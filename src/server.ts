@@ -10,11 +10,21 @@
 
 import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent } from './types'
 import { injectorCode } from './bookmarklet'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
+const __dirname = dirname(fileURLToPath(import.meta.url))
+// Use mkcert-generated certs (localhost+1.pem) if available, otherwise fall back to cert.pem
+const mkcertPath = join(__dirname, '../certs/localhost+1.pem')
+const mkcertKeyPath = join(__dirname, '../certs/localhost+1-key.pem')
+const fallbackCertPath = join(__dirname, '../certs/cert.pem')
+const fallbackKeyPath = join(__dirname, '../certs/key.pem')
+const certPath = existsSync(mkcertPath) ? mkcertPath : fallbackCertPath
+const keyPath = existsSync(mkcertKeyPath) ? mkcertKeyPath : fallbackKeyPath
+// Use HTTPS if certs exist, unless explicitly disabled (e.g., for tests)
+const USE_HTTPS = process.env.DEV_CHANNEL_NO_HTTPS !== '1' && existsSync(certPath) && existsSync(keyPath)
 
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -25,18 +35,11 @@ let componentJsWithSession = ''
 try {
   const __dirname = dirname(fileURLToPath(import.meta.url))
   componentJs = readFileSync(join(__dirname, '../dist/component.js'), 'utf-8')
-  // Inject server session ID - look for the placeholder or inject after VERSION
+  // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
   componentJsWithSession = componentJs.replace(
-    /const SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
-    `const SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
+    /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
+    `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
   )
-  // If no placeholder found, inject it after VERSION constant
-  if (componentJsWithSession === componentJs) {
-    componentJsWithSession = componentJs.replace(
-      /(var VERSION\s*=\s*["'][^"']*["'];?)/,
-      `$1\nvar SERVER_SESSION_ID = "${SERVER_SESSION_ID}";`
-    )
-  }
 } catch {
   console.warn('[tosijs-dev] Could not load component.js from dist/')
 }
@@ -244,7 +247,7 @@ async function handleRest(req: Request): Promise<Response> {
   
   <h2>Bookmarklet</h2>
   <p>Drag this to your bookmarks bar:</p>
-  <a class="bookmarklet" href="javascript:(function(){fetch('http://localhost:${PORT}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('Cannot reach server'))})();">Dev Channel</a>
+  <a class="bookmarklet" href="javascript:(function(){fetch('https://localhost:${PORT}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: '+e.message))})();">🦉 tosijs-dev</a>
   
   <h2>Test Controls</h2>
   <button onclick="console.log('Test log', Date.now())">Log to Console</button>
@@ -256,7 +259,7 @@ async function handleRest(req: Request): Promise<Response> {
   <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
   <div id="result"></div>
   
-  <tosijs-dev server="ws://localhost:${PORT}/ws/browser"></tosijs-dev>
+  <tosijs-dev server="wss://localhost:${PORT}/ws/browser"></tosijs-dev>
 </body>
 </html>`
     return new Response(html, { 
@@ -632,11 +635,9 @@ async function handleRest(req: Request): Promise<Response> {
   return Response.json({ error: 'Not found' }, { status: 404, headers })
 }
 
-// Start server
-const server = Bun.serve({
-  port: PORT,
-  
-  fetch(req, server) {
+// Shared server config
+const serverConfig = {
+  fetch(req: Request, server: any) {
     const url = new URL(req.url)
     
     // WebSocket upgrade
@@ -717,6 +718,24 @@ const server = Bun.serve({
       }
     },
   },
+}
+
+// Start server (HTTPS if certs exist, otherwise HTTP)
+const server = Bun.serve({
+  port: PORT,
+  ...(USE_HTTPS ? {
+    tls: {
+      cert: readFileSync(certPath),
+      key: readFileSync(keyPath),
+    },
+  } : {}),
+  ...serverConfig,
 })
 
-export { server, PORT }
+const protocol = USE_HTTPS ? 'https' : 'http'
+console.log(`[tosijs-dev] Server running on ${protocol}://localhost:${PORT}`)
+if (USE_HTTPS) {
+  console.log(`[tosijs-dev] First visit https://localhost:${PORT} in your browser to accept the self-signed certificate`)
+}
+
+export { server, PORT, USE_HTTPS }

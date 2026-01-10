@@ -27,7 +27,7 @@ test.beforeAll(async () => {
   // Make sure component is built first
   serverProcess = spawn('bun', ['run', 'bin/server.ts'], {
     cwd: join(__dirname, '..'),
-    env: { ...process.env, DEV_CHANNEL_PORT: String(PORT) },
+    env: { ...process.env, DEV_CHANNEL_PORT: String(PORT), DEV_CHANNEL_NO_HTTPS: '1' },
     stdio: 'inherit', // Show server output for debugging
   })
   

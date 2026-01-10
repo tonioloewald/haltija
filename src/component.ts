@@ -947,7 +947,7 @@ export class DevChannel extends HTMLElement {
   private recording: RecordingSession | null = null
   private originalConsole: Partial<Console> = {}
   private widgetHidden = false
-  private serverUrl = 'ws://localhost:8700/ws/browser'
+  private serverUrl = 'wss://localhost:8700/ws/browser'
   private browserId = uid() // Unique ID for this browser instance
   private killed = false // Prevents reconnection after kill()
   private homeLeft = 0 // Store home position for restore
@@ -2448,7 +2448,7 @@ export class DevChannel extends HTMLElement {
 customElements.define('tosijs-dev', DevChannel)
 
 // Export for bookmarklet injection
-export function inject(serverUrl = 'ws://localhost:8700/ws/browser') {
+export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
   if (document.querySelector('tosijs-dev')) {
     console.log('[tosijs-dev] Already injected')
     return
