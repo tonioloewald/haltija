@@ -47,6 +47,121 @@ export interface DomElement {
 }
 
 // ============================================
+// Element Inspector (detailed view)
+// ============================================
+
+export interface ElementInspection {
+  // Identity
+  selector: string
+  tagName: string
+  id?: string
+  classList: string[]
+  
+  // Geometry
+  box: {
+    x: number
+    y: number
+    width: number
+    height: number
+    visible: boolean        // Is it in viewport?
+    display: string         // computed display value
+    visibility: string      // computed visibility
+    opacity: number         // computed opacity
+  }
+  
+  // Offset hierarchy (for understanding positioning)
+  offsets: {
+    offsetTop: number
+    offsetLeft: number
+    offsetWidth: number
+    offsetHeight: number
+    offsetParent: string | null  // selector of offsetParent
+    scrollTop: number
+    scrollLeft: number
+    scrollWidth: number
+    scrollHeight: number
+  }
+  
+  // Content
+  text: {
+    innerText: string       // Truncated to 500 chars
+    textContent: string     // Truncated to 500 chars
+    value?: string          // For inputs
+    placeholder?: string
+    innerHTML: string       // Truncated to 1000 chars
+  }
+  
+  // Attributes (all of them)
+  attributes: Record<string, string>
+  
+  // Data attributes (convenience)
+  dataset: Record<string, string>
+  
+  // Key properties for common element types
+  properties: {
+    // State
+    hidden?: boolean
+    disabled?: boolean
+    checked?: boolean
+    selected?: boolean
+    open?: boolean          // for details/dialog
+    
+    // Form elements
+    type?: string
+    name?: string
+    required?: boolean
+    readOnly?: boolean
+    
+    // Links
+    href?: string
+    target?: string
+    
+    // Media
+    src?: string
+    alt?: string
+    
+    // ARIA
+    role?: string
+    ariaLabel?: string
+    ariaExpanded?: boolean
+    ariaHidden?: boolean
+    ariaDisabled?: boolean
+    ariaSelected?: boolean
+    ariaCurrent?: string
+    
+    // Custom element
+    isCustomElement: boolean
+    shadowRoot: boolean
+  }
+  
+  // Hierarchy
+  hierarchy: {
+    parent: string | null    // Selector
+    children: number         // Count
+    childTags: string[]      // Unique tag names of children
+    previousSibling?: string // Tag name
+    nextSibling?: string     // Tag name
+    depth: number            // How deep in DOM tree
+  }
+  
+  // Computed styles (only the useful ones)
+  styles: {
+    display: string
+    position: string
+    visibility: string
+    opacity: string
+    overflow: string
+    zIndex: string
+    pointerEvents: string
+    cursor: string
+    color: string
+    backgroundColor: string
+    fontSize: string
+    fontWeight: string
+  }
+}
+
+// ============================================
 // Event Watching & Recording
 // ============================================
 

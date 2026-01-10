@@ -28,6 +28,7 @@ import type {
   MutationWatchRequest,
   MutationBatch,
   NotableMutation,
+  ElementInspection,
 } from './types'
 
 // Generate unique IDs
@@ -102,7 +103,243 @@ function extractElement(el: Element): DomElement {
   }
 }
 
+// Detailed element inspection
+function inspectElement(el: Element): ElementInspection {
+  const htmlEl = el as HTMLElement
+  const rect = el.getBoundingClientRect()
+  const computed = getComputedStyle(el)
+  
+  // Check if visible in viewport
+  const inViewport = rect.top < window.innerHeight && 
+                     rect.bottom > 0 && 
+                     rect.left < window.innerWidth && 
+                     rect.right > 0
+  
+  // Get depth in DOM tree
+  let depth = 0
+  let parent = el.parentElement
+  while (parent) {
+    depth++
+    parent = parent.parentElement
+  }
+  
+  // Collect attributes
+  const attrs: Record<string, string> = {}
+  for (const attr of el.attributes) {
+    attrs[attr.name] = attr.value
+  }
+  
+  // Collect dataset
+  const dataset: Record<string, string> = {}
+  if (htmlEl.dataset) {
+    for (const key of Object.keys(htmlEl.dataset)) {
+      dataset[key] = htmlEl.dataset[key] || ''
+    }
+  }
+  
+  // Get unique child tag names
+  const childTags = [...new Set(Array.from(el.children).map(c => c.tagName.toLowerCase()))]
+  
+  return {
+    selector: getSelector(el),
+    tagName: el.tagName.toLowerCase(),
+    id: el.id || undefined,
+    classList: Array.from(el.classList),
+    
+    box: {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      visible: inViewport && computed.display !== 'none' && computed.visibility !== 'hidden',
+      display: computed.display,
+      visibility: computed.visibility,
+      opacity: parseFloat(computed.opacity),
+    },
+    
+    offsets: {
+      offsetTop: htmlEl.offsetTop,
+      offsetLeft: htmlEl.offsetLeft,
+      offsetWidth: htmlEl.offsetWidth,
+      offsetHeight: htmlEl.offsetHeight,
+      offsetParent: htmlEl.offsetParent ? getSelector(htmlEl.offsetParent as Element) : null,
+      scrollTop: htmlEl.scrollTop,
+      scrollLeft: htmlEl.scrollLeft,
+      scrollWidth: htmlEl.scrollWidth,
+      scrollHeight: htmlEl.scrollHeight,
+    },
+    
+    text: {
+      innerText: htmlEl.innerText?.slice(0, 500) || '',
+      textContent: el.textContent?.slice(0, 500) || '',
+      value: (htmlEl as HTMLInputElement).value || undefined,
+      placeholder: (htmlEl as HTMLInputElement).placeholder || undefined,
+      innerHTML: el.innerHTML.slice(0, 1000),
+    },
+    
+    attributes: attrs,
+    dataset,
+    
+    properties: {
+      hidden: htmlEl.hidden,
+      disabled: (htmlEl as HTMLButtonElement).disabled,
+      checked: (htmlEl as HTMLInputElement).checked,
+      selected: (htmlEl as HTMLOptionElement).selected,
+      open: (htmlEl as HTMLDetailsElement).open,
+      type: (htmlEl as HTMLInputElement).type || undefined,
+      name: (htmlEl as HTMLInputElement).name || undefined,
+      required: (htmlEl as HTMLInputElement).required,
+      readOnly: (htmlEl as HTMLInputElement).readOnly,
+      href: (htmlEl as HTMLAnchorElement).href || undefined,
+      target: (htmlEl as HTMLAnchorElement).target || undefined,
+      src: (htmlEl as HTMLImageElement).src || undefined,
+      alt: (htmlEl as HTMLImageElement).alt || undefined,
+      role: el.getAttribute('role') || undefined,
+      ariaLabel: el.getAttribute('aria-label') || undefined,
+      ariaExpanded: el.getAttribute('aria-expanded') === 'true',
+      ariaHidden: el.getAttribute('aria-hidden') === 'true',
+      ariaDisabled: el.getAttribute('aria-disabled') === 'true',
+      ariaSelected: el.getAttribute('aria-selected') === 'true',
+      ariaCurrent: el.getAttribute('aria-current') || undefined,
+      isCustomElement: el.tagName.includes('-'),
+      shadowRoot: !!el.shadowRoot,
+    },
+    
+    hierarchy: {
+      parent: el.parentElement ? getSelector(el.parentElement) : null,
+      children: el.children.length,
+      childTags,
+      previousSibling: el.previousElementSibling?.tagName.toLowerCase(),
+      nextSibling: el.nextElementSibling?.tagName.toLowerCase(),
+      depth,
+    },
+    
+    styles: {
+      display: computed.display,
+      position: computed.position,
+      visibility: computed.visibility,
+      opacity: computed.opacity,
+      overflow: computed.overflow,
+      zIndex: computed.zIndex,
+      pointerEvents: computed.pointerEvents,
+      cursor: computed.cursor,
+      color: computed.color,
+      backgroundColor: computed.backgroundColor,
+      fontSize: computed.fontSize,
+      fontWeight: computed.fontWeight,
+    },
+  }
+}
+
 type ChannelState = 'disconnected' | 'connecting' | 'connected' | 'paused'
+
+// Highlight overlay for visual pointing
+let highlightOverlay: HTMLDivElement | null = null
+let highlightLabel: HTMLDivElement | null = null
+let highlightStyles: HTMLStyleElement | null = null
+
+function createHighlightOverlay() {
+  if (highlightOverlay) return
+  
+  // Inject CSS variables and styles once
+  highlightStyles = document.createElement('style')
+  highlightStyles.textContent = `
+    :root {
+      --tosijs-highlight: #6366f1;
+      --tosijs-highlight-bg: rgba(99, 102, 241, 0.1);
+      --tosijs-highlight-glow: rgba(99, 102, 241, 0.3);
+    }
+    
+    #tosijs-dev-highlight {
+      position: fixed;
+      pointer-events: none;
+      z-index: 999998;
+      border: 3px solid var(--tosijs-highlight);
+      border-radius: 4px;
+      background: var(--tosijs-highlight-bg);
+      box-shadow: 0 0 0 4px var(--tosijs-highlight-glow), 0 0 20px var(--tosijs-highlight-glow);
+      transition: all 0.15s ease-out;
+      display: none;
+    }
+    
+    #tosijs-dev-highlight-label {
+      position: absolute;
+      top: -28px;
+      left: -3px;
+      background: var(--tosijs-highlight);
+      color: white;
+      font: 600 11px system-ui, -apple-system, sans-serif;
+      padding: 4px 8px;
+      border-radius: 4px 4px 0 0;
+      white-space: nowrap;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  `
+  document.head.appendChild(highlightStyles)
+  
+  highlightOverlay = document.createElement('div')
+  highlightOverlay.id = 'tosijs-dev-highlight'
+  
+  highlightLabel = document.createElement('div')
+  highlightLabel.id = 'tosijs-dev-highlight-label'
+  
+  highlightOverlay.appendChild(highlightLabel)
+  document.body.appendChild(highlightOverlay)
+}
+
+function showHighlight(el: Element, label?: string, color?: string) {
+  createHighlightOverlay()
+  if (!highlightOverlay || !highlightLabel) return
+  
+  const rect = el.getBoundingClientRect()
+  
+  // Set custom color via CSS variable if provided
+  if (color) {
+    highlightOverlay.style.setProperty('--tosijs-highlight', color)
+    // Derive bg and glow from color
+    const match = color.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i)
+    if (match) {
+      const r = parseInt(match[1], 16)
+      const g = parseInt(match[2], 16)
+      const b = parseInt(match[3], 16)
+      highlightOverlay.style.setProperty('--tosijs-highlight-bg', `rgba(${r}, ${g}, ${b}, 0.1)`)
+      highlightOverlay.style.setProperty('--tosijs-highlight-glow', `rgba(${r}, ${g}, ${b}, 0.3)`)
+    }
+  } else {
+    // Reset to defaults
+    highlightOverlay.style.removeProperty('--tosijs-highlight')
+    highlightOverlay.style.removeProperty('--tosijs-highlight-bg')
+    highlightOverlay.style.removeProperty('--tosijs-highlight-glow')
+  }
+  
+  // Position
+  highlightOverlay.style.display = 'block'
+  highlightOverlay.style.top = `${rect.top - 3}px`
+  highlightOverlay.style.left = `${rect.left - 3}px`
+  highlightOverlay.style.width = `${rect.width + 6}px`
+  highlightOverlay.style.height = `${rect.height + 6}px`
+  
+  // Label
+  const tagName = el.tagName.toLowerCase()
+  const id = el.id ? `#${el.id}` : ''
+  const classes = el.className && typeof el.className === 'string' 
+    ? '.' + el.className.split(' ').slice(0, 2).join('.') 
+    : ''
+  highlightLabel.textContent = label || `${tagName}${id}${classes}`
+}
+
+function hideHighlight() {
+  if (highlightOverlay) {
+    highlightOverlay.style.display = 'none'
+  }
+}
+
+function pulseHighlight(el: Element, label?: string, color?: string, duration = 2000) {
+  showHighlight(el, label, color)
+  setTimeout(() => hideHighlight(), duration)
+}
 
 export class DevChannel extends HTMLElement {
   private ws: WebSocket | null = null
@@ -681,6 +918,63 @@ export class DevChannel extends HTMLElement {
           const el = document.querySelector(req.selector)
           this.respond(msg.id, true, el ? extractElement(el) : null)
         }
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err.message)
+      }
+    } else if (action === 'inspect') {
+      try {
+        const el = document.querySelector(payload.selector)
+        if (!el) {
+          this.respond(msg.id, false, null, `Element not found: ${payload.selector}`)
+          return
+        }
+        this.respond(msg.id, true, inspectElement(el))
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err.message)
+      }
+    } else if (action === 'inspectAll') {
+      try {
+        const elements = document.querySelectorAll(payload.selector)
+        const results = Array.from(elements).slice(0, payload.limit || 10).map(el => inspectElement(el))
+        this.respond(msg.id, true, results)
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err.message)
+      }
+    } else if (action === 'highlight') {
+      try {
+        const el = document.querySelector(payload.selector)
+        if (!el) {
+          this.respond(msg.id, false, null, `Element not found: ${payload.selector}`)
+          return
+        }
+        if (payload.duration) {
+          pulseHighlight(el, payload.label, payload.color, payload.duration)
+        } else {
+          showHighlight(el, payload.label, payload.color)
+        }
+        this.respond(msg.id, true, { highlighted: payload.selector })
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err.message)
+      }
+    } else if (action === 'unhighlight') {
+      hideHighlight()
+      this.respond(msg.id, true)
+    } else if (action === 'screenshot') {
+      // Note: This captures via the page, not the highlight overlay
+      // The highlight will be visible in the screenshot if it's showing
+      try {
+        // Use html2canvas if available, otherwise return viewport info
+        const viewport = {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+          devicePixelRatio: window.devicePixelRatio,
+          url: location.href,
+          title: document.title,
+        }
+        // Could integrate html2canvas here for actual screenshot
+        this.respond(msg.id, true, { viewport, note: 'Use browser devtools or Playwright for actual screenshot capture' })
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }

@@ -419,6 +419,41 @@ async function handleRest(req: Request): Promise<Response> {
     return Response.json(response, { headers })
   }
   
+  // Inspect element (detailed view)
+  if (path === '/inspect' && req.method === 'POST') {
+    const body = await req.json()
+    const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector })
+    return Response.json(response, { headers })
+  }
+  
+  // Inspect multiple elements
+  if (path === '/inspectAll' && req.method === 'POST') {
+    const body = await req.json()
+    const response = await requestFromBrowser('dom', 'inspectAll', { 
+      selector: body.selector, 
+      limit: body.limit || 10 
+    })
+    return Response.json(response, { headers })
+  }
+  
+  // Highlight element (visual pointer)
+  if (path === '/highlight' && req.method === 'POST') {
+    const body = await req.json()
+    const response = await requestFromBrowser('dom', 'highlight', {
+      selector: body.selector,
+      label: body.label,
+      color: body.color,
+      duration: body.duration,  // If set, will auto-hide after duration ms
+    })
+    return Response.json(response, { headers })
+  }
+  
+  // Remove highlight
+  if (path === '/unhighlight' && req.method === 'POST') {
+    const response = await requestFromBrowser('dom', 'unhighlight', {})
+    return Response.json(response, { headers })
+  }
+  
   return Response.json({ error: 'Not found' }, { status: 404, headers })
 }
 
