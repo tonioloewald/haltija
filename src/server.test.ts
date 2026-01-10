@@ -68,6 +68,46 @@ describe('tosijs-dev server', () => {
       expect(code).toContain('tosijs-dev')
       expect(code).toContain('function')
     })
+    
+    it('contains correct HTTP URLs for HTTP request', async () => {
+      const res = await fetch(`${BASE_URL}/inject.js`)
+      const code = await res.text()
+      
+      // Should contain http:// URLs since we're requesting over HTTP
+      expect(code).toContain(`http://localhost:${PORT}`)
+      expect(code).toContain(`ws://localhost:${PORT}/ws/browser`)
+      // Should NOT contain https:// URLs
+      expect(code).not.toContain('https://localhost')
+      expect(code).not.toContain('wss://localhost')
+    })
+  })
+  
+  describe('GET /docs', () => {
+    it('returns quick-start documentation', async () => {
+      const res = await fetch(`${BASE_URL}/docs`)
+      expect(res.ok).toBe(true)
+      expect(res.headers.get('content-type')).toContain('text/plain')
+      
+      const docs = await res.text()
+      expect(docs).toContain('Browser Control for AI Agents')
+      expect(docs).toContain('/status')
+      expect(docs).toContain('/tree')
+      expect(docs).toContain('/api')
+    })
+  })
+  
+  describe('GET /api', () => {
+    it('returns full API reference', async () => {
+      const res = await fetch(`${BASE_URL}/api`)
+      expect(res.ok).toBe(true)
+      expect(res.headers.get('content-type')).toContain('text/plain')
+      
+      const api = await res.text()
+      expect(api).toContain('API Reference')
+      expect(api).toContain('/inspect Response')
+      expect(api).toContain('/tree Options')
+      expect(api).toContain('Mutation Batch')
+    })
   })
   
   describe('GET /component.js', () => {
