@@ -115,6 +115,9 @@ test.describe('tosijs-dev CLI', () => {
     const data = await res.json()
     expect(data).toHaveProperty('browsers')
     expect(data).toHaveProperty('agents')
+    expect(data).toHaveProperty('serverSessionId')
+    expect(typeof data.serverSessionId).toBe('string')
+    expect(data.serverSessionId.length).toBeGreaterThan(10)
   })
 })
 
@@ -816,5 +819,119 @@ test.describe('tosijs-dev DOM tree inspector', () => {
     expect(shadowDiv.children.length).toBe(2)
     expect(shadowDiv.children[0].tag).toBe('button')
     expect(shadowDiv.children[0].flags.interactive).toBe(true)
+  })
+  
+  test('mutation watching with shadow DOM piercing', async ({ page }) => {
+    // Verify connection is established first
+    const connected = await page.evaluate(() => {
+      const el = document.querySelector('tosijs-dev') as any
+      return el?.state === 'connected'
+    })
+    
+    if (!connected) {
+      await page.waitForTimeout(500)
+      const retryConnected = await page.evaluate(() => {
+        const el = document.querySelector('tosijs-dev') as any
+        return el?.state === 'connected'
+      })
+      if (!retryConnected) {
+        test.skip()
+        return
+      }
+    }
+    
+    // Note: server automatically clears mutation messages when starting a new watch
+    
+    await page.evaluate(() => {
+      // Define a custom element with shadow DOM
+      if (!customElements.get('mutation-shadow-test')) {
+        customElements.define('mutation-shadow-test', class extends HTMLElement {
+          constructor() {
+            super()
+            const shadow = this.attachShadow({ mode: 'open' })
+            shadow.innerHTML = `
+              <div class="shadow-inner">
+                <button id="shadow-toggle-btn">Toggle</button>
+              </div>
+            `
+          }
+          
+          toggle() {
+            const btn = this.shadowRoot!.querySelector('#shadow-toggle-btn')
+            if (btn) {
+              btn.classList.toggle('active')
+            }
+          }
+        })
+      }
+      
+      const container = document.createElement('div')
+      container.id = 'mutation-shadow-test-container'
+      container.innerHTML = '<mutation-shadow-test id="shadow-mut-el"></mutation-shadow-test>'
+      document.body.appendChild(container)
+    })
+    
+    await page.waitForTimeout(100)
+    
+    // Start watching with pierceShadow - use custom filter to make "active" an interesting class
+    const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        root: '#mutation-shadow-test-container',
+        pierceShadow: true,
+        preset: 'none',
+        debounce: 50,
+        filters: {
+          interestingClasses: ['active']
+        }
+      })
+    })
+    const watchData = await watchRes.json()
+    expect(watchData.success).toBe(true)
+    expect(watchData.data.watching).toBe(true)
+    
+    // Wait a moment for watch to be established
+    await page.waitForTimeout(50)
+    
+    await page.waitForTimeout(100)
+    
+    // Trigger a mutation inside shadow DOM
+    await page.evaluate(() => {
+      const el = document.querySelector('#shadow-mut-el') as any
+      el.toggle()
+    })
+    
+    // Poll for the mutation batch with attribute changes (more reliable than fixed timeout)
+    let mutationBatch: any = null
+    let allMessages: any[] = []
+    for (let i = 0; i < 15; i++) {
+      await page.waitForTimeout(100)
+      const messagesRes = await fetch(`${SERVER_URL}/messages`)
+      allMessages = await messagesRes.json()
+      // Look specifically for a mutation batch with attribute changes
+      mutationBatch = allMessages.find((m: any) => 
+        m.channel === 'mutations' && 
+        m.action === 'batch' && 
+        m.payload?.summary?.attributeChanges > 0
+      )
+      if (mutationBatch) break
+    }
+    
+    if (!mutationBatch) {
+      console.log('No mutation batch with attribute changes found. All messages:', JSON.stringify(allMessages, null, 2))
+    }
+    
+    expect(mutationBatch).toBeTruthy()
+    
+    // The selector should include ::shadow to indicate it's inside shadow DOM
+    const notable = mutationBatch.payload.notable || []
+    const shadowMutation = notable.find((n: any) => n.selector?.includes('::shadow'))
+    expect(shadowMutation).toBeDefined()
+    expect(shadowMutation.attribute).toBe('class')
+    expect(shadowMutation.newValue).toContain('active')
+    
+    // Clean up
+    await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
   })
 })

@@ -16,11 +16,27 @@ import { fileURLToPath } from 'url'
 
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
 
-// Load component.js from dist
+// Generate unique server session ID at startup
+const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+// Load component.js from dist and inject server session ID
 let componentJs = ''
+let componentJsWithSession = ''
 try {
   const __dirname = dirname(fileURLToPath(import.meta.url))
   componentJs = readFileSync(join(__dirname, '../dist/component.js'), 'utf-8')
+  // Inject server session ID - look for the placeholder or inject after VERSION
+  componentJsWithSession = componentJs.replace(
+    /const SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
+    `const SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
+  )
+  // If no placeholder found, inject it after VERSION constant
+  if (componentJsWithSession === componentJs) {
+    componentJsWithSession = componentJs.replace(
+      /(var VERSION\s*=\s*["'][^"']*["'];?)/,
+      `$1\nvar SERVER_SESSION_ID = "${SERVER_SESSION_ID}";`
+    )
+  }
 } catch {
   console.warn('[tosijs-dev] Could not load component.js from dist/')
 }
@@ -51,6 +67,15 @@ function bufferMessage(msg: DevMessage) {
   messageBuffer.push(msg)
   if (messageBuffer.length > MAX_BUFFER) {
     messageBuffer.shift()
+  }
+}
+
+// Clear only mutation-related messages from buffer
+function clearMutationMessages() {
+  for (let i = messageBuffer.length - 1; i >= 0; i--) {
+    if (messageBuffer[i].channel === 'mutations') {
+      messageBuffer.splice(i, 1)
+    }
   }
 }
 
@@ -183,13 +208,13 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   if (path === '/component.js') {
-    if (!componentJs) {
+    if (!componentJsWithSession) {
       return new Response('// Component not built. Run: bun run build', { 
         status: 503,
         headers: { ...headers, 'Content-Type': 'application/javascript' } 
       })
     }
-    return new Response(componentJs, { 
+    return new Response(componentJsWithSession, { 
       headers: { ...headers, 'Content-Type': 'application/javascript' } 
     })
   }
@@ -240,7 +265,7 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Server version
-  const SERVER_VERSION = '0.1.3'
+  const SERVER_VERSION = '0.1.5'
   
   // Status endpoint
   if (path === '/status') {
@@ -249,6 +274,7 @@ async function handleRest(req: Request): Promise<Response> {
       agents: agents.size,
       bufferedMessages: messageBuffer.length,
       serverVersion: SERVER_VERSION,
+      serverSessionId: SERVER_SESSION_ID,
     }, { headers })
   }
   
@@ -273,6 +299,12 @@ async function handleRest(req: Request): Promise<Response> {
         error: response.error || 'No browser connected'
       }, { headers })
     }
+  }
+  
+  // Reload widget with fresh code (no need to click bookmarklet again)
+  if (path === '/reload' && req.method === 'POST') {
+    const response = await requestFromBrowser('system', 'reload', {})
+    return Response.json(response, { headers })
   }
   
   // Get recent messages
@@ -504,6 +536,11 @@ async function handleRest(req: Request): Promise<Response> {
   // Start watching DOM mutations
   if (path === '/mutations/watch' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
+    
+    // Clear old mutation messages when starting a new watch
+    // This prevents stale data from previous watch sessions
+    clearMutationMessages()
+    
     const response = await requestFromBrowser('mutations', 'watch', {
       root: body.root,
       childList: body.childList ?? true,
@@ -511,6 +548,9 @@ async function handleRest(req: Request): Promise<Response> {
       characterData: body.characterData ?? false,
       subtree: body.subtree ?? true,
       debounce: body.debounce ?? 100,
+      preset: body.preset,
+      filters: body.filters,
+      pierceShadow: body.pierceShadow,
     })
     return Response.json(response, { headers })
   }
@@ -642,6 +682,21 @@ const server = Bun.serve({
           if (data.channel === 'system' && data.action === 'connected' && data.payload?.browserId) {
             browsers.set(wsTyped, data.payload.browserId)
             activeBrowserId = data.payload.browserId
+            
+            // Check if widget has the correct server session ID
+            const widgetSessionId = data.payload.serverSessionId
+            if (widgetSessionId && widgetSessionId !== SERVER_SESSION_ID) {
+              // Widget is from a different server session - tell it to reload
+              console.log(`[tosijs-dev] Widget session mismatch (${widgetSessionId} vs ${SERVER_SESSION_ID}), sending reload`)
+              wsTyped.send(JSON.stringify({
+                id: uid(),
+                channel: 'system',
+                action: 'reload',
+                payload: { reason: 'session_mismatch' },
+                timestamp: Date.now(),
+                source: 'server'
+              }))
+            }
           }
         } catch {}
       }

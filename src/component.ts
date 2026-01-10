@@ -36,44 +36,130 @@ import type {
 } from './types'
 
 // Component version - update when making changes
-export const VERSION = '0.1.3'
+export const VERSION = '0.1.6'
+
+// Server session ID - injected by server when serving component.js
+// This allows the server to detect stale widgets and tell them to reload
+const SERVER_SESSION_ID = ''
 
 // Generate unique IDs
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
 // Get a stable CSS selector path to an element
+// Handles shadow DOM by marking shadow root boundaries with ::shadow
 function getSelector(el: Element): string {
-  if (el.id) return `#${el.id}`
+  // Build shadow DOM prefix if element is inside shadow roots
+  const shadowPrefix: string[] = []
+  let rootNode = el.getRootNode()
+  let hostEl: Element | null = null
+  
+  while (rootNode instanceof ShadowRoot) {
+    shadowPrefix.unshift('::shadow')
+    hostEl = rootNode.host
+    // Get selector for the host element up to the next shadow boundary or document
+    const hostParts: string[] = []
+    let current: Element | null = hostEl
+    while (current) {
+      let selector = current.tagName.toLowerCase()
+      if (current.id) {
+        selector = `#${current.id}`
+        hostParts.unshift(selector)
+        break
+      }
+      if (current.className && typeof current.className === 'string') {
+        const classes = current.className.trim().split(/\s+/).slice(0, 2).join('.')
+        if (classes) selector += `.${classes}`
+      }
+      hostParts.unshift(selector)
+      
+      const nextRoot = current.getRootNode()
+      if (nextRoot instanceof ShadowRoot) {
+        // This host is also inside a shadow root - stop here, outer loop will handle it
+        break
+      }
+      current = current.parentElement
+    }
+    shadowPrefix.unshift(...hostParts)
+    rootNode = hostEl.getRootNode()
+  }
+  
+  // If element has ID and is in shadow DOM, prefix with shadow path
+  if (el.id) {
+    if (shadowPrefix.length > 0) {
+      return `${shadowPrefix.join(' > ')} > #${el.id}`
+    }
+    return `#${el.id}`
+  }
   
   const parts: string[] = []
   let current: Element | null = el
   
   while (current && current !== document.documentElement) {
-    let selector = current.tagName.toLowerCase()
-    
-    if (current.id) {
-      selector = `#${current.id}`
-      parts.unshift(selector)
-      break
-    }
-    
-    if (current.className && typeof current.className === 'string') {
-      const classes = current.className.trim().split(/\s+/).slice(0, 2).join('.')
-      if (classes) selector += `.${classes}`
-    }
-    
-    // Add nth-child if needed for uniqueness
-    const parent = current.parentElement
-    if (parent) {
-      const siblings = Array.from(parent.children).filter(c => c.tagName === current!.tagName)
-      if (siblings.length > 1) {
-        const index = siblings.indexOf(current) + 1
-        selector += `:nth-child(${index})`
+    // Stop if we hit the shadow root boundary (handled by prefix)
+    const currentRoot = current.getRootNode()
+    if (currentRoot instanceof ShadowRoot) {
+      // Build selector within this shadow root only
+      let selector = current.tagName.toLowerCase()
+      
+      if (current.id) {
+        selector = `#${current.id}`
+        parts.unshift(selector)
+        break
       }
+      
+      if (current.className && typeof current.className === 'string') {
+        const classes = current.className.trim().split(/\s+/).slice(0, 2).join('.')
+        if (classes) selector += `.${classes}`
+      }
+      
+      // Add nth-child if needed for uniqueness
+      const parent = current.parentElement || (currentRoot as ShadowRoot)
+      if (parent) {
+        const children = parent instanceof ShadowRoot ? Array.from(parent.children) : Array.from(parent.children)
+        const siblings = children.filter(c => c.tagName === current!.tagName)
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(current) + 1
+          selector += `:nth-child(${index})`
+        }
+      }
+      
+      parts.unshift(selector)
+      current = current.parentElement
+      
+      // If we've reached the shadow root (no more parent), stop
+      if (!current) break
+    } else {
+      // Normal DOM traversal
+      let selector = current.tagName.toLowerCase()
+      
+      if (current.id) {
+        selector = `#${current.id}`
+        parts.unshift(selector)
+        break
+      }
+      
+      if (current.className && typeof current.className === 'string') {
+        const classes = current.className.trim().split(/\s+/).slice(0, 2).join('.')
+        if (classes) selector += `.${classes}`
+      }
+      
+      const parent = current.parentElement
+      if (parent) {
+        const siblings = Array.from(parent.children).filter(c => c.tagName === current!.tagName)
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(current) + 1
+          selector += `:nth-child(${index})`
+        }
+      }
+      
+      parts.unshift(selector)
+      current = current.parentElement
     }
-    
-    parts.unshift(selector)
-    current = current.parentElement
+  }
+  
+  // Combine shadow prefix with element path
+  if (shadowPrefix.length > 0) {
+    return `${shadowPrefix.join(' > ')} > ${parts.join(' > ')}`
   }
   
   return parts.join(' > ')
@@ -853,6 +939,7 @@ export class DevChannel extends HTMLElement {
   private consoleBuffer: ConsoleEntry[] = []
   private eventWatchers: Map<string, () => void> = new Map()
   private mutationObserver: MutationObserver | null = null
+  private shadowObservers: Map<ShadowRoot, MutationObserver> = new Map()
   private mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
   private pendingMutations: MutationRecord[] = []
   private mutationConfig: MutationWatchRequest | null = null
@@ -1378,6 +1465,7 @@ export class DevChannel extends HTMLElement {
         this.send('system', 'connected', { 
           browserId: this.browserId, 
           version: VERSION,
+          serverSessionId: SERVER_SESSION_ID,
           url: location.href, 
           title: document.title 
         })
@@ -1506,6 +1594,33 @@ export class DevChannel extends HTMLElement {
         title: document.title,
         state: this.state,
       })
+    }
+    
+    // Reload the widget with fresh code from server
+    if (action === 'reload') {
+      this.respond(msg.id, true, { reloading: true, oldVersion: VERSION })
+      
+      // Disconnect and remove current widget
+      this.ws?.close()
+      
+      // Fetch and eval fresh component.js
+      const serverUrl = this.serverUrl.replace('/ws/browser', '')
+        .replace('ws://', 'http://')
+        .replace('wss://', 'https://')
+      
+      fetch(`${serverUrl}/component.js?t=${Date.now()}`)
+        .then(r => r.text())
+        .then(code => {
+          // Remove old element
+          this.remove()
+          // Eval new code and create fresh widget
+          eval(code)
+          const newWidget = document.createElement('tosijs-dev')
+          document.body.appendChild(newWidget)
+        })
+        .catch(err => {
+          console.error('[tosijs-dev] Failed to reload:', err)
+        })
     }
   }
   
@@ -1769,16 +1884,104 @@ export class DevChannel extends HTMLElement {
       }, debounceMs)
     })
     
-    this.mutationObserver.observe(root, {
+    const observerOptions = {
       childList: config.childList ?? true,
       attributes: config.attributes ?? true,
       characterData: config.characterData ?? false,
       subtree: config.subtree ?? true,
       attributeOldValue: config.attributes ?? true,
       characterDataOldValue: config.characterData ?? false,
-    })
+    }
     
-    this.send('mutations', 'started', { config })
+    this.mutationObserver.observe(root, observerOptions)
+    
+    // If pierceShadow is enabled, also observe inside shadow roots
+    if (config.pierceShadow) {
+      this.attachShadowObservers(root as Element, observerOptions, debounceMs)
+    }
+    
+    this.send('mutations', 'started', { config, shadowRoots: this.shadowObservers.size })
+  }
+  
+  /**
+   * Find all shadow roots in the subtree and attach mutation observers
+   */
+  private attachShadowObservers(
+    root: Element, 
+    options: MutationObserverInit, 
+    debounceMs: number
+  ) {
+    const attachToShadowRoot = (shadowRoot: ShadowRoot) => {
+      if (this.shadowObservers.has(shadowRoot)) return
+      
+      const observer = new MutationObserver((mutations) => {
+        this.pendingMutations.push(...mutations)
+        
+        if (this.mutationDebounceTimer) {
+          clearTimeout(this.mutationDebounceTimer)
+        }
+        
+        this.mutationDebounceTimer = setTimeout(() => {
+          this.flushMutations()
+        }, debounceMs)
+      })
+      
+      observer.observe(shadowRoot, options)
+      this.shadowObservers.set(shadowRoot, observer)
+      
+      // Recursively check for nested shadow roots
+      for (const el of shadowRoot.querySelectorAll('*')) {
+        if (el.shadowRoot) {
+          attachToShadowRoot(el.shadowRoot)
+        }
+      }
+    }
+    
+    // Find all elements with shadow roots in the main tree
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) {
+        attachToShadowRoot(el.shadowRoot)
+      }
+    }
+    
+    // Also check root itself
+    if ((root as Element).shadowRoot) {
+      attachToShadowRoot((root as Element).shadowRoot!)
+    }
+  }
+  
+  /**
+   * Check newly added elements for shadow roots and attach observers
+   */
+  private checkNewElementsForShadowRoots(mutations: MutationRecord[]) {
+    if (!this.mutationConfig?.pierceShadow) return
+    
+    const debounceMs = this.mutationConfig.debounce ?? 100
+    const options = {
+      childList: this.mutationConfig.childList ?? true,
+      attributes: this.mutationConfig.attributes ?? true,
+      characterData: this.mutationConfig.characterData ?? false,
+      subtree: this.mutationConfig.subtree ?? true,
+      attributeOldValue: this.mutationConfig.attributes ?? true,
+      characterDataOldValue: this.mutationConfig.characterData ?? false,
+    }
+    
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as Element
+          if (el.shadowRoot) {
+            this.attachShadowObservers(el, options, debounceMs)
+          }
+          // Check children too
+          for (const child of el.querySelectorAll('*')) {
+            if (child.shadowRoot) {
+              this.attachShadowObservers(child, options, debounceMs)
+            }
+          }
+        }
+      }
+    }
   }
   
   private stopMutationWatch() {
@@ -1786,6 +1989,13 @@ export class DevChannel extends HTMLElement {
       this.mutationObserver.disconnect()
       this.mutationObserver = null
     }
+    
+    // Disconnect all shadow root observers
+    for (const observer of this.shadowObservers.values()) {
+      observer.disconnect()
+    }
+    this.shadowObservers.clear()
+    
     if (this.mutationDebounceTimer) {
       clearTimeout(this.mutationDebounceTimer)
       this.mutationDebounceTimer = null
@@ -1800,6 +2010,9 @@ export class DevChannel extends HTMLElement {
     
     const mutations = this.pendingMutations
     this.pendingMutations = []
+    
+    // Check for new elements with shadow roots (for dynamic shadow DOM watching)
+    this.checkNewElementsForShadowRoots(mutations)
     
     const rules = this.mutationFilterRules || {}
     

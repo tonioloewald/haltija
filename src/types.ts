@@ -459,6 +459,8 @@ export interface MutationWatchRequest {
   preset?: MutationFilterPreset
   /** Custom filter rules (merged with preset) */
   filters?: MutationFilterRules
+  /** Also watch mutations inside shadow DOM (default: false) */
+  pierceShadow?: boolean
 }
 
 export interface MutationBatch {
