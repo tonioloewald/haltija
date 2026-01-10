@@ -412,13 +412,13 @@ export class DevChannel extends HTMLElement {
       })
     })
     
-    // Bookmark link drag handler - rename to "tosijs-dev" on drag for useful toolbar name
+    // Bookmark link - show "🦉 tosijs-dev" on hover so drag gets useful name
     const bookmarkLink = shadow.querySelector('.bookmark-link') as HTMLAnchorElement
     if (bookmarkLink) {
-      bookmarkLink.addEventListener('dragstart', () => {
-        bookmarkLink.textContent = 'tosijs-dev'
+      bookmarkLink.addEventListener('mouseenter', () => {
+        bookmarkLink.textContent = '🦉 tosijs-dev'
       })
-      bookmarkLink.addEventListener('dragend', () => {
+      bookmarkLink.addEventListener('mouseleave', () => {
         bookmarkLink.textContent = '🦉 bookmark'
       })
     }
