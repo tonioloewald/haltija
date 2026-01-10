@@ -72,8 +72,23 @@ All endpoints support CORS and return JSON.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/status` | GET | Server status (connected browsers/agents, buffered messages) |
+| `/version` | GET | Version info for server and connected browser component |
 | `/messages?since=N` | GET | Get buffered messages since timestamp N |
 | `/console?since=N` | GET | Get console entries since timestamp N |
+
+**Version Response:**
+```json
+{
+  "server": "0.1.2",
+  "component": "0.1.2",
+  "browser": {
+    "id": "abc123",
+    "url": "https://example.com",
+    "title": "Example Page",
+    "state": "connected"
+  }
+}
+```
 
 ### DOM Queries
 
@@ -358,6 +373,11 @@ curl -X POST http://localhost:8700/mutations/watch \
 - `react` - Filters React internals (__reactFiber, etc.)
 - `minimal` - Only element add/remove, ignores attribute changes
 - `none` - No filtering
+
+**Auto-filtered noise:**
+- DevTools-injected elements (React DevTools, etc.)
+- Elements with `id` starting with `__`
+- Script, style, meta tags
 
 **Custom filters:**
 ```bash

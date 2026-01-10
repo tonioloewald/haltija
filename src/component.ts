@@ -35,6 +35,9 @@ import type {
   DomTreeNode,
 } from './types'
 
+// Component version - update when making changes
+export const VERSION = '0.1.2'
+
 // Generate unique IDs
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
@@ -319,7 +322,11 @@ const FILTER_PRESETS: Record<MutationFilterPreset, MutationFilterRules> = {
       'data-event', 'data-bind', 'data-list', 'data-component', 'data-testid',
       'disabled', 'hidden', 'open', 'checked', 'selected',
     ],
-    ignoreElements: ['script', 'style', 'link', 'meta', 'noscript'],
+    ignoreElements: [
+      'script', 'style', 'link', 'meta', 'noscript',
+      // DevTools-injected garbage
+      '[id^="__"]', // React DevTools, etc.
+    ],
     ignoreClasses: [
       // Common animation/transition classes
       '^animate-', '^transition-', '^fade-', '^slide-',
@@ -351,10 +358,10 @@ function detectFramework(): MutationFilterPreset[] {
     }
     
     // Check for React (use attribute presence check via JS, not CSS selector)
+    // Note: __REACT_DEVTOOLS_GLOBAL_HOOK__ is injected by DevTools extension, not React itself
     const hasReactRoot = document.querySelector('[data-reactroot]') !== null
-    const hasReactGlobal = typeof (window as any).React !== 'undefined' ||
-                           typeof (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined'
-    // Check for React fiber by looking at element properties
+    const hasReactGlobal = typeof (window as any).React !== 'undefined'
+    // Check for React fiber by looking at element properties (the real indicator)
     const hasReactFiber = Array.from(document.body?.children || []).some(el => 
       Object.keys(el).some(key => key.startsWith('__reactFiber') || key.startsWith('__reactProps'))
     )
@@ -500,7 +507,16 @@ const DEFAULT_INTERESTING_ATTRS = [
   'disabled', 'hidden', 'open', 'checked', 'selected', 'required', 'readonly',
   'type', 'name', 'value', 'placeholder',
 ]
-const DEFAULT_IGNORE_SELECTORS = ['script', 'style', 'link', 'meta', 'noscript', 'svg', 'path']
+const DEFAULT_IGNORE_SELECTORS = [
+  'script', 'style', 'link', 'meta', 'noscript', 'svg', 'path',
+  // Chrome DevTools / React DevTools injected garbage
+  '[data-reactroot-hidden]',
+  '#__react-devtools-global-hook__',
+  '[class*="__reactdevtools"]',
+  // Other common DevTools injections
+  '#__vconsole',
+  '[id^="__"]', // Most DevTools use __prefix convention
+]
 
 /**
  * Build a DOM tree representation
@@ -1337,7 +1353,12 @@ export class DevChannel extends HTMLElement {
       this.ws.onopen = () => {
         this.state = 'connected'
         this.show() // Always show when connection established
-        this.send('system', 'connected', { browserId: this.browserId, url: location.href, title: document.title })
+        this.send('system', 'connected', { 
+          browserId: this.browserId, 
+          version: VERSION,
+          url: location.href, 
+          title: document.title 
+        })
       }
       
       this.ws.onmessage = (e) => {
@@ -1452,6 +1473,17 @@ export class DevChannel extends HTMLElement {
     // When we see another browser connect, kill ourselves
     if (action === 'connected' && payload?.browserId && payload.browserId !== this.browserId) {
       this.kill()
+    }
+    
+    // Respond to version request
+    if (action === 'version') {
+      this.respond(msg.id, true, { 
+        version: VERSION,
+        browserId: this.browserId,
+        url: location.href,
+        title: document.title,
+        state: this.state,
+      })
     }
   }
   

@@ -157,23 +157,38 @@ test.describe('tosijs-dev component', () => {
     expect(['connecting', 'connected']).toContain(state)
   })
   
-  test('Option+Tab toggles visibility', async ({ page }) => {
-    // Get initial state
-    const initiallyHidden = await page.evaluate(() => {
+  test('Option+Tab toggles minimize', async ({ page }) => {
+    // Get initial state - minimized class is on the host element, not .widget
+    const initial = await page.evaluate(() => {
       const el = document.querySelector('tosijs-dev')
-      return el?.shadowRoot?.querySelector('.widget')?.classList.contains('hidden')
+      return {
+        exists: !!el,
+        minimized: el?.classList.contains('minimized')
+      }
     })
+    console.log('Initial state:', initial)
+    expect(initial.exists).toBe(true)
+    expect(initial.minimized).toBe(false) // Should start not minimized
     
-    // Press Option+Tab
-    await page.keyboard.press('Alt+Tab')
-    await page.waitForTimeout(100)
+    // Dispatch Alt+Tab directly (OS intercepts the real shortcut)
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        altKey: true,
+        bubbles: true
+      }))
+    })
+    await page.waitForTimeout(400) // Wait for animation
     
-    const afterToggle = await page.evaluate(() => {
+    const after = await page.evaluate(() => {
       const el = document.querySelector('tosijs-dev')
-      return el?.shadowRoot?.querySelector('.widget')?.classList.contains('hidden')
+      return {
+        minimized: el?.classList.contains('minimized')
+      }
     })
+    console.log('After toggle:', after)
     
-    expect(afterToggle).toBe(!initiallyHidden)
+    expect(after.minimized).toBe(true) // Should now be minimized
   })
   
   test('captures console.log', async ({ page }) => {

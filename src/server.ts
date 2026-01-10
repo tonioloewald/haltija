@@ -239,13 +239,40 @@ async function handleRest(req: Request): Promise<Response> {
     })
   }
   
+  // Server version
+  const SERVER_VERSION = '0.1.2'
+  
   // Status endpoint
   if (path === '/status') {
     return Response.json({
       browsers: browsers.size,
       agents: agents.size,
       bufferedMessages: messageBuffer.length,
+      serverVersion: SERVER_VERSION,
     }, { headers })
+  }
+  
+  // Version endpoint - get component version from connected browser
+  if (path === '/version' && req.method === 'GET') {
+    const response = await requestFromBrowser('system', 'version', {})
+    if (response.success) {
+      return Response.json({
+        server: SERVER_VERSION,
+        component: response.data.version,
+        browser: {
+          id: response.data.browserId,
+          url: response.data.url,
+          title: response.data.title,
+          state: response.data.state,
+        }
+      }, { headers })
+    } else {
+      return Response.json({
+        server: SERVER_VERSION,
+        component: null,
+        error: response.error || 'No browser connected'
+      }, { headers })
+    }
   }
   
   // Get recent messages

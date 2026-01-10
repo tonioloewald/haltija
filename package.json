@@ -1,6 +1,6 @@
 {
   "name": "tosijs-dev",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Real-time communication bridge between AI agents and browser pages",
   "type": "module",
   "main": "dist/index.js",
