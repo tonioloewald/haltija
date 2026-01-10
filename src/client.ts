@@ -266,6 +266,158 @@ export class DevChannelClient {
       throw new Error(response.error || 'Unwatch failed')
     }
   }
+  
+  // ==========================================
+  // Mutation Watching
+  // ==========================================
+  
+  async watchMutations(options?: {
+    root?: string
+    childList?: boolean
+    attributes?: boolean
+    characterData?: boolean
+    subtree?: boolean
+    debounce?: number
+  }): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/mutations/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {}),
+    })
+    const response: DevResponse = await res.json()
+    if (!response.success) {
+      throw new Error(response.error || 'Watch mutations failed')
+    }
+  }
+  
+  async unwatchMutations(): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/mutations/unwatch`, {
+      method: 'POST',
+    })
+    const response: DevResponse = await res.json()
+    if (!response.success) {
+      throw new Error(response.error || 'Unwatch mutations failed')
+    }
+  }
+  
+  async getMutationStatus(): Promise<{ watching: boolean; config: any }> {
+    const res = await fetch(`${this.baseUrl}/mutations/status`)
+    const response: DevResponse = await res.json()
+    if (!response.success) {
+      throw new Error(response.error || 'Get mutation status failed')
+    }
+    return response.data
+  }
+  
+  async getMessages(since = 0): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/messages?since=${since}`)
+    return res.json()
+  }
+  
+  // ==========================================
+  // High-level helpers for agents
+  // ==========================================
+  
+  /**
+   * Get a summary of interactive elements on the page
+   */
+  async getInteractiveElements(): Promise<{
+    buttons: Array<{ selector: string; text: string }>
+    links: Array<{ selector: string; text: string; href: string }>
+    inputs: Array<{ selector: string; type?: string; name?: string; placeholder?: string }>
+  }> {
+    const [buttons, links, inputs] = await Promise.all([
+      this.queryAll('button'),
+      this.queryAll('a[href]'),
+      this.queryAll('input, textarea, select'),
+    ])
+    
+    return {
+      buttons: buttons.map(el => ({
+        selector: el.id ? `#${el.id}` : `button`,
+        text: el.innerText?.slice(0, 50) || '',
+      })),
+      links: links.map(el => ({
+        selector: el.id ? `#${el.id}` : `a[href="${el.attributes?.href}"]`,
+        text: el.innerText?.slice(0, 50) || '',
+        href: el.attributes?.href || '',
+      })),
+      inputs: inputs.map(el => ({
+        selector: el.id ? `#${el.id}` : `${el.tagName}[name="${el.attributes?.name}"]`,
+        type: el.attributes?.type,
+        name: el.attributes?.name,
+        placeholder: el.attributes?.placeholder,
+      })),
+    }
+  }
+  
+  /**
+   * Get custom elements (web components) on the page
+   */
+  async getCustomElements(): Promise<Record<string, { count: number; examples: any[] }>> {
+    return this.eval(`
+      Array.from(document.querySelectorAll('*'))
+        .filter(el => el.tagName.includes('-'))
+        .reduce((acc, el) => {
+          const tag = el.tagName.toLowerCase()
+          if (!acc[tag]) acc[tag] = { count: 0, examples: [] }
+          acc[tag].count++
+          if (acc[tag].examples.length < 3) {
+            acc[tag].examples.push({
+              id: el.id || null,
+              classes: el.className?.split?.(' ')?.slice(0, 3) || [],
+              text: el.textContent?.slice(0, 50)
+            })
+          }
+          return acc
+        }, {})
+    `)
+  }
+  
+  /**
+   * Perform an action and wait for DOM to settle
+   */
+  async doAndWait(
+    action: () => Promise<void>,
+    options?: { timeout?: number; debounce?: number }
+  ): Promise<{ mutations: any[]; duration: number }> {
+    const timeout = options?.timeout || 2000
+    const debounce = options?.debounce || 100
+    
+    // Start watching
+    await this.watchMutations({ debounce })
+    const startTime = Date.now()
+    
+    // Perform action
+    await action()
+    
+    // Wait for mutations to settle
+    let mutations: any[] = []
+    let lastMutationTime = Date.now()
+    
+    while (Date.now() - startTime < timeout) {
+      const messages = await this.getMessages(startTime)
+      const newMutations = messages.filter(m => m.channel === 'mutations' && m.action === 'batch')
+      
+      if (newMutations.length > mutations.length) {
+        mutations = newMutations
+        lastMutationTime = Date.now()
+      } else if (mutations.length > 0 && Date.now() - lastMutationTime > debounce * 2) {
+        // Mutations have settled
+        break
+      }
+      
+      await new Promise(r => setTimeout(r, 50))
+    }
+    
+    // Stop watching
+    await this.unwatchMutations()
+    
+    return {
+      mutations,
+      duration: Date.now() - startTime,
+    }
+  }
 }
 
 // Default export for easy usage
