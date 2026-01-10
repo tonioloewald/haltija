@@ -240,7 +240,7 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Server version
-  const SERVER_VERSION = '0.1.2'
+  const SERVER_VERSION = '0.1.3'
   
   // Status endpoint
   if (path === '/status') {
@@ -570,7 +570,7 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // DOM tree inspector
-  // POST /tree { selector, depth?, includeText?, allAttributes?, includeBox?, compact?, ... }
+  // POST /tree { selector, depth?, includeText?, allAttributes?, includeBox?, compact?, pierceShadow?, ... }
   if (path === '/tree' && req.method === 'POST') {
     const body = await req.json()
     const response = await requestFromBrowser('dom', 'tree', {
@@ -584,6 +584,7 @@ async function handleRest(req: Request): Promise<Response> {
       interestingAttributes: body.interestingAttributes,
       ignoreSelectors: body.ignoreSelectors,
       compact: body.compact,
+      pierceShadow: body.pierceShadow,
     })
     return Response.json(response, { headers })
   }

@@ -755,4 +755,66 @@ test.describe('tosijs-dev DOM tree inspector', () => {
     expect(children[2].flags.hasEvents).toBe(true)
     expect(children[3].flags.hasData).toBe(true)
   })
+  
+  test('tree with shadow DOM piercing', async ({ page }) => {
+    await page.evaluate(() => {
+      // Define a custom element with shadow DOM
+      if (!customElements.get('shadow-test')) {
+        customElements.define('shadow-test', class extends HTMLElement {
+          constructor() {
+            super()
+            const shadow = this.attachShadow({ mode: 'open' })
+            shadow.innerHTML = `
+              <style>button { color: blue; }</style>
+              <div class="shadow-container">
+                <button id="shadow-btn">Click me</button>
+                <span>Shadow content</span>
+              </div>
+            `
+          }
+        })
+      }
+      
+      const container = document.createElement('div')
+      container.id = 'shadow-pierce-test'
+      container.innerHTML = '<shadow-test><span>Light DOM</span></shadow-test>'
+      document.body.appendChild(container)
+    })
+    
+    await page.waitForTimeout(100)
+    
+    // Without pierceShadow - should not see shadow children
+    const resWithout = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#shadow-pierce-test', pierceShadow: false })
+    })
+    const dataWithout = await resWithout.json()
+    expect(dataWithout.success).toBe(true)
+    const elWithout = dataWithout.data.children.find((c: any) => c.tag === 'shadow-test')
+    expect(elWithout.flags.shadowRoot).toBe(true)
+    expect(elWithout.shadowChildren).toBeUndefined()
+    
+    // With pierceShadow - should see inside shadow DOM
+    const resWith = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#shadow-pierce-test', pierceShadow: true })
+    })
+    const dataWith = await resWith.json()
+    expect(dataWith.success).toBe(true)
+    const elWith = dataWith.data.children.find((c: any) => c.tag === 'shadow-test')
+    expect(elWith.flags.shadowRoot).toBe(true)
+    expect(elWith.shadowChildren).toBeDefined()
+    expect(elWith.shadowChildren.length).toBe(1) // The div.shadow-container
+    
+    const shadowDiv = elWith.shadowChildren[0]
+    expect(shadowDiv.tag).toBe('div')
+    expect(shadowDiv.classes).toContain('shadow-container')
+    
+    // Should have button and span as children
+    expect(shadowDiv.children.length).toBe(2)
+    expect(shadowDiv.children[0].tag).toBe('button')
+    expect(shadowDiv.children[0].flags.interactive).toBe(true)
+  })
 })

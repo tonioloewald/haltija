@@ -433,6 +433,7 @@ curl -X POST http://localhost:8700/tree \
 | `allAttributes` | `false` | Include all attrs (vs only interesting) |
 | `includeBox` | `false` | Include position/size info |
 | `compact` | `false` | Minimal output |
+| `pierceShadow` | `false` | Traverse into shadow DOM |
 | `interestingClasses` | xinjs/b8r patterns | Class patterns to highlight |
 | `interestingAttributes` | aria, data-*, etc. | Attr patterns to include |
 | `ignoreSelectors` | script, style, svg | Elements to skip |
@@ -452,9 +453,14 @@ curl -X POST http://localhost:8700/tree \
       "flags": { "interactive": true },
       "attrs": { "aria-label": "Submit form" }
     }
+  ],
+  "shadowChildren": [
+    { "tag": "div", "text": "Inside shadow DOM" }
   ]
 }
 ```
+
+When `pierceShadow: true`, elements with shadow roots will have a `shadowChildren` array containing their shadow DOM content (excludes `<style>` and `<slot>` elements).
 
 **Flags for quick scanning:**
 - `hasEvents` - Has xinjs/b8r event bindings

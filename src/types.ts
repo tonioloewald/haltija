@@ -521,6 +521,8 @@ export interface DomTreeRequest {
   ignoreSelectors?: string[]
   /** Compact mode: minimal output (default: false) */
   compact?: boolean
+  /** Pierce shadow DOM boundaries (default: false) */
+  pierceShadow?: boolean
 }
 
 /**
@@ -538,8 +540,10 @@ export interface DomTreeNode {
   attrs?: Record<string, string>
   /** Text content (for leaf nodes or if short) */
   text?: string
-  /** Child nodes */
+  /** Child nodes (light DOM) */
   children?: DomTreeNode[]
+  /** Shadow DOM children (if pierceShadow is true) */
+  shadowChildren?: DomTreeNode[]
   /** Flags for quick scanning */
   flags?: {
     /** Has event bindings (xinjs, b8r, etc.) */

@@ -36,7 +36,7 @@ import type {
 } from './types'
 
 // Component version - update when making changes
-export const VERSION = '0.1.2'
+export const VERSION = '0.1.3'
 
 // Generate unique IDs
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -532,6 +532,7 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     interestingAttributes = DEFAULT_INTERESTING_ATTRS,
     ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
     compact = false,
+    pierceShadow = false,
   } = options
 
   // Check if should be ignored
@@ -681,6 +682,27 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
 
   // Children (if not at max depth)
   const maxDepth = depth < 0 ? Infinity : depth
+  // Shadow DOM children (if pierceShadow is enabled and element has shadow root)
+  if (pierceShadow && el.shadowRoot && currentDepth < maxDepth) {
+    const shadowChildren: DomTreeNode[] = []
+    
+    for (const child of el.shadowRoot.children) {
+      // Skip our own widget and style elements in shadow DOM
+      if (child.tagName === 'STYLE' || child.tagName === 'SLOT') continue
+      if (shadowChildren.length >= 50) break
+      
+      const childNode = buildDomTree(child, options, currentDepth + 1)
+      if (childNode) {
+        shadowChildren.push(childNode)
+      }
+    }
+    
+    if (shadowChildren.length > 0) {
+      node.shadowChildren = shadowChildren
+    }
+  }
+
+  // Light DOM children
   if (currentDepth < maxDepth && el.children.length > 0) {
     const children: DomTreeNode[] = []
     let truncatedCount = 0
