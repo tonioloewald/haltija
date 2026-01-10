@@ -393,6 +393,32 @@ async function handleRest(req: Request): Promise<Response> {
     return Response.json({ success: true }, { headers })
   }
   
+  // Start watching DOM mutations
+  if (path === '/mutations/watch' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    const response = await requestFromBrowser('mutations', 'watch', {
+      root: body.root,
+      childList: body.childList ?? true,
+      attributes: body.attributes ?? true,
+      characterData: body.characterData ?? false,
+      subtree: body.subtree ?? true,
+      debounce: body.debounce ?? 100,
+    })
+    return Response.json(response, { headers })
+  }
+  
+  // Stop watching DOM mutations
+  if (path === '/mutations/unwatch' && req.method === 'POST') {
+    const response = await requestFromBrowser('mutations', 'unwatch', {})
+    return Response.json(response, { headers })
+  }
+  
+  // Get mutation watch status
+  if (path === '/mutations/status' && req.method === 'GET') {
+    const response = await requestFromBrowser('mutations', 'status', {})
+    return Response.json(response, { headers })
+  }
+  
   return Response.json({ error: 'Not found' }, { status: 404, headers })
 }
 

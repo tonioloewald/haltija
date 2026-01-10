@@ -387,4 +387,44 @@ test.describe('tosijs-dev server integration', () => {
       expect(data.data).toBe(84)
     }
   })
+  
+  test('mutation watching via REST', async ({ page }) => {
+    // Start watching mutations
+    const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ debounce: 50 })
+    })
+    const watchData = await watchRes.json()
+    expect(watchData.success).toBe(true)
+    
+    // Check status
+    const statusRes = await fetch(`${SERVER_URL}/mutations/status`)
+    const statusData = await statusRes.json()
+    expect(statusData.success).toBe(true)
+    expect(statusData.data.watching).toBe(true)
+    
+    // Make a DOM change
+    await page.evaluate(() => {
+      const div = document.createElement('div')
+      div.id = 'test-mutation'
+      div.textContent = 'Added by test'
+      document.body.appendChild(div)
+    })
+    
+    // Wait for debounce
+    await page.waitForTimeout(100)
+    
+    // Check messages for mutation batch
+    const messagesRes = await fetch(`${SERVER_URL}/messages`)
+    const messages = await messagesRes.json()
+    const mutationBatch = messages.find((m: any) => m.channel === 'mutations' && m.action === 'batch')
+    expect(mutationBatch).toBeTruthy()
+    expect(mutationBatch.payload.summary.added).toBeGreaterThan(0)
+    
+    // Stop watching
+    const unwatchRes = await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
+    const unwatchData = await unwatchRes.json()
+    expect(unwatchData.success).toBe(true)
+  })
 })

@@ -25,6 +25,9 @@ import type {
   EventWatchRequest,
   SyntheticEventRequest,
   RecordingSession,
+  MutationWatchRequest,
+  MutationBatch,
+  NotableMutation,
 } from './types'
 
 // Generate unique IDs
@@ -106,6 +109,10 @@ export class DevChannel extends HTMLElement {
   private state: ChannelState = 'disconnected'
   private consoleBuffer: ConsoleEntry[] = []
   private eventWatchers: Map<string, () => void> = new Map()
+  private mutationObserver: MutationObserver | null = null
+  private mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingMutations: MutationRecord[] = []
+  private mutationConfig: MutationWatchRequest | null = null
   private recording: RecordingSession | null = null
   private originalConsole: Partial<Console> = {}
   private widgetHidden = false
@@ -224,6 +231,7 @@ export class DevChannel extends HTMLElement {
     this.disconnect()
     this.restoreConsole()
     this.clearEventWatchers()
+    this.stopMutationWatch()
   }
   
   attributeChangedCallback(name: string, _old: string, value: string) {
@@ -495,6 +503,7 @@ export class DevChannel extends HTMLElement {
     this.killed = true // Prevent reconnection
     this.restoreConsole()
     this.clearEventWatchers()
+    this.stopMutationWatch()
     this.disconnect()
     this.remove()
   }
@@ -616,6 +625,9 @@ export class DevChannel extends HTMLElement {
         break
       case 'navigation':
         this.handleNavigationMessage(msg)
+        break
+      case 'mutations':
+        this.handleMutationsMessage(msg)
         break
     }
     
@@ -748,6 +760,158 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'replay') {
       this.replaySession(payload.session, payload.speed || 1, msg.id)
     }
+  }
+  
+  // ==========================================
+  // DOM Mutation Watching
+  // ==========================================
+  
+  private handleMutationsMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    
+    if (action === 'watch') {
+      this.startMutationWatch(payload as MutationWatchRequest)
+      this.respond(msg.id, true, { watching: true })
+    } else if (action === 'unwatch') {
+      this.stopMutationWatch()
+      this.respond(msg.id, true, { watching: false })
+    } else if (action === 'status') {
+      this.respond(msg.id, true, { 
+        watching: this.mutationObserver !== null,
+        config: this.mutationConfig 
+      })
+    }
+  }
+  
+  private startMutationWatch(config: MutationWatchRequest) {
+    // Stop any existing observer
+    this.stopMutationWatch()
+    
+    this.mutationConfig = config
+    const root = config.root ? document.querySelector(config.root) : document.body
+    
+    if (!root) {
+      this.send('mutations', 'error', { error: `Root element not found: ${config.root}` })
+      return
+    }
+    
+    const debounceMs = config.debounce ?? 100
+    
+    this.mutationObserver = new MutationObserver((mutations) => {
+      // Accumulate mutations
+      this.pendingMutations.push(...mutations)
+      
+      // Debounce: wait for DOM to settle before sending batch
+      if (this.mutationDebounceTimer) {
+        clearTimeout(this.mutationDebounceTimer)
+      }
+      
+      this.mutationDebounceTimer = setTimeout(() => {
+        this.flushMutations()
+      }, debounceMs)
+    })
+    
+    this.mutationObserver.observe(root, {
+      childList: config.childList ?? true,
+      attributes: config.attributes ?? true,
+      characterData: config.characterData ?? false,
+      subtree: config.subtree ?? true,
+      attributeOldValue: config.attributes ?? true,
+      characterDataOldValue: config.characterData ?? false,
+    })
+    
+    this.send('mutations', 'started', { config })
+  }
+  
+  private stopMutationWatch() {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect()
+      this.mutationObserver = null
+    }
+    if (this.mutationDebounceTimer) {
+      clearTimeout(this.mutationDebounceTimer)
+      this.mutationDebounceTimer = null
+    }
+    this.pendingMutations = []
+    this.mutationConfig = null
+  }
+  
+  private flushMutations() {
+    if (this.pendingMutations.length === 0) return
+    
+    const mutations = this.pendingMutations
+    this.pendingMutations = []
+    
+    // Summarize the batch
+    let added = 0
+    let removed = 0
+    let attributeChanges = 0
+    let textChanges = 0
+    const notable: NotableMutation[] = []
+    
+    for (const m of mutations) {
+      if (m.type === 'childList') {
+        // Track added nodes
+        for (const node of m.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            added++
+            const el = node as Element
+            // Notable if it has an id, is a significant element, or is interactive
+            if (el.id || ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT'].includes(el.tagName)) {
+              notable.push({
+                type: 'added',
+                selector: getSelector(el),
+                tagName: el.tagName.toLowerCase(),
+                id: el.id || undefined,
+                className: el.className?.toString() || undefined,
+              })
+            }
+          }
+        }
+        // Track removed nodes
+        for (const node of m.removedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            removed++
+            const el = node as Element
+            if (el.id || ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT'].includes(el.tagName)) {
+              notable.push({
+                type: 'removed',
+                selector: getSelector(el),
+                tagName: el.tagName.toLowerCase(),
+                id: el.id || undefined,
+                className: el.className?.toString() || undefined,
+              })
+            }
+          }
+        }
+      } else if (m.type === 'attributes') {
+        attributeChanges++
+        const el = m.target as Element
+        // Notable attribute changes on interactive elements
+        if (['disabled', 'hidden', 'aria-hidden', 'aria-expanded', 'open', 'checked', 'selected'].includes(m.attributeName || '')) {
+          notable.push({
+            type: 'attribute',
+            selector: getSelector(el),
+            tagName: el.tagName.toLowerCase(),
+            id: el.id || undefined,
+            attribute: m.attributeName || undefined,
+            oldValue: m.oldValue || undefined,
+            newValue: el.getAttribute(m.attributeName || '') || undefined,
+          })
+        }
+      } else if (m.type === 'characterData') {
+        textChanges++
+      }
+    }
+    
+    const batch: MutationBatch = {
+      timestamp: Date.now(),
+      count: mutations.length,
+      summary: { added, removed, attributeChanges, textChanges },
+      notable: notable.slice(0, 20), // Limit to 20 notable items
+    }
+    
+    this.send('mutations', 'batch', batch)
   }
   
   // ==========================================

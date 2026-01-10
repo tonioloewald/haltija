@@ -296,6 +296,54 @@ export interface StepResult {
 }
 
 // ============================================
+// DOM Mutation Watching
+// ============================================
+
+export interface MutationWatchRequest {
+  /** CSS selector for subtree to observe (default: document.body) */
+  root?: string
+  /** Watch for child list changes */
+  childList?: boolean
+  /** Watch for attribute changes */
+  attributes?: boolean
+  /** Watch for text content changes */
+  characterData?: boolean
+  /** Watch entire subtree (default: true) */
+  subtree?: boolean
+  /** Debounce mutations (ms, default: 100) */
+  debounce?: number
+}
+
+export interface MutationBatch {
+  timestamp: number
+  /** Number of mutations in this batch */
+  count: number
+  /** Summary of changes */
+  summary: {
+    added: number
+    removed: number
+    attributeChanges: number
+    textChanges: number
+  }
+  /** Notable changes (elements added/removed that might be interesting) */
+  notable: NotableMutation[]
+}
+
+export interface NotableMutation {
+  type: 'added' | 'removed' | 'attribute' | 'text'
+  selector: string
+  tagName: string
+  id?: string
+  className?: string
+  /** For attribute changes */
+  attribute?: string
+  oldValue?: string
+  newValue?: string
+  /** For text changes */
+  textContent?: string
+}
+
+// ============================================
 // Channel Subscription
 // ============================================
 
