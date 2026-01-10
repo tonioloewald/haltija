@@ -365,7 +365,7 @@ export class DevChannel extends HTMLElement {
       <div class="widget ${this.widgetHidden ? 'hidden' : ''}">
         <div class="header">
           <div class="status ${this.state}"></div>
-          <div class="title">Dev Channel</div>
+          <div class="title">🦉 tosijs-dev</div>
           <div class="controls">
             <button class="btn" data-action="pause" title="Pause/Resume">
               ${this.state === 'paused' ? '▶' : '⏸'}
@@ -393,9 +393,10 @@ export class DevChannel extends HTMLElement {
           </div>
           <div class="hint">
             Option+Tab to toggle | 
-            <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('Dev Channel: Cannot reach server'))})();" 
+            <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: Cannot reach server'))})();" 
                style="color: #6366f1; text-decoration: none;"
-               title="Drag to bookmarks bar">Bookmark</a>
+               title="Drag to bookmarks bar"
+               class="bookmark-link">🦉 bookmark</a>
           </div>
         </div>
       </div>
@@ -410,6 +411,17 @@ export class DevChannel extends HTMLElement {
         if (action === 'kill') this.kill()
       })
     })
+    
+    // Bookmark link drag handler - rename to "tosijs-dev" on drag for useful toolbar name
+    const bookmarkLink = shadow.querySelector('.bookmark-link') as HTMLAnchorElement
+    if (bookmarkLink) {
+      bookmarkLink.addEventListener('dragstart', () => {
+        bookmarkLink.textContent = 'tosijs-dev'
+      })
+      bookmarkLink.addEventListener('dragend', () => {
+        bookmarkLink.textContent = '🦉 bookmark'
+      })
+    }
     
     // Drag support
     this.setupDrag(shadow.querySelector('.header')!)
