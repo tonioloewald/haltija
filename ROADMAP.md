@@ -130,6 +130,17 @@ The holy grail - AI that can:
 - `src/client.ts` - Agent/CLI client
 - `src/bookmarklet.ts` - Injection code
 
+### Visual Replay Cursor
+
+When replaying tests or recordings, show a visible animated cursor:
+- **Cursor graphic** - Smooth movement to click targets
+- **Click ripple** - Visual feedback when clicking
+- **Typing animation** - Text appearing character-by-character with blinking caret
+- **Scroll indicator** - Show scroll direction/distance
+- **Hover glow** - Highlight elements being interacted with
+
+Makes replays feel alive and helps users understand what the agent is doing.
+
 ## Ideas Parking Lot
 
 - Sourcemaps for transpiled code debugging

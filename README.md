@@ -79,24 +79,66 @@ All endpoints support CORS and return JSON.
 
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
-| `/query` | POST | `{selector: string, all?: boolean}` | Query DOM elements |
+| `/query` | POST | `{selector, all?}` | Query DOM elements (basic info) |
+| `/inspect` | POST | `{selector}` | Deep inspect single element |
+| `/inspectAll` | POST | `{selector, limit?}` | Deep inspect multiple elements |
 
-**Response:**
+**Query Response (basic):**
 ```json
 {
   "success": true,
   "data": {
-    "tagName": "BUTTON",
+    "tagName": "button",
     "id": "submit",
     "className": "btn primary",
     "textContent": "Submit",
-    "innerText": "Submit",
-    "outerHTML": "<button id=\"submit\" class=\"btn primary\">Submit</button>",
-    "attributes": {"id": "submit", "class": "btn primary"},
-    "rect": {}
+    "attributes": {"id": "submit", "class": "btn primary"}
   }
 }
 ```
+
+**Inspect Response (detailed):**
+```json
+{
+  "selector": "body > form > button#submit",
+  "tagName": "button",
+  "classList": ["btn", "primary"],
+  "box": { "x": 100, "y": 200, "width": 120, "height": 40, "visible": true },
+  "offsets": { "offsetTop": 200, "offsetLeft": 100, "scrollTop": 0 },
+  "text": { "innerText": "Submit", "value": null },
+  "attributes": { "id": "submit", "class": "btn primary", "type": "submit" },
+  "dataset": { "testId": "submit-btn" },
+  "properties": { "disabled": false, "hidden": false, "isCustomElement": false },
+  "hierarchy": { "parent": "form#login", "children": 1, "depth": 4 },
+  "styles": { "display": "inline-block", "visibility": "visible" }
+}
+```
+
+### Visual Highlighting
+
+Point at elements visually - great for debugging and screenshots.
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/highlight` | POST | `{selector, label?, color?, duration?}` | Highlight an element |
+| `/unhighlight` | POST | - | Remove highlight |
+
+```bash
+# Highlight with custom label and color
+curl -X POST http://localhost:8700/highlight \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#login-form", "label": "Bug is here!", "color": "#ef4444"}'
+
+# Auto-hide after 3 seconds
+curl -X POST http://localhost:8700/highlight \
+  -H "Content-Type: application/json" \
+  -d '{"selector": ".error", "label": "Error message", "duration": 3000}'
+```
+
+CSS variables for theming:
+- `--tosijs-highlight` - Border color
+- `--tosijs-highlight-bg` - Background (10% opacity)
+- `--tosijs-highlight-glow` - Glow effect (30% opacity)
 
 ### Interactions
 
@@ -113,6 +155,43 @@ All endpoints support CORS and return JSON.
 | `/refresh` | POST | `{hard?: boolean}` | Refresh the page |
 | `/navigate` | POST | `{url: string}` | Navigate to URL |
 | `/location` | GET | - | Get current location |
+
+### DOM Mutation Watching
+
+Watch for DOM changes in real-time - useful for verifying UI updates.
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/mutations/watch` | POST | `{root?, debounce?, childList?, attributes?}` | Start watching |
+| `/mutations/unwatch` | POST | - | Stop watching |
+| `/mutations/status` | GET | - | Check if watching |
+
+```bash
+# Start watching with 50ms debounce
+curl -X POST http://localhost:8700/mutations/watch \
+  -H "Content-Type: application/json" \
+  -d '{"debounce": 50}'
+
+# Mutations appear in /messages as channel: "mutations", action: "batch"
+curl http://localhost:8700/messages
+```
+
+**Mutation Batch:**
+```json
+{
+  "channel": "mutations",
+  "action": "batch",
+  "payload": {
+    "timestamp": 1234567890,
+    "count": 5,
+    "summary": { "added": 2, "removed": 0, "attributeChanges": 3 },
+    "notable": [
+      { "type": "added", "selector": "#new-item", "tagName": "div" },
+      { "type": "attribute", "selector": "#btn", "attribute": "disabled" }
+    ]
+  }
+}
+```
 
 ### Recording
 
@@ -182,20 +261,73 @@ curl http://127.0.0.1:8700/console
 curl http://127.0.0.1:8700/messages
 ```
 
+### Inspecting Elements
+
+```bash
+# Deep inspection with box model, properties, hierarchy
+curl -X POST http://localhost:8700/inspect \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "xin-tabs"}'
+
+# Returns: box dimensions, visibility, attributes, dataset,
+# properties (disabled, checked, aria-*), hierarchy, computed styles
+```
+
+### Visual Pointing
+
+```bash
+# Highlight an element to show the user
+curl -X POST http://localhost:8700/highlight \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#problem-area", "label": "This is the bug!"}'
+
+# Use different colors for different purposes
+curl -X POST http://localhost:8700/highlight \
+  -H "Content-Type: application/json" \
+  -d '{"selector": ".success", "color": "#22c55e", "label": "Fixed!"}'
+
+# Clear when done
+curl -X POST http://localhost:8700/unhighlight
+```
+
+### Watching for Changes
+
+```bash
+# Start watching DOM mutations
+curl -X POST http://localhost:8700/mutations/watch \
+  -H "Content-Type: application/json" \
+  -d '{"debounce": 100}'
+
+# Do something (click, type, etc.)
+curl -X POST http://localhost:8700/click \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#submit"}'
+
+# Check what changed
+curl http://localhost:8700/messages | jq '.[] | select(.channel=="mutations")'
+
+# Stop watching
+curl -X POST http://localhost:8700/mutations/unwatch
+```
+
 ### Typical Workflow
 
 1. **Check connection**: `GET /status` - ensure `browsers >= 1`
-2. **Understand the page**: `POST /query` with `body`, then key elements
-3. **Read console**: `GET /console` to see any errors
-4. **Interact**: Use `/click`, `/type`, `/eval` as needed
-5. **Verify results**: Query DOM again or check console
+2. **Understand the page**: `POST /inspect` on key elements
+3. **Explore structure**: Find custom elements, interactive elements
+4. **Point at things**: Use `/highlight` to show user what you're looking at
+5. **Watch for changes**: Start `/mutations/watch` before interactions
+6. **Interact**: Use `/click`, `/type`, `/eval` as needed
+7. **Verify results**: Check mutations, query DOM, read console
 
 ### Tips for Agents
 
 - **Always check `/status` first** - if `browsers: 0`, ask the user to inject the widget
-- **Use specific selectors** - IDs are best, then unique classes, then tag+attribute combos
-- **Check results** - After clicking/typing, query the DOM to verify the action worked
-- **Monitor console** - Errors often appear here before visible UI changes
+- **Use `/inspect` over `/query`** - much more useful information
+- **Highlight what you're discussing** - helps the user follow along
+- **Watch mutations during interactions** - know exactly what changed
+- **Use specific selectors** - IDs are best, then unique classes
+- **Check results** - After clicking/typing, verify the action worked
 - **Use eval sparingly** - Prefer `/query` and `/click` when possible
 
 ## Widget Controls
