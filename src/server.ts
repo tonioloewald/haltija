@@ -416,8 +416,224 @@ curl -X POST ${baseUrl}/click -d '{"selector":"#login-btn"}' -H "Content-Type: a
 Server: ${baseUrl}
 WebSocket: ${wsProtocol}://localhost:${PORT}/ws/browser (for browser widget)
 WebSocket: ${wsProtocol}://localhost:${PORT}/ws/agent (for programmatic agents)
+
+For complete API reference with all options and response formats:
+  curl ${baseUrl}/api
 `
     return new Response(docs, { 
+      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
+    })
+  }
+
+  // Full API reference endpoint
+  if (path === '/api' && req.method === 'GET') {
+    const baseUrl = USE_HTTP ? `http://localhost:${PORT}` : `https://localhost:${HTTPS_PORT}`
+    
+    const api = `# tosijs-dev API Reference
+
+Complete API documentation. For quick start, see: curl ${baseUrl}/docs
+
+All endpoints support CORS and return JSON (except /docs and /api which return text).
+
+## Status & Messages
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /status | GET | Server status (connected browsers/agents, buffered messages) |
+| /version | GET | Version info for server and connected browser component |
+| /messages?since=N | GET | Get buffered messages since timestamp N |
+| /console?since=N | GET | Get console entries since timestamp N |
+| /location | GET | Current page URL, title, pathname |
+
+### /version Response
+{
+  "server": "0.1.7",
+  "component": "0.1.7",
+  "browser": {
+    "id": "abc123",
+    "url": "https://example.com",
+    "title": "Example Page",
+    "state": "connected"
+  }
+}
+
+## DOM Queries
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /query | POST | {selector, all?} | Query DOM elements (basic info) |
+| /inspect | POST | {selector} | Deep inspect single element |
+| /inspectAll | POST | {selector, limit?} | Deep inspect multiple elements |
+| /tree | POST | {selector, depth?, ...} | Build filterable DOM tree |
+
+### /query Response
+{
+  "success": true,
+  "data": {
+    "tagName": "button",
+    "id": "submit",
+    "className": "btn primary",
+    "textContent": "Submit",
+    "attributes": {"id": "submit", "class": "btn primary"}
+  }
+}
+
+### /inspect Response (detailed)
+{
+  "selector": "body > form > button#submit",
+  "tagName": "button",
+  "classList": ["btn", "primary"],
+  "box": { "x": 100, "y": 200, "width": 120, "height": 40, "visible": true },
+  "offsets": { "offsetTop": 200, "offsetLeft": 100, "scrollTop": 0 },
+  "text": { "innerText": "Submit", "value": null },
+  "attributes": { "id": "submit", "class": "btn primary", "type": "submit" },
+  "dataset": { "testId": "submit-btn" },
+  "properties": { "disabled": false, "hidden": false, "isCustomElement": false },
+  "hierarchy": { "parent": "form#login", "children": 1, "depth": 4 },
+  "styles": { "display": "inline-block", "visibility": "visible" }
+}
+
+### /tree Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| selector | "body" | Root element |
+| depth | 3 | Max depth (-1 for unlimited) |
+| includeText | true | Include text content of leaf nodes |
+| allAttributes | false | Include all attrs (vs only interesting) |
+| includeBox | false | Include position/size info |
+| compact | false | Minimal output |
+| pierceShadow | false | Traverse into shadow DOM |
+| interestingClasses | [...] | Class patterns to highlight |
+| interestingAttributes | [...] | Attr patterns to include |
+| ignoreSelectors | [...] | Elements to skip |
+
+### /tree Response
+{
+  "tag": "div",
+  "id": "app",
+  "classes": ["-xin-data"],
+  "attrs": { "role": "main" },
+  "flags": { "hasData": true, "customElement": false },
+  "children": [...],
+  "shadowChildren": [...]  // when pierceShadow: true
+}
+
+Flags: hasEvents, hasData, interactive, customElement, shadowRoot, hidden, hasAria
+
+## Interactions
+
+All interaction endpoints automatically scroll the element into view first.
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /click | POST | {selector} | Click element (full mouse lifecycle) |
+| /type | POST | {selector, text} | Type into an input |
+| /drag | POST | {selector, deltaX, deltaY, duration?} | Drag an element |
+| /eval | POST | {code} | Execute JavaScript |
+
+/click fires: mouseenter -> mouseover -> mousemove -> mousedown -> mouseup -> click
+
+### /drag Example
+curl -X POST ${baseUrl}/drag -H "Content-Type: application/json" \\
+  -d '{"selector": ".draggable", "deltaX": 100, "deltaY": 50, "duration": 300}'
+
+## Visual Highlighting
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /highlight | POST | {selector, label?, color?, duration?} | Highlight element |
+| /unhighlight | POST | - | Remove highlight |
+
+### /highlight Example
+curl -X POST ${baseUrl}/highlight -H "Content-Type: application/json" \\
+  -d '{"selector": "#login-form", "label": "Bug here!", "color": "#ef4444", "duration": 3000}'
+
+CSS variables for theming:
+  --tosijs-highlight (border), --tosijs-highlight-bg, --tosijs-highlight-glow
+
+## Navigation
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /refresh | POST | {hard?} | Refresh the page |
+| /navigate | POST | {url} | Navigate to URL |
+| /location | GET | - | Get current location |
+| /reload | POST | - | Reload the tosijs-dev widget |
+
+## DOM Mutation Watching
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /mutations/watch | POST | {preset?, filters?, debounce?} | Start watching |
+| /mutations/unwatch | POST | - | Stop watching |
+| /mutations/status | GET | - | Check if watching |
+
+### Presets
+- smart (default) - Auto-detects xinjs, b8r, React, Tailwind
+- xinjs - Highlights -xin-event, -xin-data classes
+- b8rjs - Highlights data-event, data-bind attributes
+- tailwind - Filters out utility classes
+- react - Filters React internals
+- minimal - Only element add/remove
+- none - No filtering
+
+### Custom Filters
+{
+  "preset": "smart",
+  "filters": {
+    "ignoreClasses": ["^animate-", "^transition-"],
+    "ignoreAttributes": ["style"],
+    "ignoreElements": ["script", "style"],
+    "interestingClasses": ["-xin-event", "active"],
+    "interestingAttributes": ["aria-", "data-testid"],
+    "onlySelectors": ["#app", ".main-content"]
+  }
+}
+
+### Mutation Batch (in /messages)
+{
+  "channel": "mutations",
+  "action": "batch",
+  "payload": {
+    "timestamp": 1234567890,
+    "count": 5,
+    "summary": { "added": 2, "removed": 0, "attributeChanges": 3 },
+    "notable": [
+      { "type": "added", "selector": "#new-item", "tagName": "div" },
+      { "type": "attribute", "selector": "#btn", "attribute": "disabled" }
+    ]
+  }
+}
+
+## Session Recording
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /recording/start | POST | {name} | Start recording session |
+| /recording/stop | POST | - | Stop and return recorded events |
+
+## Build Events
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| /build | POST | {type, message?, file?, line?} | Publish build event |
+
+## WebSocket Endpoints
+
+- /ws/browser - For browser widget connections
+- /ws/agent - For programmatic agent connections
+
+## Widget Controls
+
+The widget appears in the bottom-right corner:
+- Status indicator: Green=connected, Yellow=connecting, Orange=paused, Red=disconnected
+- Pause button - Temporarily stop responding to commands
+- Minimize button - Slide to corner (Option+Tab to toggle)
+- Kill button - Disconnect and remove widget
+
+Security: Widget always shows when agent sends commands (no silent snooping)
+`
+    return new Response(api, { 
       headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
     })
   }
