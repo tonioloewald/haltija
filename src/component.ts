@@ -732,12 +732,16 @@ export class DevChannel extends HTMLElement {
       this.show() // Always show when resuming
     } else if (this.state === 'connected') {
       this.state = 'paused'
+      // Clean up any visual artifacts when pausing
+      hideHighlight()
+      this.stopMutationWatch()
     }
     this.render()
   }
   
   private kill() {
     this.killed = true // Prevent reconnection
+    hideHighlight() // Clean up visual artifacts
     this.restoreConsole()
     this.clearEventWatchers()
     this.stopMutationWatch()
