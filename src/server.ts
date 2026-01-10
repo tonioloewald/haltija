@@ -10,21 +10,49 @@
 
 import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent } from './types'
 import { injectorCode } from './bookmarklet'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { execSync } from 'child_process'
 
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
+const HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
 const __dirname = dirname(fileURLToPath(import.meta.url))
-// Use mkcert-generated certs (localhost+1.pem) if available, otherwise fall back to cert.pem
-const mkcertPath = join(__dirname, '../certs/localhost+1.pem')
-const mkcertKeyPath = join(__dirname, '../certs/localhost+1-key.pem')
-const fallbackCertPath = join(__dirname, '../certs/cert.pem')
-const fallbackKeyPath = join(__dirname, '../certs/key.pem')
-const certPath = existsSync(mkcertPath) ? mkcertPath : fallbackCertPath
-const keyPath = existsSync(mkcertKeyPath) ? mkcertKeyPath : fallbackKeyPath
-// Use HTTPS if certs exist, unless explicitly disabled (e.g., for tests)
-const USE_HTTPS = process.env.DEV_CHANNEL_NO_HTTPS !== '1' && existsSync(certPath) && existsSync(keyPath)
+const certsDir = join(__dirname, '../certs')
+
+// Cert paths
+const certPath = join(certsDir, 'localhost.pem')
+const keyPath = join(certsDir, 'localhost-key.pem')
+
+// Mode: 'http', 'https', or 'both'
+const MODE = process.env.DEV_CHANNEL_MODE || 'http'
+const WANT_HTTPS = MODE === 'https' || MODE === 'both'
+const WANT_HTTP = MODE === 'http' || MODE === 'both'
+
+// Generate self-signed certs if needed for HTTPS
+let certsAvailable = existsSync(certPath) && existsSync(keyPath)
+if (WANT_HTTPS && !certsAvailable) {
+  // Try mkcert first (produces trusted certs), fall back to openssl
+  try {
+    mkdirSync(certsDir, { recursive: true })
+    try {
+      execSync(`mkcert -cert-file "${certPath}" -key-file "${keyPath}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
+      console.log('[tosijs-dev] Generated trusted certificates with mkcert')
+    } catch {
+      // Fall back to openssl self-signed cert
+      execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
+      console.log('[tosijs-dev] Generated self-signed certificates with openssl')
+      console.log('[tosijs-dev] For trusted certs, install mkcert: brew install mkcert && mkcert -install')
+    }
+    certsAvailable = true
+  } catch (err) {
+    console.error('[tosijs-dev] Failed to generate certificates:', err)
+    console.error('[tosijs-dev] HTTPS will not be available')
+  }
+}
+
+const USE_HTTPS = WANT_HTTPS && certsAvailable
+const USE_HTTP = WANT_HTTP
 
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -204,8 +232,20 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Static files for bookmarklet injection
+  // Replace placeholders with actual URLs based on request protocol
   if (path === '/inject.js') {
-    return new Response(injectorCode, { 
+    const isSecure = req.url.startsWith('https:')
+    const protocol = isSecure ? 'https' : 'http'
+    const wsProtocol = isSecure ? 'wss' : 'ws'
+    const port = isSecure ? HTTPS_PORT : PORT
+    const serverUrl = `${protocol}://localhost:${port}`
+    const wsUrl = `${wsProtocol}://localhost:${port}/ws/browser`
+    
+    const code = injectorCode
+      .replace('__SERVER_URL__', serverUrl)
+      .replace('__WS_URL__', wsUrl)
+    
+    return new Response(code, { 
       headers: { ...headers, 'Content-Type': 'application/javascript' } 
     })
   }
@@ -247,7 +287,19 @@ async function handleRest(req: Request): Promise<Response> {
   
   <h2>Bookmarklet</h2>
   <p>Drag this to your bookmarks bar:</p>
-  <a class="bookmarklet" href="javascript:(function(){fetch('https://localhost:${PORT}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: '+e.message))})();">🦉 tosijs-dev</a>
+  <a class="bookmarklet" id="bookmarklet-link" href="#">🦉 tosijs-dev</a>
+  <script>
+    // Generate bookmarklet that matches the protocol we're viewing this page on
+    (function() {
+      var proto = location.protocol;
+      var port = location.port || (proto === 'https:' ? '443' : '80');
+      var wsProto = proto === 'https:' ? 'wss:' : 'ws:';
+      var baseUrl = proto + '//localhost:' + port;
+      var wsUrl = wsProto + '//localhost:' + port + '/ws/browser';
+      var code = "(function(){fetch('" + baseUrl + "/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: '+e.message))})()";
+      document.getElementById('bookmarklet-link').href = 'javascript:' + code;
+    })();
+  </script>
   
   <h2>Test Controls</h2>
   <button onclick="console.log('Test log', Date.now())">Log to Console</button>
@@ -259,7 +311,15 @@ async function handleRest(req: Request): Promise<Response> {
   <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
   <div id="result"></div>
   
-  <tosijs-dev server="wss://localhost:${PORT}/ws/browser"></tosijs-dev>
+  <tosijs-dev id="dev-widget"></tosijs-dev>
+  <script>
+    // Set the server URL based on page protocol
+    (function() {
+      var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      var port = location.port || (location.protocol === 'https:' ? '443' : '80');
+      document.getElementById('dev-widget').setAttribute('server', wsProto + '//localhost:' + port + '/ws/browser');
+    })();
+  </script>
 </body>
 </html>`
     return new Response(html, { 
@@ -268,8 +328,100 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Server version
-  const SERVER_VERSION = '0.1.5'
+  const SERVER_VERSION = '0.1.6'
   
+  // Agent documentation endpoint - everything an LLM needs to use this tool
+  if (path === '/docs' && req.method === 'GET') {
+    const baseUrl = USE_HTTPS ? `https://localhost:${PORT}` : `http://localhost:${PORT}`
+    const wsProtocol = USE_HTTPS ? 'wss' : 'ws'
+    
+    const docs = `# tosijs-dev: Browser Control for AI Agents
+
+You have access to a live browser tab. You can see the DOM, click elements, type text, 
+run JavaScript, watch for changes, and control navigation. The human has injected a 
+widget into their browser that connects to this server.
+
+## Quick Start
+
+Check connection:
+  curl ${baseUrl}/status
+
+Get current page:
+  curl ${baseUrl}/location
+
+See the DOM tree:
+  curl -X POST ${baseUrl}/tree -H "Content-Type: application/json" -d '{"selector": "body", "depth": 3}'
+
+## Core Endpoints
+
+### Page Info
+- GET  /status          - Server status, connected browsers/agents
+- GET  /location        - Current URL, title, pathname
+- GET  /version         - Server and component versions
+- GET  /console         - Captured console output (logs, errors, warnings)
+
+### DOM Exploration  
+- POST /tree            - Get DOM tree: {"selector": "body", "depth": 4}
+- POST /query           - Query single element: {"selector": "#login-btn"}
+- POST /inspect         - Detailed element info: {"selector": ".header"}
+- POST /inspectAll      - Inspect multiple elements: {"selector": "button"}
+
+### Interaction
+- POST /click           - Click element: {"selector": "#submit"}
+- POST /type            - Type text: {"selector": "input[name=email]", "text": "user@example.com"}
+- POST /drag            - Drag element: {"selector": ".item", "deltaX": 100, "deltaY": 0}
+- POST /eval            - Run JavaScript: {"code": "document.title"}
+
+### Visual Feedback
+- POST /highlight       - Highlight element: {"selector": ".target", "color": "red"}
+- POST /unhighlight     - Remove highlights
+
+### Navigation
+- POST /navigate        - Go to URL: {"url": "https://example.com"}
+- POST /refresh         - Reload the page
+- POST /reload          - Reload the tosijs-dev widget
+
+### Mutation Watching
+- POST /mutations/watch   - Start watching: {"selector": "body", "subtree": true}
+- POST /mutations/unwatch - Stop watching
+- GET  /mutations/status  - Get recorded mutations
+
+### Session Recording
+- POST /recording/start - Record user interactions
+- POST /recording/stop  - Stop and get recorded events
+
+## Tips
+
+1. Use /tree first to understand page structure before querying specific elements
+2. Selectors work like CSS: "#id", ".class", "tag", "[attr=value]", combinations
+3. /inspectAll is great for finding all buttons, inputs, links on a page
+4. /console shows what the page is logging - useful for debugging
+5. /eval can run any JavaScript and return results
+6. The widget shows a visual indicator when connected - the human can see activity
+
+## Example: Explore a Page
+
+# What page am I on?
+curl ${baseUrl}/location
+
+# What's the structure?
+curl -X POST ${baseUrl}/tree -d '{"selector":"body","depth":3}' -H "Content-Type: application/json"
+
+# Find all interactive elements
+curl -X POST ${baseUrl}/inspectAll -d '{"selector":"button, a, input"}' -H "Content-Type: application/json"
+
+# Click something
+curl -X POST ${baseUrl}/click -d '{"selector":"#login-btn"}' -H "Content-Type: application/json"
+
+Server: ${baseUrl}
+WebSocket: ${wsProtocol}://localhost:${PORT}/ws/browser (for browser widget)
+WebSocket: ${wsProtocol}://localhost:${PORT}/ws/agent (for programmatic agents)
+`
+    return new Response(docs, { 
+      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
+    })
+  }
+
   // Status endpoint
   if (path === '/status') {
     return Response.json({
@@ -720,22 +872,66 @@ const serverConfig = {
   },
 }
 
-// Start server (HTTPS if certs exist, otherwise HTTP)
-const server = Bun.serve({
-  port: PORT,
-  ...(USE_HTTPS ? {
+// Start servers based on mode
+let httpServer: ReturnType<typeof Bun.serve> | null = null
+let httpsServer: ReturnType<typeof Bun.serve> | null = null
+
+if (USE_HTTP) {
+  httpServer = Bun.serve({
+    port: PORT,
+    ...serverConfig,
+  })
+}
+
+if (USE_HTTPS) {
+  httpsServer = Bun.serve({
+    port: HTTPS_PORT,
     tls: {
       cert: readFileSync(certPath),
       key: readFileSync(keyPath),
     },
-  } : {}),
-  ...serverConfig,
-})
-
-const protocol = USE_HTTPS ? 'https' : 'http'
-console.log(`[tosijs-dev] Server running on ${protocol}://localhost:${PORT}`)
-if (USE_HTTPS) {
-  console.log(`[tosijs-dev] First visit https://localhost:${PORT} in your browser to accept the self-signed certificate`)
+    ...serverConfig,
+  })
 }
 
-export { server, PORT, USE_HTTPS }
+// Build URLs for display
+const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
+const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
+const primaryUrl = httpsUrl || httpUrl
+
+console.log(`
+================================================================================
+  tosijs-dev v0.1.7 - Browser Control for AI Agents
+================================================================================
+`)
+
+if (httpUrl) {
+  console.log(`  HTTP:      ${httpUrl}`)
+}
+if (httpsUrl) {
+  console.log(`  HTTPS:     ${httpsUrl}`)
+}
+
+console.log(`
+  To connect: Visit the server URL and drag the bookmarklet to your toolbar.
+              The bookmarklet auto-detects HTTP/HTTPS based on the target page.
+
+  AI AGENTS:  curl ${primaryUrl}/docs
+              ^ This endpoint contains everything you need to control the browser.
+              You can query the DOM, click elements, type text, run JavaScript,
+              watch for mutations, and navigate pages. The human is waiting.
+
+================================================================================
+`)
+
+if (USE_HTTPS && !httpUrl) {
+  console.log(`  Note: First visit ${httpsUrl} in your browser to accept the certificate.\n`)
+}
+
+if (MODE === 'both') {
+  console.log(`  Mode: both - Use HTTP (${PORT}) for HTTP sites, HTTPS (${HTTPS_PORT}) for HTTPS sites.\n`)
+}
+
+// Export the primary server (HTTPS preferred)
+const server = httpsServer || httpServer!
+export { server, httpServer, httpsServer, PORT, HTTPS_PORT, USE_HTTP, USE_HTTPS }

@@ -1,72 +1,74 @@
 #!/usr/bin/env bun
 /**
- * tosijs-dev CLI
+ * tosijs-dev CLI (Bun version)
  * 
  * Usage:
- *   bunx tosijs-dev          # Start server on default port 8700
- *   bunx tosijs-dev 3000     # Start server on port 3000
- *   bunx tosijs-dev --help   # Show help
+ *   bunx tosijs-dev              # Start HTTP server on port 8700
+ *   bunx tosijs-dev --https      # Start HTTPS server (auto-generates certs)
+ *   bunx tosijs-dev --both       # Start both HTTP and HTTPS
+ *   bunx tosijs-dev --help       # Show help
  */
 
 const args = process.argv.slice(2)
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-tosijs-dev - Real-time browser↔agent communication
+tosijs-dev - Browser control for AI agents
 
 Usage:
-  tosijs-dev [port]     Start server (default: 8700)
-  tosijs-dev --help     Show this help
+  tosijs-dev [options]
 
-Example:
-  tosijs-dev            # Start on port 8700
-  tosijs-dev 3000       # Start on port 3000
+Options:
+  --http          HTTP only on port 8700 (default)
+  --https         HTTPS only on port 8701 (auto-generates certs)
+  --both          Both HTTP (8700) and HTTPS (8701)
+  --port <n>      Set HTTP port (default: 8700)
+  --https-port <n> Set HTTPS port (default: 8701)
+  --help, -h      Show this help
 
-Once running:
-  1. Open http://localhost:<port> for test page
-  2. Drag bookmarklet to your bookmarks bar
-  3. Click bookmarklet on any page to inject the widget
-  4. Use REST API or client to interact with the page
+Environment Variables:
+  DEV_CHANNEL_PORT       HTTP port (default: 8700)
+  DEV_CHANNEL_HTTPS_PORT HTTPS port (default: 8701)
+  DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'http')
+
+Examples:
+  tosijs-dev                    # HTTP on 8700
+  tosijs-dev --https            # HTTPS on 8701 (generates certs with mkcert or openssl)
+  tosijs-dev --both             # HTTP on 8700 + HTTPS on 8701
+  tosijs-dev --port 3000        # HTTP on 3000
+
+Once running, curl the /docs endpoint for full API documentation.
 `)
   process.exit(0)
 }
 
-const port = parseInt(args[0]) || parseInt(process.env.DEV_CHANNEL_PORT || '8700')
+// Parse args
+if (args.includes('--https')) {
+  process.env.DEV_CHANNEL_MODE = 'https'
+} else if (args.includes('--both')) {
+  process.env.DEV_CHANNEL_MODE = 'both'
+} else {
+  process.env.DEV_CHANNEL_MODE = process.env.DEV_CHANNEL_MODE || 'http'
+}
 
-// Set port for server
-process.env.DEV_CHANNEL_PORT = String(port)
+const portIdx = args.indexOf('--port')
+if (portIdx !== -1 && args[portIdx + 1]) {
+  process.env.DEV_CHANNEL_PORT = args[portIdx + 1]
+}
 
-// Import and start server
-import('../dist/server.js').then(() => {
-  const bookmarklet = `javascript:(function(){fetch('http://localhost:${port}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('Dev Channel: Cannot reach server'))})()`
-  
-  // Find docs path relative to this script
-  const docsPath = new URL('../README.md', import.meta.url).pathname
-  const roadmapPath = new URL('../ROADMAP.md', import.meta.url).pathname
-  
-  console.log(`
-┌─────────────────────────────────────────────────────────────────────┐
-│  tosijs-dev ready on port ${port}                                       │
-└─────────────────────────────────────────────────────────────────────┘
+const httpsPortIdx = args.indexOf('--https-port')
+if (httpsPortIdx !== -1 && args[httpsPortIdx + 1]) {
+  process.env.DEV_CHANNEL_HTTPS_PORT = args[httpsPortIdx + 1]
+}
 
-Test page:   http://localhost:${port}/
+// Legacy: first positional arg as port
+const firstArg = args.find(a => !a.startsWith('-'))
+if (firstArg && !isNaN(parseInt(firstArg))) {
+  process.env.DEV_CHANNEL_PORT = firstArg
+}
 
-Bookmarklet (create bookmark, paste this as URL):
-${bookmarklet}
-
-REST API:
-  GET  /status     - Connection status
-  POST /query      - DOM query { selector }
-  POST /click      - Click element { selector }
-  POST /type       - Type text { selector, text }
-  POST /eval       - Run JS { code }
-  GET  /console    - Get console output
-
-Docs:
-  ${docsPath}
-  ${roadmapPath}
-`)
-}).catch(err => {
+// Import and start server (the server prints its own startup message)
+import('../dist/server.js').catch(err => {
   console.error('Failed to start server:', err)
   process.exit(1)
 })

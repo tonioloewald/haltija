@@ -4,19 +4,16 @@
  * Minimal loader that fetches and executes the injector from the server.
  * 
  * Usage:
- * 1. Start server: bun run packages/tosijs-dev/bin/server.ts
- * 2. Visit https://localhost:8700 and accept the self-signed certificate
- * 3. Drag the bookmark from the test page to your bookmarks bar
- * 4. Click bookmark on any page to inject tosijs-dev
+ * 1. Start server: bunx tosijs-dev (HTTP on 8700) or DEV_CHANNEL_MODE=https bunx tosijs-dev
+ * 2. Visit the server URL and drag the bookmarklet to your toolbar
+ * 3. Click bookmark on any page to inject tosijs-dev
  * 
- * The server runs HTTPS on port 8700 by default (if certs exist).
- * This allows injection on both HTTP and HTTPS sites.
+ * The bookmarklet is protocol-aware: it uses HTTPS for HTTPS sites, HTTP for HTTP sites.
+ * For HTTPS sites, you need to run the server in 'https' or 'both' mode.
  */
 
-// Bookmarklet (always uses HTTPS):
-// javascript:(function(){fetch('https://localhost:8700/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: '+e.message+' - Visit https://localhost:8700 first to accept the certificate.'))})()
-
 // This file contains the actual injection code that gets served from /inject.js
+// The __SERVER_URL__ and __WS_URL__ placeholders are replaced by the server at runtime
 export const injectorCode = `
 (function() {
   if (document.querySelector('tosijs-dev')) {
@@ -26,20 +23,21 @@ export const injectorCode = `
     return;
   }
   
-  // Server URL - always HTTPS on port 8700
-  var serverUrl = 'https://localhost:8700';
+  // These get replaced by the server based on the request protocol
+  var serverUrl = '__SERVER_URL__';
+  var wsUrl = '__WS_URL__';
   
   var script = document.createElement('script');
   script.src = serverUrl + '/component.js';
   script.onload = function() {
     if (window.DevChannel) {
       var el = document.createElement('tosijs-dev');
-      el.setAttribute('server', 'wss://localhost:8700/ws/browser');
+      el.setAttribute('server', wsUrl);
       document.body.appendChild(el);
     }
   };
   script.onerror = function() {
-    alert('[tosijs-dev] Could not load. Visit https://localhost:8700 first to accept the self-signed certificate.');
+    alert('[tosijs-dev] Could not load component. Check that the server is running.');
   };
   document.head.appendChild(script);
 })();
