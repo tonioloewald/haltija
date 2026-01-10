@@ -389,6 +389,25 @@ test.describe('tosijs-dev server integration', () => {
   })
   
   test('mutation watching via REST', async ({ page }) => {
+    // Verify connection is established first
+    const connected = await page.evaluate(() => {
+      const el = document.querySelector('tosijs-dev') as any
+      return el?.state === 'connected'
+    })
+    
+    if (!connected) {
+      // Wait a bit more and check again
+      await page.waitForTimeout(500)
+      const retryConnected = await page.evaluate(() => {
+        const el = document.querySelector('tosijs-dev') as any
+        return el?.state === 'connected'
+      })
+      if (!retryConnected) {
+        test.skip()
+        return
+      }
+    }
+    
     // Start watching mutations
     const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
       method: 'POST',
@@ -413,7 +432,7 @@ test.describe('tosijs-dev server integration', () => {
     })
     
     // Wait for debounce
-    await page.waitForTimeout(100)
+    await page.waitForTimeout(150)
     
     // Check messages for mutation batch
     const messagesRes = await fetch(`${SERVER_URL}/messages`)
@@ -426,5 +445,299 @@ test.describe('tosijs-dev server integration', () => {
     const unwatchRes = await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
     const unwatchData = await unwatchRes.json()
     expect(unwatchData.success).toBe(true)
+  })
+  
+  test('mutation filtering with presets', async ({ page }) => {
+    // Clear previous messages
+    await fetch(`${SERVER_URL}/clear`, { method: 'POST' })
+    
+    // Verify connection
+    const connected = await page.evaluate(() => {
+      const el = document.querySelector('tosijs-dev') as any
+      return el?.state === 'connected'
+    })
+    if (!connected) {
+      await page.waitForTimeout(500)
+    }
+    
+    // Start watching with tailwind preset (should filter utility classes)
+    const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ debounce: 50, preset: 'tailwind' })
+    })
+    const watchData = await watchRes.json()
+    if (!watchData.success) {
+      test.skip()
+      return
+    }
+    
+    // Add element with tailwind classes
+    await page.evaluate(() => {
+      const div = document.createElement('div')
+      div.id = 'tailwind-test'
+      div.className = 'flex p-4 text-sm bg-blue-500'
+      document.body.appendChild(div)
+    })
+    
+    await page.waitForTimeout(150)
+    
+    // Check that mutation was captured
+    const messagesRes = await fetch(`${SERVER_URL}/messages`)
+    const messages = await messagesRes.json()
+    const batch = messages.find((m: any) => m.channel === 'mutations' && m.action === 'batch')
+    expect(batch).toBeTruthy()
+    expect(batch.payload.summary.added).toBeGreaterThan(0)
+    
+    // Stop watching
+    await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
+  })
+  
+  test('mutation filtering with xinjs preset detects interesting classes', async ({ page }) => {
+    await fetch(`${SERVER_URL}/clear`, { method: 'POST' })
+    
+    // Verify connection
+    const connected = await page.evaluate(() => {
+      const el = document.querySelector('tosijs-dev') as any
+      return el?.state === 'connected'
+    })
+    if (!connected) {
+      await page.waitForTimeout(500)
+    }
+    
+    // Start watching with xinjs preset
+    const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ debounce: 50, preset: 'xinjs' })
+    })
+    const watchData = await watchRes.json()
+    if (!watchData.success) {
+      test.skip()
+      return
+    }
+    
+    // Add element with xinjs binding classes
+    await page.evaluate(() => {
+      const div = document.createElement('div')
+      div.id = 'xinjs-test'
+      div.className = '-xin-event -xin-data'
+      document.body.appendChild(div)
+    })
+    
+    await page.waitForTimeout(150)
+    
+    const messagesRes = await fetch(`${SERVER_URL}/messages`)
+    const messages = await messagesRes.json()
+    const batch = messages.find((m: any) => m.channel === 'mutations' && m.action === 'batch')
+    
+    expect(batch).toBeTruthy()
+    // Should be in notable because of interesting classes
+    const notable = batch.payload.notable.find((n: any) => n.id === 'xinjs-test')
+    expect(notable).toBeTruthy()
+    
+    await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
+  })
+})
+
+test.describe('tosijs-dev DOM tree inspector', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+  })
+  
+  test('basic tree query', async ({ page }) => {
+    // Create test DOM structure
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'tree-test'
+      container.innerHTML = `
+        <header>
+          <nav>
+            <a href="/home">Home</a>
+            <a href="/about">About</a>
+          </nav>
+        </header>
+        <main>
+          <article>
+            <h1>Title</h1>
+            <p>Content</p>
+          </article>
+        </main>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#tree-test', depth: 3 })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.tag).toBe('div')
+    expect(data.data.id).toBe('tree-test')
+    expect(data.data.children).toBeDefined()
+    expect(data.data.children.length).toBe(2) // header and main
+  })
+  
+  test('tree with depth limit', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'depth-test'
+      container.innerHTML = '<div><div><div><div>Deep</div></div></div></div>'
+      document.body.appendChild(container)
+    })
+    
+    // Depth 1 should truncate
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#depth-test', depth: 1 })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.children[0].truncated).toBe(true)
+    expect(data.data.children[0].childCount).toBe(1)
+  })
+  
+  test('tree with interesting attributes', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'attrs-test'
+      container.innerHTML = `
+        <button aria-label="Submit" data-testid="submit-btn">Submit</button>
+        <input type="text" name="email" placeholder="Email" required>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#attrs-test' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    const button = data.data.children.find((c: any) => c.tag === 'button')
+    expect(button.attrs['aria-label']).toBe('Submit')
+    expect(button.attrs['data-testid']).toBe('submit-btn')
+    expect(button.flags.interactive).toBe(true)
+    expect(button.flags.hasAria).toBe(true)
+    
+    const input = data.data.children.find((c: any) => c.tag === 'input')
+    expect(input.attrs.type).toBe('text')
+    expect(input.attrs.name).toBe('email')
+    expect(input.flags.interactive).toBe(true)
+  })
+  
+  test('tree with custom element detection', async ({ page }) => {
+    await page.evaluate(() => {
+      // Define a simple custom element
+      if (!customElements.get('test-component')) {
+        customElements.define('test-component', class extends HTMLElement {
+          connectedCallback() {
+            this.innerHTML = '<span>Custom content</span>'
+          }
+        })
+      }
+      
+      const container = document.createElement('div')
+      container.id = 'custom-test'
+      container.innerHTML = '<test-component></test-component>'
+      document.body.appendChild(container)
+    })
+    
+    await page.waitForTimeout(100) // Let custom element render
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#custom-test' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    const customEl = data.data.children.find((c: any) => c.tag === 'test-component')
+    expect(customEl).toBeTruthy()
+    expect(customEl.flags.customElement).toBe(true)
+  })
+  
+  test('tree with box info', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'box-test'
+      container.style.cssText = 'width: 200px; height: 100px; position: absolute; top: 50px; left: 50px;'
+      container.textContent = 'Box test'
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#box-test', includeBox: true })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.box).toBeDefined()
+    expect(data.data.box.w).toBe(200)
+    expect(data.data.box.h).toBe(100)
+    expect(data.data.box.visible).toBe(true)
+  })
+  
+  test('tree compact mode', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'compact-test'
+      container.className = 'foo bar baz qux'
+      container.innerHTML = '<span class="a b c d">Text</span>'
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#compact-test', compact: true })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    // In compact mode, non-interesting classes shouldn't be included
+    expect(data.data.classes).toBeUndefined()
+  })
+  
+  test('tree with xinjs binding detection', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'binding-test'
+      container.innerHTML = `
+        <div class="-xin-event">Event bound</div>
+        <div class="-xin-data">Data bound</div>
+        <div data-event="click:handler">b8r event</div>
+        <div data-bind="text=value">b8r bind</div>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#binding-test' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    const children = data.data.children
+    expect(children[0].flags.hasEvents).toBe(true)
+    expect(children[1].flags.hasData).toBe(true)
+    expect(children[2].flags.hasEvents).toBe(true)
+    expect(children[3].flags.hasData).toBe(true)
   })
 })

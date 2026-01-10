@@ -336,33 +336,42 @@ const FILTER_PRESETS: Record<MutationFilterPreset, MutationFilterRules> = {
 function detectFramework(): MutationFilterPreset[] {
   const detected: MutationFilterPreset[] = []
   
-  // Check for xinjs
-  if (document.querySelector('[class*="-xin-"]') || 
-      typeof (window as any).xin !== 'undefined') {
-    detected.push('xinjs')
-  }
-  
-  // Check for b8r
-  if (document.querySelector('[data-event]') || 
-      document.querySelector('[data-bind]') ||
-      typeof (window as any).b8r !== 'undefined') {
-    detected.push('b8rjs')
-  }
-  
-  // Check for React
-  if (document.querySelector('[data-reactroot]') ||
-      document.querySelector('[__reactFiber$]') ||
-      typeof (window as any).React !== 'undefined' ||
-      typeof (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined') {
-    detected.push('react')
-  }
-  
-  // Check for Tailwind (look for common utility classes)
-  const hasTailwind = document.querySelector('[class*="flex"]') &&
-                      document.querySelector('[class*="p-"]') &&
-                      document.querySelector('[class*="text-"]')
-  if (hasTailwind) {
-    detected.push('tailwind')
+  try {
+    // Check for xinjs
+    if (document.querySelector('[class*="-xin-"]') || 
+        typeof (window as any).xin !== 'undefined') {
+      detected.push('xinjs')
+    }
+    
+    // Check for b8r
+    if (document.querySelector('[data-event]') || 
+        document.querySelector('[data-bind]') ||
+        typeof (window as any).b8r !== 'undefined') {
+      detected.push('b8rjs')
+    }
+    
+    // Check for React (use attribute presence check via JS, not CSS selector)
+    const hasReactRoot = document.querySelector('[data-reactroot]') !== null
+    const hasReactGlobal = typeof (window as any).React !== 'undefined' ||
+                           typeof (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined'
+    // Check for React fiber by looking at element properties
+    const hasReactFiber = Array.from(document.body?.children || []).some(el => 
+      Object.keys(el).some(key => key.startsWith('__reactFiber') || key.startsWith('__reactProps'))
+    )
+    if (hasReactRoot || hasReactGlobal || hasReactFiber) {
+      detected.push('react')
+    }
+    
+    // Check for Tailwind (look for common utility classes)
+    const hasTailwind = document.querySelector('[class*="flex"]') &&
+                        document.querySelector('[class*="p-"]') &&
+                        document.querySelector('[class*="text-"]')
+    if (hasTailwind) {
+      detected.push('tailwind')
+    }
+  } catch (err) {
+    // If detection fails, just return empty - we'll use default rules
+    console.warn('[tosijs-dev] Framework detection failed:', err)
   }
   
   return detected
@@ -1643,17 +1652,21 @@ export class DevChannel extends HTMLElement {
   private handleMutationsMessage(msg: DevMessage) {
     const { action, payload } = msg
     
-    if (action === 'watch') {
-      this.startMutationWatch(payload as MutationWatchRequest)
-      this.respond(msg.id, true, { watching: true })
-    } else if (action === 'unwatch') {
-      this.stopMutationWatch()
-      this.respond(msg.id, true, { watching: false })
-    } else if (action === 'status') {
-      this.respond(msg.id, true, { 
-        watching: this.mutationObserver !== null,
-        config: this.mutationConfig 
-      })
+    try {
+      if (action === 'watch') {
+        this.startMutationWatch(payload as MutationWatchRequest)
+        this.respond(msg.id, true, { watching: true })
+      } else if (action === 'unwatch') {
+        this.stopMutationWatch()
+        this.respond(msg.id, true, { watching: false })
+      } else if (action === 'status') {
+        this.respond(msg.id, true, { 
+          watching: this.mutationObserver !== null,
+          config: this.mutationConfig 
+        })
+      }
+    } catch (err: any) {
+      this.respond(msg.id, false, null, err.message)
     }
   }
   
