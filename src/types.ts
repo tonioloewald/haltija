@@ -414,6 +414,34 @@ export interface StepResult {
 // DOM Mutation Watching
 // ============================================
 
+/**
+ * Mutation filter presets for common frameworks.
+ * Each preset defines what to ignore and what to highlight.
+ */
+export type MutationFilterPreset = 
+  | 'none'        // No filtering (raw mutations)
+  | 'xinjs'       // xinjs: highlight -xin-event, -xin-data classes
+  | 'b8rjs'       // b8r: highlight data-event, data-bind attributes  
+  | 'tailwind'    // Ignore tailwind utility classes
+  | 'react'       // Ignore React internals (__reactFiber, etc.)
+  | 'minimal'     // Only show structural changes (add/remove elements)
+  | 'smart'       // Auto-detect framework, apply sensible defaults
+
+export interface MutationFilterRules {
+  /** Class patterns to ignore (regex strings) */
+  ignoreClasses?: string[]
+  /** Attribute names to ignore */
+  ignoreAttributes?: string[]
+  /** Element selectors to completely ignore (e.g., 'script', 'style') */
+  ignoreElements?: string[]
+  /** Class patterns that are interesting (highlight these) */
+  interestingClasses?: string[]
+  /** Attribute patterns that are interesting (e.g., 'aria-', 'data-bind') */
+  interestingAttributes?: string[]
+  /** Only report mutations on elements matching these selectors */
+  onlySelectors?: string[]
+}
+
 export interface MutationWatchRequest {
   /** CSS selector for subtree to observe (default: document.body) */
   root?: string
@@ -427,6 +455,10 @@ export interface MutationWatchRequest {
   subtree?: boolean
   /** Debounce mutations (ms, default: 100) */
   debounce?: number
+  /** Filter preset (default: 'smart') */
+  preset?: MutationFilterPreset
+  /** Custom filter rules (merged with preset) */
+  filters?: MutationFilterRules
 }
 
 export interface MutationBatch {
@@ -442,6 +474,8 @@ export interface MutationBatch {
   }
   /** Notable changes (elements added/removed that might be interesting) */
   notable: NotableMutation[]
+  /** Number of mutations filtered out (if filtering is active) */
+  ignored?: number
 }
 
 export interface NotableMutation {
@@ -456,6 +490,79 @@ export interface NotableMutation {
   newValue?: string
   /** For text changes */
   textContent?: string
+}
+
+// ============================================
+// DOM Tree Inspector
+// ============================================
+
+/**
+ * Request to build a DOM tree representation.
+ * Designed for efficient, configurable snapshots of DOM subtrees.
+ */
+export interface DomTreeRequest {
+  /** Root element selector */
+  selector: string
+  /** Maximum depth to traverse (default: 3, -1 for unlimited) */
+  depth?: number
+  /** Include text content of leaf nodes (default: true) */
+  includeText?: boolean
+  /** Include all attributes (default: false, includes only "interesting" ones) */
+  allAttributes?: boolean
+  /** Include computed styles (default: false) */
+  includeStyles?: boolean
+  /** Include box model info (default: false) */
+  includeBox?: boolean
+  /** Patterns for interesting classes (highlight these) */
+  interestingClasses?: string[]
+  /** Patterns for interesting attributes */
+  interestingAttributes?: string[]
+  /** Ignore elements matching these selectors */
+  ignoreSelectors?: string[]
+  /** Compact mode: minimal output (default: false) */
+  compact?: boolean
+}
+
+/**
+ * A node in the DOM tree representation.
+ * Designed to be compact but informative.
+ */
+export interface DomTreeNode {
+  /** Tag name (lowercase) */
+  tag: string
+  /** Element ID if present */
+  id?: string
+  /** Interesting classes only (filtered) */
+  classes?: string[]
+  /** Interesting attributes only (filtered) */
+  attrs?: Record<string, string>
+  /** Text content (for leaf nodes or if short) */
+  text?: string
+  /** Child nodes */
+  children?: DomTreeNode[]
+  /** Flags for quick scanning */
+  flags?: {
+    /** Has event bindings (xinjs, b8r, etc.) */
+    hasEvents?: boolean
+    /** Has data bindings */
+    hasData?: boolean
+    /** Is interactive (button, input, a, etc.) */
+    interactive?: boolean
+    /** Is a custom element */
+    customElement?: boolean
+    /** Has shadow DOM */
+    shadowRoot?: boolean
+    /** Is hidden */
+    hidden?: boolean
+    /** Has ARIA attributes */
+    hasAria?: boolean
+  }
+  /** Position info (if requested) */
+  box?: { x: number; y: number; w: number; h: number; visible: boolean }
+  /** Truncation indicator */
+  truncated?: boolean
+  /** Child count if children were truncated */
+  childCount?: number
 }
 
 // ============================================

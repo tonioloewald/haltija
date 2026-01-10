@@ -82,6 +82,7 @@ All endpoints support CORS and return JSON.
 | `/query` | POST | `{selector, all?}` | Query DOM elements (basic info) |
 | `/inspect` | POST | `{selector}` | Deep inspect single element |
 | `/inspectAll` | POST | `{selector, limit?}` | Deep inspect multiple elements |
+| `/tree` | POST | `{selector, depth?, ...}` | Build filterable DOM tree |
 
 **Query Response (basic):**
 ```json
@@ -310,7 +311,7 @@ curl -X POST http://localhost:8700/unhighlight
 ### Watching for Changes
 
 ```bash
-# Start watching DOM mutations
+# Start watching DOM mutations (smart filtering auto-detects framework)
 curl -X POST http://localhost:8700/mutations/watch \
   -H "Content-Type: application/json" \
   -d '{"debounce": 100}'
@@ -326,6 +327,123 @@ curl http://localhost:8700/messages | jq '.[] | select(.channel=="mutations")'
 # Stop watching
 curl -X POST http://localhost:8700/mutations/unwatch
 ```
+
+#### Smart Mutation Filtering
+
+By default, mutation watching uses `preset: "smart"` which auto-detects your framework and filters out noise:
+
+```bash
+# Use a specific preset
+curl -X POST http://localhost:8700/mutations/watch \
+  -d '{"preset": "xinjs"}'   # Highlights -xin-event, -xin-data classes
+
+curl -X POST http://localhost:8700/mutations/watch \
+  -d '{"preset": "tailwind"}' # Filters out utility classes
+
+curl -X POST http://localhost:8700/mutations/watch \
+  -d '{"preset": "react"}'    # Filters React internals
+
+curl -X POST http://localhost:8700/mutations/watch \
+  -d '{"preset": "minimal"}'  # Only structural changes
+
+curl -X POST http://localhost:8700/mutations/watch \
+  -d '{"preset": "none"}'     # Raw mutations, no filtering
+```
+
+**Available presets:**
+- `smart` (default) - Auto-detects xinjs, b8r, React, Tailwind
+- `xinjs` - Highlights `-xin-event`, `-xin-data` classes
+- `b8rjs` - Highlights `data-event`, `data-bind` attributes
+- `tailwind` - Filters out utility classes (flex, p-4, text-sm, etc.)
+- `react` - Filters React internals (__reactFiber, etc.)
+- `minimal` - Only element add/remove, ignores attribute changes
+- `none` - No filtering
+
+**Custom filters:**
+```bash
+curl -X POST http://localhost:8700/mutations/watch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "preset": "smart",
+    "filters": {
+      "ignoreClasses": ["^animate-", "^transition-"],
+      "ignoreAttributes": ["style"],
+      "ignoreElements": ["script", "style"],
+      "interestingClasses": ["-xin-event", "active", "selected"],
+      "interestingAttributes": ["aria-", "data-testid"],
+      "onlySelectors": ["#app", ".main-content"]
+    }
+  }'
+```
+
+### DOM Tree Inspector
+
+Get a structured, filterable view of a DOM subtree:
+
+```bash
+# Basic tree (3 levels deep, interesting attrs only)
+curl -X POST http://localhost:8700/tree \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#app"}'
+
+# Deep dive with all attributes
+curl -X POST http://localhost:8700/tree \
+  -d '{"selector": "main", "depth": 5, "allAttributes": true}'
+
+# Compact mode with box info
+curl -X POST http://localhost:8700/tree \
+  -d '{"selector": "nav", "compact": true, "includeBox": true}'
+
+# Custom interesting patterns
+curl -X POST http://localhost:8700/tree \
+  -d '{
+    "selector": "body",
+    "depth": 4,
+    "interestingClasses": ["-xin-", "active", "selected"],
+    "interestingAttributes": ["aria-", "data-testid", "href"]
+  }'
+```
+
+**Tree options:**
+| Option | Default | Description |
+|--------|---------|-------------|
+| `selector` | `"body"` | Root element |
+| `depth` | `3` | Max depth (-1 for unlimited) |
+| `includeText` | `true` | Include text content of leaf nodes |
+| `allAttributes` | `false` | Include all attrs (vs only interesting) |
+| `includeBox` | `false` | Include position/size info |
+| `compact` | `false` | Minimal output |
+| `interestingClasses` | xinjs/b8r patterns | Class patterns to highlight |
+| `interestingAttributes` | aria, data-*, etc. | Attr patterns to include |
+| `ignoreSelectors` | script, style, svg | Elements to skip |
+
+**Response format:**
+```json
+{
+  "tag": "div",
+  "id": "app",
+  "classes": ["-xin-data"],
+  "attrs": { "role": "main" },
+  "flags": { "hasData": true, "customElement": false },
+  "children": [
+    {
+      "tag": "button",
+      "text": "Submit",
+      "flags": { "interactive": true },
+      "attrs": { "aria-label": "Submit form" }
+    }
+  ]
+}
+```
+
+**Flags for quick scanning:**
+- `hasEvents` - Has xinjs/b8r event bindings
+- `hasData` - Has data bindings
+- `interactive` - Button, input, link, etc.
+- `customElement` - Web component (has `-` in tag)
+- `shadowRoot` - Has shadow DOM
+- `hidden` - Hidden or aria-hidden
+- `hasAria` - Has ARIA attributes
 
 ### Typical Workflow
 

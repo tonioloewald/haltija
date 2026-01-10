@@ -542,6 +542,25 @@ async function handleRest(req: Request): Promise<Response> {
     return Response.json(response, { headers })
   }
   
+  // DOM tree inspector
+  // POST /tree { selector, depth?, includeText?, allAttributes?, includeBox?, compact?, ... }
+  if (path === '/tree' && req.method === 'POST') {
+    const body = await req.json()
+    const response = await requestFromBrowser('dom', 'tree', {
+      selector: body.selector || 'body',
+      depth: body.depth,
+      includeText: body.includeText,
+      allAttributes: body.allAttributes,
+      includeStyles: body.includeStyles,
+      includeBox: body.includeBox,
+      interestingClasses: body.interestingClasses,
+      interestingAttributes: body.interestingAttributes,
+      ignoreSelectors: body.ignoreSelectors,
+      compact: body.compact,
+    })
+    return Response.json(response, { headers })
+  }
+  
   return Response.json({ error: 'Not found' }, { status: 404, headers })
 }
 

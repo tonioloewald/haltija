@@ -29,6 +29,10 @@ import type {
   MutationBatch,
   NotableMutation,
   ElementInspection,
+  MutationFilterPreset,
+  MutationFilterRules,
+  DomTreeRequest,
+  DomTreeNode,
 } from './types'
 
 // Generate unique IDs
@@ -231,6 +235,461 @@ function inspectElement(el: Element): ElementInspection {
   }
 }
 
+// ==========================================
+// Mutation Filter Presets
+// ==========================================
+
+const FILTER_PRESETS: Record<MutationFilterPreset, MutationFilterRules> = {
+  none: {},
+  
+  xinjs: {
+    interestingClasses: ['-xin-event', '-xin-data', '-xin-'],
+    interestingAttributes: ['aria-', 'role', 'title', 'data-'],
+    ignoreClasses: [
+      // Animation/transition classes
+      '^animate-', '^transition-', '^fade-',
+    ],
+  },
+  
+  b8rjs: {
+    interestingAttributes: ['data-event', 'data-bind', 'data-list', 'data-component', 'aria-', 'role', 'title'],
+    ignoreClasses: ['^animate-', '^transition-'],
+  },
+  
+  tailwind: {
+    ignoreClasses: [
+      // Layout
+      '^flex', '^grid', '^block', '^inline', '^hidden',
+      // Spacing  
+      '^p-', '^m-', '^px-', '^py-', '^mx-', '^my-', '^pt-', '^pb-', '^pl-', '^pr-', '^mt-', '^mb-', '^ml-', '^mr-',
+      '^gap-', '^space-',
+      // Sizing
+      '^w-', '^h-', '^min-', '^max-',
+      // Colors
+      '^bg-', '^text-', '^border-', '^ring-', '^shadow-',
+      // Typography
+      '^font-', '^text-', '^leading-', '^tracking-',
+      // Borders
+      '^rounded', '^border',
+      // Effects
+      '^opacity-', '^blur-', '^brightness-',
+      // Transitions
+      '^transition', '^duration-', '^ease-', '^delay-',
+      // Transforms
+      '^scale-', '^rotate-', '^translate-', '^skew-',
+      // Interactivity
+      '^cursor-', '^select-', '^pointer-',
+      // Position
+      '^absolute', '^relative', '^fixed', '^sticky', '^static',
+      '^top-', '^right-', '^bottom-', '^left-', '^inset-', '^z-',
+      // Overflow
+      '^overflow-', '^truncate',
+      // Flex/Grid modifiers
+      '^justify-', '^items-', '^content-', '^self-', '^place-',
+      '^col-', '^row-', '^order-',
+      // Responsive prefixes
+      '^sm:', '^md:', '^lg:', '^xl:', '^2xl:',
+      // State prefixes  
+      '^hover:', '^focus:', '^active:', '^disabled:', '^group-',
+      // Dark mode
+      '^dark:',
+    ],
+    interestingAttributes: ['aria-', 'role', 'title', 'data-'],
+  },
+  
+  react: {
+    ignoreAttributes: [
+      '__reactFiber', '__reactProps', '__reactEvents', 
+      'data-reactroot', 'data-reactid',
+    ],
+    ignoreClasses: ['^css-'], // emotion/styled-components
+    interestingAttributes: ['aria-', 'role', 'title', 'data-testid', 'data-cy'],
+  },
+  
+  minimal: {
+    ignoreAttributes: ['style', 'class'],
+    ignoreClasses: ['.*'], // Ignore all class changes
+  },
+  
+  smart: {
+    // Will be computed dynamically based on detected framework
+    interestingClasses: ['-xin-event', '-xin-data'],
+    interestingAttributes: [
+      'aria-', 'role', 'title',
+      'data-event', 'data-bind', 'data-list', 'data-component', 'data-testid',
+      'disabled', 'hidden', 'open', 'checked', 'selected',
+    ],
+    ignoreElements: ['script', 'style', 'link', 'meta', 'noscript'],
+    ignoreClasses: [
+      // Common animation/transition classes
+      '^animate-', '^transition-', '^fade-', '^slide-',
+      // Common state classes that change frequently
+      '^is-', '^has-', '^was-',
+    ],
+    ignoreAttributes: ['style'], // Style changes are usually noise
+  },
+}
+
+/**
+ * Detect which framework is in use on the page
+ */
+function detectFramework(): MutationFilterPreset[] {
+  const detected: MutationFilterPreset[] = []
+  
+  // Check for xinjs
+  if (document.querySelector('[class*="-xin-"]') || 
+      typeof (window as any).xin !== 'undefined') {
+    detected.push('xinjs')
+  }
+  
+  // Check for b8r
+  if (document.querySelector('[data-event]') || 
+      document.querySelector('[data-bind]') ||
+      typeof (window as any).b8r !== 'undefined') {
+    detected.push('b8rjs')
+  }
+  
+  // Check for React
+  if (document.querySelector('[data-reactroot]') ||
+      document.querySelector('[__reactFiber$]') ||
+      typeof (window as any).React !== 'undefined' ||
+      typeof (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined') {
+    detected.push('react')
+  }
+  
+  // Check for Tailwind (look for common utility classes)
+  const hasTailwind = document.querySelector('[class*="flex"]') &&
+                      document.querySelector('[class*="p-"]') &&
+                      document.querySelector('[class*="text-"]')
+  if (hasTailwind) {
+    detected.push('tailwind')
+  }
+  
+  return detected
+}
+
+/**
+ * Merge multiple filter rule sets
+ */
+function mergeFilterRules(...rules: (MutationFilterRules | undefined)[]): MutationFilterRules {
+  const merged: MutationFilterRules = {
+    ignoreClasses: [],
+    ignoreAttributes: [],
+    ignoreElements: [],
+    interestingClasses: [],
+    interestingAttributes: [],
+    onlySelectors: [],
+  }
+  
+  for (const rule of rules) {
+    if (!rule) continue
+    if (rule.ignoreClasses) merged.ignoreClasses!.push(...rule.ignoreClasses)
+    if (rule.ignoreAttributes) merged.ignoreAttributes!.push(...rule.ignoreAttributes)
+    if (rule.ignoreElements) merged.ignoreElements!.push(...rule.ignoreElements)
+    if (rule.interestingClasses) merged.interestingClasses!.push(...rule.interestingClasses)
+    if (rule.interestingAttributes) merged.interestingAttributes!.push(...rule.interestingAttributes)
+    if (rule.onlySelectors) merged.onlySelectors!.push(...rule.onlySelectors)
+  }
+  
+  return merged
+}
+
+/**
+ * Check if a class name matches any pattern in the list
+ */
+function matchesPatterns(value: string, patterns: string[]): boolean {
+  for (const pattern of patterns) {
+    try {
+      if (new RegExp(pattern).test(value)) return true
+    } catch {
+      // Invalid regex, try exact match
+      if (value === pattern || value.includes(pattern)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Filter class list based on rules
+ */
+function filterClasses(
+  classes: string[], 
+  rules: MutationFilterRules
+): { ignored: string[], interesting: string[], other: string[] } {
+  const ignored: string[] = []
+  const interesting: string[] = []
+  const other: string[] = []
+  
+  for (const cls of classes) {
+    if (rules.ignoreClasses?.length && matchesPatterns(cls, rules.ignoreClasses)) {
+      ignored.push(cls)
+    } else if (rules.interestingClasses?.length && matchesPatterns(cls, rules.interestingClasses)) {
+      interesting.push(cls)
+    } else {
+      other.push(cls)
+    }
+  }
+  
+  return { ignored, interesting, other }
+}
+
+/**
+ * Check if an attribute is interesting
+ */
+function isInterestingAttribute(name: string, rules: MutationFilterRules): boolean {
+  if (rules.ignoreAttributes?.some(pattern => name.startsWith(pattern) || name === pattern)) {
+    return false
+  }
+  if (rules.interestingAttributes?.some(pattern => name.startsWith(pattern) || name === pattern)) {
+    return true
+  }
+  return false
+}
+
+/**
+ * Check if element should be ignored entirely
+ */
+function shouldIgnoreElement(el: Element, rules: MutationFilterRules): boolean {
+  if (!rules.ignoreElements?.length) return false
+  
+  for (const selector of rules.ignoreElements) {
+    try {
+      if (el.matches(selector)) return true
+    } catch {
+      // Invalid selector, try tag name match
+      if (el.tagName.toLowerCase() === selector.toLowerCase()) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Check if element matches "only" filter
+ */
+function matchesOnlyFilter(el: Element, rules: MutationFilterRules): boolean {
+  if (!rules.onlySelectors?.length) return true // No filter = include all
+  
+  for (const selector of rules.onlySelectors) {
+    try {
+      if (el.matches(selector)) return true
+    } catch {
+      continue
+    }
+  }
+  return false
+}
+
+// ==========================================
+// DOM Tree Inspector
+// ==========================================
+
+const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'DETAILS', 'SUMMARY'])
+const DEFAULT_INTERESTING_CLASSES = ['-xin-event', '-xin-data', '-xin-']
+const DEFAULT_INTERESTING_ATTRS = [
+  'aria-', 'role', 'title', 'href', 'src', 'alt',
+  'data-event', 'data-bind', 'data-list', 'data-component', 'data-testid',
+  'disabled', 'hidden', 'open', 'checked', 'selected', 'required', 'readonly',
+  'type', 'name', 'value', 'placeholder',
+]
+const DEFAULT_IGNORE_SELECTORS = ['script', 'style', 'link', 'meta', 'noscript', 'svg', 'path']
+
+/**
+ * Build a DOM tree representation
+ */
+function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): DomTreeNode | null {
+  const {
+    depth = 3,
+    includeText = true,
+    allAttributes = false,
+    includeStyles = false,
+    includeBox = false,
+    interestingClasses = DEFAULT_INTERESTING_CLASSES,
+    interestingAttributes = DEFAULT_INTERESTING_ATTRS,
+    ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
+    compact = false,
+  } = options
+
+  // Check if should be ignored
+  for (const selector of ignoreSelectors) {
+    try {
+      if (el.matches(selector)) return null
+    } catch {
+      if (el.tagName.toLowerCase() === selector.toLowerCase()) return null
+    }
+  }
+
+  const tagName = el.tagName.toLowerCase()
+  const htmlEl = el as HTMLElement
+  
+  // Build the node
+  const node: DomTreeNode = {
+    tag: tagName,
+  }
+
+  // ID (always include if present)
+  if (el.id) {
+    node.id = el.id
+  }
+
+  // Classes - filter to interesting ones unless allAttributes
+  const allClasses = el.className?.toString().split(/\s+/).filter(Boolean) || []
+  if (allClasses.length > 0) {
+    if (allAttributes) {
+      node.classes = allClasses
+    } else {
+      const interesting = allClasses.filter(cls => 
+        interestingClasses.some(pattern => {
+          try {
+            return new RegExp(pattern).test(cls)
+          } catch {
+            return cls.includes(pattern)
+          }
+        })
+      )
+      if (interesting.length > 0) {
+        node.classes = interesting
+      } else if (!compact && allClasses.length <= 3) {
+        // In non-compact mode, show up to 3 classes even if not "interesting"
+        node.classes = allClasses.slice(0, 3)
+      }
+    }
+  }
+
+  // Attributes - filter to interesting ones unless allAttributes
+  const attrs: Record<string, string> = {}
+  for (const attr of el.attributes) {
+    if (attr.name === 'id' || attr.name === 'class') continue // Already handled
+    
+    if (allAttributes) {
+      attrs[attr.name] = attr.value
+    } else {
+      const isInteresting = interestingAttributes.some(pattern => 
+        attr.name.startsWith(pattern) || attr.name === pattern
+      )
+      if (isInteresting) {
+        attrs[attr.name] = attr.value
+      }
+    }
+  }
+  if (Object.keys(attrs).length > 0) {
+    node.attrs = attrs
+  }
+
+  // Flags for quick scanning
+  const flags: DomTreeNode['flags'] = {}
+  
+  // Check for event bindings (xinjs, b8r)
+  if (allClasses.some(c => c.includes('-xin-event')) || el.hasAttribute('data-event')) {
+    flags.hasEvents = true
+  }
+  
+  // Check for data bindings
+  if (allClasses.some(c => c.includes('-xin-data')) || 
+      el.hasAttribute('data-bind') || 
+      el.hasAttribute('data-list')) {
+    flags.hasData = true
+  }
+  
+  // Interactive element
+  if (INTERACTIVE_TAGS.has(el.tagName)) {
+    flags.interactive = true
+  }
+  
+  // Custom element
+  if (tagName.includes('-')) {
+    flags.customElement = true
+  }
+  
+  // Shadow DOM
+  if (el.shadowRoot) {
+    flags.shadowRoot = true
+  }
+  
+  // Hidden
+  if (htmlEl.hidden || el.getAttribute('aria-hidden') === 'true') {
+    flags.hidden = true
+  }
+  
+  // Has ARIA
+  if (Array.from(el.attributes).some(a => a.name.startsWith('aria-') || a.name === 'role')) {
+    flags.hasAria = true
+  }
+  
+  if (Object.keys(flags).length > 0) {
+    node.flags = flags
+  }
+
+  // Box model (if requested)
+  if (includeBox) {
+    const rect = el.getBoundingClientRect()
+    const computed = getComputedStyle(el)
+    const inViewport = rect.top < window.innerHeight && 
+                       rect.bottom > 0 && 
+                       rect.left < window.innerWidth && 
+                       rect.right > 0
+    node.box = {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+      visible: inViewport && computed.display !== 'none' && computed.visibility !== 'hidden',
+    }
+  }
+
+  // Text content for leaf nodes or short text
+  if (includeText) {
+    const childElements = el.children.length
+    const directText = Array.from(el.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE)
+      .map(n => n.textContent?.trim())
+      .filter(Boolean)
+      .join(' ')
+    
+    if (childElements === 0 && directText) {
+      // Leaf node with text
+      node.text = directText.slice(0, 200)
+    } else if (directText && directText.length <= 50) {
+      // Short direct text even with children
+      node.text = directText
+    }
+  }
+
+  // Children (if not at max depth)
+  const maxDepth = depth < 0 ? Infinity : depth
+  if (currentDepth < maxDepth && el.children.length > 0) {
+    const children: DomTreeNode[] = []
+    let truncatedCount = 0
+    
+    for (const child of el.children) {
+      // Limit children to prevent huge responses
+      if (children.length >= 50) {
+        truncatedCount = el.children.length - children.length
+        break
+      }
+      
+      const childNode = buildDomTree(child, options, currentDepth + 1)
+      if (childNode) {
+        children.push(childNode)
+      }
+    }
+    
+    if (children.length > 0) {
+      node.children = children
+    }
+    
+    if (truncatedCount > 0) {
+      node.truncated = true
+      node.childCount = el.children.length
+    }
+  } else if (el.children.length > 0) {
+    // At max depth but has children - indicate truncation
+    node.truncated = true
+    node.childCount = el.children.length
+  }
+
+  return node
+}
+
 type ChannelState = 'disconnected' | 'connecting' | 'connected' | 'paused'
 
 // Highlight overlay for visual pointing
@@ -350,6 +809,7 @@ export class DevChannel extends HTMLElement {
   private mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
   private pendingMutations: MutationRecord[] = []
   private mutationConfig: MutationWatchRequest | null = null
+  private mutationFilterRules: MutationFilterRules | null = null
   private recording: RecordingSession | null = null
   private originalConsole: Partial<Console> = {}
   private widgetHidden = false
@@ -1065,6 +1525,20 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'unhighlight') {
       hideHighlight()
       this.respond(msg.id, true)
+    } else if (action === 'tree') {
+      // Build a DOM tree representation
+      try {
+        const request = payload as DomTreeRequest
+        const el = document.querySelector(request.selector)
+        if (!el) {
+          this.respond(msg.id, false, null, `Element not found: ${request.selector}`)
+          return
+        }
+        const tree = buildDomTree(el, request)
+        this.respond(msg.id, true, tree)
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err.message)
+      }
     } else if (action === 'screenshot') {
       // Note: This captures via the page, not the highlight overlay
       // The highlight will be visible in the screenshot if it's showing
@@ -1195,6 +1669,23 @@ export class DevChannel extends HTMLElement {
       return
     }
     
+    // Compute filter rules based on preset and custom filters
+    const preset = config.preset ?? 'smart'
+    let presetRules: MutationFilterRules
+    
+    if (preset === 'smart') {
+      // Auto-detect frameworks and merge their rules
+      const detected = detectFramework()
+      const detectedRules = detected.map(p => FILTER_PRESETS[p])
+      presetRules = mergeFilterRules(FILTER_PRESETS.smart, ...detectedRules)
+      this.send('mutations', 'detected', { frameworks: detected })
+    } else {
+      presetRules = FILTER_PRESETS[preset]
+    }
+    
+    // Merge with custom filters
+    this.mutationFilterRules = mergeFilterRules(presetRules, config.filters)
+    
     const debounceMs = config.debounce ?? 100
     
     this.mutationObserver = new MutationObserver((mutations) => {
@@ -1234,6 +1725,7 @@ export class DevChannel extends HTMLElement {
     }
     this.pendingMutations = []
     this.mutationConfig = null
+    this.mutationFilterRules = null
   }
   
   private flushMutations() {
@@ -1242,11 +1734,14 @@ export class DevChannel extends HTMLElement {
     const mutations = this.pendingMutations
     this.pendingMutations = []
     
+    const rules = this.mutationFilterRules || {}
+    
     // Summarize the batch
     let added = 0
     let removed = 0
     let attributeChanges = 0
     let textChanges = 0
+    let ignored = 0
     const notable: NotableMutation[] = []
     
     for (const m of mutations) {
@@ -1254,61 +1749,165 @@ export class DevChannel extends HTMLElement {
         // Track added nodes
         for (const node of m.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            added++
             const el = node as Element
-            // Notable if it has an id, is a significant element, or is interactive
-            if (el.id || ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT'].includes(el.tagName)) {
-              notable.push({
+            
+            // Check if should be ignored
+            if (shouldIgnoreElement(el, rules)) {
+              ignored++
+              continue
+            }
+            
+            // Check if passes "only" filter
+            if (!matchesOnlyFilter(el, rules)) {
+              ignored++
+              continue
+            }
+            
+            added++
+            
+            // Determine if notable
+            const hasId = !!el.id
+            const isSignificant = ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)
+            const isCustomElement = el.tagName.includes('-')
+            
+            // Check for interesting classes
+            const classes = el.className?.toString().split(/\s+/).filter(Boolean) || []
+            const { interesting: interestingClasses } = filterClasses(classes, rules)
+            const hasInterestingClasses = interestingClasses.length > 0
+            
+            // Check for interesting attributes
+            const hasInterestingAttrs = Array.from(el.attributes).some(
+              attr => isInterestingAttribute(attr.name, rules)
+            )
+            
+            if (hasId || isSignificant || isCustomElement || hasInterestingClasses || hasInterestingAttrs) {
+              const mutation: NotableMutation = {
                 type: 'added',
                 selector: getSelector(el),
                 tagName: el.tagName.toLowerCase(),
                 id: el.id || undefined,
-                className: el.className?.toString() || undefined,
-              })
+                className: interestingClasses.length > 0 
+                  ? interestingClasses.join(' ') 
+                  : (classes.slice(0, 3).join(' ') || undefined),
+              }
+              notable.push(mutation)
             }
           }
         }
+        
         // Track removed nodes
         for (const node of m.removedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            removed++
             const el = node as Element
-            if (el.id || ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT'].includes(el.tagName)) {
+            
+            if (shouldIgnoreElement(el, rules)) {
+              ignored++
+              continue
+            }
+            
+            removed++
+            
+            const hasId = !!el.id
+            const isSignificant = ['DIALOG', 'MODAL', 'FORM', 'BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)
+            const isCustomElement = el.tagName.includes('-')
+            
+            if (hasId || isSignificant || isCustomElement) {
               notable.push({
                 type: 'removed',
                 selector: getSelector(el),
                 tagName: el.tagName.toLowerCase(),
                 id: el.id || undefined,
-                className: el.className?.toString() || undefined,
+                className: el.className?.toString().split(/\s+/).slice(0, 3).join(' ') || undefined,
               })
             }
           }
         }
       } else if (m.type === 'attributes') {
-        attributeChanges++
         const el = m.target as Element
-        // Notable attribute changes on interactive elements
-        if (['disabled', 'hidden', 'aria-hidden', 'aria-expanded', 'open', 'checked', 'selected'].includes(m.attributeName || '')) {
-          notable.push({
-            type: 'attribute',
-            selector: getSelector(el),
-            tagName: el.tagName.toLowerCase(),
-            id: el.id || undefined,
-            attribute: m.attributeName || undefined,
-            oldValue: m.oldValue || undefined,
-            newValue: el.getAttribute(m.attributeName || '') || undefined,
-          })
+        const attrName = m.attributeName || ''
+        
+        // Check if element should be ignored
+        if (shouldIgnoreElement(el, rules)) {
+          ignored++
+          continue
+        }
+        
+        // Check if attribute should be ignored
+        if (rules.ignoreAttributes?.some(pattern => attrName.startsWith(pattern) || attrName === pattern)) {
+          ignored++
+          continue
+        }
+        
+        // Special handling for class attribute
+        if (attrName === 'class') {
+          const oldClasses = (m.oldValue || '').split(/\s+/).filter(Boolean)
+          const newClasses = (el.className?.toString() || '').split(/\s+/).filter(Boolean)
+          
+          // Find what changed
+          const addedClasses = newClasses.filter(c => !oldClasses.includes(c))
+          const removedClasses = oldClasses.filter(c => !newClasses.includes(c))
+          
+          // Filter the changes
+          const { interesting: addedInteresting, ignored: addedIgnored } = filterClasses(addedClasses, rules)
+          const { interesting: removedInteresting, ignored: removedIgnored } = filterClasses(removedClasses, rules)
+          
+          // If all changes are ignored, skip
+          if (addedClasses.length === addedIgnored.length && removedClasses.length === removedIgnored.length) {
+            ignored++
+            continue
+          }
+          
+          attributeChanges++
+          
+          // Only report if interesting classes changed
+          if (addedInteresting.length > 0 || removedInteresting.length > 0) {
+            notable.push({
+              type: 'attribute',
+              selector: getSelector(el),
+              tagName: el.tagName.toLowerCase(),
+              id: el.id || undefined,
+              attribute: 'class',
+              oldValue: removedInteresting.length > 0 ? `-${removedInteresting.join(' -')}` : undefined,
+              newValue: addedInteresting.length > 0 ? `+${addedInteresting.join(' +')}` : undefined,
+            })
+          }
+        } else {
+          attributeChanges++
+          
+          // Check if this is an interesting attribute
+          const isInteresting = isInterestingAttribute(attrName, rules)
+          
+          if (isInteresting) {
+            notable.push({
+              type: 'attribute',
+              selector: getSelector(el),
+              tagName: el.tagName.toLowerCase(),
+              id: el.id || undefined,
+              attribute: attrName,
+              oldValue: m.oldValue || undefined,
+              newValue: el.getAttribute(attrName) || undefined,
+            })
+          }
         }
       } else if (m.type === 'characterData') {
         textChanges++
       }
     }
     
-    const batch: MutationBatch = {
+    // Don't send batch if nothing notable happened and everything was filtered
+    if (added === 0 && removed === 0 && attributeChanges === 0 && textChanges === 0) {
+      return
+    }
+    
+    const batch: MutationBatch & { ignored?: number } = {
       timestamp: Date.now(),
       count: mutations.length,
       summary: { added, removed, attributeChanges, textChanges },
       notable: notable.slice(0, 20), // Limit to 20 notable items
+    }
+    
+    if (ignored > 0) {
+      batch.ignored = ignored
     }
     
     this.send('mutations', 'batch', batch)
