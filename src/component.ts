@@ -356,6 +356,8 @@ export class DevChannel extends HTMLElement {
   private serverUrl = 'ws://localhost:8700/ws/browser'
   private browserId = uid() // Unique ID for this browser instance
   private killed = false // Prevents reconnection after kill()
+  private homeLeft = 0 // Store home position for restore
+  private homeBottom = 16
   
   // Pending requests waiting for response
   private pending = new Map<string, { resolve: (r: DevResponse) => void, reject: (e: Error) => void }>()
@@ -458,6 +460,12 @@ export class DevChannel extends HTMLElement {
   connectedCallback() {
     this.serverUrl = this.getAttribute('server') || this.serverUrl
     this.render()
+    // Set initial position using left (calculate from right: 16px after render so we know width)
+    const rect = this.getBoundingClientRect()
+    this.homeLeft = window.innerWidth - rect.width - 16
+    this.homeBottom = 16
+    this.style.left = `${this.homeLeft}px`
+    this.style.bottom = `${this.homeBottom}px`
     this.setupKeyboardShortcut()
     this.interceptConsole()
     this.connect()
@@ -486,17 +494,32 @@ export class DevChannel extends HTMLElement {
   // ==========================================
   
   private render() {
+    // Only do full render once
+    if (this.shadowRoot!.querySelector('.widget')) {
+      this.updateUI()
+      return
+    }
+    
     const shadow = this.shadowRoot!
+    
     shadow.innerHTML = `
       <style>
         :host {
           position: fixed;
-          bottom: 16px;
-          right: 16px;
           z-index: 999999;
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
         }
+        
+        :host(.animating-hide) {
+          transition: left 0.3s ease-out, bottom 0.3s ease-in;
+        }
+        
+        :host(.animating-show) {
+          transition: left 0.3s ease-in, bottom 0.3s ease-out;
+        }
+        
+
         
         .widget {
           background: #1a1a2e;
@@ -504,14 +527,16 @@ export class DevChannel extends HTMLElement {
           border-radius: 8px;
           box-shadow: 0 4px 20px rgba(0,0,0,0.3);
           overflow: hidden;
-          min-width: 200px;
-          transition: opacity 0.2s, transform 0.2s;
+          min-width: 180px;
+          transition: all 0.3s ease-out;
         }
         
-        .widget.hidden {
-          opacity: 0;
-          transform: scale(0.9) translateY(10px);
-          pointer-events: none;
+        :host(.minimized) .widget {
+          border-radius: 8px 8px 0 0;
+        }
+        
+        :host(.minimized) .body {
+          display: none;
         }
         
         .widget.flash {
@@ -552,10 +577,32 @@ export class DevChannel extends HTMLElement {
         
         .title {
           flex: 1;
-          font-weight: 600;
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          font-weight: 500;
+          font-size: 12px;
+        }
+        
+        .indicators {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+        
+        .indicator {
+          font-size: 10px;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-weight: 500;
+        }
+        
+        .indicator.errors {
+          background: #ef4444;
+          color: white;
+        }
+        
+        .indicator.recording {
+          background: #ef4444;
+          color: white;
+          animation: pulse 1s infinite;
         }
         
         .controls {
@@ -580,79 +627,43 @@ export class DevChannel extends HTMLElement {
         
         .body {
           padding: 8px 12px;
-          font-size: 11px;
-          color: #aaa;
-        }
-        
-        .stats {
-          display: flex;
-          gap: 12px;
-        }
-        
-        .stat {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-        
-        .stat-value {
-          color: #fff;
-          font-weight: 500;
-        }
-        
-        .hint {
-          margin-top: 6px;
           font-size: 10px;
           color: #666;
         }
       </style>
       
-      <div class="widget ${this.widgetHidden ? 'hidden' : ''}">
+      <div class="widget">
         <div class="header">
-          <div class="status ${this.state}"></div>
+          <div class="status"></div>
           <div class="title">🦉 tosijs-dev</div>
+          <div class="indicators"></div>
           <div class="controls">
-            <button class="btn" data-action="pause" title="Pause/Resume">
-              ${this.state === 'paused' ? '▶' : '⏸'}
-            </button>
-            <button class="btn" data-action="hide" title="Hide (Option+Tab)">─</button>
-            <button class="btn danger" data-action="kill" title="Kill connection">✕</button>
+            <button class="btn" data-action="pause" title="Pause/Resume">⏸</button>
+            <button class="btn" data-action="minimize" title="Minimize (⌥Tab)">─</button>
+            <button class="btn danger" data-action="kill" title="Close">✕</button>
           </div>
         </div>
         <div class="body">
-          <div class="stats">
-            <div class="stat">
-              <span>Console:</span>
-              <span class="stat-value">${this.consoleBuffer.length}</span>
-            </div>
-            <div class="stat">
-              <span>Watchers:</span>
-              <span class="stat-value">${this.eventWatchers.size}</span>
-            </div>
-            ${this.recording ? `
-            <div class="stat">
-              <span>Recording:</span>
-              <span class="stat-value" style="color: #ef4444;">●</span>
-            </div>
-            ` : ''}
-          </div>
-          <div class="hint">
-            Option+Tab to toggle | 
             <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: Cannot reach server'))})();" 
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">🦉 bookmark</a>
-          </div>
         </div>
       </div>
     `
     
-    // Event handlers
+    this.updateUI()
+    
+    // Event handlers (only set up once)
     shadow.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('mousedown', (e) => {
+        e.stopPropagation() // Don't trigger drag
+      })
       btn.addEventListener('click', (e) => {
+        e.stopPropagation()
         const action = (e.currentTarget as HTMLElement).dataset.action
         if (action === 'pause') this.togglePause()
-        if (action === 'hide') this.toggleHidden()
+        if (action === 'minimize') this.toggleMinimize()
         if (action === 'kill') this.kill()
       })
     })
@@ -672,28 +683,72 @@ export class DevChannel extends HTMLElement {
     this.setupDrag(shadow.querySelector('.header')!)
   }
   
+  private updateUI() {
+    const shadow = this.shadowRoot!
+    
+    // Update status indicator
+    const status = shadow.querySelector('.status')
+    if (status) {
+      status.className = `status ${this.state}`
+    }
+    
+    // Update pause button
+    const pauseBtn = shadow.querySelector('[data-action="pause"]')
+    if (pauseBtn) {
+      pauseBtn.textContent = this.state === 'paused' ? '▶' : '⏸'
+    }
+    
+    // Update indicators
+    const indicators = shadow.querySelector('.indicators')
+    if (indicators) {
+      const errorCount = this.consoleBuffer.filter(e => e.level === 'error').length
+      let html = ''
+      if (errorCount > 0) {
+        html += `<span class="indicator errors">${errorCount} error${errorCount > 1 ? 's' : ''}</span>`
+      }
+      if (this.recording) {
+        html += `<span class="indicator recording">REC</span>`
+      }
+      indicators.innerHTML = html
+    }
+  }
+  
   private setupDrag(handle: Element) {
-    let startX = 0, startY = 0, startRight = 0, startBottom = 0
+    let startX = 0, startY = 0, startLeft = 0, startBottom = 0
     
     const onMouseMove = (e: MouseEvent) => {
       const dx = e.clientX - startX
       const dy = e.clientY - startY
-      this.style.right = `${startRight - dx}px`
+      this.style.left = `${startLeft + dx}px`
       this.style.bottom = `${startBottom - dy}px`
     }
     
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
+      // Save current position as home (but not if minimized)
+      if (!this.classList.contains('minimized')) {
+        const rect = this.getBoundingClientRect()
+        this.homeLeft = rect.left
+        this.homeBottom = window.innerHeight - rect.bottom
+      }
     }
     
     handle.addEventListener('mousedown', (e: Event) => {
       const me = e as MouseEvent
       startX = me.clientX
       startY = me.clientY
-      const style = getComputedStyle(this)
-      startRight = parseInt(style.right) || 16
-      startBottom = parseInt(style.bottom) || 16
+      
+      // Get current position
+      const rect = this.getBoundingClientRect()
+      startLeft = rect.left
+      startBottom = window.innerHeight - rect.bottom
+      
+      // If minimized, just remove the class (position is already left-based)
+      if (this.classList.contains('minimized')) {
+        this.classList.remove('minimized')
+      }
+      
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     })
@@ -701,10 +756,10 @@ export class DevChannel extends HTMLElement {
   
   private setupKeyboardShortcut() {
     document.addEventListener('keydown', (e) => {
-      // Option+Tab to toggle visibility
+      // Option+Tab to toggle minimize
       if (e.altKey && e.key === 'Tab') {
         e.preventDefault()
-        this.toggleHidden()
+        this.toggleMinimize()
       }
     })
   }
@@ -724,6 +779,53 @@ export class DevChannel extends HTMLElement {
   private toggleHidden() {
     this.widgetHidden = !this.widgetHidden
     this.render()
+  }
+  
+  private toggleMinimize() {
+    const isMinimized = this.classList.contains('minimized')
+    
+    // Capture current position before any changes
+    const rect = this.getBoundingClientRect()
+    const currentLeft = rect.left
+    const currentBottom = window.innerHeight - rect.bottom
+    
+    if (isMinimized) {
+      // Restoring: animate from current (minimized) position to home
+      // 1. Ensure starting position is set
+      this.style.left = `${currentLeft}px`
+      this.style.bottom = `${currentBottom}px`
+      this.classList.remove('minimized')
+      
+      // 2. Force reflow so browser knows starting point
+      this.offsetHeight
+      
+      // 3. Add transition and set target
+      this.classList.add('animating-show')
+      this.style.left = `${this.homeLeft}px`
+      this.style.bottom = `${this.homeBottom}px`
+      
+      // Cleanup
+      setTimeout(() => this.classList.remove('animating-show'), 350)
+    } else {
+      // Minimizing: animate from current position to corner
+      // 1. Save home and ensure starting position is set
+      this.homeLeft = currentLeft
+      this.homeBottom = currentBottom
+      this.style.left = `${currentLeft}px`
+      this.style.bottom = `${currentBottom}px`
+      
+      // 2. Force reflow so browser knows starting point
+      this.offsetHeight
+      
+      // 3. Add transition and set target
+      this.classList.add('animating-hide')
+      this.style.left = '16px'
+      this.style.bottom = '0px'
+      this.classList.add('minimized')
+      
+      // Cleanup
+      setTimeout(() => this.classList.remove('animating-hide'), 350)
+    }
   }
   
   private togglePause() {

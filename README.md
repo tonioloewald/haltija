@@ -142,11 +142,28 @@ CSS variables for theming:
 
 ### Interactions
 
+All interaction endpoints automatically scroll the element into view first.
+
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
-| `/click` | POST | `{selector: string}` | Click an element |
+| `/click` | POST | `{selector: string}` | Click an element (full mouse lifecycle) |
 | `/type` | POST | `{selector: string, text: string}` | Type into an input |
+| `/drag` | POST | `{selector, deltaX, deltaY, duration?}` | Drag an element |
 | `/eval` | POST | `{code: string}` | Execute JavaScript |
+
+**Click** fires the full mouse event lifecycle: `mouseenter` → `mouseover` → `mousemove` → `mousedown` → `mouseup` → `click`
+
+**Drag** simulates a realistic drag operation:
+```bash
+# Drag element 100px right and 50px down over 300ms (default)
+curl -X POST http://localhost:8700/drag \
+  -H "Content-Type: application/json" \
+  -d '{"selector": ".draggable", "deltaX": 100, "deltaY": 50}'
+
+# Faster drag (100ms)  
+curl -X POST http://localhost:8700/drag \
+  -d '{"selector": ".handle", "deltaX": -200, "deltaY": 0, "duration": 100}'
+```
 
 ### Navigation
 
@@ -334,10 +351,14 @@ curl -X POST http://localhost:8700/mutations/unwatch
 
 The widget appears in the bottom-right corner:
 
-- **Status indicator** - Green = connected, Yellow = connecting, Red = disconnected
-- **Pause button** - Temporarily stop responding to agent commands
-- **Hide button** - Minimize the widget (Option+Tab to toggle)
-- **Kill button** - Completely disconnect and remove the widget
+- **Status indicator** - Green = connected, Yellow = connecting, Orange = paused, Red = disconnected
+- **Error count** - Shows number of console errors (if any)
+- **REC indicator** - Shows when recording is active
+- **Pause button (⏸/▶)** - Temporarily stop responding to agent commands
+- **Minimize button (─)** - Slide widget to bottom-left corner (⌥Tab to toggle)
+- **Kill button (✕)** - Completely disconnect and remove the widget
+
+The widget can be dragged anywhere on the page. When minimized, it animates to the bottom-left corner and back.
 
 **Security**: The widget always shows when an agent sends commands - no silent snooping.
 

@@ -307,20 +307,101 @@ async function handleRest(req: Request): Promise<Response> {
     return Response.json(response, { headers })
   }
   
-  // Click shorthand
+  // Click shorthand - fires full mouse event lifecycle
   if (path === '/click' && req.method === 'POST') {
     const body = await req.json()
-    const response = await requestFromBrowser('events', 'dispatch', {
-      selector: body.selector,
-      event: 'click',
-      options: body.options,
+    const selector = body.selector
+    const options = body.options || {}
+    
+    // Scroll element into view first
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
     })
-    return Response.json(response, { headers })
+    await new Promise(r => setTimeout(r, 100)) // Wait for scroll
+    
+    // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
+    for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
+      await requestFromBrowser('events', 'dispatch', {
+        selector,
+        event,
+        options,
+      })
+    }
+    
+    return Response.json({ success: true }, { headers })
+  }
+  
+  // Drag shorthand - simulates a drag operation
+  // POST /drag { selector, deltaX, deltaY, duration? }
+  if (path === '/drag' && req.method === 'POST') {
+    const body = await req.json()
+    const selector = body.selector
+    const deltaX = body.deltaX || 0
+    const deltaY = body.deltaY || 0
+    const duration = body.duration || 300 // ms
+    const steps = Math.max(5, Math.floor(duration / 16)) // ~60fps
+    
+    // Scroll element into view first
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+    })
+    await new Promise(r => setTimeout(r, 100))
+    
+    // Get element center position
+    const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector })
+    if (!inspectResponse.success || !inspectResponse.data) {
+      return Response.json({ success: false, error: 'Element not found' }, { headers })
+    }
+    const box = inspectResponse.data.box
+    const startX = box.x + box.width / 2
+    const startY = box.y + box.height / 2
+    
+    // mouseenter, mouseover, mousemove to start position
+    for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
+      await requestFromBrowser('events', 'dispatch', {
+        selector,
+        event,
+        options: { clientX: startX, clientY: startY },
+      })
+    }
+    
+    // mousedown
+    await requestFromBrowser('events', 'dispatch', {
+      selector,
+      event: 'mousedown',
+      options: { clientX: startX, clientY: startY },
+    })
+    
+    // mousemove steps (dispatched on document)
+    const stepDelay = duration / steps
+    for (let i = 1; i <= steps; i++) {
+      const progress = i / steps
+      const x = startX + deltaX * progress
+      const y = startY + deltaY * progress
+      await requestFromBrowser('eval', 'exec', {
+        code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
+      })
+      await new Promise(r => setTimeout(r, stepDelay))
+    }
+    
+    // mouseup
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
+    })
+    
+    return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
   }
   
   // Type shorthand
   if (path === '/type' && req.method === 'POST') {
     const body = await req.json()
+    
+    // Scroll element into view first
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+    })
+    await new Promise(r => setTimeout(r, 100))
+    
     const response = await requestFromBrowser('events', 'dispatch', {
       selector: body.selector,
       event: 'input',
@@ -439,6 +520,13 @@ async function handleRest(req: Request): Promise<Response> {
   // Highlight element (visual pointer)
   if (path === '/highlight' && req.method === 'POST') {
     const body = await req.json()
+    
+    // Scroll element into view first
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+    })
+    await new Promise(r => setTimeout(r, 100))
+    
     const response = await requestFromBrowser('dom', 'highlight', {
       selector: body.selector,
       label: body.label,
