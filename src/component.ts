@@ -2952,6 +2952,14 @@ export class DevChannel extends HTMLElement {
       const target = e.target as HTMLElement
       if (!target || this.contains(target)) return
       
+      // Skip inputs handled by change handler (checkbox, radio, range, color, date, time, file)
+      if (target.tagName === 'INPUT') {
+        const inputType = (target as HTMLInputElement).type
+        if (['checkbox', 'radio', 'range', 'color', 'date', 'time', 'datetime-local', 'month', 'week', 'file'].includes(inputType)) {
+          return
+        }
+      }
+      
       // Get the value - either from input/textarea or contenteditable
       const isContentEditable = target.isContentEditable
       const isFormField = 'value' in target
@@ -3188,15 +3196,62 @@ export class DevChannel extends HTMLElement {
       if (!form || this.contains(form)) return
       
       this.emitSemanticEvent({
-        type: 'interaction:submit',
+        type: 'form:submit',
         timestamp: Date.now(),
         category: 'interaction',
         target: this.getTargetInfo(form),
         payload: {
           formId: form.id,
+          formName: form.name,
           formAction: form.action,
           fieldCount: form.elements.length,
           method: form.method,
+        },
+      })
+    }
+    
+    // Form reset
+    this.semanticHandlers.reset = (e: Event) => {
+      const form = e.target as HTMLFormElement
+      if (!form || this.contains(form)) return
+      
+      this.emitSemanticEvent({
+        type: 'form:reset',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(form),
+        payload: {
+          formId: form.id,
+          formName: form.name,
+        },
+      })
+    }
+    
+    // Form invalid (validation failed on a field)
+    this.semanticHandlers.invalid = (e: Event) => {
+      const target = e.target as HTMLInputElement
+      if (!target || this.contains(target)) return
+      
+      this.emitSemanticEvent({
+        type: 'form:invalid',
+        timestamp: Date.now(),
+        category: 'input',
+        target: this.getTargetInfo(target),
+        payload: {
+          field: this.getBestSelector(target),
+          fieldName: target.name,
+          fieldType: target.type,
+          validationMessage: target.validationMessage,
+          validity: {
+            valueMissing: target.validity.valueMissing,
+            typeMismatch: target.validity.typeMismatch,
+            patternMismatch: target.validity.patternMismatch,
+            tooShort: target.validity.tooShort,
+            tooLong: target.validity.tooLong,
+            rangeUnderflow: target.validity.rangeUnderflow,
+            rangeOverflow: target.validity.rangeOverflow,
+            stepMismatch: target.validity.stepMismatch,
+          },
         },
       })
     }
@@ -3380,6 +3435,8 @@ export class DevChannel extends HTMLElement {
     document.addEventListener('focusin', this.semanticHandlers.focus, true)
     document.addEventListener('focusout', this.semanticHandlers.blur, true)
     document.addEventListener('submit', this.semanticHandlers.submit, true)
+    document.addEventListener('reset', this.semanticHandlers.reset, true)
+    document.addEventListener('invalid', this.semanticHandlers.invalid, true)
     window.addEventListener('popstate', this.semanticHandlers.popstate)
     document.addEventListener('mousedown', this.semanticHandlers.mousedown, true)
     document.addEventListener('mouseup', this.semanticHandlers.mouseup, true)
@@ -3449,6 +3506,12 @@ export class DevChannel extends HTMLElement {
     if (this.semanticHandlers.submit) {
       document.removeEventListener('submit', this.semanticHandlers.submit, true)
     }
+    if (this.semanticHandlers.reset) {
+      document.removeEventListener('reset', this.semanticHandlers.reset, true)
+    }
+    if (this.semanticHandlers.invalid) {
+      document.removeEventListener('invalid', this.semanticHandlers.invalid, true)
+    }
     if (this.semanticHandlers.popstate) {
       window.removeEventListener('popstate', this.semanticHandlers.popstate)
     }
@@ -3466,6 +3529,17 @@ export class DevChannel extends HTMLElement {
     if (this.typingState.field) {
       const field = this.typingState.field as HTMLElement
       const isContentEditable = field.isContentEditable
+      
+      // Skip inputs that are handled by the change handler
+      if (field.tagName === 'INPUT') {
+        const inputType = (field as HTMLInputElement).type
+        if (['checkbox', 'radio', 'range', 'color', 'date', 'time', 'datetime-local', 'month', 'week', 'file'].includes(inputType)) {
+          if (this.typingState.timeout) clearTimeout(this.typingState.timeout)
+          this.typingState = { field: null, startTime: 0, text: '', timeout: null }
+          return
+        }
+      }
+      
       const finalValue = isContentEditable 
         ? field.innerText || ''
         : (field as HTMLInputElement).value

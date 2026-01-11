@@ -532,6 +532,107 @@ async function handleRest(req: Request): Promise<Response> {
     <a href="#" id="tab-link">Link</a>
   </div>
   
+  <h2>Form Validation</h2>
+  <form id="test-form" novalidate style="display: grid; gap: 12px; max-width: 400px; padding: 16px; border: 1px solid #ccc; border-radius: 8px;">
+    <div>
+      <label for="form-name">Name (required):</label>
+      <input type="text" id="form-name" name="name" required minlength="2" style="width: 100%;">
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div>
+      <label for="form-email">Email (required, valid format):</label>
+      <input type="email" id="form-email" name="email" required style="width: 100%;">
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div>
+      <label for="form-age">Age (18-120):</label>
+      <input type="number" id="form-age" name="age" min="18" max="120" style="width: 100%;">
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div>
+      <label for="form-website">Website (valid URL):</label>
+      <input type="url" id="form-website" name="website" placeholder="https://..." style="width: 100%;">
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div>
+      <label for="form-password">Password (min 8 chars):</label>
+      <input type="password" id="form-password" name="password" minlength="8" style="width: 100%;">
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div>
+      <label><input type="checkbox" id="form-terms" name="terms" required> I agree to the terms</label>
+      <span class="error" style="color: red; font-size: 12px;"></span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button type="submit">Submit</button>
+      <button type="reset">Reset</button>
+    </div>
+    <div id="form-result" style="padding: 8px; border-radius: 4px; display: none;"></div>
+  </form>
+  <script>
+    // Form validation handling
+    (function() {
+      var form = document.getElementById('test-form');
+      
+      // Show validation errors on blur
+      form.querySelectorAll('input').forEach(function(input) {
+        input.addEventListener('blur', function() {
+          validateInput(this);
+        });
+        input.addEventListener('input', function() {
+          // Clear error on typing
+          var errorSpan = this.parentElement.querySelector('.error');
+          if (errorSpan) errorSpan.textContent = '';
+        });
+      });
+      
+      function validateInput(input) {
+        var errorSpan = input.parentElement.querySelector('.error');
+        if (!errorSpan) return true;
+        
+        if (!input.checkValidity()) {
+          errorSpan.textContent = input.validationMessage;
+          return false;
+        } else {
+          errorSpan.textContent = '';
+          return true;
+        }
+      }
+      
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        var isValid = true;
+        form.querySelectorAll('input').forEach(function(input) {
+          if (!validateInput(input)) isValid = false;
+        });
+        
+        var result = document.getElementById('form-result');
+        if (isValid) {
+          var formData = new FormData(form);
+          var data = {};
+          formData.forEach(function(value, key) { data[key] = value; });
+          result.style.display = 'block';
+          result.style.background = '#d4edda';
+          result.style.color = '#155724';
+          result.textContent = 'Form submitted: ' + JSON.stringify(data);
+          console.log('Form submitted', data);
+        } else {
+          result.style.display = 'block';
+          result.style.background = '#f8d7da';
+          result.style.color = '#721c24';
+          result.textContent = 'Please fix the errors above.';
+        }
+      });
+      
+      form.addEventListener('reset', function() {
+        var result = document.getElementById('form-result');
+        result.style.display = 'none';
+        form.querySelectorAll('.error').forEach(function(e) { e.textContent = ''; });
+      });
+    })();
+  </script>
+  
   <${TAG_NAME} id="dev-widget"></${TAG_NAME}>
   <script>
     // Set the server URL based on page protocol
