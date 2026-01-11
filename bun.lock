@@ -4,9 +4,6 @@
   "workspaces": {
     "": {
       "name": "dev-channel",
-      "dependencies": {
-        "tosijs": "^1.0.10",
-      },
       "devDependencies": {
         "@playwright/test": "^1.40.0",
         "typescript": "^5.0.0",
@@ -21,8 +18,6 @@
     "playwright": ["playwright@1.57.0", "", { "dependencies": { "playwright-core": "1.57.0" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-ilYQj1s8sr2ppEJ2YVadYBN0Mb3mdo9J0wQ+UuDhzYqURwSoW4n1Xs5vs7ORwgDGmyEh33tRMeS8KhdkMoLXQw=="],
 
     "playwright-core": ["playwright-core@1.57.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-agTcKlMw/mjBWOnD6kFZttAAGHgi/Nw0CZ2o6JqWSbMlI219lAFLZZCyqByTsvVAJq5XA5H8cA6PrvBRpBWEuQ=="],
-
-    "tosijs": ["tosijs@1.0.10", "", {}, "sha512-qD2Jyo4wQoGcHoYnYAfcIQcDymJLiodBvHgG6EK440Z9bPiv0262pqTwrjGm8yzMsHH/sOONjFT1jSH3liu37g=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
   }
