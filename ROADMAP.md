@@ -294,15 +294,20 @@ user:dwelled     (hovered > threshold)
 
 ## Planned
 
-### Phase 7: Log Viewer Widget
+### Phase 7: Log Viewer Widget ✅
 
-Use xinjs-ui `data-table` patterns:
-- Virtual scrolling (handle thousands of events)
-- Filterable by category
-- Color-coded by type
-- Expandable details
-- Real-time streaming
-- Compact by default, expand on click
+- Toggle with 📋 button in widget header
+- Auto-starts semantic event watching when opened
+- Filterable by category (clicks, input, nav, hover, focus)
+- Color-coded entries by category
+- Details/summary expand for payload (compact key-value table)
+- Auto-scroll with pause on manual scroll
+- Drag detection with smart thresholds (>10px fast, or >200ms deliberate)
+- Bookmarklet auto-replaces stale widgets (version check)
+
+**Future enhancements:**
+- Direction change detection for drags (reversal = intentional)
+- Virtual scrolling if buffer size increases beyond 100
 
 ### Phase 8: Recording & Test Generation
 
