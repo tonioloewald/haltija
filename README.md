@@ -149,7 +149,7 @@ curl -X POST http://localhost:8700/mutations/watch -d '{"preset":"tailwind"}'
 
 See only the changes that matter, not framework internals or utility class churn.
 
-## Semantic Events (The Hindsight Buffer)
+## Semantic Events (Context History Stream)
 
 Raw DOM events are noise. Semantic events are signal.
 
@@ -212,7 +212,7 @@ curl http://localhost:8700/events
 curl "http://localhost:8700/events?since=1736600000000"
 ```
 
-Humans and AI agents share the same hindsight buffer - both can answer "what just happened?" without re-querying the DOM.
+Humans and AI agents share the same context history stream - both can answer "what just happened?" without re-querying the DOM.
 
 ## Smart Element Selectors
 
@@ -466,6 +466,11 @@ The AI reads your tests, understands the intent, runs them, and explains failure
 - AI pair programmer that can actually see your app
 - Debug CSS/layout issues together
 - Prototype interactions
+
+**UX Auditing** *(coming soon)*
+- Automatically flags common anti-patterns during test runs
+- Bad form inputs, accessibility traps, mobile hostility
+- Built-in heuristics detect 50+ "UX crimes"
 
 ## Full API Reference
 

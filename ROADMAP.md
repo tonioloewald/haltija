@@ -264,7 +264,7 @@ system        - internal only, never broadcast to agents
 - "User explored" (moused over several options before clicking)
 - "User confidently clicked" vs "User hesitated then clicked"
 
-#### Event Payloads (Hindsight Buffer)
+#### Event Payloads (Context History Stream)
 **Key insight**: Events must carry their *payload*, not just their type.
 
 Bad: `mutation(div.error)` - Agent must query DOM to know what changed
