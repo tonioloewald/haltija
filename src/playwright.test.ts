@@ -1018,12 +1018,35 @@ test.describe('tosijs-dev test generation', () => {
     expect(generateData.test.version).toBe(1)
     expect(generateData.test.steps.length).toBeGreaterThan(0)
     
-    // Should have type steps for username and password
-    const typeSteps = generateData.test.steps.filter((s: any) => s.action === 'type')
-    expect(typeSteps.length).toBeGreaterThanOrEqual(2)
+    const steps = generateData.test.steps
+    const typeSteps = steps.filter((s: any) => s.action === 'type')
+    const clickSteps = steps.filter((s: any) => s.action === 'click')
     
-    // Should have a click step
-    const clickSteps = generateData.test.steps.filter((s: any) => s.action === 'click')
+    // Semantic events are aggregated asynchronously, so we check for presence
+    // not order. The password field typing might arrive after the submit click
+    // if the aggregator was still debouncing when the click happened.
+    
+    // Should have captured typing in both username and password fields
+    const usernameType = typeSteps.find((s: any) => s.selector === '#username')
+    const passwordType = typeSteps.find((s: any) => s.selector === '#password')
+    
+    if (!usernameType || !passwordType) {
+      console.log('Missing type events. Captured steps:', JSON.stringify(steps, null, 2))
+      console.log('Note: Semantic events are debounced/aggregated. If this fails intermittently,')
+      console.log('it may be a timing issue with the event aggregator flush timing.')
+    }
+    
+    expect(usernameType).toBeDefined()
+    expect(usernameType.text).toBe('testuser')
+    expect(passwordType).toBeDefined()
+    expect(passwordType.text).toBe('secret123')
+    
+    // Should have at least one click (the submit button)
+    const submitClick = clickSteps.find((s: any) => s.selector === '#submit-btn')
+    if (!submitClick && clickSteps.length > 0) {
+      // Click was captured but with different selector - still valid
+      console.log('Submit click captured with different selector:', clickSteps)
+    }
     expect(clickSteps.length).toBeGreaterThanOrEqual(1)
     
     // Clean up
