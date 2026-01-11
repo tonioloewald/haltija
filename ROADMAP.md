@@ -304,6 +304,8 @@ user:dwelled     (hovered > threshold)
 - Auto-scroll with pause on manual scroll
 - Drag detection with smart thresholds (>10px fast, or >200ms deliberate)
 - Bookmarklet auto-replaces stale widgets (version check)
+- Hot reload via `POST /reload` - widget updates without page refresh
+- Custom element re-registration (auto-renames to `tosijs-dev-1`, etc.)
 
 **Future enhancements:**
 - Direction change detection for drags (reversal = intentional)
