@@ -20,7 +20,9 @@ export const injectorCode = `
   var wsUrl = '__WS_URL__';
   var serverVersion = '__VERSION__';
   
-  var existing = document.querySelector('tosijs-dev');
+  // Check for existing widget - use DevChannel.tagName if available (handles renamed tags)
+  var currentTag = (window.DevChannel && window.DevChannel.tagName) || 'tosijs-dev';
+  var existing = document.querySelector(currentTag);
   if (existing) {
     // Check if existing widget is stale (different version)
     var existingVersion = existing.getAttribute('data-version') || '0.0.0';
@@ -38,7 +40,9 @@ export const injectorCode = `
   script.src = serverUrl + '/component.js?v=' + serverVersion;
   script.onload = function() {
     if (window.DevChannel) {
-      var el = document.createElement('tosijs-dev');
+      // Use elementCreator to get correct (possibly auto-renamed) tag
+      var creator = window.DevChannel.elementCreator();
+      var el = creator();
       el.setAttribute('server', wsUrl);
       el.setAttribute('data-version', serverVersion);
       document.body.appendChild(el);

@@ -941,7 +941,21 @@ function pulseHighlight(el: Element, label?: string, color?: string, duration = 
   setTimeout(() => hideHighlight(), duration)
 }
 
+// Track the current tag name (may be renamed on re-registration)
+let currentTagName = 'tosijs-dev'
+let registrationCount = 0
+
 export class DevChannel extends HTMLElement {
+  // Static getter for current tag name
+  static get tagName(): string {
+    return currentTagName
+  }
+  
+  // Element creator that always uses the current tag name
+  static elementCreator(): () => DevChannel {
+    return () => document.createElement(currentTagName) as DevChannel
+  }
+  
   private ws: WebSocket | null = null
   private state: ChannelState = 'disconnected'
   private consoleBuffer: ConsoleEntry[] = []
@@ -1172,6 +1186,7 @@ export class DevChannel extends HTMLElement {
     shadow.innerHTML = `
       <style>
         :host {
+          display: block;
           position: fixed;
           z-index: 999999;
           font-family: system-ui, -apple-system, sans-serif;
@@ -3043,11 +3058,17 @@ export class DevChannel extends HTMLElement {
       fetch(`${serverUrl}/component.js?t=${Date.now()}`)
         .then(r => r.text())
         .then(code => {
+          const wsUrl = this.serverUrl
           // Remove old element
           this.remove()
-          // Eval new code and create fresh widget
+          // Eval new code - this registers a new DevChannel with auto-generated tag
           eval(code)
-          const newWidget = document.createElement('tosijs-dev')
+          // Use the NEW DevChannel class (attached to window by the eval'd code)
+          const NewDevChannel = (window as any).DevChannel
+          const creator = NewDevChannel.elementCreator()
+          const newWidget = creator()
+          newWidget.setAttribute('server', wsUrl)
+          newWidget.setAttribute('data-version', NewDevChannel.VERSION || VERSION)
           document.body.appendChild(newWidget)
         })
         .catch(err => {
@@ -3876,21 +3897,45 @@ export class DevChannel extends HTMLElement {
   }
 }
 
-// Register the custom element
-// Note: tosijs auto-renames if already registered, so no guard needed
-customElements.define('tosijs-dev', DevChannel)
+// Register the custom element, handling re-registration with new tag names
+function registerDevChannel() {
+  // Try to register with preferred tag name, fall back to numbered versions
+  let tagToUse = 'tosijs-dev'
+  
+  if (customElements.get(tagToUse)) {
+    // Already registered - generate a new tag name
+    registrationCount++
+    tagToUse = `tosijs-dev-${registrationCount}`
+    
+    // Keep trying until we find an unused tag
+    while (customElements.get(tagToUse)) {
+      registrationCount++
+      tagToUse = `tosijs-dev-${registrationCount}`
+    }
+    
+    console.log(`[tosijs-dev] Re-registering as ${tagToUse}`)
+  }
+  
+  customElements.define(tagToUse, DevChannel)
+  currentTagName = tagToUse
+}
+
+registerDevChannel()
 
 // Export for bookmarklet injection
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
-  if (document.querySelector('tosijs-dev')) {
+  // Check for existing widget using the current tag name
+  if (document.querySelector(currentTagName)) {
     console.log('[tosijs-dev] Already injected')
     return
   }
   
-  const el = document.createElement('tosijs-dev')
+  // Use the element creator to get the correct tag
+  const el = DevChannel.elementCreator()()
   el.setAttribute('server', serverUrl)
+  el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log('[tosijs-dev] Injected')
+  console.log('[tosijs-dev] Injected as', currentTagName)
 }
 
 // Attach to window for console access
