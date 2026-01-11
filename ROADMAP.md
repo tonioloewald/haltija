@@ -419,6 +419,51 @@ The holy grail - AI that can:
 - Automatic UX suggestions based on interaction patterns
 - Heatmap generation from event data
 
+### Phase 9.5: Extensible Docs System ✅
+
+**Problem:** Agents need project-specific knowledge (style guides, API docs, testing conventions) but built-in docs are one-size-fits-all.
+
+**Solution:** Pluggable docs directory with discovery endpoint
+
+**Endpoints:**
+- `GET /docs/list` - Discover all available docs (built-in + custom)
+- `GET /docs/:name` - Fetch specific doc by name (e.g., `/docs/ux-crimes`)
+
+**CLI flag:**
+```bash
+npx haltija --docs-dir ./my-docs
+```
+
+**Built-in docs:**
+- `ux-crimes` - The Haltija Criminal Code (35 detectable UX anti-patterns)
+
+**Custom docs:**
+- Add any `.md` files to your docs directory
+- Description auto-extracted from first heading
+- Custom docs can override built-in docs (same filename)
+- Agents discover available docs via `/docs/list`
+
+**Use cases:**
+- Project style guides
+- API reference docs
+- Testing conventions
+- Business rules
+- Accessibility requirements
+
+**Response format:**
+```json
+{
+  "docs": [
+    {"name": "style-guide", "description": "Project Style Guide", "source": "custom"},
+    {"name": "ux-crimes", "description": "The Haltija Criminal Code", "source": "builtin"}
+  ],
+  "customDocsDir": "/path/to/docs",
+  "hint": "Use GET /docs/:name to fetch a specific doc"
+}
+```
+
+**Headers:** `X-Doc-Source: custom|builtin` indicates doc origin.
+
 ## Planned
 
 ### Phase 10: Haltija - Native App Shell (Electron/Tauri)

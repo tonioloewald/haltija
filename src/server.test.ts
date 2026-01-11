@@ -7,8 +7,11 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
+import { mkdirSync, writeFileSync, rmSync } from 'fs'
+import { join } from 'path'
 
 const PORT = 8701 // Use different port for tests
+const CUSTOM_DOCS_PORT = 8702 // Port for custom docs test
 const BASE_URL = `http://localhost:${PORT}`
 
 let serverProcess: Subprocess | null = null
@@ -107,6 +110,52 @@ describe('tosijs-dev server', () => {
       expect(api).toContain('/inspect Response')
       expect(api).toContain('/tree Options')
       expect(api).toContain('Mutation Batch')
+    })
+  })
+  
+  describe('GET /docs/list', () => {
+    it('returns list of available docs', async () => {
+      const res = await fetch(`${BASE_URL}/docs/list`)
+      expect(res.ok).toBe(true)
+      
+      const data = await res.json()
+      expect(data).toHaveProperty('docs')
+      expect(Array.isArray(data.docs)).toBe(true)
+      expect(data.docs.length).toBeGreaterThan(0)
+      
+      // Should include built-in ux-crimes doc
+      const uxCrimes = data.docs.find((d: any) => d.name === 'ux-crimes')
+      expect(uxCrimes).toBeDefined()
+      expect(uxCrimes.source).toBe('builtin')
+      expect(uxCrimes.description).toContain('UX')
+    })
+    
+    it('includes hint for fetching docs', async () => {
+      const res = await fetch(`${BASE_URL}/docs/list`)
+      const data = await res.json()
+      expect(data.hint).toContain('/docs/:name')
+    })
+  })
+  
+  describe('GET /docs/:name', () => {
+    it('returns built-in doc by name', async () => {
+      const res = await fetch(`${BASE_URL}/docs/ux-crimes`)
+      expect(res.ok).toBe(true)
+      expect(res.headers.get('content-type')).toContain('text/markdown')
+      expect(res.headers.get('x-doc-source')).toBe('builtin')
+      
+      const content = await res.text()
+      expect(content).toContain('Haltija Criminal Code')
+      expect(content).toContain('Class 1')
+    })
+    
+    it('returns 404 for unknown doc', async () => {
+      const res = await fetch(`${BASE_URL}/docs/nonexistent-doc`)
+      expect(res.status).toBe(404)
+      
+      const data = await res.json()
+      expect(data.error).toContain('not found')
+      expect(data.available).toContain('ux-crimes')
     })
   })
   
@@ -270,5 +319,106 @@ describe('tosijs-dev WebSocket', () => {
     
     expect(received.length).toBeGreaterThan(0)
     expect(received[0].channel).toBe('dom')
+  })
+})
+
+describe('tosijs-dev custom docs', () => {
+  const CUSTOM_DOCS_DIR = join(import.meta.dir, '../.test-docs')
+  const CUSTOM_URL = `http://localhost:${CUSTOM_DOCS_PORT}`
+  let customServer: Subprocess | null = null
+  
+  beforeAll(async () => {
+    // Create temp docs directory with test files
+    mkdirSync(CUSTOM_DOCS_DIR, { recursive: true })
+    writeFileSync(
+      join(CUSTOM_DOCS_DIR, 'style-guide.md'),
+      '# Project Style Guide\n\nUse tabs, not spaces.'
+    )
+    writeFileSync(
+      join(CUSTOM_DOCS_DIR, 'api-reference.md'),
+      '# API Reference\n\nOur custom API docs.'
+    )
+    // Override built-in doc
+    writeFileSync(
+      join(CUSTOM_DOCS_DIR, 'ux-crimes.md'),
+      '# Custom UX Crimes\n\nOur project-specific UX rules.'
+    )
+    
+    // Start server with custom docs dir
+    customServer = spawn({
+      cmd: ['bun', 'run', 'bin/server.ts'],
+      cwd: import.meta.dir + '/..',
+      env: { 
+        ...process.env, 
+        DEV_CHANNEL_PORT: String(CUSTOM_DOCS_PORT),
+        DEV_CHANNEL_DOCS_DIR: CUSTOM_DOCS_DIR
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    
+    // Wait for server to be ready
+    let ready = false
+    for (let i = 0; i < 20 && !ready; i++) {
+      try {
+        const res = await fetch(`${CUSTOM_URL}/status`)
+        if (res.ok) ready = true
+      } catch {
+        await new Promise(r => setTimeout(r, 100))
+      }
+    }
+    
+    if (!ready) {
+      throw new Error('Custom docs server failed to start')
+    }
+  })
+  
+  afterAll(() => {
+    customServer?.kill()
+    // Clean up temp docs
+    try {
+      rmSync(CUSTOM_DOCS_DIR, { recursive: true })
+    } catch {
+      // Ignore cleanup errors
+    }
+  })
+  
+  it('lists custom docs alongside built-in', async () => {
+    const res = await fetch(`${CUSTOM_URL}/docs/list`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.customDocsDir).toBe(CUSTOM_DOCS_DIR)
+    
+    // Should have style-guide and api-reference as custom
+    const styleGuide = data.docs.find((d: any) => d.name === 'style-guide')
+    expect(styleGuide).toBeDefined()
+    expect(styleGuide.source).toBe('custom')
+    expect(styleGuide.description).toContain('Style Guide')
+    
+    const apiRef = data.docs.find((d: any) => d.name === 'api-reference')
+    expect(apiRef).toBeDefined()
+    expect(apiRef.source).toBe('custom')
+  })
+  
+  it('serves custom doc content', async () => {
+    const res = await fetch(`${CUSTOM_URL}/docs/style-guide`)
+    expect(res.ok).toBe(true)
+    expect(res.headers.get('x-doc-source')).toBe('custom')
+    
+    const content = await res.text()
+    expect(content).toContain('Use tabs, not spaces')
+  })
+  
+  it('custom docs override built-in docs', async () => {
+    const res = await fetch(`${CUSTOM_URL}/docs/ux-crimes`)
+    expect(res.ok).toBe(true)
+    expect(res.headers.get('x-doc-source')).toBe('custom')
+    
+    const content = await res.text()
+    expect(content).toContain('Custom UX Crimes')
+    expect(content).toContain('project-specific')
+    // Should NOT contain the built-in content
+    expect(content).not.toContain('Haltija Criminal Code')
   })
 })
