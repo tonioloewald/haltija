@@ -1101,8 +1101,8 @@ export class DevChannel extends HTMLElement {
     })()
     
     await test('status indicator', () => {
-      const status = el.shadowRoot?.querySelector('.status')
-      if (!status) throw new Error('No status')
+      const status = el.shadowRoot?.querySelector('.status-ring')
+      if (!status) throw new Error('No status ring')
     })()
     
     await test('control buttons', () => {
@@ -1250,17 +1250,32 @@ export class DevChannel extends HTMLElement {
           user-select: none;
         }
         
-        .status {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #666;
+        .logo-wrapper {
+          position: relative;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         
-        .status.connected { background: #22c55e; }
-        .status.connecting { background: #eab308; animation: pulse 1s infinite; }
-        .status.paused { background: #f97316; }
-        .status.disconnected { background: #ef4444; }
+        .status-ring {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          border: 2px solid #666;
+        }
+        
+        .status-ring.connected { border-color: #22c55e; }
+        .status-ring.connecting { border-color: #eab308; animation: pulse 1s infinite; }
+        .status-ring.paused { border-color: #f97316; }
+        .status-ring.disconnected { border-color: #ef4444; }
+        
+        .logo {
+          font-size: 14px;
+          line-height: 1;
+          z-index: 1;
+        }
         
         @keyframes pulse {
           0%, 100% { opacity: 1; }
@@ -1633,8 +1648,11 @@ export class DevChannel extends HTMLElement {
       
       <div class="widget">
         <div class="header">
-          <div class="status"></div>
-          <div class="title">🧝 ${PRODUCT_NAME}</div>
+          <div class="logo-wrapper">
+            <div class="status-ring"></div>
+            <span class="logo">🧝</span>
+          </div>
+          <div class="title">${PRODUCT_NAME}</div>
           <div class="indicators"></div>
           <div class="controls">
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">⏺</button>
@@ -1762,10 +1780,10 @@ export class DevChannel extends HTMLElement {
   private updateUI() {
     const shadow = this.shadowRoot!
     
-    // Update status indicator
-    const status = shadow.querySelector('.status')
-    if (status) {
-      status.className = `status ${this.state}`
+    // Update status indicator (ring around logo)
+    const statusRing = shadow.querySelector('.status-ring')
+    if (statusRing) {
+      statusRing.className = `status-ring ${this.state}`
     }
     
     // Update pause button
