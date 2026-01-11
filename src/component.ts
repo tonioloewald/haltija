@@ -43,7 +43,7 @@ import type {
 } from './types'
 
 // Component version - update when making changes
-export const VERSION = '0.1.6'
+export const VERSION = '0.1.7'
 
 // Server session ID - injected by server when serving component.js
 // This allows the server to detect stale widgets and tell them to reload
@@ -965,6 +965,10 @@ export class DevChannel extends HTMLElement {
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
   
+  // Log viewer state
+  private logPanelOpen = false
+  private logAutoScroll = true
+  
   // Pending requests waiting for response
   private pending = new Map<string, { resolve: (r: DevResponse) => void, reject: (e: Error) => void }>()
   
@@ -1325,6 +1329,158 @@ export class DevChannel extends HTMLElement {
           color: #888;
           margin-top: 4px;
         }
+        
+        /* Log Viewer Panel */
+        .log-panel {
+          display: none;
+          border-top: 1px solid #333;
+          max-height: 300px;
+          overflow: hidden;
+          flex-direction: column;
+        }
+        
+        .log-panel.open {
+          display: flex;
+        }
+        
+        .log-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: #16213e;
+          border-bottom: 1px solid #333;
+          flex-shrink: 0;
+        }
+        
+        .log-title {
+          flex: 1;
+          font-size: 10px;
+          font-weight: 500;
+          color: #888;
+        }
+        
+        .log-filter {
+          font-size: 9px;
+          padding: 2px 6px;
+          background: #2a2a4a;
+          border: 1px solid #444;
+          border-radius: 4px;
+          color: #aaa;
+          cursor: pointer;
+        }
+        
+        .log-filter:hover {
+          background: #3a3a5a;
+          border-color: #666;
+        }
+        
+        .log-scroll-btn {
+          font-size: 10px;
+          padding: 2px 6px;
+          background: transparent;
+          border: 1px solid #444;
+          border-radius: 4px;
+          color: #666;
+          cursor: pointer;
+        }
+        
+        .log-scroll-btn.active {
+          background: #2a4a2a;
+          border-color: #22c55e;
+          color: #22c55e;
+        }
+        
+        .log-scroll-btn:hover {
+          border-color: #666;
+          color: #888;
+        }
+        
+        .log-content {
+          flex: 1;
+          overflow-y: auto;
+          overflow-x: hidden;
+          font-family: ui-monospace, monospace;
+          font-size: 10px;
+        }
+        
+        .log-empty {
+          padding: 20px;
+          text-align: center;
+          color: #555;
+          font-style: italic;
+        }
+        
+        .log-entry {
+          display: flex;
+          gap: 8px;
+          padding: 4px 12px;
+          border-bottom: 1px solid #222;
+          cursor: pointer;
+        }
+        
+        .log-entry:hover {
+          background: #222;
+        }
+        
+        .log-entry.expanded {
+          flex-direction: column;
+          background: #1e1e3e;
+        }
+        
+        .log-entry-main {
+          display: flex;
+          gap: 8px;
+          align-items: baseline;
+        }
+        
+        .log-time {
+          color: #555;
+          flex-shrink: 0;
+          width: 65px;
+        }
+        
+        .log-cat {
+          font-size: 8px;
+          padding: 1px 4px;
+          border-radius: 3px;
+          flex-shrink: 0;
+          text-transform: uppercase;
+          font-weight: 600;
+        }
+        
+        .log-cat.interaction { background: #3b82f6; color: white; }
+        .log-cat.navigation { background: #8b5cf6; color: white; }
+        .log-cat.input { background: #22c55e; color: white; }
+        .log-cat.hover { background: #f59e0b; color: black; }
+        .log-cat.scroll { background: #6b7280; color: white; }
+        .log-cat.focus { background: #06b6d4; color: white; }
+        .log-cat.mutation { background: #ec4899; color: white; }
+        .log-cat.console { background: #ef4444; color: white; }
+        
+        .log-type {
+          color: #aaa;
+          flex-shrink: 0;
+        }
+        
+        .log-target {
+          color: #6366f1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          flex: 1;
+        }
+        
+        .log-payload {
+          margin-top: 6px;
+          padding: 6px 8px;
+          background: #0a0a1a;
+          border-radius: 4px;
+          color: #888;
+          white-space: pre-wrap;
+          word-break: break-all;
+          font-size: 9px;
+        }
       </style>
       
       <div class="widget">
@@ -1333,6 +1489,7 @@ export class DevChannel extends HTMLElement {
           <div class="title">🦉 tosijs-dev</div>
           <div class="indicators"></div>
           <div class="controls">
+            <button class="btn" data-action="logs" title="Event Log">📋</button>
             <button class="btn" data-action="pause" title="Pause/Resume">⏸</button>
             <button class="btn" data-action="minimize" title="Minimize (⌥Tab)">─</button>
             <button class="btn danger" data-action="kill" title="Close">✕</button>
@@ -1343,6 +1500,24 @@ export class DevChannel extends HTMLElement {
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">🦉 bookmark</a>
+        </div>
+        <div class="log-panel">
+          <div class="log-header">
+            <span class="log-title">Events</span>
+            <select class="log-filter">
+              <option value="all">All</option>
+              <option value="interaction">Clicks</option>
+              <option value="input">Input</option>
+              <option value="navigation">Nav</option>
+              <option value="hover">Hover</option>
+              <option value="focus">Focus</option>
+            </select>
+            <button class="log-scroll-btn active" title="Auto-scroll">⬇</button>
+            <button class="btn" data-action="clear-logs" title="Clear">🗑</button>
+          </div>
+          <div class="log-content">
+            <div class="log-empty">No events yet. Events will appear when semantic event watching is active.</div>
+          </div>
         </div>
       </div>
     `
@@ -1360,8 +1535,49 @@ export class DevChannel extends HTMLElement {
         if (action === 'pause') this.togglePause()
         if (action === 'minimize') this.toggleMinimize()
         if (action === 'kill') this.kill()
+        if (action === 'logs') this.toggleLogPanel()
+        if (action === 'clear-logs') this.clearLogPanel()
       })
     })
+    
+    // Log panel controls
+    const logFilter = shadow.querySelector('.log-filter') as HTMLSelectElement
+    if (logFilter) {
+      logFilter.addEventListener('change', () => this.updateLogPanel())
+    }
+    
+    const logScrollBtn = shadow.querySelector('.log-scroll-btn')
+    if (logScrollBtn) {
+      logScrollBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.logAutoScroll = !this.logAutoScroll
+        logScrollBtn.classList.toggle('active', this.logAutoScroll)
+        if (this.logAutoScroll) {
+          this.scrollLogToBottom()
+        }
+      })
+    }
+    
+    // Detect manual scroll to pause auto-scroll
+    const logContent = shadow.querySelector('.log-content')
+    if (logContent) {
+      logContent.addEventListener('scroll', () => {
+        const el = logContent as HTMLElement
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20
+        if (!atBottom && this.logAutoScroll) {
+          this.logAutoScroll = false
+          shadow.querySelector('.log-scroll-btn')?.classList.remove('active')
+        }
+      })
+      
+      // Click to expand/collapse entries
+      logContent.addEventListener('click', (e) => {
+        const entry = (e.target as HTMLElement).closest('.log-entry')
+        if (entry) {
+          entry.classList.toggle('expanded')
+        }
+      })
+    }
     
     // Bookmark link - show "🦉 tosijs-dev" on hover so drag gets useful name
     const bookmarkLink = shadow.querySelector('.bookmark-link') as HTMLAnchorElement
@@ -1409,6 +1625,103 @@ export class DevChannel extends HTMLElement {
       indicators.innerHTML = html
     }
     
+    // Update log panel button state
+    const logBtn = shadow.querySelector('[data-action="logs"]')
+    if (logBtn) {
+      logBtn.classList.toggle('active', this.logPanelOpen)
+    }
+  }
+  
+  // ============================================
+  // Log Panel Methods
+  // ============================================
+  
+  private toggleLogPanel() {
+    this.logPanelOpen = !this.logPanelOpen
+    const panel = this.shadowRoot?.querySelector('.log-panel')
+    if (panel) {
+      panel.classList.toggle('open', this.logPanelOpen)
+      if (this.logPanelOpen) {
+        this.updateLogPanel()
+        if (this.logAutoScroll) {
+          this.scrollLogToBottom()
+        }
+      }
+    }
+    this.updateUI()
+  }
+  
+  private clearLogPanel() {
+    this.semanticEventBuffer.length = 0
+    this.updateLogPanel()
+  }
+  
+  private scrollLogToBottom() {
+    const content = this.shadowRoot?.querySelector('.log-content')
+    if (content) {
+      content.scrollTop = content.scrollHeight
+    }
+  }
+  
+  private updateLogPanel() {
+    const content = this.shadowRoot?.querySelector('.log-content')
+    if (!content) return
+    
+    const filter = (this.shadowRoot?.querySelector('.log-filter') as HTMLSelectElement)?.value || 'all'
+    const events = filter === 'all' 
+      ? this.semanticEventBuffer 
+      : this.semanticEventBuffer.filter(e => e.category === filter)
+    
+    if (events.length === 0) {
+      content.innerHTML = `<div class="log-empty">${
+        this.semanticEventsEnabled 
+          ? 'No events yet. Interact with the page to see events.' 
+          : 'Event watching not active. Use POST /events/watch to start.'
+      }</div>`
+      return
+    }
+    
+    content.innerHTML = events.map(event => {
+      const time = new Date(event.timestamp).toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        fractionalSecondDigits: 1
+      } as Intl.DateTimeFormatOptions)
+      
+      const target = event.target 
+        ? (event.target.label || event.target.text || event.target.selector || event.target.tag)
+        : ''
+      
+      const payloadStr = Object.keys(event.payload).length > 0 
+        ? JSON.stringify(event.payload, null, 2) 
+        : ''
+      
+      return `
+        <div class="log-entry" data-ts="${event.timestamp}">
+          <div class="log-entry-main">
+            <span class="log-time">${time}</span>
+            <span class="log-cat ${event.category}">${event.category.slice(0, 3)}</span>
+            <span class="log-type">${event.type}</span>
+            <span class="log-target" title="${target}">${target}</span>
+          </div>
+          ${payloadStr ? `<div class="log-payload">${this.escapeHtml(payloadStr)}</div>` : ''}
+        </div>
+      `
+    }).join('')
+    
+    if (this.logAutoScroll) {
+      this.scrollLogToBottom()
+    }
+  }
+  
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
   }
   
   private setupDrag(handle: Element) {
@@ -2351,6 +2664,11 @@ export class DevChannel extends HTMLElement {
     this.semanticEventBuffer.push(event)
     if (this.semanticEventBuffer.length > this.SEMANTIC_BUFFER_MAX) {
       this.semanticEventBuffer.shift()
+    }
+    
+    // Update log panel if open
+    if (this.logPanelOpen) {
+      this.updateLogPanel()
     }
     
     // Send to server
