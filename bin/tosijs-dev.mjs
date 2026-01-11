@@ -131,11 +131,11 @@ const startHeadlessBrowser = async (port) => {
     
     // Navigate to URL if specified
     if (headlessUrl) {
-      console.log(\`[tosijs-dev] Opening \${headlessUrl}...\`)
+      console.log(`[tosijs-dev] Opening ${headlessUrl}...`)
       await page.goto(headlessUrl, { waitUntil: 'domcontentloaded' })
     } else {
       // Navigate to test page by default
-      await page.goto(\`http://localhost:\${port}/\`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' })
     }
     
     console.log('[tosijs-dev] Headless browser ready. Widget auto-injected.')
