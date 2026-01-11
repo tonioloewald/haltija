@@ -1013,6 +1013,13 @@ export class DevChannel extends HTMLElement {
     debug: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll', 'mutation', 'console'],
   }
   
+  // Noise reduction metrics - count raw DOM events vs emitted semantic events
+  private rawEventCounts: Record<string, number> = {}
+  private semanticEventCounts: Record<SemanticEventCategory, number> = {
+    interaction: 0, navigation: 0, input: 0, hover: 0, scroll: 0, mutation: 0, console: 0, focus: 0
+  }
+  private statsStartTime = 0
+  
   // Typing aggregation state
   private typingState: {
     field: Element | null
@@ -2924,6 +2931,7 @@ export class DevChannel extends HTMLElement {
     
     // Click handler
     this.semanticHandlers.click = (e: MouseEvent) => {
+      this.countRawEvent('click')
       const target = e.target as Element
       if (!target || this.contains(target)) return // Ignore widget clicks
       
@@ -2949,6 +2957,7 @@ export class DevChannel extends HTMLElement {
     
     // Input handler - aggregates typing (includes contenteditable)
     this.semanticHandlers.input = (e: Event) => {
+      this.countRawEvent('input')
       const target = e.target as HTMLElement
       if (!target || this.contains(target)) return
       
@@ -2987,6 +2996,7 @@ export class DevChannel extends HTMLElement {
     
     // Keydown handler - capture Enter for newlines and special keys
     this.semanticHandlers.keydown = (e: KeyboardEvent) => {
+      this.countRawEvent('keydown')
       const target = e.target as HTMLElement
       if (!target || this.contains(target)) return
       
@@ -3023,6 +3033,7 @@ export class DevChannel extends HTMLElement {
     
     // Change handler - for inputs that don't fire 'input' events (date, time, color, select, file)
     this.semanticHandlers.change = (e: Event) => {
+      this.countRawEvent('change')
       const target = e.target as HTMLInputElement | HTMLSelectElement
       if (!target || this.contains(target)) return
       
@@ -3091,6 +3102,7 @@ export class DevChannel extends HTMLElement {
     
     // Scroll handler - aggregates scroll events
     this.semanticHandlers.scroll = () => {
+      this.countRawEvent('scroll')
       const now = Date.now()
       
       if (this.scrollState.timeout) {
@@ -3106,6 +3118,7 @@ export class DevChannel extends HTMLElement {
     
     // Hover handlers - track element boundaries
     this.semanticHandlers.mouseover = (e: MouseEvent) => {
+      this.countRawEvent('mouseover')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3157,6 +3170,7 @@ export class DevChannel extends HTMLElement {
     
     // Focus handlers
     this.semanticHandlers.focus = (e: FocusEvent) => {
+      this.countRawEvent('focus')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3174,6 +3188,7 @@ export class DevChannel extends HTMLElement {
     }
     
     this.semanticHandlers.blur = (e: FocusEvent) => {
+      this.countRawEvent('blur')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3192,6 +3207,7 @@ export class DevChannel extends HTMLElement {
     
     // Form submit
     this.semanticHandlers.submit = (e: SubmitEvent) => {
+      this.countRawEvent('submit')
       const form = e.target as HTMLFormElement
       if (!form || this.contains(form)) return
       
@@ -3212,6 +3228,7 @@ export class DevChannel extends HTMLElement {
     
     // Form reset
     this.semanticHandlers.reset = (e: Event) => {
+      this.countRawEvent('reset')
       const form = e.target as HTMLFormElement
       if (!form || this.contains(form)) return
       
@@ -3229,6 +3246,7 @@ export class DevChannel extends HTMLElement {
     
     // Form invalid (validation failed on a field)
     this.semanticHandlers.invalid = (e: Event) => {
+      this.countRawEvent('invalid')
       const target = e.target as HTMLInputElement
       if (!target || this.contains(target)) return
       
@@ -3258,6 +3276,7 @@ export class DevChannel extends HTMLElement {
     
     // Navigation (popstate)
     this.semanticHandlers.popstate = () => {
+      this.countRawEvent('popstate')
       this.emitSemanticEvent({
         type: 'navigation:navigate',
         timestamp: Date.now(),
@@ -3280,6 +3299,7 @@ export class DevChannel extends HTMLElement {
     
     // Mousedown - potential drag start
     this.semanticHandlers.mousedown = (e: MouseEvent) => {
+      this.countRawEvent('mousedown')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3293,6 +3313,7 @@ export class DevChannel extends HTMLElement {
     
     // Mouseup - check if it was a drag
     this.semanticHandlers.mouseup = (e: MouseEvent) => {
+      this.countRawEvent('mouseup')
       if (!dragState) return
       
       const dx = e.clientX - dragState.startX
@@ -3331,6 +3352,7 @@ export class DevChannel extends HTMLElement {
     
     // Clipboard handlers - cut/copy/paste
     this.semanticHandlers.cut = (e: ClipboardEvent) => {
+      this.countRawEvent('cut')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3350,6 +3372,7 @@ export class DevChannel extends HTMLElement {
     }
     
     this.semanticHandlers.copy = (e: ClipboardEvent) => {
+      this.countRawEvent('copy')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3369,6 +3392,7 @@ export class DevChannel extends HTMLElement {
     }
     
     this.semanticHandlers.paste = (e: ClipboardEvent) => {
+      this.countRawEvent('paste')
       const target = e.target as Element
       if (!target || this.contains(target)) return
       
@@ -3389,6 +3413,7 @@ export class DevChannel extends HTMLElement {
     // Selection change handler - capture text selections
     let selectionTimeout: ReturnType<typeof setTimeout> | null = null
     this.semanticHandlers.selectionchange = () => {
+      this.countRawEvent('selectionchange')
       // Debounce selection events
       if (selectionTimeout) clearTimeout(selectionTimeout)
       selectionTimeout = setTimeout(() => {
@@ -3635,7 +3660,15 @@ export class DevChannel extends HTMLElement {
     }
   }
   
+  // Count a raw DOM event for noise metrics
+  private countRawEvent(eventType: string) {
+    this.rawEventCounts[eventType] = (this.rawEventCounts[eventType] || 0) + 1
+  }
+  
   private emitSemanticEvent(event: SemanticEvent) {
+    // Count semantic event for metrics
+    this.semanticEventCounts[event.category]++
+    
     // Check if this event category is subscribed
     if (this.semanticSubscription) {
       const categories = this.semanticSubscription.categories 
@@ -3811,6 +3844,14 @@ export class DevChannel extends HTMLElement {
     if (action === 'start' || action === 'watch') {
       // Accept subscription options
       this.semanticSubscription = payload || null
+      
+      // Reset noise reduction stats
+      this.rawEventCounts = {}
+      this.semanticEventCounts = {
+        interaction: 0, navigation: 0, input: 0, hover: 0, scroll: 0, mutation: 0, console: 0, focus: 0
+      }
+      this.statsStartTime = Date.now()
+      
       this.startSemanticEvents()
       
       const categories = this.semanticSubscription?.categories 
@@ -3846,6 +3887,32 @@ export class DevChannel extends HTMLElement {
         enabled: this.semanticEventsEnabled,
         bufferSize: this.semanticEventBuffer.length,
         subscription: this.semanticSubscription,
+      })
+    } else if (action === 'stats') {
+      // Calculate noise reduction metrics
+      const totalRaw = Object.values(this.rawEventCounts).reduce((a, b) => a + b, 0)
+      const totalSemantic = Object.values(this.semanticEventCounts).reduce((a, b) => a + b, 0)
+      const duration = Date.now() - this.statsStartTime
+      
+      // Calculate what would be visible at each preset level
+      const byPreset: Record<string, { events: number; categories: string[] }> = {}
+      for (const [preset, categories] of Object.entries(this.SEMANTIC_PRESETS)) {
+        const count = categories.reduce((sum, cat) => sum + (this.semanticEventCounts[cat] || 0), 0)
+        byPreset[preset] = { events: count, categories }
+      }
+      
+      this.respond(msg.id, true, {
+        duration,
+        raw: {
+          total: totalRaw,
+          byType: this.rawEventCounts,
+        },
+        semantic: {
+          total: totalSemantic,
+          byCategory: this.semanticEventCounts,
+        },
+        byPreset,
+        noiseReduction: totalRaw > 0 ? Math.round((1 - totalSemantic / totalRaw) * 100) : 0,
       })
     }
   }

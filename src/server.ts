@@ -63,19 +63,21 @@ const USE_HTTP = WANT_HTTP
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 
-// Load component.js from dist and inject server session ID
-let componentJs = ''
-let componentJsWithSession = ''
-try {
-  const __dirname = dirname(fileURLToPath(import.meta.url))
-  componentJs = readFileSync(join(__dirname, '../dist/component.js'), 'utf-8')
-  // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
-  componentJsWithSession = componentJs.replace(
-    /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
-    `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
-  )
-} catch {
-  console.warn(`${LOG_PREFIX} Could not load component.js from dist/`)
+// Component.js path for dynamic loading
+const componentJsPath = join(__dirname, '../dist/component.js')
+
+// Load component.js fresh on each request to always serve latest build
+function getComponentJs(): string {
+  try {
+    const componentJs = readFileSync(componentJsPath, 'utf-8')
+    // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
+    return componentJs.replace(
+      /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
+      `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
+    )
+  } catch {
+    return ''
+  }
 }
 
 // Connected browser clients (WebSocket -> browserId)
@@ -305,13 +307,14 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   if (path === '/component.js') {
-    if (!componentJsWithSession) {
+    const componentJs = getComponentJs()
+    if (!componentJs) {
       return new Response('// Component not built. Run: bun run build', { 
         status: 503,
         headers: { ...headers, 'Content-Type': 'application/javascript' } 
       })
     }
-    return new Response(componentJsWithSession, { 
+    return new Response(componentJs, { 
       headers: { ...headers, 'Content-Type': 'application/javascript' } 
     })
   }
@@ -1587,6 +1590,12 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // Get semantic events status
   if (path === '/events/status' && req.method === 'GET') {
     const response = await requestFromBrowser('semantic', 'status', {})
+    return Response.json(response, { headers })
+  }
+  
+  // Get noise reduction statistics
+  if (path === '/events/stats' && req.method === 'GET') {
+    const response = await requestFromBrowser('semantic', 'stats', {})
     return Response.json(response, { headers })
   }
   
