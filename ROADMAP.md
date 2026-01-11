@@ -56,7 +56,9 @@
 - **Accessibility audits**: WCAG compliance, contrast ratios, focus order, ARIA
 
 #### Smart Input Behaviors
-- **OTP/PIN fields**: Detect 6-digit inputs, type with realistic pauses
+- **Segmented inputs**: Detect split fields (OTP, credit card 4-4-4-4, SSN, phone)
+  - Auto-tab between segments with natural pause
+  - Type at human speed across the group
 - **Password fields**: Occasional show/hide toggle, variable timing
 - **Restricted inputs**: Respect maxlength, input masks, validation
 - **Form field detection**: Know when it's email vs phone vs credit card
