@@ -218,9 +218,7 @@ ai-qa:
 | "Timeout after 30s" | "Spinner never dismissed - loading state stuck, check network tab" |
 | "Expected 'Dashboard' got 'Login'" | "Auth cookie not set, CORS issue with new API domain" |
 
-## In Progress
-
-### Phase 6: Smart Event Streams (THE BIG ONE)
+### Phase 6: Smart Event Streams ✅
 
 **Problem**: Current approach is "log everything" which is noisy and useless.
 

@@ -229,6 +229,194 @@ export interface ActionSequence {
 }
 
 // ============================================
+// Semantic Events (Phase 6: Smart Event Streams)
+// ============================================
+
+/**
+ * Event categories for subscription filtering.
+ * Agents subscribe to what they need, ignore the rest.
+ */
+export type SemanticEventCategory = 
+  | 'interaction'   // clicks, submits, form changes
+  | 'navigation'    // page loads, hash changes, history
+  | 'input'         // aggregated typing (not individual keystrokes)
+  | 'hover'         // boundary crossings + dwell, not mousemove spam
+  | 'scroll'        // meaningful stops, not every pixel
+  | 'mutation'      // DOM changes with payloads
+  | 'console'       // errors always, logs optional
+  | 'focus'         // focus/blur on interactive elements
+
+/**
+ * Filter presets for common use cases.
+ */
+export type SemanticEventPreset = 
+  | 'minimal'       // clicks, submits, navigation only
+  | 'interactive'   // + hovers on buttons/links, form changes
+  | 'detailed'      // + all element boundary crossings
+  | 'debug'         // everything (rarely needed)
+
+/**
+ * A semantic event - aggregated, meaningful, with payload.
+ * The "textual glance" applied to time.
+ */
+export interface SemanticEvent {
+  /** Event type in format category:action */
+  type: string
+  /** When this event occurred (or completed, for aggregated events) */
+  timestamp: number
+  /** Category for filtering */
+  category: SemanticEventCategory
+  /** Target element info (when applicable) */
+  target?: {
+    selector: string
+    tag: string
+    id?: string
+    text?: string         // Truncated innerText
+    role?: string         // ARIA role
+    label?: string        // aria-label or associated label
+  }
+  /** Event-specific payload - always included, never requires re-query */
+  payload: Record<string, any>
+}
+
+// Specific semantic event types
+
+export interface TypedEvent extends SemanticEvent {
+  type: 'input:typed'
+  payload: {
+    text: string          // The aggregated text that was typed
+    field: string         // Selector of the input
+    fieldType?: string    // input type (text, email, password, etc.)
+    duration: number      // How long the typing took
+    finalValue: string    // Current value of the field
+  }
+}
+
+export interface ClickedEvent extends SemanticEvent {
+  type: 'interaction:click'
+  payload: {
+    text?: string         // Button/link text
+    href?: string         // For links
+    disabled?: boolean    // Was it disabled?
+    position: { x: number, y: number }
+  }
+}
+
+export interface SubmittedEvent extends SemanticEvent {
+  type: 'interaction:submit'
+  payload: {
+    formId?: string
+    formAction?: string
+    fieldCount: number
+    method?: string
+  }
+}
+
+export interface NavigatedEvent extends SemanticEvent {
+  type: 'navigation:navigate'
+  payload: {
+    from: string
+    to: string
+    trigger: 'click' | 'submit' | 'script' | 'popstate' | 'initial'
+  }
+}
+
+export interface ScrolledEvent extends SemanticEvent {
+  type: 'scroll:stop'
+  payload: {
+    to: string            // Selector of element scrolled to (or "top"/"bottom")
+    direction: 'up' | 'down'
+    distance: number      // Pixels scrolled
+    duration: number      // How long the scroll took
+  }
+}
+
+export interface HoveredEvent extends SemanticEvent {
+  type: 'hover:dwell'
+  payload: {
+    duration: number      // How long they hovered
+    element: string       // What they hovered on
+    interactive: boolean  // Is it a button/link/input?
+  }
+}
+
+export interface EnteredEvent extends SemanticEvent {
+  type: 'hover:enter'
+  payload: {
+    from?: string         // Element they came from
+  }
+}
+
+export interface LeftEvent extends SemanticEvent {
+  type: 'hover:leave'
+  payload: {
+    to?: string           // Element they went to
+    dwellTime: number     // How long they were on this element
+  }
+}
+
+export interface MutatedEvent extends SemanticEvent {
+  type: 'mutation:change'
+  payload: {
+    changeType: 'added' | 'removed' | 'text' | 'attribute'
+    element: string       // Selector
+    text?: string         // New text content (for text changes)
+    attribute?: string    // Which attribute changed
+    oldValue?: string     // Previous value
+    newValue?: string     // New value
+  }
+}
+
+export interface FocusedEvent extends SemanticEvent {
+  type: 'focus:in' | 'focus:out'
+  payload: {
+    fieldType?: string
+    hasValue: boolean
+    required?: boolean
+  }
+}
+
+export interface ConsoleEvent extends SemanticEvent {
+  type: 'console:error' | 'console:warn' | 'console:log'
+  payload: {
+    message: string
+    stack?: string
+    count: number         // If same message repeated
+  }
+}
+
+/**
+ * Subscription request for semantic events.
+ */
+export interface SemanticEventSubscription {
+  /** Use a preset, or specify categories */
+  preset?: SemanticEventPreset
+  /** Specific categories to subscribe to (overrides preset) */
+  categories?: SemanticEventCategory[]
+  /** Only events on elements matching this selector */
+  selector?: string
+  /** Debounce threshold for typing aggregation (ms, default: 500) */
+  typingDebounce?: number
+  /** Dwell threshold for hover events (ms, default: 300) */
+  dwellThreshold?: number
+  /** Scroll stop threshold (ms, default: 150) */
+  scrollDebounce?: number
+}
+
+/**
+ * The hindsight buffer - recent events with full payloads.
+ * Agent can ask "what just happened?" and get context.
+ */
+export interface HindsightBuffer {
+  /** Events in chronological order */
+  events: SemanticEvent[]
+  /** When the buffer started (oldest event) */
+  since: number
+  /** Maximum events retained */
+  maxSize: number
+}
+
+// ============================================
 // Console Capture
 // ============================================
 

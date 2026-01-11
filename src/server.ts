@@ -498,6 +498,15 @@ See the DOM tree:
 
 Test failures automatically capture snapshots. The snapshotId is included in test results.
 
+### Semantic Events (The Hindsight Buffer)
+- POST /events/watch    - Start watching semantic events
+- POST /events/unwatch  - Stop watching
+- GET  /events?since=N  - Get event buffer since timestamp
+- GET  /events/status   - Check if watching
+
+Events are aggregated at source: "user typed 'hello'" not 5 keystrokes.
+Categories: interaction, navigation, input, hover, scroll, mutation, focus, console.
+
 ## Tips
 
 1. Use /tree first to understand page structure before querying specific elements
@@ -1211,6 +1220,40 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // Get mutation watch status
   if (path === '/mutations/status' && req.method === 'GET') {
     const response = await requestFromBrowser('mutations', 'status', {})
+    return Response.json(response, { headers })
+  }
+  
+  // ============================================
+  // Semantic Events (Phase 6)
+  // ============================================
+  
+  // Start watching semantic events
+  if (path === '/events/watch' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    // Accept preset or categories
+    const response = await requestFromBrowser('semantic', 'watch', {
+      preset: body.preset,        // 'minimal', 'interactive', 'detailed', 'debug'
+      categories: body.categories, // or explicit array of categories
+    })
+    return Response.json(response, { headers })
+  }
+  
+  // Stop watching semantic events
+  if (path === '/events/unwatch' && req.method === 'POST') {
+    const response = await requestFromBrowser('semantic', 'unwatch', {})
+    return Response.json(response, { headers })
+  }
+  
+  // Get semantic event buffer (hindsight)
+  if (path === '/events' && req.method === 'GET') {
+    const since = parseInt(url.searchParams.get('since') || '0')
+    const response = await requestFromBrowser('semantic', 'get', { since })
+    return Response.json(response, { headers })
+  }
+  
+  // Get semantic events status
+  if (path === '/events/status' && req.method === 'GET') {
+    const response = await requestFromBrowser('semantic', 'status', {})
     return Response.json(response, { headers })
   }
   

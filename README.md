@@ -125,6 +125,7 @@ curl -X POST http://localhost:8700/highlight -d '{"selector":".error","label":"B
 
 **Observation**
 - `/mutations/watch` - Watch DOM changes with smart filtering
+- `/events/watch` - Semantic event stream (aggregated, not raw)
 - `/console` - Captured console output (logs, errors, warnings)
 - `/highlight` - Visual pointer for human collaboration
 
@@ -147,6 +148,40 @@ curl -X POST http://localhost:8700/mutations/watch -d '{"preset":"tailwind"}'
 ```
 
 See only the changes that matter, not framework internals or utility class churn.
+
+## Semantic Events (The Hindsight Buffer)
+
+Raw DOM events are noise. Semantic events are signal.
+
+```bash
+# Start watching with a preset
+curl -X POST http://localhost:8700/events/watch -d '{"preset":"interactive"}'
+
+# Get the event buffer
+curl http://localhost:8700/events
+
+# Stop watching
+curl -X POST http://localhost:8700/events/unwatch
+```
+
+**What you get:**
+- `input:typed` - "user typed 'hello@example.com'" (not 18 keydown events)
+- `interaction:click` - "user clicked Submit button" (with element text, position)
+- `scroll:stop` - "user scrolled to #pricing section" (not 200 scroll events)
+- `hover:dwell` - "user hovered on Help link for 1.2s" (not mousemove spam)
+- `navigation:navigate` - "user went from /login to /dashboard"
+
+**Presets:**
+- `minimal` - clicks, submits, navigation only
+- `interactive` - + typing, focus changes
+- `detailed` - + hover, scroll
+- `debug` - everything including mutations
+
+**Why this matters:**
+The AI can ask "what just happened?" and get a meaningful answer:
+"User typed email, clicked Submit, got error 'Invalid password'"
+
+Not: "keydown e, keydown m, keydown a, keydown i, keydown l, mousedown, mouseup, click..."
 
 ## Security Model
 

@@ -36,6 +36,10 @@ import type {
   DevChannelTest,
   TestStep,
   TestAssertion,
+  SemanticEvent,
+  SemanticEventCategory,
+  SemanticEventSubscription,
+  SemanticEventPreset,
 } from './types'
 
 // Component version - update when making changes
@@ -964,6 +968,60 @@ export class DevChannel extends HTMLElement {
   // Pending requests waiting for response
   private pending = new Map<string, { resolve: (r: DevResponse) => void, reject: (e: Error) => void }>()
   
+  // ============================================
+  // Semantic Event Aggregation (Phase 6)
+  // ============================================
+  private semanticEventsEnabled = false
+  private semanticEventBuffer: SemanticEvent[] = []
+  private readonly SEMANTIC_BUFFER_MAX = 100
+  private semanticSubscription: SemanticEventSubscription | null = null
+  
+  // Preset definitions
+  private readonly SEMANTIC_PRESETS: Record<SemanticEventPreset, SemanticEventCategory[]> = {
+    minimal: ['interaction', 'navigation'],
+    interactive: ['interaction', 'navigation', 'input', 'focus'],
+    detailed: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll'],
+    debug: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll', 'mutation', 'console'],
+  }
+  
+  // Typing aggregation state
+  private typingState: {
+    field: Element | null
+    startTime: number
+    text: string
+    timeout: ReturnType<typeof setTimeout> | null
+  } = { field: null, startTime: 0, text: '', timeout: null }
+  private readonly TYPING_DEBOUNCE = 500
+  
+  // Scroll aggregation state
+  private scrollState: {
+    startY: number
+    startTime: number
+    timeout: ReturnType<typeof setTimeout> | null
+  } = { startY: 0, startTime: 0, timeout: null }
+  private readonly SCROLL_DEBOUNCE = 150
+  
+  // Hover tracking state
+  private hoverState: {
+    element: Element | null
+    enterTime: number
+    timeout: ReturnType<typeof setTimeout> | null
+  } = { element: null, enterTime: 0, timeout: null }
+  private readonly DWELL_THRESHOLD = 300
+  
+  // Bound event handlers for cleanup
+  private semanticHandlers: {
+    click?: (e: MouseEvent) => void
+    input?: (e: Event) => void
+    scroll?: (e: Event) => void
+    mouseover?: (e: MouseEvent) => void
+    mouseout?: (e: MouseEvent) => void
+    focus?: (e: FocusEvent) => void
+    blur?: (e: FocusEvent) => void
+    submit?: (e: SubmitEvent) => void
+    popstate?: (e: PopStateEvent) => void
+  } = {}
+  
   static get observedAttributes() {
     return ['server', 'hidden']
   }
@@ -1845,6 +1903,370 @@ export class DevChannel extends HTMLElement {
   }
   
   // ==========================================
+  // Semantic Events (Phase 6)
+  // ==========================================
+  
+  private startSemanticEvents() {
+    if (this.semanticEventsEnabled) return
+    this.semanticEventsEnabled = true
+    
+    // Click handler
+    this.semanticHandlers.click = (e: MouseEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return // Ignore widget clicks
+      
+      this.emitSemanticEvent({
+        type: 'interaction:click',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(target),
+        payload: {
+          text: (target as HTMLElement).innerText?.slice(0, 100),
+          href: (target as HTMLAnchorElement).href,
+          disabled: (target as HTMLButtonElement).disabled,
+          position: { x: e.clientX, y: e.clientY },
+        },
+      })
+    }
+    
+    // Input handler - aggregates typing
+    this.semanticHandlers.input = (e: Event) => {
+      const target = e.target as HTMLInputElement | HTMLTextAreaElement
+      if (!target || !('value' in target)) return
+      
+      // If typing in same field, extend the timeout
+      if (this.typingState.field === target) {
+        if (this.typingState.timeout) clearTimeout(this.typingState.timeout)
+      } else {
+        // New field - flush previous if any
+        this.flushTyping()
+        this.typingState.field = target
+        this.typingState.startTime = Date.now()
+        this.typingState.text = ''
+      }
+      
+      this.typingState.text = target.value
+      this.typingState.timeout = setTimeout(() => this.flushTyping(), this.TYPING_DEBOUNCE)
+    }
+    
+    // Scroll handler - aggregates scroll events
+    this.semanticHandlers.scroll = () => {
+      const now = Date.now()
+      
+      if (this.scrollState.timeout) {
+        clearTimeout(this.scrollState.timeout)
+      } else {
+        // Start of scroll
+        this.scrollState.startY = window.scrollY
+        this.scrollState.startTime = now
+      }
+      
+      this.scrollState.timeout = setTimeout(() => this.flushScroll(), this.SCROLL_DEBOUNCE)
+    }
+    
+    // Hover handlers - track element boundaries
+    this.semanticHandlers.mouseover = (e: MouseEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return
+      
+      // Ignore if same element
+      if (this.hoverState.element === target) return
+      
+      // Flush previous hover
+      this.flushHover()
+      
+      this.hoverState.element = target
+      this.hoverState.enterTime = Date.now()
+      
+      // Emit enter event
+      this.emitSemanticEvent({
+        type: 'hover:enter',
+        timestamp: Date.now(),
+        category: 'hover',
+        target: this.getTargetInfo(target),
+        payload: {
+          from: e.relatedTarget ? this.getBestSelector(e.relatedTarget as Element) : undefined,
+        },
+      })
+      
+      // Set dwell timeout
+      this.hoverState.timeout = setTimeout(() => {
+        if (this.hoverState.element === target) {
+          const isInteractive = target.matches('a, button, input, select, textarea, [role="button"], [tabindex]')
+          this.emitSemanticEvent({
+            type: 'hover:dwell',
+            timestamp: Date.now(),
+            category: 'hover',
+            target: this.getTargetInfo(target),
+            payload: {
+              duration: Date.now() - this.hoverState.enterTime,
+              element: this.getBestSelector(target),
+              interactive: isInteractive,
+            },
+          })
+        }
+      }, this.DWELL_THRESHOLD)
+    }
+    
+    this.semanticHandlers.mouseout = (e: MouseEvent) => {
+      const target = e.target as Element
+      if (!target || this.hoverState.element !== target) return
+      
+      this.flushHover()
+    }
+    
+    // Focus handlers
+    this.semanticHandlers.focus = (e: FocusEvent) => {
+      const target = e.target as Element
+      if (!target) return
+      
+      this.emitSemanticEvent({
+        type: 'focus:in',
+        timestamp: Date.now(),
+        category: 'focus',
+        target: this.getTargetInfo(target),
+        payload: {
+          fieldType: (target as HTMLInputElement).type,
+          hasValue: !!(target as HTMLInputElement).value,
+          required: (target as HTMLInputElement).required,
+        },
+      })
+    }
+    
+    this.semanticHandlers.blur = (e: FocusEvent) => {
+      const target = e.target as Element
+      if (!target) return
+      
+      this.emitSemanticEvent({
+        type: 'focus:out',
+        timestamp: Date.now(),
+        category: 'focus',
+        target: this.getTargetInfo(target),
+        payload: {
+          fieldType: (target as HTMLInputElement).type,
+          hasValue: !!(target as HTMLInputElement).value,
+          required: (target as HTMLInputElement).required,
+        },
+      })
+    }
+    
+    // Form submit
+    this.semanticHandlers.submit = (e: SubmitEvent) => {
+      const form = e.target as HTMLFormElement
+      if (!form) return
+      
+      this.emitSemanticEvent({
+        type: 'interaction:submit',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(form),
+        payload: {
+          formId: form.id,
+          formAction: form.action,
+          fieldCount: form.elements.length,
+          method: form.method,
+        },
+      })
+    }
+    
+    // Navigation (popstate)
+    this.semanticHandlers.popstate = () => {
+      this.emitSemanticEvent({
+        type: 'navigation:navigate',
+        timestamp: Date.now(),
+        category: 'navigation',
+        payload: {
+          from: document.referrer,
+          to: location.href,
+          trigger: 'popstate',
+        },
+      })
+    }
+    
+    // Add all listeners
+    document.addEventListener('click', this.semanticHandlers.click, true)
+    document.addEventListener('input', this.semanticHandlers.input, true)
+    window.addEventListener('scroll', this.semanticHandlers.scroll, { passive: true })
+    document.addEventListener('mouseover', this.semanticHandlers.mouseover, true)
+    document.addEventListener('mouseout', this.semanticHandlers.mouseout, true)
+    document.addEventListener('focusin', this.semanticHandlers.focus, true)
+    document.addEventListener('focusout', this.semanticHandlers.blur, true)
+    document.addEventListener('submit', this.semanticHandlers.submit, true)
+    window.addEventListener('popstate', this.semanticHandlers.popstate)
+    
+    // Emit initial navigation event
+    this.emitSemanticEvent({
+      type: 'navigation:navigate',
+      timestamp: Date.now(),
+      category: 'navigation',
+      payload: {
+        from: document.referrer,
+        to: location.href,
+        trigger: 'initial',
+      },
+    })
+  }
+  
+  private stopSemanticEvents() {
+    if (!this.semanticEventsEnabled) return
+    this.semanticEventsEnabled = false
+    
+    // Flush any pending aggregated events
+    this.flushTyping()
+    this.flushScroll()
+    this.flushHover()
+    
+    // Remove all listeners
+    if (this.semanticHandlers.click) {
+      document.removeEventListener('click', this.semanticHandlers.click, true)
+    }
+    if (this.semanticHandlers.input) {
+      document.removeEventListener('input', this.semanticHandlers.input, true)
+    }
+    if (this.semanticHandlers.scroll) {
+      window.removeEventListener('scroll', this.semanticHandlers.scroll)
+    }
+    if (this.semanticHandlers.mouseover) {
+      document.removeEventListener('mouseover', this.semanticHandlers.mouseover, true)
+    }
+    if (this.semanticHandlers.mouseout) {
+      document.removeEventListener('mouseout', this.semanticHandlers.mouseout, true)
+    }
+    if (this.semanticHandlers.focus) {
+      document.removeEventListener('focusin', this.semanticHandlers.focus, true)
+    }
+    if (this.semanticHandlers.blur) {
+      document.removeEventListener('focusout', this.semanticHandlers.blur, true)
+    }
+    if (this.semanticHandlers.submit) {
+      document.removeEventListener('submit', this.semanticHandlers.submit, true)
+    }
+    if (this.semanticHandlers.popstate) {
+      window.removeEventListener('popstate', this.semanticHandlers.popstate)
+    }
+    
+    this.semanticHandlers = {}
+  }
+  
+  private flushTyping() {
+    if (this.typingState.field && this.typingState.text) {
+      const field = this.typingState.field as HTMLInputElement
+      this.emitSemanticEvent({
+        type: 'input:typed',
+        timestamp: Date.now(),
+        category: 'input',
+        target: this.getTargetInfo(field),
+        payload: {
+          text: this.typingState.text,
+          field: this.getBestSelector(field),
+          fieldType: field.type,
+          duration: Date.now() - this.typingState.startTime,
+          finalValue: field.value,
+        },
+      })
+    }
+    
+    if (this.typingState.timeout) clearTimeout(this.typingState.timeout)
+    this.typingState = { field: null, startTime: 0, text: '', timeout: null }
+  }
+  
+  private flushScroll() {
+    if (this.scrollState.timeout) {
+      const distance = Math.abs(window.scrollY - this.scrollState.startY)
+      if (distance > 50) { // Only emit if scrolled meaningfully
+        // Try to find what element we scrolled to
+        const viewportMid = window.innerHeight / 2
+        const elemAtMid = document.elementFromPoint(window.innerWidth / 2, viewportMid)
+        
+        let toSelector = 'unknown'
+        if (window.scrollY < 100) {
+          toSelector = 'top'
+        } else if (window.scrollY + window.innerHeight >= document.body.scrollHeight - 100) {
+          toSelector = 'bottom'
+        } else if (elemAtMid) {
+          toSelector = this.getBestSelector(elemAtMid)
+        }
+        
+        this.emitSemanticEvent({
+          type: 'scroll:stop',
+          timestamp: Date.now(),
+          category: 'scroll',
+          payload: {
+            to: toSelector,
+            direction: window.scrollY > this.scrollState.startY ? 'down' : 'up',
+            distance,
+            duration: Date.now() - this.scrollState.startTime,
+          },
+        })
+      }
+      
+      clearTimeout(this.scrollState.timeout)
+    }
+    this.scrollState = { startY: 0, startTime: 0, timeout: null }
+  }
+  
+  private flushHover() {
+    if (this.hoverState.element) {
+      const dwellTime = Date.now() - this.hoverState.enterTime
+      
+      this.emitSemanticEvent({
+        type: 'hover:leave',
+        timestamp: Date.now(),
+        category: 'hover',
+        target: this.getTargetInfo(this.hoverState.element),
+        payload: {
+          to: undefined, // Could track this but adds complexity
+          dwellTime,
+        },
+      })
+    }
+    
+    if (this.hoverState.timeout) clearTimeout(this.hoverState.timeout)
+    this.hoverState = { element: null, enterTime: 0, timeout: null }
+  }
+  
+  private getTargetInfo(el: Element): SemanticEvent['target'] {
+    return {
+      selector: this.getBestSelector(el),
+      tag: el.tagName.toLowerCase(),
+      id: el.id || undefined,
+      text: (el as HTMLElement).innerText?.slice(0, 50),
+      role: el.getAttribute('role') || undefined,
+      label: el.getAttribute('aria-label') || (el as HTMLInputElement).labels?.[0]?.innerText,
+    }
+  }
+  
+  private emitSemanticEvent(event: SemanticEvent) {
+    // Check if this event category is subscribed
+    if (this.semanticSubscription) {
+      const categories = this.semanticSubscription.categories 
+        || (this.semanticSubscription.preset 
+            ? this.SEMANTIC_PRESETS[this.semanticSubscription.preset] 
+            : null)
+      
+      if (categories && !categories.includes(event.category)) {
+        return // Skip - not subscribed to this category
+      }
+    }
+    
+    // Add to buffer
+    this.semanticEventBuffer.push(event)
+    if (this.semanticEventBuffer.length > this.SEMANTIC_BUFFER_MAX) {
+      this.semanticEventBuffer.shift()
+    }
+    
+    // Send to server
+    this.send('semantic', event.type, event)
+  }
+  
+  private getSemanticBuffer(since?: number): SemanticEvent[] {
+    if (since) {
+      return this.semanticEventBuffer.filter(e => e.timestamp > since)
+    }
+    return [...this.semanticEventBuffer]
+  }
+  
+  // ==========================================
   // WebSocket Connection
   // ==========================================
   
@@ -1971,9 +2393,57 @@ export class DevChannel extends HTMLElement {
       case 'mutations':
         this.handleMutationsMessage(msg)
         break
+      case 'semantic':
+        this.handleSemanticMessage(msg)
+        break
     }
     
     this.render()
+  }
+  
+  private handleSemanticMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    
+    if (action === 'start' || action === 'watch') {
+      // Accept subscription options
+      this.semanticSubscription = payload || null
+      this.startSemanticEvents()
+      
+      const categories = this.semanticSubscription?.categories 
+        || (this.semanticSubscription?.preset 
+            ? this.SEMANTIC_PRESETS[this.semanticSubscription.preset] 
+            : Object.values(this.SEMANTIC_PRESETS).flat())
+      
+      this.respond(msg.id, true, { 
+        watching: true,
+        preset: this.semanticSubscription?.preset,
+        categories: [...new Set(categories)],
+      })
+    } else if (action === 'stop' || action === 'unwatch') {
+      this.stopSemanticEvents()
+      this.semanticSubscription = null
+      this.respond(msg.id, true, { watching: false })
+    } else if (action === 'buffer' || action === 'get') {
+      const since = payload?.since
+      const category = payload?.category
+      let events = this.getSemanticBuffer(since)
+      
+      // Filter by category if specified
+      if (category) {
+        events = events.filter(e => e.category === category)
+      }
+      
+      this.respond(msg.id, true, { 
+        events,
+        enabled: this.semanticEventsEnabled,
+      })
+    } else if (action === 'status') {
+      this.respond(msg.id, true, {
+        enabled: this.semanticEventsEnabled,
+        bufferSize: this.semanticEventBuffer.length,
+        subscription: this.semanticSubscription,
+      })
+    }
   }
   
   private handleSystemMessage(msg: DevMessage) {
