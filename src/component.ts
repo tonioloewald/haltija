@@ -43,7 +43,8 @@ import type {
 } from './types'
 
 // Component version - imported from shared version file
-export { VERSION } from './version'
+import { VERSION as _VERSION } from './version'
+export const VERSION = _VERSION
 
 // Server session ID - injected by server when serving component.js
 // This allows the server to detect stale widgets and tell them to reload
@@ -3876,6 +3877,7 @@ export class DevChannel extends HTMLElement {
 }
 
 // Register the custom element
+// Note: tosijs auto-renames if already registered, so no guard needed
 customElements.define('tosijs-dev', DevChannel)
 
 // Export for bookmarklet injection
