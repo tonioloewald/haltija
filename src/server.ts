@@ -262,6 +262,54 @@ async function handleRest(req: Request): Promise<Response> {
     })
   }
   
+  // Dev mode one-liner endpoint - injects widget with localhost check and console badge
+  if (path === '/dev.js') {
+    const isSecure = req.url.startsWith('https:')
+    const protocol = isSecure ? 'https' : 'http'
+    const wsProtocol = isSecure ? 'wss' : 'ws'
+    const port = isSecure ? HTTPS_PORT : PORT
+    const serverUrl = `${protocol}://localhost:${port}`
+    const wsUrl = `${wsProtocol}://localhost:${port}/ws/browser`
+    
+    const devCode = `
+// tosijs-dev: Browser control for AI agents
+// Remove this before deploying to production!
+(function() {
+  // Only run on localhost
+  if (!/^localhost$|^127\\./.test(location.hostname)) {
+    console.warn('%c[tosijs-dev]%c Skipped - not localhost', 
+      'background:#ef4444;color:white;padding:2px 6px;border-radius:3px;font-weight:bold',
+      'color:#ef4444');
+    return;
+  }
+  
+  // Don't inject twice
+  if (document.querySelector('tosijs-dev')) return;
+  
+  // Announce ourselves
+  console.log(
+    '%c🦉 tosijs-dev%c connected %c⚠️ Remove before production!',
+    'background:#6366f1;color:white;padding:2px 8px;border-radius:3px 0 0 3px;font-weight:bold',
+    'background:#22c55e;color:white;padding:2px 8px',
+    'background:#f97316;color:white;padding:2px 8px;border-radius:0 3px 3px 0'
+  );
+  
+  // Fetch and inject the component
+  fetch('${serverUrl}/inject.js')
+    .then(r => r.text())
+    .then(eval)
+    .catch(e => {
+      console.error('%c[tosijs-dev]%c Failed to connect:', 
+        'background:#ef4444;color:white;padding:2px 6px;border-radius:3px;font-weight:bold',
+        'color:#ef4444', e.message);
+    });
+})();
+`
+    return new Response(devCode, { 
+      headers: { ...headers, 'Content-Type': 'application/javascript' } 
+    })
+  }
+  
   // Serve a simple test page
   if (path === '/' || path === '/test' || path === '/test.html') {
     const html = `<!DOCTYPE html>
@@ -412,6 +460,15 @@ curl -X POST ${baseUrl}/inspectAll -d '{"selector":"button, a, input"}' -H "Cont
 
 # Click something
 curl -X POST ${baseUrl}/click -d '{"selector":"#login-btn"}' -H "Content-Type: application/json"
+
+## Developer Integration
+
+Add this one-liner to your project to auto-inject the widget on localhost:
+
+  /^localhost$|^127\\./.test(location.hostname)&&import('${baseUrl}/dev.js')
+
+It's safe to leave in production - it only runs on localhost/127.x.x.x.
+The console will show a colored badge when connected.
 
 Server: ${baseUrl}
 WebSocket: ${wsProtocol}://localhost:${PORT}/ws/browser (for browser widget)
@@ -1729,10 +1786,11 @@ console.log(`
   To connect: Visit the server URL and drag the bookmarklet to your toolbar.
               The bookmarklet auto-detects HTTP/HTTPS based on the target page.
 
+  DEV MODE:   Paste this one-liner in your code (auto-disabled in production):
+
+              /^localhost$|^127\\./.test(location.hostname)&&import('${primaryUrl}/dev.js')
+
   AI AGENTS:  curl ${primaryUrl}/docs
-              ^ This endpoint contains everything you need to control the browser.
-              You can query the DOM, click elements, type text, run JavaScript,
-              watch for mutations, and navigate pages. The human is waiting.
 
 ================================================================================
 `)
