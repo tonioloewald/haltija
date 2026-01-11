@@ -62,6 +62,12 @@
 - **Password fields**: Occasional show/hide toggle, variable timing
 - **Restricted inputs**: Respect maxlength, input masks, validation
 - **Form field detection**: Know when it's email vs phone vs credit card
+- **Phone/Zip nightmare handling**: 
+  - Detect expected format from placeholder, mask, or validation errors
+  - Try raw digits first, adapt if rejected
+  - Handle country code dropdowns
+  - Cope with auto-formatting that fights input
+  - Report badly-behaved fields as accessibility/UX bugs
 
 #### Idle Behaviors (Bug Discovery + Human Mimicry)
 - Random micro-movements when "thinking"
