@@ -328,6 +328,18 @@ With smart events, recording becomes useful:
 - Human-readable descriptions: "Type 'user@example.com' in Email"
 - Purpose annotations: "Enter email value", "Confirm navigation completed"
 
+**Event capture refinements:**
+- Fixed duplicate events for checkbox/radio/range inputs
+- Added form event handlers: `form:submit`, `form:reset`, `form:invalid`
+- Proper validation message capture with validity details
+
+**Test suite infrastructure:**
+- `POST /test/suite` runs multiple JSON test files
+- Test page enhanced with form validation, scrollable containers, resizable elements
+- Comprehensive test suites in `tests/` directory:
+  - `test-page-actions.json` - 14 tests exercising all interactive elements
+  - `test-recording-capture.json` - Verifies semantic event capture for all action types
+
 ### Phase 9: AI-Assisted Testing
 
 The holy grail - AI that can:

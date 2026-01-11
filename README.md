@@ -166,10 +166,16 @@ curl -X POST http://localhost:8700/events/unwatch
 
 **What you get:**
 - `input:typed` - "user typed 'hello@example.com'" (not 18 keydown events)
+- `input:checked` - "user checked Accept Terms" (checkbox/radio, no duplicates)
+- `input:changed` - "user selected 'Large'" (select, date, color, range inputs)
 - `interaction:click` - "user clicked Submit button" (with element text, position)
+- `interaction:drag` - "user dragged slider from 50 to 75" (not 100 mousemove events)
 - `scroll:stop` - "user scrolled to #pricing section" (not 200 scroll events)
 - `hover:dwell` - "user hovered on Help link for 1.2s" (not mousemove spam)
 - `navigation:navigate` - "user went from /login to /dashboard"
+- `form:submit` - "user submitted Contact form" (with form metadata)
+- `form:reset` - "user reset form"
+- `form:invalid` - "email field failed validation: missing @" (with validity details)
 
 **Presets:**
 - `minimal` - clicks, submits, navigation only
