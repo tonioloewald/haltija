@@ -68,6 +68,10 @@
   - Handle country code dropdowns
   - Cope with auto-formatting that fights input
   - Report badly-behaved fields as accessibility/UX bugs
+- **Country/State dropdowns**: 
+  - Flag "200 countries, US not defaulted despite en-US locale"
+  - Handle type-ahead (or lack thereof)
+  - Detect duplicate entries (UK vs Great Britain vs United Kingdom)
 
 #### Idle Behaviors (Bug Discovery + Human Mimicry)
 - Random micro-movements when "thinking"
