@@ -1590,7 +1590,7 @@ export class DevChannel extends HTMLElement {
           flex: 1;
         }
         .test-modal-body input {
-          width: 100%;
+          width: calc(100% - 16px);
           padding: 8px;
           margin-bottom: 12px;
           background: #222;
@@ -1600,7 +1600,7 @@ export class DevChannel extends HTMLElement {
           font-size: 13px;
         }
         .test-modal-body textarea {
-          width: 100%;
+          width: calc(100% - 16px);
           height: 200px;
           padding: 8px;
           background: #111;
@@ -1615,8 +1615,9 @@ export class DevChannel extends HTMLElement {
           padding: 12px 16px;
           border-top: 1px solid #333;
           display: flex;
-          gap: 8px;
+          gap: 12px;
           justify-content: flex-end;
+          align-items: center;
         }
         .test-modal-footer button {
           padding: 8px 16px;
@@ -1642,7 +1643,22 @@ export class DevChannel extends HTMLElement {
         .test-modal .success-msg {
           color: #22c55e;
           font-size: 11px;
-          margin-left: 8px;
+          flex: 1;
+        }
+        .test-modal-footer .btn-cancel {
+          background: transparent;
+          border: 1px solid #444;
+          color: #888;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+          margin-right: auto;
+        }
+        .test-modal-footer .btn-cancel:hover {
+          background: #222;
+          color: #fff;
+          border-color: #666;
         }
       </style>
       
@@ -1691,14 +1707,15 @@ export class DevChannel extends HTMLElement {
       <div class="test-modal">
         <div class="test-modal-content">
           <div class="test-modal-header">
-            <h3>Generated Test</h3>
+            <h3>Name and Save Your Test</h3>
             <button class="btn" data-action="close-modal" title="Close">✕</button>
           </div>
           <div class="test-modal-body">
-            <input type="text" class="test-name" placeholder="Test name" value="Recorded Test">
+            <input type="text" class="test-name" placeholder="Enter test name..." value="">
             <textarea class="test-json" readonly></textarea>
           </div>
           <div class="test-modal-footer">
+            <button class="btn-cancel" data-action="close-modal">Cancel</button>
             <span class="success-msg"></span>
             <button class="btn-secondary" data-action="download-test">💾 Save</button>
             <button class="btn-primary" data-action="copy-test">📋 Copy</button>
@@ -2022,7 +2039,7 @@ export class DevChannel extends HTMLElement {
   
   private generateAndShowTest() {
     const test = this.eventsToTest(this.recordingEvents, {
-      name: 'Recorded Test',
+      name: '',  // Start with empty name
       url: window.location.href,
       addAssertions: true,
     })
@@ -2033,9 +2050,12 @@ export class DevChannel extends HTMLElement {
     const successMsg = this.shadowRoot?.querySelector('.success-msg')
     
     if (modal && nameInput && jsonArea) {
-      nameInput.value = test.name
+      nameInput.value = ''  // Empty, user must enter name
       jsonArea.value = JSON.stringify(test, null, 2)
       modal.classList.add('open')
+      
+      // Focus the name input so user can start typing immediately
+      setTimeout(() => nameInput.focus(), 100)
       
       // Clear any previous success message
       if (successMsg) successMsg.textContent = ''
@@ -2046,6 +2066,16 @@ export class DevChannel extends HTMLElement {
         jsonArea.value = JSON.stringify(test, null, 2)
       }
     }
+  }
+  
+  // Clean up text for use in descriptions (remove newlines, truncate)
+  private cleanDescription(text: string, maxLen = 30): string {
+    if (!text) return ''
+    return text
+      .replace(/\s+/g, ' ')  // Collapse whitespace/newlines to single space
+      .trim()
+      .slice(0, maxLen)
+      + (text.length > maxLen ? '...' : '')
   }
   
   private eventsToTest(events: SemanticEvent[], options: { name: string, url: string, addAssertions: boolean }): DevChannelTest {
@@ -2062,10 +2092,11 @@ export class DevChannel extends HTMLElement {
       
       switch (event.type) {
         case 'interaction:click':
+          const clickText = this.cleanDescription(text)
           steps.push({
             action: 'click',
             selector,
-            description: text ? `Click "${text}"` : `Click ${selector}`,
+            description: clickText ? `Click "${clickText}"` : `Click ${selector}`,
             ...(delay && delay > 50 ? { delay } : {}),
           })
           
@@ -2082,22 +2113,50 @@ export class DevChannel extends HTMLElement {
           break
           
         case 'input:typed':
-          const typedText = event.payload?.text || event.payload?.value || ''
-          const fieldName = event.target?.label || event.target?.tag || 'field'
+        case 'input:cleared':
+        case 'input:changed':
+        case 'input:checked':
+          const inputValue = event.payload?.text ?? event.payload?.value ?? ''
+          const inputType = event.payload?.fieldType || event.target?.tag || 'input'
+          const inputLabel = this.cleanDescription(event.target?.label || inputType)
+          const isCleared = event.type === 'input:cleared' || inputValue === ''
+          
+          // Determine the right action and description based on input type
+          let inputAction = 'type'
+          let inputDesc = ''
+          
+          if (isCleared) {
+            inputDesc = `Clear ${inputLabel}`
+          } else if (inputType === 'range') {
+            inputAction = 'set'
+            inputDesc = `Set ${inputLabel} to ${inputValue}`
+          } else if (inputType === 'select-one' || inputType === 'select-multiple') {
+            inputAction = 'select'
+            inputDesc = `Select "${inputValue}" in ${inputLabel}`
+          } else if (inputType === 'checkbox' || inputType === 'radio') {
+            inputAction = 'check'
+            inputDesc = `Check ${inputLabel}`
+          } else if (inputType === 'date' || inputType === 'time' || inputType === 'color') {
+            inputAction = 'set'
+            inputDesc = `Set ${inputLabel} to ${inputValue}`
+          } else {
+            inputDesc = `Type "${inputValue}" in ${inputLabel}`
+          }
+          
           steps.push({
-            action: 'type',
+            action: inputAction,
             selector,
-            text: typedText,
-            description: `Type "${typedText}" in ${fieldName}`,
+            ...(inputAction === 'type' || inputAction === 'set' ? { text: inputValue } : { value: inputValue }),
+            description: inputDesc,
             ...(delay && delay > 50 ? { delay } : {}),
           })
           
           // Add value assertion
-          if (options.addAssertions && typedText) {
+          if (options.addAssertions && inputValue) {
             steps.push({
               action: 'assert',
-              assertion: { type: 'value', selector, expected: typedText },
-              description: `Verify field contains "${typedText}"`,
+              assertion: { type: 'value', selector, expected: inputValue },
+              description: `Verify ${inputLabel} is "${inputValue}"`,
             })
           }
           break
@@ -2122,6 +2181,70 @@ export class DevChannel extends HTMLElement {
             action: 'click',
             selector: event.target?.selector || 'button[type="submit"]',
             description: `Submit form`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'interaction:select':
+          const selectedText = this.cleanDescription(event.payload?.text || '', 50)
+          steps.push({
+            action: 'select',
+            selector,
+            text: event.payload?.text || '',
+            description: `Select text "${selectedText}"`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'interaction:cut':
+          const cutText = this.cleanDescription(event.payload?.text || '', 50)
+          steps.push({
+            action: 'cut',
+            selector,
+            text: event.payload?.text || '',
+            description: `Cut "${cutText}"`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'interaction:copy':
+          const copyText = this.cleanDescription(event.payload?.text || '', 50)
+          steps.push({
+            action: 'copy',
+            selector,
+            text: event.payload?.text || '',
+            description: `Copy "${copyText}"`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'interaction:paste':
+          const pasteText = this.cleanDescription(event.payload?.text || '', 50)
+          steps.push({
+            action: 'paste',
+            selector,
+            text: event.payload?.text || '',
+            description: `Paste "${pasteText}"`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'input:newline':
+          steps.push({
+            action: 'key',
+            selector,
+            key: 'Enter',
+            description: `Press Enter`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+          
+        case 'input:escape':
+          steps.push({
+            action: 'key',
+            selector,
+            key: 'Escape',
+            description: `Press Escape`,
             ...(delay && delay > 50 ? { delay } : {}),
           })
           break
@@ -2164,9 +2287,27 @@ export class DevChannel extends HTMLElement {
     const jsonArea = this.shadowRoot?.querySelector('.test-json') as HTMLTextAreaElement
     const successMsg = this.shadowRoot?.querySelector('.success-msg')
     
+    if (!nameInput?.value.trim()) {
+      if (successMsg) {
+        successMsg.textContent = 'Please enter a test name'
+        successMsg.style.color = '#ef4444'
+        setTimeout(() => { 
+          successMsg.textContent = ''
+          successMsg.style.color = ''
+        }, 2000)
+      }
+      nameInput?.focus()
+      return
+    }
+    
     if (jsonArea && nameInput) {
-      const filename = nameInput.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '.test.json'
-      const blob = new Blob([jsonArea.value], { type: 'application/json' })
+      // Update the JSON with the current name before saving
+      const testData = JSON.parse(jsonArea.value)
+      testData.name = nameInput.value.trim()
+      const updatedJson = JSON.stringify(testData, null, 2)
+      
+      const filename = nameInput.value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '.test.json'
+      const blob = new Blob([updatedJson], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       
       const a = document.createElement('a')
@@ -2786,6 +2927,12 @@ export class DevChannel extends HTMLElement {
       const target = e.target as Element
       if (!target || this.contains(target)) return // Ignore widget clicks
       
+      // Skip checkbox/radio clicks - the change event handles these better
+      const inputType = (target as HTMLInputElement).type
+      if (target.tagName === 'INPUT' && (inputType === 'checkbox' || inputType === 'radio')) {
+        return
+      }
+      
       this.emitSemanticEvent({
         type: 'interaction:click',
         timestamp: Date.now(),
@@ -2800,10 +2947,20 @@ export class DevChannel extends HTMLElement {
       })
     }
     
-    // Input handler - aggregates typing
+    // Input handler - aggregates typing (includes contenteditable)
     this.semanticHandlers.input = (e: Event) => {
-      const target = e.target as HTMLInputElement | HTMLTextAreaElement
-      if (!target || !('value' in target) || this.contains(target)) return
+      const target = e.target as HTMLElement
+      if (!target || this.contains(target)) return
+      
+      // Get the value - either from input/textarea or contenteditable
+      const isContentEditable = target.isContentEditable
+      const isFormField = 'value' in target
+      
+      if (!isContentEditable && !isFormField) return
+      
+      const currentValue = isContentEditable 
+        ? target.innerText || ''
+        : (target as HTMLInputElement).value
       
       // If typing in same field, extend the timeout
       if (this.typingState.field === target) {
@@ -2816,8 +2973,112 @@ export class DevChannel extends HTMLElement {
         this.typingState.text = ''
       }
       
-      this.typingState.text = target.value
+      this.typingState.text = currentValue
       this.typingState.timeout = setTimeout(() => this.flushTyping(), this.TYPING_DEBOUNCE)
+    }
+    
+    // Keydown handler - capture Enter for newlines and special keys
+    this.semanticHandlers.keydown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (!target || this.contains(target)) return
+      
+      // Capture Enter key (newlines in textarea/contenteditable)
+      if (e.key === 'Enter' && !e.isComposing) {
+        const isContentEditable = target.isContentEditable
+        const isTextarea = target.tagName === 'TEXTAREA'
+        
+        if (isContentEditable || isTextarea) {
+          this.emitSemanticEvent({
+            type: 'input:newline',
+            timestamp: Date.now(),
+            category: 'input',
+            target: this.getTargetInfo(target),
+            payload: {
+              field: this.getBestSelector(target),
+              shiftKey: e.shiftKey,
+            },
+          })
+        }
+      }
+      
+      // Capture Escape key
+      if (e.key === 'Escape') {
+        this.emitSemanticEvent({
+          type: 'input:escape',
+          timestamp: Date.now(),
+          category: 'input',
+          target: this.getTargetInfo(target),
+          payload: {},
+        })
+      }
+    }
+    
+    // Change handler - for inputs that don't fire 'input' events (date, time, color, select, file)
+    this.semanticHandlers.change = (e: Event) => {
+      const target = e.target as HTMLInputElement | HTMLSelectElement
+      if (!target || this.contains(target)) return
+      
+      const tagName = target.tagName.toLowerCase()
+      const inputType = (target as HTMLInputElement).type || ''
+      
+      // Skip text inputs - they're handled by the input handler
+      if (tagName === 'input' && ['text', 'password', 'email', 'search', 'tel', 'url', 'number'].includes(inputType)) {
+        return
+      }
+      
+      // Handle select elements
+      if (tagName === 'select') {
+        const select = target as HTMLSelectElement
+        const selectedOptions = Array.from(select.selectedOptions).map(o => o.value)
+        const value = select.multiple ? selectedOptions.join(', ') : select.value
+        
+        this.emitSemanticEvent({
+          type: 'input:changed',
+          timestamp: Date.now(),
+          category: 'input',
+          target: this.getTargetInfo(target),
+          payload: {
+            text: value,
+            value,
+            field: this.getBestSelector(target),
+            fieldType: select.multiple ? 'select-multiple' : 'select-one',
+            selectedOptions,
+          },
+        })
+        return
+      }
+      
+      // Handle special input types (date, time, color, range, checkbox, radio, file)
+      if (tagName === 'input') {
+        const input = target as HTMLInputElement
+        let value = input.value
+        let eventType: 'input:changed' | 'input:checked' = 'input:changed'
+        
+        // For checkbox/radio, track checked state
+        if (inputType === 'checkbox' || inputType === 'radio') {
+          eventType = 'input:checked'
+          value = input.checked ? input.value || 'on' : ''
+        }
+        
+        // For file inputs, get file names
+        if (inputType === 'file' && input.files) {
+          value = Array.from(input.files).map(f => f.name).join(', ')
+        }
+        
+        this.emitSemanticEvent({
+          type: eventType,
+          timestamp: Date.now(),
+          category: 'input',
+          target: this.getTargetInfo(target),
+          payload: {
+            text: value,
+            value,
+            field: this.getBestSelector(target),
+            fieldType: inputType,
+            checked: input.checked,
+          },
+        })
+      }
     }
     
     // Scroll handler - aggregates scroll events
@@ -3013,9 +3274,106 @@ export class DevChannel extends HTMLElement {
       dragState = null
     }
     
+    // Clipboard handlers - cut/copy/paste
+    this.semanticHandlers.cut = (e: ClipboardEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return
+      
+      const selection = document.getSelection()
+      const text = selection?.toString() || ''
+      
+      this.emitSemanticEvent({
+        type: 'interaction:cut',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(target),
+        payload: {
+          text: text.slice(0, 200),
+          length: text.length,
+        },
+      })
+    }
+    
+    this.semanticHandlers.copy = (e: ClipboardEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return
+      
+      const selection = document.getSelection()
+      const text = selection?.toString() || ''
+      
+      this.emitSemanticEvent({
+        type: 'interaction:copy',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(target),
+        payload: {
+          text: text.slice(0, 200),
+          length: text.length,
+        },
+      })
+    }
+    
+    this.semanticHandlers.paste = (e: ClipboardEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return
+      
+      const text = e.clipboardData?.getData('text') || ''
+      
+      this.emitSemanticEvent({
+        type: 'interaction:paste',
+        timestamp: Date.now(),
+        category: 'interaction',
+        target: this.getTargetInfo(target),
+        payload: {
+          text: text.slice(0, 200),
+          length: text.length,
+        },
+      })
+    }
+    
+    // Selection change handler - capture text selections
+    let selectionTimeout: ReturnType<typeof setTimeout> | null = null
+    this.semanticHandlers.selectionchange = () => {
+      // Debounce selection events
+      if (selectionTimeout) clearTimeout(selectionTimeout)
+      selectionTimeout = setTimeout(() => {
+        const selection = document.getSelection()
+        if (!selection || selection.isCollapsed) return
+        
+        const text = selection.toString().trim()
+        if (!text || text.length < 2) return // Ignore tiny selections
+        
+        // Get the element containing the selection
+        const anchorNode = selection.anchorNode
+        const element = anchorNode?.nodeType === Node.TEXT_NODE 
+          ? anchorNode.parentElement 
+          : anchorNode as Element
+        
+        if (!element || this.contains(element)) return
+        
+        this.emitSemanticEvent({
+          type: 'interaction:select',
+          timestamp: Date.now(),
+          category: 'interaction',
+          target: this.getTargetInfo(element),
+          payload: {
+            text: text.slice(0, 200),
+            length: text.length,
+            selector: this.getBestSelector(element),
+          },
+        })
+      }, 300) // Wait for selection to stabilize
+    }
+    
     // Add all listeners
     document.addEventListener('click', this.semanticHandlers.click, true)
     document.addEventListener('input', this.semanticHandlers.input, true)
+    document.addEventListener('change', this.semanticHandlers.change, true)
+    document.addEventListener('keydown', this.semanticHandlers.keydown, true)
+    document.addEventListener('cut', this.semanticHandlers.cut, true)
+    document.addEventListener('copy', this.semanticHandlers.copy, true)
+    document.addEventListener('paste', this.semanticHandlers.paste, true)
+    document.addEventListener('selectionchange', this.semanticHandlers.selectionchange)
     window.addEventListener('scroll', this.semanticHandlers.scroll, { passive: true })
     document.addEventListener('mouseover', this.semanticHandlers.mouseover, true)
     document.addEventListener('mouseout', this.semanticHandlers.mouseout, true)
@@ -3055,6 +3413,24 @@ export class DevChannel extends HTMLElement {
     if (this.semanticHandlers.input) {
       document.removeEventListener('input', this.semanticHandlers.input, true)
     }
+    if (this.semanticHandlers.change) {
+      document.removeEventListener('change', this.semanticHandlers.change, true)
+    }
+    if (this.semanticHandlers.keydown) {
+      document.removeEventListener('keydown', this.semanticHandlers.keydown, true)
+    }
+    if (this.semanticHandlers.cut) {
+      document.removeEventListener('cut', this.semanticHandlers.cut, true)
+    }
+    if (this.semanticHandlers.copy) {
+      document.removeEventListener('copy', this.semanticHandlers.copy, true)
+    }
+    if (this.semanticHandlers.paste) {
+      document.removeEventListener('paste', this.semanticHandlers.paste, true)
+    }
+    if (this.semanticHandlers.selectionchange) {
+      document.removeEventListener('selectionchange', this.semanticHandlers.selectionchange)
+    }
     if (this.semanticHandlers.scroll) {
       window.removeEventListener('scroll', this.semanticHandlers.scroll)
     }
@@ -3087,21 +3463,32 @@ export class DevChannel extends HTMLElement {
   }
   
   private flushTyping() {
-    if (this.typingState.field && this.typingState.text) {
-      const field = this.typingState.field as HTMLInputElement
-      this.emitSemanticEvent({
-        type: 'input:typed',
-        timestamp: Date.now(),
-        category: 'input',
-        target: this.getTargetInfo(field),
-        payload: {
-          text: this.typingState.text,
-          field: this.getBestSelector(field),
-          fieldType: field.type,
-          duration: Date.now() - this.typingState.startTime,
-          finalValue: field.value,
-        },
-      })
+    if (this.typingState.field) {
+      const field = this.typingState.field as HTMLElement
+      const isContentEditable = field.isContentEditable
+      const finalValue = isContentEditable 
+        ? field.innerText || ''
+        : (field as HTMLInputElement).value
+      const fieldType = isContentEditable 
+        ? 'contenteditable' 
+        : (field as HTMLInputElement).type || field.tagName.toLowerCase()
+      
+      // Emit if there's text OR if the field was cleared (empty value after interaction)
+      if (this.typingState.text || finalValue === '') {
+        this.emitSemanticEvent({
+          type: finalValue === '' ? 'input:cleared' : 'input:typed',
+          timestamp: Date.now(),
+          category: 'input',
+          target: this.getTargetInfo(field),
+          payload: {
+            text: finalValue,
+            field: this.getBestSelector(field),
+            fieldType,
+            duration: Date.now() - this.typingState.startTime,
+            finalValue: finalValue,
+          },
+        })
+      }
     }
     
     if (this.typingState.timeout) clearTimeout(this.typingState.timeout)

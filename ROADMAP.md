@@ -523,6 +523,50 @@ Makes replays feel alive and helps users understand what the agent is doing.
 - Hover over elements before clicking
 - These uncover bugs (hover states, focus traps, tooltip issues)
 
+### Semantic Event Narration & Accessibility
+
+**Philosophy**: Semantic events should be at least as good as a screen reader for a blind user.
+
+**Bigger vision**: This architecture could power a *better* screen reader.
+
+Current screen readers do DOM-level narration - "Button", "Edit text, password field", "Checkbox, checked". They read elements, not intent. Haltija's semantic events capture what's actually happening:
+
+| Screen Reader | Haltija Semantic Event |
+|---------------|------------------------|
+| "Button" | "User clicked Submit to complete checkout" |
+| "Edit text" | "User typed email address in login form" |
+| "Checkbox, checked" | "User accepted terms and conditions" |
+
+The aggregation we're building - debouncing keystrokes, detecting gestures, understanding navigation causality - is what screen readers *should* do. A screen reader built on this could:
+- Announce meaningful actions, not element descriptions
+- Skip noise (intermediate states, framework churn)
+- Provide workflow context ("checkout step 2 of 3")
+- Understand state changes, not just DOM changes
+
+If a blind user can follow the semantic event stream and understand the page, we've succeeded.
+
+- **Subtitles overlay**: Pop-up captions showing semantic events as they're captured
+  - Especially useful during recording to confirm what's being tracked
+  - Unobtrusive positioning, auto-fade
+  - Toggle on/off from widget
+  
+- **Voice narration**: Text-to-speech toggle that reads semantic events aloud
+  - Uses Web Speech API
+  - Configurable voice, rate, pitch
+  - Great for demos, accessibility testing, and hands-free monitoring
+  
+- **Screen reader parity**: 
+  - Study real screen reader behavior (NVDA, JAWS, VoiceOver)
+  - Find blind user forums/communities for feedback on pain points
+  - Semantic events should announce what a screen reader would announce
+  - Rich descriptions: "Button: Submit form" not just "click"
+  - Context-aware: "Checkbox: Accept terms, now checked"
+  
+- **Accessibility testing integration**:
+  - Compare our semantic stream to screen reader output
+  - Flag elements with poor accessibility (missing labels, bad ARIA)
+  - Partner with blind testers for real-world validation
+
 ### Other Ideas
 - Sourcemaps for transpiled code debugging
 - Session replay (video-like scrubbing)

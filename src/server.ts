@@ -389,7 +389,7 @@ async function handleRest(req: Request): Promise<Response> {
   
   <h2>Bookmarklet</h2>
   <p>Drag this to your bookmarks bar:</p>
-  <a class="bookmarklet" id="bookmarklet-link" href="#">🧝 ${PRODUCT_NAME}</a>
+  <a class="bookmarklet" id="bookmarklet-link" href="#">&#129494; ${PRODUCT_NAME}</a>
   <script>
     // Generate bookmarklet that matches the protocol we're viewing this page on
     (function() {
@@ -412,6 +412,125 @@ async function handleRest(req: Request): Promise<Response> {
   <input id="test-input" placeholder="Type here...">
   <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
   <div id="result"></div>
+  
+  <h2>More Form Elements</h2>
+  <div style="display: grid; gap: 12px; max-width: 400px;">
+    <label>
+      Date: <input type="date" id="test-date">
+    </label>
+    <label>
+      Range: <input type="range" id="test-range" min="0" max="100" value="50" oninput="document.getElementById('range-value').textContent = this.value">
+      <span id="range-value">50</span>
+    </label>
+    <label>
+      Select: 
+      <select id="test-select">
+        <option value="">Choose...</option>
+        <option value="apple">Apple</option>
+        <option value="banana">Banana</option>
+        <option value="cherry">Cherry</option>
+      </select>
+    </label>
+  </div>
+  
+  <h2>Drag and Drop</h2>
+  <div style="display: flex; gap: 20px; margin-top: 12px;">
+    <div id="drag-source" draggable="true" 
+         style="padding: 16px 24px; background: #6366f1; color: white; border-radius: 8px; cursor: grab;"
+         ondragstart="event.dataTransfer.setData('text/plain', 'https://example.com/dragged-url')">
+      Drag this URL
+    </div>
+    <div id="drop-target" 
+         style="padding: 16px 24px; background: #f3f4f6; border: 2px dashed #ccc; border-radius: 8px; min-width: 150px; text-align: center;"
+         ondragover="event.preventDefault(); this.style.borderColor = '#6366f1'; this.style.background = '#eef2ff';"
+         ondragleave="this.style.borderColor = '#ccc'; this.style.background = '#f3f4f6';"
+         ondrop="event.preventDefault(); this.textContent = 'Dropped: ' + event.dataTransfer.getData('text/plain'); this.style.borderColor = '#22c55e'; this.style.background = '#f0fdf4';">
+      Drop here
+    </div>
+  </div>
+  
+  <h2>Multi-Select &amp; Lists</h2>
+  <div style="display: grid; gap: 12px; max-width: 400px;">
+    <label>
+      Multi-select (Ctrl/Cmd+click):
+      <select id="test-multi" multiple size="4" style="width: 100%;">
+        <option value="red">Red</option>
+        <option value="green">Green</option>
+        <option value="blue">Blue</option>
+        <option value="yellow">Yellow</option>
+      </select>
+    </label>
+    <label>
+      Datalist (autocomplete):
+      <input id="test-datalist" list="browsers" placeholder="Type a browser...">
+      <datalist id="browsers">
+        <option value="Chrome">
+        <option value="Firefox">
+        <option value="Safari">
+        <option value="Edge">
+      </datalist>
+    </label>
+  </div>
+  
+  <h2>Text Areas &amp; Rich Text</h2>
+  <div style="display: grid; gap: 12px; max-width: 400px;">
+    <label>
+      Textarea:
+      <textarea id="test-textarea" rows="3" placeholder="Multi-line text..." style="width: 100%; resize: vertical;"></textarea>
+    </label>
+    <label>
+      ContentEditable:
+      <div id="test-contenteditable" contenteditable="true" 
+           style="min-height: 60px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;">
+        Edit this rich text...
+      </div>
+    </label>
+  </div>
+  
+  <h2>Checkboxes &amp; Radios</h2>
+  <div style="display: grid; gap: 8px;">
+    <label><input type="checkbox" id="check-1" name="features" value="feature1"> Feature 1</label>
+    <label><input type="checkbox" id="check-2" name="features" value="feature2"> Feature 2</label>
+    <label><input type="checkbox" id="check-3" name="features" value="feature3"> Feature 3</label>
+    <div style="margin-top: 8px;">
+      <label><input type="radio" name="size" value="small"> Small</label>
+      <label><input type="radio" name="size" value="medium" checked> Medium</label>
+      <label><input type="radio" name="size" value="large"> Large</label>
+    </div>
+  </div>
+  
+  <h2>Specialized Inputs</h2>
+  <div style="display: grid; gap: 12px; max-width: 400px;">
+    <label>Color: <input type="color" id="test-color" value="#6366f1"></label>
+    <label>Time: <input type="time" id="test-time"></label>
+    <label>Number: <input type="number" id="test-number" min="0" max="100" step="5" placeholder="0-100"></label>
+    <label>Email: <input type="email" id="test-email" placeholder="user@example.com"></label>
+    <label>Password: <input type="password" id="test-password" placeholder="Secret..."></label>
+    <label>Search: <input type="search" id="test-search" placeholder="Search..."></label>
+    <label>Tel: <input type="tel" id="test-tel" placeholder="+1 (555) 123-4567"></label>
+    <label>URL: <input type="url" id="test-url" placeholder="https://..."></label>
+    <label>File: <input type="file" id="test-file"></label>
+  </div>
+  
+  <h2>Interactive Elements</h2>
+  <details id="test-details">
+    <summary>Click to expand</summary>
+    <p>Hidden content revealed! This tests the details/summary disclosure widget.</p>
+  </details>
+  
+  <dialog id="test-dialog" style="padding: 20px; border-radius: 8px;">
+    <p>This is a native dialog!</p>
+    <button onclick="document.getElementById('test-dialog').close()">Close</button>
+  </dialog>
+  <button onclick="document.getElementById('test-dialog').showModal()">Open Dialog</button>
+  
+  <h2>Keyboard Navigation</h2>
+  <div style="display: flex; gap: 8px;">
+    <button id="tab-1">Tab 1</button>
+    <button id="tab-2">Tab 2</button>
+    <button id="tab-3">Tab 3</button>
+    <a href="#" id="tab-link">Link</a>
+  </div>
   
   <${TAG_NAME} id="dev-widget"></${TAG_NAME}>
   <script>
