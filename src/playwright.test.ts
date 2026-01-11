@@ -73,9 +73,20 @@ async function injectDevChannel(page: Page) {
     </html>
   `)
   
-  // Wait for element to be ready and connected
+  // Wait for element to be ready
   await page.waitForSelector('tosijs-dev')
-  await page.waitForTimeout(300) // Give time for WebSocket to connect
+  
+  // Poll /status until a browser is connected (WebSocket established)
+  const maxAttempts = 20
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await fetch(`${SERVER_URL}/status`)
+    const status = await res.json()
+    if (status.browsers > 0) {
+      return // Connected!
+    }
+    await page.waitForTimeout(100)
+  }
+  throw new Error('Timeout waiting for browser to connect to server')
 }
 
 test.describe('tosijs-dev CLI', () => {
@@ -933,5 +944,127 @@ test.describe('tosijs-dev DOM tree inspector', () => {
     
     // Clean up
     await fetch(`${SERVER_URL}/mutations/unwatch`, { method: 'POST' })
+  })
+})
+
+test.describe('tosijs-dev test generation', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+  })
+  
+  test('generates test from semantic events via /recording/generate', async ({ page }) => {
+    // Add a form to interact with (insert before widget, don't replace innerHTML)
+    await page.evaluate(() => {
+      const form = document.createElement('form')
+      form.id = 'test-form'
+      form.innerHTML = `
+        <input id="username" type="text" placeholder="Username">
+        <input id="password" type="password" placeholder="Password">
+        <button type="submit" id="submit-btn">Login</button>
+      `
+      const result = document.createElement('div')
+      result.id = 'result'
+      
+      // Insert at beginning of body (before widget)
+      document.body.insertBefore(result, document.body.firstChild)
+      document.body.insertBefore(form, document.body.firstChild)
+      
+      form.onsubmit = (e) => {
+        e.preventDefault()
+        result.textContent = 'Submitted!'
+      }
+    })
+    
+    // Start watching semantic events
+    const watchRes = await fetch(`${SERVER_URL}/events/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset: 'interactive' })
+    })
+    expect((await watchRes.json()).success).toBe(true)
+    
+    await page.waitForTimeout(100)
+    
+    // Perform real user interactions via Playwright (not REST API puppetry)
+    // Use type() instead of fill() to simulate real keystrokes
+    await page.click('#username')
+    await page.type('#username', 'testuser', { delay: 20 })
+    await page.waitForTimeout(200)
+    
+    await page.click('#password')
+    await page.type('#password', 'secret123', { delay: 20 })
+    await page.waitForTimeout(200)
+    
+    await page.click('#submit-btn')
+    await page.waitForTimeout(300)
+    
+    // Generate a test from the recorded events
+    const generateRes = await fetch(`${SERVER_URL}/recording/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Login Test',
+        description: 'Test login form',
+        url: 'http://localhost:3000/login',
+        addAssertions: true
+      })
+    })
+    
+    const generateData = await generateRes.json()
+    
+    expect(generateData.success).toBe(true)
+    expect(generateData.test).toBeDefined()
+    expect(generateData.test.name).toBe('Login Test')
+    expect(generateData.test.version).toBe(1)
+    expect(generateData.test.steps.length).toBeGreaterThan(0)
+    
+    // Should have type steps for username and password
+    const typeSteps = generateData.test.steps.filter((s: any) => s.action === 'type')
+    expect(typeSteps.length).toBeGreaterThanOrEqual(2)
+    
+    // Should have a click step
+    const clickSteps = generateData.test.steps.filter((s: any) => s.action === 'click')
+    expect(clickSteps.length).toBeGreaterThanOrEqual(1)
+    
+    // Clean up
+    await fetch(`${SERVER_URL}/events/unwatch`, { method: 'POST' })
+  })
+  
+  test('generates test from provided events array', async () => {
+    // Test with explicit events (no browser needed)
+    const generateRes = await fetch(`${SERVER_URL}/recording/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Direct Events Test',
+        url: 'http://example.com',
+        addAssertions: false,
+        events: [
+          {
+            type: 'interaction:click',
+            timestamp: 1000,
+            category: 'interaction',
+            target: { selector: '#btn', tag: 'button', text: 'Click Me' },
+            payload: { text: 'Click Me', position: { x: 100, y: 100 } }
+          },
+          {
+            type: 'input:typed',
+            timestamp: 2000,
+            category: 'input',
+            target: { selector: '#input', tag: 'input' },
+            payload: { text: 'hello', field: '#input', finalValue: 'hello', duration: 500 }
+          }
+        ]
+      })
+    })
+    
+    const data = await generateRes.json()
+    
+    expect(data.success).toBe(true)
+    expect(data.test.name).toBe('Direct Events Test')
+    expect(data.test.steps).toHaveLength(2)
+    expect(data.test.steps[0].action).toBe('click')
+    expect(data.test.steps[1].action).toBe('type')
+    expect((data.test.steps[1] as any).text).toBe('hello')
   })
 })
