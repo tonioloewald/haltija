@@ -28,6 +28,15 @@
 - Assertions: exists, text, value, visible, url, console-contains
 - `TestResult` / `StepResult` for reporting
 
+### Phase 4.5: HTTPS & Agent Onboarding ✅
+- HTTP/HTTPS dual-mode server (`--http`, `--https`, `--both`)
+- Auto-generate certificates with mkcert or openssl
+- Protocol-aware bookmarklet (adapts to target page)
+- `/docs` endpoint - quick-start guide for AI agents
+- `/api` endpoint - complete API reference
+- Human-like typing with variable latency and typos
+- Node-compatible CLI (`npx tosijs-dev` works)
+
 ## In Progress
 
 ### Phase 5: Test Runner Implementation
@@ -112,6 +121,49 @@ The holy grail - AI that can:
 - Generate robust tests that survive UI changes
 - Suggest better UX based on observed behavior
 - "User seemed confused here" insights
+
+### Phase 10: Native App Shell (Electron/Tauri)
+
+**The "God Mode" Browser** - CSP bypass for universal compatibility.
+
+#### Core Features
+- Strip `Content-Security-Policy`, `X-Frame-Options` headers
+- Auto-inject tosijs-dev widget on page load
+- Minimal chrome (address bar, back/forward, agent status)
+- Works on any site, no bookmarklet needed
+
+#### Distribution Options
+1. **DIY (open source)** - Build script, user code-signs
+2. **Pre-built (paid)** - Signed, notarized, auto-updates
+
+#### App Store Version
+- Mac App Store distribution (sandboxed, trusted)
+- One-click install for non-technical users
+- Apple handles payments
+
+### Phase 11: Apple Intelligence Integration
+
+**Private, on-device AI for basic automation.**
+
+- Default AI backend (free, no API keys needed)
+- On-device processing (privacy-first)
+- Good enough for basic QA: find elements, fill forms, verify state
+- Optional upgrade path to Claude/OpenAI for advanced tasks
+
+#### Positioning
+- "Works with your Mac's built-in AI"
+- Enterprise-friendly: DOM never leaves the device
+- Differentiator vs. cloud-only tools
+
+### Phase 12: MCP Bridge (Claude Desktop Integration)
+
+**Buzzword compliance for Claude Desktop users.**
+
+- Thin wrapper: translates MCP JSON-RPC to REST API
+- `browser_act` → `POST /click`, `POST /type`
+- `browser_sense` → `GET /tree`, `GET /location`
+- Live event stream via MCP Resource
+- No new capabilities, just integration
 
 ## Architecture Principles
 
