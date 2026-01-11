@@ -39,11 +39,34 @@
 
 ## In Progress
 
-### Phase 5: Test Runner Implementation
-- **TODO**: Add `runTest(test: DevChannelTest)` to client.ts
-- **TODO**: Execute steps sequentially with delays
-- **TODO**: Run assertions and collect results
-- **TODO**: REST endpoint for running tests
+### Phase 5: Test Runner & AI QA Agent
+
+#### Manual Test Scripts (Playwright but good)
+- Add `runTest(test: DevChannelTest)` to client.ts
+- Execute steps sequentially with delays
+- Run assertions and collect results
+- REST endpoint for running tests
+- Human-readable test format (not code)
+
+#### AI as QA Professional
+- **Exploratory testing**: Agent fuzzes around, finds edge cases
+- **Test plan generation**: Agent inspects page, proposes what to test
+- **Bug reports**: Structured reports with repro steps, screenshots, DOM state
+- **Regression verification**: "Is bug #123 fixed?" → Agent checks
+- **Accessibility audits**: WCAG compliance, contrast ratios, focus order, ARIA
+
+#### Smart Input Behaviors
+- **OTP/PIN fields**: Detect 6-digit inputs, type with realistic pauses
+- **Password fields**: Occasional show/hide toggle, variable timing
+- **Restricted inputs**: Respect maxlength, input masks, validation
+- **Form field detection**: Know when it's email vs phone vs credit card
+
+#### Idle Behaviors (Bug Discovery + Human Mimicry)
+- Random micro-movements when "thinking"
+- Occasional scroll jitter
+- Tab between fields without typing
+- Hover over elements before clicking
+- These uncover bugs (hover states, focus traps, tooltip issues)
 
 ## Planned
 
@@ -72,6 +95,19 @@ system        - internal only, never broadcast to agents
 - "user hovered on .btn for 1.2s" not mousemove spam
 - "cursor entered #submit-btn" / "cursor left .dropdown-menu"
 - Dwell detection: "hovered for 500ms"
+
+#### Mouse Movement Filtering
+- Ignore movements < 5px (jitter)
+- Only report when crossing element boundaries
+- Track velocity/acceleration for gesture detection
+- "Mouse moved to #submit" not 200 coordinate pairs
+
+#### Default Filter Presets
+- **minimal**: Only clicks, submits, navigation
+- **interactive**: + hovers on buttons/links, form changes
+- **detailed**: + all element boundary crossings
+- **debug**: Everything (rarely needed)
+- Agents choose their noise tolerance
 - Gesture recognition: "drag from #item-3 to #trash"
 
 #### Semantic Events (what AI actually needs to see)
@@ -131,6 +167,16 @@ The holy grail - AI that can:
 - Auto-inject tosijs-dev widget on page load
 - Minimal chrome (address bar, back/forward, agent status)
 - Works on any site, no bookmarklet needed
+
+#### Screen Capture for Agents
+- Full page screenshots on demand
+- Element-specific captures
+- **Visual accessibility testing**: Actual rendered colors including:
+  - Background blur/translucency
+  - Glows and shadows
+  - Overlapping elements
+  - Computed contrast ratios from pixels, not CSS
+- Video recording of sessions
 
 #### Distribution Options
 1. **DIY (open source)** - Build script, user code-signs
