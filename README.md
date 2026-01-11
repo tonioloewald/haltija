@@ -183,6 +183,21 @@ The AI can ask "what just happened?" and get a meaningful answer:
 
 Not: "keydown e, keydown m, keydown a, keydown i, keydown l, mousedown, mouseup, click..."
 
+## Smart Element Selectors
+
+Element identification prioritizes what engineers actually use:
+
+1. **ARIA labels** - `button[aria-label="Close dialog"]`
+2. **Form labels** - `input labeled "Email address"`
+3. **Semantic landmarks** - `section "Pricing"`, `nav`, `footer`
+4. **Button/link text** - `button "Sign Up"`, `link "Learn more"`
+5. **Title/tooltip** - `img[title="Company logo"]`
+6. **Context** - `input[2] in form "Contact us"`
+
+**Not:** `div.flex.mt-4.p-2 > button.btn.btn-primary`
+
+This creates a virtuous cycle: apps with good accessibility get useful selectors. Apps without get `div[47] in body` - a nudge to add semantic markup that helps everyone (users, screen readers, *and* testing tools).
+
 ## Security Model
 
 - Widget is always visible when agent is connected (no silent snooping)
