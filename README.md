@@ -552,10 +552,40 @@ The AI reads your tests, understands the intent, runs them, and explains failure
 - Debug CSS/layout issues together
 - Prototype interactions
 
-**UX Auditing** *(coming soon)*
+**UX Auditing**
 - Automatically flags common anti-patterns during test runs
 - Bad form inputs, accessibility traps, mobile hostility
-- Built-in heuristics detect 50+ "UX crimes"
+- Built-in heuristics detect 35+ "UX crimes" via `/docs/ux-crimes`
+
+## Reference Docs (Extensible Knowledge Base)
+
+Agents can discover and fetch reference documentation:
+
+```bash
+# List all available docs
+curl http://localhost:8700/docs/list
+
+# Fetch a specific doc
+curl http://localhost:8700/docs/ux-crimes
+```
+
+**Built-in docs:**
+- `ux-crimes` - The Haltija Criminal Code (35 detectable UX anti-patterns with detection signatures)
+
+**Add your own docs:**
+
+```bash
+# Start with custom docs directory
+haltija --docs-dir ./my-docs
+```
+
+Add any `.md` files to your docs directory:
+- `style-guide.md` - Your project's coding conventions
+- `api-reference.md` - Internal API documentation  
+- `testing-conventions.md` - How tests should be written
+- `accessibility-requirements.md` - Project-specific a11y rules
+
+Agents discover available docs via `/docs/list`, then fetch what they need. Custom docs can override built-in docs by using the same filename.
 
 ## Full API Reference
 
