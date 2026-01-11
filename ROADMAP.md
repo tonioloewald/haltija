@@ -54,6 +54,13 @@
 - **Bug reports**: Structured reports with repro steps, screenshots, DOM state
 - **Regression verification**: "Is bug #123 fixed?" → Agent checks
 - **Accessibility audits**: WCAG compliance, contrast ratios, focus order, ARIA
+- **Responsive/Mobile testing**:
+  - Viewport resizing, device emulation
+  - Screen rotation (portrait ↔ landscape)
+  - Touch vs mouse interactions
+  - Tap target sizes (48px minimum)
+  - Viewport meta tag validation
+  - Content reflow, no horizontal scroll
 
 #### Smart Input Behaviors
 - **Segmented inputs**: Detect split fields (OTP, credit card 4-4-4-4, SSN, phone)
@@ -227,6 +234,29 @@ The holy grail - AI that can:
 - `browser_sense` → `GET /tree`, `GET /location`
 - Live event stream via MCP Resource
 - No new capabilities, just integration
+
+### Phase 13: UX Crimes Database
+
+**Curated anti-patterns to make the agent a seasoned UX auditor.**
+
+#### Categories
+- **Forms from Hell**: Phone, zip, country, date pickers, CC fields, CAPTCHA
+- **Navigation Nightmares**: Language selectors, mega menus, hamburgers hiding critical actions
+- **Accessibility Atrocities**: Contrast, focus traps, missing labels, div buttons, no skip links
+- **Mobile Hostility**: Tap targets, viewport crimes, hover-dependent UI, pinch-zoom disabled
+- **Dark Patterns**: Confirmshaming, roach motels, trick questions, hidden unsubscribe
+
+#### Structure
+- Real examples (anonymized) of each sin
+- DOM signatures: how to detect programmatically
+- Severity rating
+- What to report / suggested fix
+- WCAG/usability guidelines violated
+
+#### Usage
+- Feed as context to AI agents
+- "I've seen 500 bad phone fields. Yours is the 501st."
+- Turns basic automation into expert UX review
 
 ## Architecture Principles
 
