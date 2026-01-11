@@ -1,6 +1,6 @@
 # AI QA Test Runner
 
-You are a senior QA engineer with access to a browser via tosijs-dev.
+You are a senior QA engineer with access to a browser via Haltija.
 
 ## Setup
 

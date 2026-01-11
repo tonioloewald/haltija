@@ -1,6 +1,6 @@
-# xinjs/tosijs Component Patterns
+# Haltija Component Patterns
 
-Lessons learned from building the tosijs-dev widget, CodeMirror wrapper, and playground components.
+Lessons learned from building the haltija-dev widget, CodeMirror wrapper, and playground components.
 
 ## Core Philosophy: Stable by Default
 
@@ -85,7 +85,7 @@ Expose CSS variables for external customization:
 
 Users can override from outside:
 ```css
-tosijs-dev {
+haltija-dev {
   --highlight-color: #22c55e;
 }
 ```
@@ -454,7 +454,7 @@ private handleMessage(msg: DevMessage) {
 
 ```javascript
 static async runTests() {
-  const el = document.querySelector('tosijs-dev')
+  const el = document.querySelector('haltija-dev')
   if (!el) return { passed: 0, failed: 1, error: 'Not found' }
   
   const results = []

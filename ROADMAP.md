@@ -1,4 +1,4 @@
-# Dev Channel Roadmap
+# Haltija Roadmap
 
 ## Completed
 
@@ -35,7 +35,7 @@
 - `/docs` endpoint - quick-start guide for AI agents
 - `/api` endpoint - complete API reference
 - Human-like typing with variable latency and typos
-- Node-compatible CLI (`npx tosijs-dev` works)
+- Node-compatible CLI (`npx haltija` works)
 
 ### Phase 5: JSON Test Framework ✅
 
@@ -135,11 +135,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Start app + tosijs-dev
+      - name: Start app + haltija
         run: |
           npm start &
           npx playwright install chromium
-          bunx tosijs-dev --headless &
+          bunx haltija --headless &
           sleep 5
           
       - name: AI executes test plan
@@ -163,7 +163,7 @@ jobs:
 ```
 
 ##### Headless Mode
-- `bunx tosijs-dev --headless` - Starts Playwright browser automatically
+- `bunx haltija --headless` - Starts Playwright browser automatically
 - No manual browser/bookmarklet needed
 - Chromium runs headless in CI environment
 - Widget auto-injected into every page
@@ -200,7 +200,7 @@ ai-qa:
   image: mcr.microsoft.com/playwright:v1.40.0
   script:
     - npm start &
-    - bunx tosijs-dev --headless &
+    - bunx haltija --headless &
     - sleep 5
     - npx claude-code -p "$(cat .tosijs/prompts/run-tests.md)" > results.json
     - jq -e '.summary.failed == 0' results.json
@@ -305,7 +305,7 @@ user:dwelled     (hovered > threshold)
 - Drag detection with smart thresholds (>10px fast, or >200ms deliberate)
 - Bookmarklet auto-replaces stale widgets (version check)
 - Hot reload via `POST /reload` - widget updates without page refresh
-- Custom element re-registration (auto-renames to `tosijs-dev-1`, etc.)
+- Custom element re-registration (auto-renames to `haltija-1`, etc.)
 
 **Future enhancements:**
 - Direction change detection for drags (reversal = intentional)
@@ -345,7 +345,7 @@ The holy grail - AI that can:
 
 #### Core Features
 - Strip `Content-Security-Policy`, `X-Frame-Options` headers
-- Auto-inject tosijs-dev widget on page load
+- Auto-inject haltija widget on page load
 - Minimal chrome (address bar, back/forward, agent status)
 - Works on any site, no bookmarklet needed
 

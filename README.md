@@ -1,8 +1,8 @@
-# tosijs-dev
+# Haltija 🧝
 
 **Give AI agents eyes and hands in the browser.**
 
-tosijs-dev lets AI agents see and control live browser tabs - not headless puppets, but the actual pages your users see. Query the DOM, click buttons, fill forms, watch for changes, run JavaScript. The agent works like a QA engineer, not a test script.
+Haltija lets AI agents see and control live browser tabs - not headless puppets, but the actual pages your users see. Query the DOM, click buttons, fill forms, watch for changes, run JavaScript. The agent works like a QA engineer, not a test script.
 
 ## Why This Matters
 
@@ -34,7 +34,7 @@ An AI that can see is fundamentally different from an AI that has to be told.
 - Test scripts break when the UI changes
 - Engineers debug the test harness, not the product
 
-**With tosijs-dev:**
+**With Haltija:**
 - Agent sees the user's live browser session
 - Explores the app like a human would
 - Finds real bugs, writes repro steps in plain English
@@ -46,13 +46,13 @@ This isn't "better test automation." It's giving AI the ability to understand wh
 
 ```bash
 # Start the server
-bunx tosijs-dev
+bunx haltija
 
 # For HTTPS sites
-bunx tosijs-dev --https
+bunx haltija --https
 
 # Both HTTP and HTTPS  
-bunx tosijs-dev --both
+bunx haltija --both
 ```
 
 ### Option 1: Bookmarklet
@@ -69,7 +69,7 @@ Safe to leave in your codebase - it's a no-op in production. You'll see a colore
 
 ### Option 3: Headless Mode (for CI)
 ```bash
-bunx tosijs-dev --headless --headless-url http://localhost:3000
+bunx haltija --headless --headless-url http://localhost:3000
 ```
 
 Starts Playwright Chromium with the widget auto-injected. Perfect for CI pipelines.
@@ -253,14 +253,14 @@ The agent doesn't need special libraries. It's just HTTP.
 
 ```bash
 # Run directly
-bunx tosijs-dev
+bunx haltija
 
 # Or install globally
-npm install -g tosijs-dev
-tosijs-dev
+npm install -g haltija
+haltija
 
 # Or add to your project
-npm install tosijs-dev
+npm install haltija
 ```
 
 Works with Bun (preferred) or Node.js.
@@ -268,12 +268,12 @@ Works with Bun (preferred) or Node.js.
 ## CLI Options
 
 ```bash
-tosijs-dev                    # HTTP on port 8700
-tosijs-dev --https            # HTTPS on port 8701 (auto-generates certs)
-tosijs-dev --both             # Both HTTP and HTTPS
-tosijs-dev --port 3000        # Custom HTTP port
-tosijs-dev --headless         # Start Playwright browser with widget auto-injected
-tosijs-dev --headless-url URL # Headless mode, navigate to specific URL
+haltija                    # HTTP on port 8700
+haltija --https            # HTTPS on port 8701 (auto-generates certs)
+haltija --both             # Both HTTP and HTTPS
+haltija --port 3000        # Custom HTTP port
+haltija --headless         # Start Playwright browser with widget auto-injected
+haltija --headless-url URL # Headless mode, navigate to specific URL
 ```
 
 Environment variables:
@@ -489,12 +489,12 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          npx tosijs-dev --headless --headless-url http://localhost:3000 &
+          npx haltija --headless --headless-url http://localhost:3000 &
           sleep 3
           
           # Let Claude run the tests
           npx claude --print "
-            Run the test suite at ./tests/*.json using the tosijs-dev API at localhost:8700.
+            Run the test suite at ./tests/*.json using the haltija API at localhost:8700.
             For each test, report: passed/failed, and if failed explain what went wrong
             and suggest a fix. Output as markdown.
           " > qa-report.md
@@ -513,7 +513,7 @@ ai-qa:
   stage: test
   script:
     - npm start &
-    - npx tosijs-dev --headless --headless-url http://localhost:3000 &
+    - npx haltija --headless --headless-url http://localhost:3000 &
     - sleep 3
     - |
       npx claude --print "
