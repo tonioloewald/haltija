@@ -36,6 +36,7 @@ Options:
   --headless      Start headless Chromium browser (for CI)
   --headless-url <url>  URL to open in headless browser (default: none)
   --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
+  --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
   --help, -h      Show this help
@@ -45,6 +46,7 @@ Environment Variables:
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
   DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')
   DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)
+  DEV_CHANNEL_DOCS_DIR       Directory with custom docs (default: built-in only)
 
 Examples:
   npx tosijs-dev                          # HTTP on 8700
@@ -91,6 +93,12 @@ if (firstArg && !isNaN(parseInt(firstArg))) {
 const snapshotsDirIdx = args.indexOf('--snapshots-dir')
 if (snapshotsDirIdx !== -1 && args[snapshotsDirIdx + 1]) {
   env.DEV_CHANNEL_SNAPSHOTS_DIR = args[snapshotsDirIdx + 1]
+}
+
+// Custom docs directory
+const docsDirIdx = args.indexOf('--docs-dir')
+if (docsDirIdx !== -1 && args[docsDirIdx + 1]) {
+  env.DEV_CHANNEL_DOCS_DIR = args[docsDirIdx + 1]
 }
 
 // Headless mode options

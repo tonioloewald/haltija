@@ -384,6 +384,180 @@ You are building **the memory that the modern web tries to erase**.
 
 ---
 
+## Class 7: Mobile Hostility
+
+*Crimes committed by developers who only test on a 27-inch monitor with a mouse.*
+
+### 25. The Pinch-to-Zoom Lock
+
+**The Crime:** Disabling zoom because it "messes up the design." This actively prevents users with vision impairments (or anyone in bright sunlight) from reading your content.
+
+**Haltija Signature:**
+- Scan `<meta name="viewport">`
+- Look for `user-scalable=no` or `maximum-scale=1.0`
+
+**Report:** "Viewport Violation: Zoom disabled. Accessibility failure for low-vision users."
+
+---
+
+### 26. The Hover Trap
+
+**The Crime:** Hiding critical actions (like "Edit" or "Delete" buttons) or navigation sub-menus behind a `:hover` state.
+
+**The Reality:** There is no hover on touchscreens. The user has to awkwardly tap once to see the menu (which might interpret the tap as a click and navigate away immediately).
+
+**Haltija Signature:**
+- Identify elements with `mouseover` or `:hover` listeners that change visibility of child elements
+- **Heuristic:** Can the Agent access the child element via a single `click` or `focus` event without triggering navigation?
+
+**Report:** "Touchscreen Exclusion: Critical UI hidden behind Hover state. Inaccessible on mobile."
+
+---
+
+### 27. The Keyboard Eclipse
+
+**The Crime:** Tapping an input field brings up the on-screen keyboard, which completely covers the input field you are typing in.
+
+**Haltija Signature:**
+- **Simulation:** Set viewport height to 50% (simulating keyboard)
+- **Action:** Focus an input in the bottom half of the page
+- **Check:** Is the input element's `bottom` coordinate > visible viewport height? Does the page fail to scroll it into view?
+
+**Report:** "Input Occlusion: Active field hidden by virtual keyboard."
+
+---
+
+### 28. The Fat Finger Minefield
+
+**The Crime:** Placing two actionable elements (e.g., "Save" and "Cancel", or list items) closer than 8px apart.
+
+**Haltija Signature:**
+- Scan all `button`, `a`, `input`
+- Compute bounding boxes
+- **Check:** If distance between edges of two interactive targets is < 8px → **Crime**
+
+**Report:** "Touch Target Risk: Interactive elements too close. High probability of accidental clicks."
+
+---
+
+### 29. The Horizontal Scroll of Death
+
+**The Crime:** A single element (like a long URL or code block) is wider than the mobile viewport, causing the *entire page* to wobble left and right.
+
+**Haltija Signature:**
+- Set viewport width to 375px (iPhone SE)
+- **Check:** Is `document.body.scrollWidth` > `window.innerWidth`?
+
+**Report:** "Layout Failure: Page overflows horizontally. Causes unstable scrolling."
+
+---
+
+## Class 8: Accessibility Atrocities
+
+*Basic exclusions that are often illegal and always unethical.*
+
+### 30. The Silent Image
+
+**The Crime:** Meaningful images (not decorative) missing `alt` text. Screen readers just say "Image" or read the filename "DSC_0043.jpg".
+
+**Haltija Signature:**
+- Query `img:not([alt])`
+- Filter out `role="presentation"` or empty `alt=""` (if decorative)
+
+**Report:** "Blind Spot: Meaningful image missing alternative text."
+
+---
+
+### 31. The Color-Only Signal
+
+**The Crime:** Using *only* red text or a red border to indicate an error, with no icon or text label explaining "Invalid".
+
+**The Reality:** Colorblind users cannot see the error.
+
+**Haltija Signature:**
+- Trigger form error
+- **Check:** Did a new text node appear or did `aria-invalid` toggle?
+- **Failure:** If only CSS `color` or `border-color` changed → **Crime**
+
+**Report:** "Sensory Reliance: Error state conveyed solely by color. Invisible to colorblind users."
+
+---
+
+### 32. The Low Contrast Grey
+
+**The Crime:** Light grey text on a white background (e.g., `#999` on `#fff`). The designer thinks it looks "clean." Users think it looks "invisible."
+
+**Haltija Signature:**
+- **Heuristic:** Compute background color and foreground color of all text nodes
+- **Math:** Calculate luminosity ratio
+- If < 4.5:1 (WCAG AA) for normal text → **Crime**
+
+**Report:** "Legibility Failure: Text contrast too low (Ratio X:1)."
+
+---
+
+### 33. The Headings Out of Order
+
+**The Crime:** Using `<h3>` because you wanted "medium sized font," skipping `<h1>` or `<h2>`.
+
+**The Reality:** Screen reader users navigate by headings. A broken hierarchy makes the page structure unintelligible.
+
+**Haltija Signature:**
+- Scan heading tags
+- Check order (e.g., `h4` appears before `h1`, or `h3` is a direct child of `h1` skipping `h2`)
+
+**Report:** "Structural Chaos: Semantic heading hierarchy broken."
+
+---
+
+### 34. The Autoplay Assault
+
+**The Crime:** Video or audio that plays automatically on page load.
+
+**The Reality:** This overrides screen reader audio, disorienting blind users, and triggers anxiety/migraines in neurodiverse users.
+
+**Haltija Signature:**
+- Check `<video>` or `<audio>` tags for `autoplay` attribute
+- Check if `muted` is missing
+
+**Report:** "Hostile Media: Unsolicited autoplay detected."
+
+---
+
+### 35. The No Skip Link
+
+**The Crime:** Forcing keyboard users to tab through 50 navigation links on *every single page* before they can reach the content.
+
+**Haltija Signature:**
+- **Action:** Press `Tab` from page load
+- **Check:** Is one of the first 3 focusable elements a link to `#main` or `main`?
+
+**Report:** "Navigation Fatigue: Missing 'Skip to Content' link."
+
+---
+
+## Implementation Strategy: The Audit Flag
+
+You don't want this running on every fast iteration loop (it generates too much noise).
+
+**Add a flag to the Haltija CLI:**
+
+```bash
+# Run functional tests only
+npx haltija test
+
+# Run with full Criminal Investigation
+npx haltija test --audit
+```
+
+When `--audit` is active, the Agent gets the "Criminal Code" system prompt and the Haltija widget activates its "Sensors" (Contrast checker, Layout shift observer, etc.).
+
+This allows teams to separate:
+- **"Did we break the build?"** (Functional)
+- **"Did we ruin the product?"** (Audit)
+
+---
+
 ## The Value Proposition
 
 You aren't just selling a "Tester." You are selling a **Compliance Officer**.

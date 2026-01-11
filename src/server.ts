@@ -17,7 +17,7 @@
 import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode } from './types'
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -30,6 +30,7 @@ const LOG_PREFIX = '[haltija]'
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
 const HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
 const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
+const DOCS_DIR = process.env.DEV_CHANNEL_DOCS_DIR || null
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const certsDir = join(__dirname, '../certs')
 
@@ -786,6 +787,117 @@ async function handleRest(req: Request): Promise<Response> {
   // Server version
   const SERVER_VERSION = '0.1.6'
   
+  // Built-in docs (shipped with Haltija)
+  const builtinDocs: Record<string, { path: string; description: string }> = {
+    'ux-crimes': {
+      path: join(__dirname, '../docs/UX-CRIMES.md'),
+      description: 'The Haltija Criminal Code - 35 detectable UX anti-patterns'
+    }
+  }
+  
+  // Helper to get all available docs (built-in + custom)
+  function getAvailableDocs(): Array<{ name: string; description: string; source: 'builtin' | 'custom' }> {
+    const docs: Array<{ name: string; description: string; source: 'builtin' | 'custom' }> = []
+    
+    // Add built-in docs
+    for (const [name, info] of Object.entries(builtinDocs)) {
+      if (existsSync(info.path)) {
+        docs.push({ name, description: info.description, source: 'builtin' })
+      }
+    }
+    
+    // Add custom docs from DOCS_DIR
+    if (DOCS_DIR && existsSync(DOCS_DIR)) {
+      try {
+        const files = readdirSync(DOCS_DIR)
+        for (const file of files) {
+          if (file.endsWith('.md')) {
+            const name = file.replace(/\.md$/, '')
+            // Custom docs can override built-in
+            const existing = docs.findIndex(d => d.name === name)
+            if (existing >= 0) {
+              docs[existing] = { name, description: `(custom override)`, source: 'custom' }
+            } else {
+              // Try to extract description from first line
+              try {
+                const content = readFileSync(join(DOCS_DIR, file), 'utf-8')
+                const firstLine = content.split('\n')[0]?.replace(/^#\s*/, '').trim() || file
+                docs.push({ name, description: firstLine, source: 'custom' })
+              } catch {
+                docs.push({ name, description: file, source: 'custom' })
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore read errors
+      }
+    }
+    
+    return docs.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  
+  // Helper to get a specific doc by name
+  function getDoc(name: string): { content: string; source: 'builtin' | 'custom' } | null {
+    // Check custom docs first (allows override)
+    if (DOCS_DIR && existsSync(DOCS_DIR)) {
+      const customPath = join(DOCS_DIR, `${name}.md`)
+      if (existsSync(customPath)) {
+        try {
+          return { content: readFileSync(customPath, 'utf-8'), source: 'custom' }
+        } catch {
+          // Fall through to builtin
+        }
+      }
+    }
+    
+    // Check built-in docs
+    const builtin = builtinDocs[name]
+    if (builtin && existsSync(builtin.path)) {
+      try {
+        return { content: readFileSync(builtin.path, 'utf-8'), source: 'builtin' }
+      } catch {
+        return null
+      }
+    }
+    
+    return null
+  }
+  
+  // List all available docs (discovery endpoint)
+  if (path === '/docs/list' && req.method === 'GET') {
+    const docs = getAvailableDocs()
+    return Response.json({ 
+      docs,
+      customDocsDir: DOCS_DIR || null,
+      hint: 'Use GET /docs/:name to fetch a specific doc'
+    }, { headers })
+  }
+  
+  // Get a specific doc by name
+  // Match /docs/xyz where xyz is NOT 'list' (already handled above)
+  const docMatch = path.match(/^\/docs\/([^/]+)$/)
+  if (docMatch && docMatch[1] !== 'list' && req.method === 'GET') {
+    const docName = docMatch[1]
+    const doc = getDoc(docName)
+    if (doc) {
+      return new Response(doc.content, { 
+        headers: { 
+          ...headers, 
+          'Content-Type': 'text/markdown',
+          'X-Doc-Source': doc.source
+        } 
+      })
+    } else {
+      const available = getAvailableDocs().map(d => d.name)
+      return Response.json({ 
+        error: `Doc '${docName}' not found`,
+        available,
+        hint: DOCS_DIR ? `Add ${docName}.md to ${DOCS_DIR}` : 'Use --docs-dir to add custom docs'
+      }, { status: 404, headers })
+    }
+  }
+  
   // Agent documentation endpoint - everything an LLM needs to use this tool
   if (path === '/docs' && req.method === 'GET') {
     const baseUrl = USE_HTTPS ? `https://localhost:${PORT}` : `http://localhost:${PORT}`
@@ -876,6 +988,17 @@ fetch the full recording. Perfect for "show me how you do X" workflows.
 
 Events are aggregated at source: "user typed 'hello'" not 5 keystrokes.
 Categories: interaction, navigation, input, hover, scroll, mutation, focus, console.
+
+### Reference Docs (Extensible Knowledge Base)
+- GET  /docs/list       - List all available docs (built-in + custom)
+- GET  /docs/:name      - Fetch a specific doc by name (e.g., /docs/ux-crimes)
+
+Built-in docs: ux-crimes (The Haltija Criminal Code - 35 UX anti-patterns)
+
+Custom docs: Add your own .md files to a directory and use --docs-dir <path>
+Example: style-guide.md, api-reference.md, testing-conventions.md
+
+Custom docs can override built-in docs by using the same filename.
 
 ## Tips
 
