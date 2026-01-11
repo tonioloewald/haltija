@@ -183,6 +183,37 @@ The AI can ask "what just happened?" and get a meaningful answer:
 
 Not: "keydown e, keydown m, keydown a, keydown i, keydown l, mousedown, mouseup, click..."
 
+## Log Viewer Widget
+
+Click the 📋 button on the widget to open the interactive event log. It auto-starts semantic event watching so you can immediately see what's happening.
+
+**Features:**
+- **Filter by category** - clicks, input, navigation, hover, focus
+- **Color-coded entries** - instantly distinguish event types
+- **Expandable details** - click any entry to see the full payload
+- **Auto-scroll** - stays at bottom for new events, pauses when you scroll up
+- **Drag detection** - captures resize handles, sliders, and other drag interactions
+
+The log viewer is perfect for:
+- Debugging "what just happened?" during development
+- Understanding user interaction patterns
+- Verifying that your UI responds correctly to events
+- Watching an AI agent interact with your page in real-time
+- **Building tests** - the event stream becomes test steps
+- **Failure analysis** - see exactly what led up to a crash or bug
+
+**Same data, two views.** The log viewer shows exactly what AI agents see via the API:
+
+```bash
+# Same event stream the log viewer displays
+curl http://localhost:8700/events
+
+# Get events since a timestamp (for polling)
+curl "http://localhost:8700/events?since=1736600000000"
+```
+
+Humans and AI agents share the same hindsight buffer - both can answer "what just happened?" without re-querying the DOM.
+
 ## Smart Element Selectors
 
 Element identification prioritizes what engineers actually use:
