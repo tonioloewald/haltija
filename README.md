@@ -410,6 +410,18 @@ If you prefer traditional recording, it's still available - but the AI will unde
 
 Unlike Playwright's recorder, we capture semantic events ("user typed email in login form") not raw DOM events ("keydown on `input#email`"). When the UI changes, the AI can adapt the test instead of breaking.
 
+**Recordings are saved server-side** - the agent can retrieve them:
+
+```bash
+# List all recordings
+curl http://localhost:8700/recordings
+
+# Get a specific recording (includes full semantic events)
+curl http://localhost:8700/recording/rec_1736600123456_abc123
+```
+
+The agent also sees `recording:started` and `recording:stopped` events in the semantic stream, enabling "show me how you do X" workflows.
+
 ### Snapshots (Time Travel Debugging)
 
 When a test fails, a snapshot is automatically captured. The `snapshotId` is included in the test result.
