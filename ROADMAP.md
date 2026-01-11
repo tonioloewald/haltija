@@ -39,14 +39,94 @@
 
 ## In Progress
 
-### Phase 5: Test Runner & AI QA Agent
+### Phase 5: JSON Test Framework
 
-#### Manual Test Scripts (Playwright but good)
-- Add `runTest(test: DevChannelTest)` to client.ts
-- Execute steps sequentially with delays
-- Run assertions and collect results
-- REST endpoint for running tests
-- Human-readable test format (not code)
+Pure JSON tests that map to atomic actions. No code files - just data.
+
+#### Test Format
+```json
+{
+  "version": 1,
+  "name": "Login flow",
+  "description": "Verify user can log in with valid credentials",
+  "url": "https://example.com/login",
+  "createdAt": 1704067200000,
+  "createdBy": "human" | "ai",
+  "tags": ["auth", "critical-path"],
+  "steps": [
+    {
+      "action": "type",
+      "selector": "#email",
+      "text": "user@example.com",
+      "description": "Enter email address",
+      "purpose": "Provide valid user credentials for authentication"
+    },
+    {
+      "action": "click",
+      "selector": "#submit",
+      "description": "Submit login form",
+      "purpose": "Trigger authentication request"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "url", "pattern": "/dashboard" },
+      "description": "Verify redirect to dashboard",
+      "purpose": "Confirm successful authentication"
+    }
+  ]
+}
+```
+
+#### Human Test Recording (Widget UI)
+- **Record button**: Start capturing user actions as JSON steps
+- **Check button**: Insert assertion at current state (exists, text, value, visible)
+- **Save button**: Stop recording, prompt for name/description, save to file/server
+- Actions captured: clicks, typing, navigation, form submissions
+- Auto-generates selectors (prefer id > data-testid > stable classes > path)
+
+#### AI Test Generation
+- AI inspects page via `/tree`, `/inspectAll`, proposes test plan
+- Each step includes `description` (what) and `purpose` (why)
+- AI generates assertions based on expected behavior
+- Metadata enables meaningful failure messages:
+  - "Step 3 failed: Submit login form - button was disabled"
+  - NOT: "Click on #submit failed"
+
+#### Test Runner
+- `POST /test/run` - Execute a test, return results
+- `POST /test/validate` - Dry-run to check selectors exist
+- Sequential execution with configurable delays
+- Per-step results with timing and error details
+- Clear failure reporting: which step, what failed, why
+
+#### Test Results Format
+```json
+{
+  "test": "Login flow",
+  "passed": false,
+  "duration": 2340,
+  "steps": [
+    { "index": 0, "passed": true, "duration": 120 },
+    { "index": 1, "passed": true, "duration": 85 },
+    { 
+      "index": 2, 
+      "passed": false, 
+      "duration": 5000,
+      "error": "Timeout waiting for URL to match /dashboard",
+      "description": "Verify redirect to dashboard",
+      "purpose": "Confirm successful authentication",
+      "context": { "actualUrl": "/login?error=invalid" }
+    }
+  ]
+}
+```
+
+#### CI/Cloud Testing
+- **Headless execution**: Run saved JSON tests without browser UI
+- **AI QA in cloud**: Execute test suite, AI analyzes failures
+- **Test amendment**: AI updates failing tests (selector changed, flow changed)
+- **Batch runner**: `POST /test/suite` - Run multiple tests, aggregate results
+- **Webhook support**: POST results to CI system on completion
 
 #### AI as QA Professional
 - **Exploratory testing**: Agent fuzzes around, finds edge cases

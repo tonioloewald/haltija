@@ -418,6 +418,119 @@ export class DevChannelClient {
       duration: Date.now() - startTime,
     }
   }
+  
+  // ==========================================
+  // Test Runner
+  // ==========================================
+  
+  /**
+   * Validate a test without executing it
+   * Checks that all selectors in the test exist
+   */
+  async validateTest(test: DevChannelTest): Promise<{
+    valid: boolean
+    issues: Array<{ step: number; selector: string; error: string }>
+    stepCount: number
+  }> {
+    const res = await fetch(`${this.baseUrl}/test/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(test),
+    })
+    return res.json()
+  }
+  
+  /**
+   * Run a test and return results
+   */
+  async runTest(test: DevChannelTest, options?: {
+    stepDelay?: number
+    timeout?: number
+    stopOnFailure?: boolean
+  }): Promise<TestResult> {
+    const res = await fetch(`${this.baseUrl}/test/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ test, ...options }),
+    })
+    const result = await res.json()
+    
+    // Map to TestResult format
+    return {
+      test,
+      passed: result.passed,
+      startTime: Date.now() - result.duration,
+      endTime: Date.now(),
+      steps: result.steps,
+      error: result.steps.find((s: StepResult) => !s.passed)?.error,
+    }
+  }
+  
+  /**
+   * Run multiple tests as a suite
+   */
+  async runTestSuite(tests: DevChannelTest[], options?: {
+    testDelay?: number
+    stepDelay?: number
+    timeout?: number
+    stopOnFailure?: boolean
+  }): Promise<{
+    duration: number
+    results: TestResult[]
+    summary: { total: number; executed: number; passed: number; failed: number }
+  }> {
+    const res = await fetch(`${this.baseUrl}/test/suite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tests, ...options }),
+    })
+    return res.json()
+  }
+  
+  /**
+   * Load a test from a JSON file or URL
+   */
+  async loadTest(source: string): Promise<DevChannelTest> {
+    // If it looks like a URL, fetch it
+    if (source.startsWith('http://') || source.startsWith('https://')) {
+      const res = await fetch(source)
+      return res.json()
+    }
+    
+    // Otherwise try to parse as JSON
+    return JSON.parse(source)
+  }
+  
+  /**
+   * Print test results to console in a readable format
+   */
+  formatTestResult(result: TestResult): string {
+    const lines: string[] = []
+    const icon = result.passed ? '✓' : '✗'
+    const status = result.passed ? 'PASSED' : 'FAILED'
+    
+    lines.push(`${icon} ${result.test.name} - ${status}`)
+    lines.push(`  Duration: ${result.endTime - result.startTime}ms`)
+    lines.push('')
+    
+    for (const step of result.steps) {
+      const stepIcon = step.passed ? '  ✓' : '  ✗'
+      const desc = step.description || `Step ${step.index + 1}`
+      lines.push(`${stepIcon} ${desc}`)
+      
+      if (!step.passed && step.error) {
+        lines.push(`      Error: ${step.error}`)
+        if (step.purpose) {
+          lines.push(`      Purpose: ${step.purpose}`)
+        }
+        if (step.context) {
+          lines.push(`      Context: ${JSON.stringify(step.context)}`)
+        }
+      }
+    }
+    
+    return lines.join('\n')
+  }
 }
 
 // Default export for easy usage

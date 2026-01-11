@@ -291,7 +291,8 @@ export interface DomSnapshot {
 
 /**
  * A test file that can be saved, loaded, and replayed.
- * Designed for agent-driven testing and recording/playback.
+ * Pure JSON format - no code, just data that maps to atomic actions.
+ * Designed for both human recording and AI generation.
  */
 export interface DevChannelTest {
   /** Schema version for forward compatibility */
@@ -303,6 +304,10 @@ export interface DevChannelTest {
   url: string
   /** When the test was created */
   createdAt: number
+  /** Who created this test */
+  createdBy?: 'human' | 'ai'
+  /** Tags for categorization (e.g., ["auth", "critical-path", "smoke"]) */
+  tags?: string[]
   /** Steps to execute */
   steps: TestStep[]
 }
@@ -320,8 +325,10 @@ export type TestStep =
   | EvalStep
 
 interface BaseStep {
-  /** Optional description of what this step does */
+  /** Human-readable description of what this step does (the "what") */
   description?: string
+  /** Why this step matters - enables meaningful failure messages (the "why") */
+  purpose?: string
   /** Delay in ms before executing this step (default: 0) */
   delay?: number
 }
@@ -404,10 +411,22 @@ export interface TestResult {
 }
 
 export interface StepResult {
+  /** Index of the step in the test */
+  index: number
+  /** The step that was executed */
   step: TestStep
+  /** Whether the step passed */
   passed: boolean
+  /** How long the step took (ms) */
   duration: number
+  /** Error message if failed */
   error?: string
+  /** Step description (copied from step for convenience) */
+  description?: string
+  /** Step purpose (copied from step for convenience) */
+  purpose?: string
+  /** Additional context about the failure (e.g., actual vs expected values) */
+  context?: Record<string, any>
 }
 
 // ============================================

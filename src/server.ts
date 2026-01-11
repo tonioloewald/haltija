@@ -8,7 +8,7 @@
  * - Buffers recent messages for late joiners
  */
 
-import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent } from './types'
+import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult } from './types'
 import { injectorCode } from './bookmarklet'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
@@ -1132,6 +1132,469 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       pierceShadow: body.pierceShadow,
     })
     return Response.json(response, { headers })
+  }
+  
+  // ==========================================
+  // Test Runner Endpoints
+  // ==========================================
+  
+  // Validate a test (check all selectors exist without executing actions)
+  if (path === '/test/validate' && req.method === 'POST') {
+    const test = await req.json() as DevChannelTest
+    const issues: Array<{ step: number; selector: string; error: string }> = []
+    
+    for (let i = 0; i < test.steps.length; i++) {
+      const step = test.steps[i]
+      let selector: string | undefined
+      
+      // Extract selector from step
+      if ('selector' in step) {
+        selector = step.selector
+      } else if (step.action === 'assert' && 'selector' in step.assertion) {
+        selector = step.assertion.selector
+      }
+      
+      if (selector) {
+        const response = await requestFromBrowser('dom', 'query', { selector })
+        if (!response.success || !response.data) {
+          issues.push({
+            step: i,
+            selector,
+            error: `Element not found: ${selector}`,
+          })
+        }
+      }
+    }
+    
+    return Response.json({
+      valid: issues.length === 0,
+      issues,
+      stepCount: test.steps.length,
+    }, { headers })
+  }
+  
+  // Run a test and return results
+  if (path === '/test/run' && req.method === 'POST') {
+    const body = await req.json()
+    const test = body.test as DevChannelTest
+    const options = {
+      stepDelay: body.stepDelay ?? 100,  // ms between steps
+      timeout: body.timeout ?? 5000,      // ms timeout per step
+      stopOnFailure: body.stopOnFailure ?? true,
+    }
+    
+    const startTime = Date.now()
+    const stepResults: StepResult[] = []
+    let passed = true
+    
+    for (let i = 0; i < test.steps.length; i++) {
+      const step = test.steps[i]
+      const stepStart = Date.now()
+      let stepPassed = true
+      let error: string | undefined
+      let context: Record<string, any> | undefined
+      
+      // Apply step delay
+      if (step.delay || options.stepDelay) {
+        await new Promise(r => setTimeout(r, step.delay || options.stepDelay))
+      }
+      
+      try {
+        switch (step.action) {
+          case 'navigate': {
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, options.timeout)
+            if (!response.success) {
+              stepPassed = false
+              error = response.error || 'Navigation failed'
+            }
+            break
+          }
+          
+          case 'click': {
+            // Scroll into view
+            await requestFromBrowser('eval', 'exec', {
+              code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+            })
+            await new Promise(r => setTimeout(r, 100))
+            
+            // Check element exists and is clickable
+            const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
+            if (!inspectResponse.success || !inspectResponse.data) {
+              stepPassed = false
+              error = `Element not found: ${step.selector}`
+              break
+            }
+            
+            const elData = inspectResponse.data
+            if (elData.properties?.disabled) {
+              stepPassed = false
+              error = 'Element is disabled'
+              context = { disabled: true }
+              break
+            }
+            
+            // Click
+            for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
+              await requestFromBrowser('events', 'dispatch', { selector: step.selector, event })
+            }
+            break
+          }
+          
+          case 'type': {
+            // Scroll into view
+            await requestFromBrowser('eval', 'exec', {
+              code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+            })
+            await new Promise(r => setTimeout(r, 100))
+            
+            // Check element exists
+            const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
+            if (!inspectResponse.success || !inspectResponse.data) {
+              stepPassed = false
+              error = `Element not found: ${step.selector}`
+              break
+            }
+            
+            // Clear if needed
+            if (step.clear !== false) {
+              await requestFromBrowser('eval', 'exec', {
+                code: `document.querySelector(${JSON.stringify(step.selector)}).value = ''`
+              })
+            }
+            
+            // Focus and type
+            await requestFromBrowser('eval', 'exec', {
+              code: `document.querySelector(${JSON.stringify(step.selector)})?.focus()`
+            })
+            
+            // Set value and fire input event
+            await requestFromBrowser('eval', 'exec', {
+              code: `(function(){
+                const el = document.querySelector(${JSON.stringify(step.selector)});
+                if (el) { 
+                  el.value = ${JSON.stringify(step.text)}; 
+                  el.dispatchEvent(new InputEvent('input', {bubbles: true})); 
+                }
+              })()`
+            })
+            break
+          }
+          
+          case 'key': {
+            await requestFromBrowser('events', 'dispatch', {
+              selector: 'body',
+              event: 'keydown',
+              options: {
+                key: step.key,
+                altKey: step.modifiers?.alt,
+                ctrlKey: step.modifiers?.ctrl,
+                metaKey: step.modifiers?.meta,
+                shiftKey: step.modifiers?.shift,
+              },
+            })
+            break
+          }
+          
+          case 'wait': {
+            if (step.duration) {
+              await new Promise(r => setTimeout(r, step.duration))
+            } else if (step.selector) {
+              // Wait for selector to appear
+              const waitStart = Date.now()
+              let found = false
+              while (Date.now() - waitStart < options.timeout) {
+                const response = await requestFromBrowser('dom', 'query', { selector: step.selector })
+                if (response.success && response.data) {
+                  found = true
+                  break
+                }
+                await new Promise(r => setTimeout(r, 100))
+              }
+              if (!found) {
+                stepPassed = false
+                error = `Timeout waiting for selector: ${step.selector}`
+              }
+            } else if (step.url) {
+              // Wait for URL to match
+              const waitStart = Date.now()
+              let matched = false
+              const pattern = typeof step.url === 'string' ? step.url : step.url.source
+              while (Date.now() - waitStart < options.timeout) {
+                const response = await requestFromBrowser('navigation', 'location', {})
+                if (response.success && response.data) {
+                  const url = response.data.url || response.data.href
+                  if (url.includes(pattern) || new RegExp(pattern).test(url)) {
+                    matched = true
+                    break
+                  }
+                }
+                await new Promise(r => setTimeout(r, 100))
+              }
+              if (!matched) {
+                stepPassed = false
+                error = `Timeout waiting for URL to match: ${pattern}`
+                const locResponse = await requestFromBrowser('navigation', 'location', {})
+                context = { actualUrl: locResponse.data?.url || locResponse.data?.href }
+              }
+            }
+            break
+          }
+          
+          case 'assert': {
+            const assertion = step.assertion
+            
+            switch (assertion.type) {
+              case 'exists': {
+                const response = await requestFromBrowser('dom', 'query', { selector: assertion.selector })
+                if (!response.success || !response.data) {
+                  stepPassed = false
+                  error = `Element does not exist: ${assertion.selector}`
+                }
+                break
+              }
+              
+              case 'not-exists': {
+                const response = await requestFromBrowser('dom', 'query', { selector: assertion.selector })
+                if (response.success && response.data) {
+                  stepPassed = false
+                  error = `Element should not exist: ${assertion.selector}`
+                }
+                break
+              }
+              
+              case 'text': {
+                const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
+                if (!response.success || !response.data) {
+                  stepPassed = false
+                  error = `Element not found: ${assertion.selector}`
+                  break
+                }
+                const actualText = response.data.text?.innerText || response.data.text?.textContent || ''
+                const matches = assertion.contains 
+                  ? actualText.includes(assertion.text)
+                  : actualText.trim() === assertion.text.trim()
+                if (!matches) {
+                  stepPassed = false
+                  error = assertion.contains 
+                    ? `Text "${actualText}" does not contain "${assertion.text}"`
+                    : `Text mismatch: expected "${assertion.text}", got "${actualText}"`
+                  context = { expected: assertion.text, actual: actualText }
+                }
+                break
+              }
+              
+              case 'value': {
+                const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
+                if (!response.success || !response.data) {
+                  stepPassed = false
+                  error = `Element not found: ${assertion.selector}`
+                  break
+                }
+                const actualValue = response.data.text?.value || ''
+                if (actualValue !== assertion.value) {
+                  stepPassed = false
+                  error = `Value mismatch: expected "${assertion.value}", got "${actualValue}"`
+                  context = { expected: assertion.value, actual: actualValue }
+                }
+                break
+              }
+              
+              case 'visible': {
+                const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
+                if (!response.success || !response.data) {
+                  stepPassed = false
+                  error = `Element not found: ${assertion.selector}`
+                  break
+                }
+                if (!response.data.box?.visible || response.data.styles?.visibility === 'hidden' || response.data.styles?.display === 'none') {
+                  stepPassed = false
+                  error = `Element is not visible: ${assertion.selector}`
+                  context = { 
+                    display: response.data.styles?.display,
+                    visibility: response.data.styles?.visibility,
+                    inViewport: response.data.box?.visible,
+                  }
+                }
+                break
+              }
+              
+              case 'hidden': {
+                const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
+                // Element not existing counts as hidden
+                if (!response.success || !response.data) break
+                
+                if (response.data.box?.visible && response.data.styles?.visibility !== 'hidden' && response.data.styles?.display !== 'none') {
+                  stepPassed = false
+                  error = `Element is visible but should be hidden: ${assertion.selector}`
+                }
+                break
+              }
+              
+              case 'url': {
+                const response = await requestFromBrowser('navigation', 'location', {})
+                if (!response.success) {
+                  stepPassed = false
+                  error = 'Could not get current URL'
+                  break
+                }
+                const url = response.data?.url || response.data?.href || ''
+                if (!url.includes(assertion.pattern) && !new RegExp(assertion.pattern).test(url)) {
+                  stepPassed = false
+                  error = `URL does not match pattern "${assertion.pattern}"`
+                  context = { actualUrl: url, pattern: assertion.pattern }
+                }
+                break
+              }
+              
+              case 'title': {
+                const response = await requestFromBrowser('navigation', 'location', {})
+                if (!response.success) {
+                  stepPassed = false
+                  error = 'Could not get page title'
+                  break
+                }
+                const title = response.data?.title || ''
+                if (!title.includes(assertion.pattern) && !new RegExp(assertion.pattern).test(title)) {
+                  stepPassed = false
+                  error = `Title does not match pattern "${assertion.pattern}"`
+                  context = { actualTitle: title, pattern: assertion.pattern }
+                }
+                break
+              }
+              
+              case 'console-contains': {
+                const response = await requestFromBrowser('console', 'get', { since: 0 })
+                if (!response.success) {
+                  stepPassed = false
+                  error = 'Could not get console entries'
+                  break
+                }
+                const entries = response.data || []
+                const filtered = assertion.level 
+                  ? entries.filter((e: any) => e.level === assertion.level)
+                  : entries
+                const found = filtered.some((e: any) => 
+                  e.args?.some((arg: any) => 
+                    String(arg).includes(assertion.text)
+                  )
+                )
+                if (!found) {
+                  stepPassed = false
+                  error = `Console does not contain "${assertion.text}"${assertion.level ? ` at level ${assertion.level}` : ''}`
+                }
+                break
+              }
+              
+              case 'eval': {
+                const response = await requestFromBrowser('eval', 'exec', { code: assertion.code })
+                if (!response.success) {
+                  stepPassed = false
+                  error = response.error || 'Eval failed'
+                  break
+                }
+                if (response.data !== assertion.expected) {
+                  stepPassed = false
+                  error = `Eval result mismatch`
+                  context = { expected: assertion.expected, actual: response.data }
+                }
+                break
+              }
+            }
+            break
+          }
+          
+          case 'eval': {
+            const response = await requestFromBrowser('eval', 'exec', { code: step.code }, options.timeout)
+            if (!response.success) {
+              stepPassed = false
+              error = response.error || 'Eval failed'
+              break
+            }
+            if (step.expect !== undefined && response.data !== step.expect) {
+              stepPassed = false
+              error = 'Eval result did not match expected value'
+              context = { expected: step.expect, actual: response.data }
+            }
+            break
+          }
+        }
+      } catch (err) {
+        stepPassed = false
+        error = err instanceof Error ? err.message : String(err)
+      }
+      
+      stepResults.push({
+        index: i,
+        step,
+        passed: stepPassed,
+        duration: Date.now() - stepStart,
+        error,
+        description: step.description,
+        purpose: step.purpose,
+        context,
+      })
+      
+      if (!stepPassed) {
+        passed = false
+        if (options.stopOnFailure) break
+      }
+    }
+    
+    return Response.json({
+      test: test.name,
+      passed,
+      duration: Date.now() - startTime,
+      steps: stepResults,
+      summary: {
+        total: test.steps.length,
+        executed: stepResults.length,
+        passed: stepResults.filter(s => s.passed).length,
+        failed: stepResults.filter(s => !s.passed).length,
+      },
+    }, { headers })
+  }
+  
+  // Run a test suite (multiple tests)
+  if (path === '/test/suite' && req.method === 'POST') {
+    const body = await req.json()
+    const tests = body.tests as DevChannelTest[]
+    const options = {
+      testDelay: body.testDelay ?? 500,  // ms between tests
+      stepDelay: body.stepDelay ?? 100,
+      timeout: body.timeout ?? 5000,
+      stopOnFailure: body.stopOnFailure ?? false,  // continue to next test by default
+    }
+    
+    const suiteStart = Date.now()
+    const results: any[] = []
+    
+    for (const test of tests) {
+      // Run the test by making internal request
+      const testResult = await handleRest(new Request(`http://localhost/test/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test, ...options }),
+      }))
+      
+      const result = await testResult.json()
+      results.push(result)
+      
+      if (!result.passed && options.stopOnFailure) break
+      
+      // Delay between tests
+      await new Promise(r => setTimeout(r, options.testDelay))
+    }
+    
+    return Response.json({
+      duration: Date.now() - suiteStart,
+      results,
+      summary: {
+        total: tests.length,
+        executed: results.length,
+        passed: results.filter(r => r.passed).length,
+        failed: results.filter(r => !r.passed).length,
+      },
+    }, { headers })
   }
   
   return Response.json({ error: 'Not found' }, { status: 404, headers })

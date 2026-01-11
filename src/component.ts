@@ -33,6 +33,9 @@ import type {
   MutationFilterRules,
   DomTreeRequest,
   DomTreeNode,
+  DevChannelTest,
+  TestStep,
+  TestAssertion,
 } from './types'
 
 // Component version - update when making changes
@@ -945,6 +948,11 @@ export class DevChannel extends HTMLElement {
   private mutationConfig: MutationWatchRequest | null = null
   private mutationFilterRules: MutationFilterRules | null = null
   private recording: RecordingSession | null = null
+  private testRecording: {
+    steps: TestStep[]
+    startUrl: string
+    startTime: number
+  } | null = null
   private originalConsole: Partial<Console> = {}
   private widgetHidden = false
   private serverUrl = 'wss://localhost:8700/ws/browser'
@@ -1224,6 +1232,41 @@ export class DevChannel extends HTMLElement {
           font-size: 10px;
           color: #666;
         }
+        
+        .test-controls {
+          display: flex;
+          gap: 4px;
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid #333;
+        }
+        
+        .test-btn {
+          flex: 1;
+          background: #2a2a4a;
+          border: 1px solid #444;
+          color: #aaa;
+          cursor: pointer;
+          padding: 6px 8px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 500;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+        }
+        
+        .test-btn:hover { background: #3a3a5a; color: #fff; border-color: #666; }
+        .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .test-btn.recording { background: #4a2a2a; border-color: #ef4444; color: #ef4444; }
+        .test-btn.recording:hover { background: #5a3a3a; }
+        
+        .step-count {
+          font-size: 9px;
+          color: #888;
+          margin-top: 4px;
+        }
       </style>
       
       <div class="widget">
@@ -1242,6 +1285,18 @@ export class DevChannel extends HTMLElement {
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">🦉 bookmark</a>
+            <div class="test-controls">
+              <button class="test-btn" data-test-action="record" title="Record test steps">
+                <span>⏺</span> Record
+              </button>
+              <button class="test-btn" data-test-action="check" title="Add assertion" disabled>
+                <span>✓</span> Check
+              </button>
+              <button class="test-btn" data-test-action="save" title="Save test" disabled>
+                <span>💾</span> Save
+              </button>
+            </div>
+            <div class="step-count"></div>
         </div>
       </div>
     `
@@ -1273,6 +1328,18 @@ export class DevChannel extends HTMLElement {
       })
     }
     
+    // Test recording buttons
+    shadow.querySelectorAll('.test-btn').forEach(btn => {
+      btn.addEventListener('mousedown', (e) => e.stopPropagation())
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const action = (e.currentTarget as HTMLElement).dataset.testAction
+        if (action === 'record') this.toggleTestRecording()
+        if (action === 'check') this.addTestAssertion()
+        if (action === 'save') this.saveTest()
+      })
+    })
+    
     // Drag support
     this.setupDrag(shadow.querySelector('.header')!)
   }
@@ -1303,7 +1370,42 @@ export class DevChannel extends HTMLElement {
       if (this.recording) {
         html += `<span class="indicator recording">REC</span>`
       }
+      if (this.testRecording) {
+        html += `<span class="indicator recording">TEST</span>`
+      }
       indicators.innerHTML = html
+    }
+    
+    // Update test recording buttons
+    const recordBtn = shadow.querySelector('[data-test-action="record"]') as HTMLButtonElement
+    const checkBtn = shadow.querySelector('[data-test-action="check"]') as HTMLButtonElement
+    const saveBtn = shadow.querySelector('[data-test-action="save"]') as HTMLButtonElement
+    const stepCount = shadow.querySelector('.step-count')
+    
+    if (recordBtn) {
+      if (this.testRecording) {
+        recordBtn.classList.add('recording')
+        recordBtn.innerHTML = '<span>⏹</span> Stop'
+      } else {
+        recordBtn.classList.remove('recording')
+        recordBtn.innerHTML = '<span>⏺</span> Record'
+      }
+    }
+    
+    if (checkBtn) {
+      checkBtn.disabled = !this.testRecording
+    }
+    
+    if (saveBtn) {
+      saveBtn.disabled = !this.testRecording || this.testRecording.steps.length === 0
+    }
+    
+    if (stepCount) {
+      if (this.testRecording && this.testRecording.steps.length > 0) {
+        stepCount.textContent = `${this.testRecording.steps.length} step${this.testRecording.steps.length > 1 ? 's' : ''} recorded`
+      } else {
+        stepCount.textContent = ''
+      }
     }
   }
   
@@ -1441,8 +1543,361 @@ export class DevChannel extends HTMLElement {
     this.restoreConsole()
     this.clearEventWatchers()
     this.stopMutationWatch()
+    this.stopTestRecording()
     this.disconnect()
     this.remove()
+  }
+  
+  // ==========================================
+  // Test Recording (JSON Test Generation)
+  // ==========================================
+  
+  private testRecordingHandler: ((e: Event) => void) | null = null
+  
+  private toggleTestRecording() {
+    if (this.testRecording) {
+      this.stopTestRecording()
+    } else {
+      this.startTestRecording()
+    }
+    this.render()
+  }
+  
+  private startTestRecording() {
+    this.testRecording = {
+      steps: [],
+      startUrl: location.href,
+      startTime: Date.now(),
+    }
+    
+    // Attach event listeners to capture user actions
+    this.testRecordingHandler = (e: Event) => {
+      if (!this.testRecording) return
+      
+      const target = e.target as Element
+      if (!target || target.closest('tosijs-dev')) return // Ignore widget clicks
+      
+      const step = this.eventToTestStep(e)
+      if (step) {
+        this.testRecording.steps.push(step)
+        this.render()
+        
+        // Send to server for live monitoring
+        this.send('test-recording', 'step', { 
+          index: this.testRecording.steps.length - 1,
+          step 
+        })
+      }
+    }
+    
+    // Capture clicks, input, and form submissions
+    document.addEventListener('click', this.testRecordingHandler, true)
+    document.addEventListener('input', this.testRecordingHandler, true)
+    document.addEventListener('change', this.testRecordingHandler, true)
+    document.addEventListener('submit', this.testRecordingHandler, true)
+    
+    this.send('test-recording', 'started', { url: location.href })
+  }
+  
+  private stopTestRecording() {
+    if (this.testRecordingHandler) {
+      document.removeEventListener('click', this.testRecordingHandler, true)
+      document.removeEventListener('input', this.testRecordingHandler, true)
+      document.removeEventListener('change', this.testRecordingHandler, true)
+      document.removeEventListener('submit', this.testRecordingHandler, true)
+      this.testRecordingHandler = null
+    }
+    
+    if (this.testRecording) {
+      this.send('test-recording', 'stopped', { 
+        stepCount: this.testRecording.steps.length 
+      })
+    }
+    
+    // Don't clear testRecording - keep it for save
+  }
+  
+  /**
+   * Generate a stable, unique selector for an element
+   * Priority: id > data-testid > name > stable classes > path
+   */
+  private getBestSelector(el: Element): string {
+    // ID is best
+    if (el.id) {
+      return `#${el.id}`
+    }
+    
+    // data-testid is designed for testing
+    const testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id')
+    if (testId) {
+      return `[data-testid="${testId}"]`
+    }
+    
+    // For form elements, name attribute is stable
+    const name = el.getAttribute('name')
+    if (name && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) {
+      return `${el.tagName.toLowerCase()}[name="${name}"]`
+    }
+    
+    // For buttons/links, unique text content
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+      const text = (el as HTMLElement).innerText?.trim()
+      if (text && text.length < 50 && !text.includes('\n')) {
+        // Check if this text is unique on the page
+        const matches = document.querySelectorAll(`${el.tagName.toLowerCase()}`)
+        const textMatches = Array.from(matches).filter(m => 
+          (m as HTMLElement).innerText?.trim() === text
+        )
+        if (textMatches.length === 1) {
+          return `${el.tagName.toLowerCase()}:contains("${text.slice(0, 30)}")`
+        }
+      }
+    }
+    
+    // Fall back to class-based selector if classes look stable (not utility classes)
+    const classList = Array.from(el.classList).filter(c => 
+      !c.match(/^(p|m|w|h|text|bg|flex|grid|hidden|block|inline)-/) && // Tailwind
+      !c.match(/^-?xin-/) && // xinjs transient
+      c.length > 2
+    )
+    
+    if (classList.length > 0) {
+      const selector = `${el.tagName.toLowerCase()}.${classList.slice(0, 2).join('.')}`
+      // Check uniqueness
+      if (document.querySelectorAll(selector).length === 1) {
+        return selector
+      }
+    }
+    
+    // Fall back to getSelector (full path)
+    return getSelector(el)
+  }
+  
+  /**
+   * Convert a DOM event to a test step
+   */
+  private eventToTestStep(e: Event): TestStep | null {
+    const target = e.target as Element
+    const selector = this.getBestSelector(target)
+    
+    if (e.type === 'click') {
+      // Ignore clicks on inputs (they're followed by input events)
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        return null
+      }
+      
+      return {
+        action: 'click',
+        selector,
+        description: this.describeElement(target),
+      }
+    }
+    
+    if (e.type === 'input' || e.type === 'change') {
+      const inputEl = target as HTMLInputElement
+      
+      // Debounce: if last step was same selector input, update it
+      if (this.testRecording && this.testRecording.steps.length > 0) {
+        const lastStep = this.testRecording.steps[this.testRecording.steps.length - 1]
+        if (lastStep.action === 'type' && lastStep.selector === selector) {
+          lastStep.text = inputEl.value
+          return null // Don't add new step
+        }
+      }
+      
+      return {
+        action: 'type',
+        selector,
+        text: inputEl.value,
+        description: this.describeElement(target),
+      }
+    }
+    
+    if (e.type === 'submit') {
+      // Find submit button or first button in form
+      const form = target as HTMLFormElement
+      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])')
+      if (submitBtn) {
+        return {
+          action: 'click',
+          selector: this.getBestSelector(submitBtn),
+          description: 'Submit form',
+        }
+      }
+    }
+    
+    return null
+  }
+  
+  /**
+   * Generate a human-readable description of an element
+   */
+  private describeElement(el: Element): string {
+    const tag = el.tagName.toLowerCase()
+    const htmlEl = el as HTMLElement
+    
+    // Buttons and links: use text
+    if (tag === 'button' || tag === 'a') {
+      const text = htmlEl.innerText?.trim().slice(0, 30)
+      if (text) return `Click "${text}"`
+    }
+    
+    // Inputs: use label or placeholder or name
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      const inputEl = el as HTMLInputElement
+      
+      // Find associated label
+      const labelFor = inputEl.id && document.querySelector(`label[for="${inputEl.id}"]`)
+      if (labelFor) {
+        return `Enter ${(labelFor as HTMLElement).innerText?.trim()}`
+      }
+      
+      // Use placeholder
+      if (inputEl.placeholder) {
+        return `Enter ${inputEl.placeholder}`
+      }
+      
+      // Use name
+      if (inputEl.name) {
+        return `Enter ${inputEl.name.replace(/[_-]/g, ' ')}`
+      }
+      
+      // Use type
+      if (inputEl.type) {
+        return `Enter ${inputEl.type}`
+      }
+    }
+    
+    return `Interact with ${tag}`
+  }
+  
+  /**
+   * Add an assertion at the current state
+   */
+  private addTestAssertion() {
+    if (!this.testRecording) return
+    
+    // Prompt for assertion type
+    const type = prompt(
+      'What to check?\n\n' +
+      '1. Element exists (selector)\n' +
+      '2. Text content (selector, text)\n' +
+      '3. Input value (selector, value)\n' +
+      '4. URL contains (pattern)\n' +
+      '5. Element visible (selector)\n\n' +
+      'Enter number (1-5):'
+    )
+    
+    if (!type) return
+    
+    let assertion: TestAssertion | null = null
+    let description = ''
+    
+    switch (type.trim()) {
+      case '1': {
+        const selector = prompt('Enter CSS selector:')
+        if (selector) {
+          assertion = { type: 'exists', selector }
+          description = `Verify ${selector} exists`
+        }
+        break
+      }
+      case '2': {
+        const selector = prompt('Enter CSS selector:')
+        const text = prompt('Enter expected text (or part of it):')
+        if (selector && text) {
+          assertion = { type: 'text', selector, text, contains: true }
+          description = `Verify ${selector} contains "${text}"`
+        }
+        break
+      }
+      case '3': {
+        const selector = prompt('Enter CSS selector for input:')
+        const value = prompt('Enter expected value:')
+        if (selector && value) {
+          assertion = { type: 'value', selector, value }
+          description = `Verify ${selector} has value "${value}"`
+        }
+        break
+      }
+      case '4': {
+        const pattern = prompt('Enter URL pattern to match:')
+        if (pattern) {
+          assertion = { type: 'url', pattern }
+          description = `Verify URL contains "${pattern}"`
+        }
+        break
+      }
+      case '5': {
+        const selector = prompt('Enter CSS selector:')
+        if (selector) {
+          assertion = { type: 'visible', selector }
+          description = `Verify ${selector} is visible`
+        }
+        break
+      }
+    }
+    
+    if (assertion) {
+      const step: TestStep = {
+        action: 'assert',
+        assertion,
+        description,
+      }
+      this.testRecording.steps.push(step)
+      this.render()
+      
+      this.send('test-recording', 'assertion', { 
+        index: this.testRecording.steps.length - 1,
+        step 
+      })
+    }
+  }
+  
+  /**
+   * Save the recorded test as JSON
+   */
+  private saveTest() {
+    if (!this.testRecording || this.testRecording.steps.length === 0) {
+      alert('No steps recorded!')
+      return
+    }
+    
+    const name = prompt('Test name:', 'Recorded test')
+    if (!name) return
+    
+    const description = prompt('Test description (optional):')
+    
+    const test: DevChannelTest = {
+      version: 1,
+      name,
+      description: description || undefined,
+      url: this.testRecording.startUrl,
+      createdAt: this.testRecording.startTime,
+      createdBy: 'human',
+      steps: this.testRecording.steps,
+    }
+    
+    // Create JSON and trigger download
+    const json = JSON.stringify(test, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name.toLowerCase().replace(/\s+/g, '-')}.test.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    // Also send to server
+    this.send('test-recording', 'saved', { test })
+    
+    // Clear recording
+    this.testRecording = null
+    this.render()
+    
+    alert(`Test saved: ${a.download}`)
   }
   
   // ==========================================
