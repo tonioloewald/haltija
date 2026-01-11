@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Haltija</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Minimal toolbar -->
+  <div id="toolbar">
+    <div class="nav-buttons">
+      <button id="back" title="Back">←</button>
+      <button id="forward" title="Forward">→</button>
+      <button id="refresh" title="Refresh">↻</button>
+    </div>
+    
+    <div class="address-bar">
+      <input type="text" id="url-input" placeholder="Enter URL..." spellcheck="false">
+      <button id="go">Go</button>
+    </div>
+    
+    <div class="status">
+      <span id="haltija-status" class="status-dot disconnected" title="Haltija: Disconnected"></span>
+      <span class="logo">🧝</span>
+    </div>
+  </div>
+  
+  <!-- The actual browser -->
+  <webview 
+    id="browser" 
+    src="about:blank"
+    webpreferences="contextIsolation=no, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes"
+    allowpopups
+  ></webview>
+  
+  <script src="renderer.js"></script>
+</body>
+</html>

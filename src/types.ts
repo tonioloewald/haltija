@@ -552,6 +552,7 @@ export type TestStep =
   | WaitStep
   | AssertStep
   | EvalStep
+  | VerifyStep
 
 interface BaseStep {
   /** Human-readable description of what this step does (the "what") */
@@ -611,6 +612,64 @@ export interface EvalStep extends BaseStep {
   /** Expected return value (optional) */
   expect?: any
 }
+
+/**
+ * Verify step - async eval with retry/polling for backend state verification.
+ * 
+ * Unlike assert (which checks DOM state) or eval (which runs once), verify
+ * polls an expression until it matches the expected value or times out.
+ * 
+ * Ideal for checking:
+ * - Backend state via window.__test helpers (e.g., Firestore data)
+ * - Async operations that take time to complete
+ * - State that may not be immediately consistent
+ * 
+ * @example
+ * ```json
+ * {
+ *   "action": "verify",
+ *   "eval": "window.__test.getUser('uid123')",
+ *   "expect": { "contains": { "role": "admin" } },
+ *   "timeout": 5000,
+ *   "description": "User role updated to admin"
+ * }
+ * ```
+ */
+export interface VerifyStep extends BaseStep {
+  action: 'verify'
+  /** JavaScript expression to evaluate. Can return a Promise. */
+  eval: string
+  /** 
+   * Expected value or matching rule:
+   * - Primitive: exact match (===)
+   * - { equals: value }: explicit exact match
+   * - { matches: "regex" }: regex match for strings
+   * - { contains: value }: subset match for objects/arrays
+   * - { truthy: true }: just needs to be truthy
+   * - { falsy: true }: just needs to be falsy
+   * - { gt: n } / { gte: n } / { lt: n } / { lte: n }: numeric comparisons
+   */
+  expect: VerifyExpectation
+  /** How long to poll before giving up (ms, default: 5000) */
+  timeout?: number
+  /** How often to poll (ms, default: 100) */
+  interval?: number
+}
+
+/**
+ * Expectation types for verify step.
+ */
+export type VerifyExpectation =
+  | any                                    // Primitive: exact match
+  | { equals: any }                        // Explicit exact match
+  | { matches: string }                    // Regex for strings
+  | { contains: any }                      // Subset match for objects/arrays
+  | { truthy: true }                       // Value is truthy
+  | { falsy: true }                        // Value is falsy
+  | { gt: number }                         // Greater than
+  | { gte: number }                        // Greater than or equal
+  | { lt: number }                         // Less than
+  | { lte: number }                        // Less than or equal
 
 /**
  * Assertions that can be made during a test.
@@ -828,6 +887,62 @@ export interface DomTreeNode {
 // ============================================
 
 export type MessageHandler = (message: DevMessage) => void | Promise<void>
+
+// ============================================
+// Window Management
+// ============================================
+
+/**
+ * Represents a browser window/tab connected to the server.
+ * Each widget instance generates a stable windowId persisted in sessionStorage.
+ */
+export interface BrowserWindow {
+  /** Stable ID persisted in sessionStorage (survives refresh, not tab close) */
+  id: string
+  /** Current page URL */
+  url: string
+  /** Current page title */
+  title: string
+  /** Whether this window is active (responding to commands) or inactive */
+  active: boolean
+  /** When this window first connected */
+  connectedAt: number
+  /** When this window last sent a message */
+  lastSeen: number
+  /** Optional label set by agent for easier reference */
+  label?: string
+}
+
+/**
+ * Response from GET /windows
+ */
+export interface WindowListResponse {
+  windows: BrowserWindow[]
+  /** Which window is currently focused (if any) */
+  focused?: string
+}
+
+/**
+ * Request to focus/activate a window
+ */
+export interface WindowFocusRequest {
+  /** Window ID to focus */
+  windowId: string
+  /** Also bring browser window to front (if possible) */
+  bringToFront?: boolean
+}
+
+/**
+ * Request to set a window's state
+ */
+export interface WindowStateRequest {
+  /** Window ID */
+  windowId: string
+  /** Active state */
+  active: boolean
+  /** Optional label */
+  label?: string
+}
 
 export interface DevChannelClient {
   // Connection

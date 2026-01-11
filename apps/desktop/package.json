@@ -1,0 +1,73 @@
+{
+  "name": "haltija-desktop",
+  "version": "0.1.0",
+  "description": "Haltija Desktop - God Mode Browser for AI Agents",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prebuild": "npm run compile:server",
+    "compile:server": "cd ../.. && bun run build && bun build --compile --target=bun-darwin-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64 && bun build --compile --target=bun-darwin-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && cp dist/component.js apps/desktop/resources/component.js",
+    "compile:server:win": "cd ../.. && bun build --compile --target=bun-windows-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64.exe",
+    "compile:server:linux": "cd ../.. && bun build --compile --target=bun-linux-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-linux-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64",
+    "build": "electron-builder",
+    "build:mac": "npm run compile:server && electron-builder --mac",
+    "build:win": "npm run compile:server:win && electron-builder --win",
+    "build:linux": "npm run compile:server:linux && electron-builder --linux"
+  },
+  "author": "Tonio Loewald",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.haltija.desktop",
+    "productName": "Haltija",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "renderer.js"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/haltija-server-${arch}",
+        "to": "haltija-server-${arch}"
+      },
+      {
+        "from": "resources/component.js",
+        "to": "component.js"
+      }
+    ],
+    "asarUnpack": [
+      "resources/*"
+    ]
+  }
+}

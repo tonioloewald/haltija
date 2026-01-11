@@ -14,7 +14,7 @@
  * - Buffers recent messages for late joiners
  */
 
-import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode } from './types'
+import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode, VerifyExpectation, VerifyStep } from './types'
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
@@ -71,30 +71,56 @@ const USE_HTTP = WANT_HTTP
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 
-// Component.js path for dynamic loading
-const componentJsPath = join(__dirname, '../dist/component.js')
+// Component.js paths for dynamic loading (try multiple locations for compiled binary support)
+const componentJsPaths = [
+  join(__dirname, '../dist/component.js'),           // Dev mode: relative to src/
+  join(__dirname, 'component.js'),                   // Compiled: same dir as binary
+  join(process.cwd(), 'dist/component.js'),          // CWD fallback
+  join(process.cwd(), 'component.js'),               // CWD direct
+]
 
 // Load component.js fresh on each request to always serve latest build
 function getComponentJs(): string {
-  try {
-    const componentJs = readFileSync(componentJsPath, 'utf-8')
-    // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
-    return componentJs.replace(
-      /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
-      `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
-    )
-  } catch {
-    return ''
+  for (const componentJsPath of componentJsPaths) {
+    try {
+      if (!existsSync(componentJsPath)) continue
+      const componentJs = readFileSync(componentJsPath, 'utf-8')
+      // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
+      return componentJs.replace(
+        /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
+        `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
+      )
+    } catch {
+      continue
+    }
   }
+  return ''
 }
 
 // Connected browser clients (WebSocket -> browserId)
 const browsers = new Map<WebSocket, string>()
 
+// Window tracking for multi-window support
+interface TrackedWindow {
+  id: string           // windowId from sessionStorage
+  browserId: string    // browserId (changes on page load)
+  ws: WebSocket        // WebSocket connection
+  url: string          // Current page URL
+  title: string        // Current page title
+  active: boolean      // Whether window is active (responding to commands)
+  connectedAt: number  // When first connected
+  lastSeen: number     // Last message time
+  label?: string       // Optional agent-assigned label
+}
+const windows = new Map<string, TrackedWindow>()
+
 // Connected agent clients (could be multiple)
 const agents = new Set<WebSocket>()
 
-// Track the currently active browser ID
+// Track the currently focused window ID (for routing untargeted commands)
+let focusedWindowId: string | null = null
+
+// Track the currently active browser ID (legacy, for backwards compatibility)
 let activeBrowserId: string | null = null
 
 // Message buffer for late joiners
@@ -249,22 +275,28 @@ function sendToAgents(msg: DevMessage | DevResponse) {
 }
 
 // Send request to browser and wait for response
+// If windowId is provided, send only to that window; otherwise send to focused window or all
 async function requestFromBrowser(
   channel: string, 
   action: string, 
   payload: any,
-  timeoutMs = 5000
+  timeoutMs = 5000,
+  windowId?: string
 ): Promise<DevResponse> {
   if (browsers.size === 0) {
     return { id: '', success: false, error: 'No browser connected', timestamp: Date.now() }
   }
   
   const id = uid()
+  
+  // Include windowId in payload if targeting specific window
+  const targetPayload = windowId ? { ...payload, windowId } : payload
+  
   const msg: DevMessage = {
     id,
     channel,
     action,
-    payload,
+    payload: targetPayload,
     timestamp: Date.now(),
     source: 'agent',
   }
@@ -276,7 +308,21 @@ async function requestFromBrowser(
     }, timeoutMs)
     
     pendingResponses.set(id, { resolve, timeout })
-    sendToBrowsers(msg)
+    
+    // If windowId specified, send only to that window
+    if (windowId) {
+      const win = windows.get(windowId)
+      if (win) {
+        win.ws.send(JSON.stringify(msg))
+      } else {
+        clearTimeout(timeout)
+        pendingResponses.delete(id)
+        resolve({ id, success: false, error: `Window ${windowId} not found`, timestamp: Date.now() })
+      }
+    } else {
+      // Send to all browsers (they will filter by active state)
+      sendToBrowsers(msg)
+    }
   })
 }
 
@@ -339,11 +385,17 @@ async function handleRest(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname
   
-  // CORS headers
+  // Window targeting: ?window=<windowId> routes command to specific window
+  // If not specified, command goes to all active windows
+  const targetWindowId = url.searchParams.get('window') || undefined
+  
+  // CORS headers (including Private Network Access for local server)
+  // PNA allows HTTPS sites to access localhost
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
   
@@ -453,10 +505,17 @@ async function handleRest(req: Request): Promise<Response> {
 </head>
 <body>
   <h1>${PRODUCT_NAME}</h1>
-  <p>The widget should appear in the bottom-right corner.</p>
+  <p>The widget should appear in the bottom-left corner.</p>
+  
+  <h2>For AI Agents</h2>
+  <pre style="background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; font-size: 13px;">curl http://localhost:${PORT}/docs</pre>
+  
+  <h2>Dev Mode One-Liner</h2>
+  <p>Add this to your app (auto-disabled in production):</p>
+  <pre style="background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; font-size: 13px; word-break: break-all;">/^localhost$|^127\\./.test(location.hostname)&&import('http://localhost:${PORT}/dev.js')</pre>
   
   <h2>Bookmarklet</h2>
-  <p>Drag this to your bookmarks bar:</p>
+  <p>Drag this to your bookmarks bar. Click it on any page to connect that tab:</p>
   <a class="bookmarklet" id="bookmarklet-link" href="#">&#129494; ${PRODUCT_NAME}</a>
   <script>
     // Generate bookmarklet that matches the protocol we're viewing this page on
@@ -958,6 +1017,13 @@ See the DOM tree:
 - POST /recording/start - Record user interactions
 - POST /recording/stop  - Stop and get recorded events
 
+### Selection Tool
+- POST /select/start   - Start selection mode (user drags rectangle)
+- POST /select/cancel  - Cancel selection mode
+- GET  /select/status  - Check if selection is active or has result
+- GET  /select/result  - Get the selected elements
+- POST /select/clear   - Clear stored selection
+
 ### Test Runner
 - POST /test/validate   - Validate test JSON format
 - POST /test/run        - Run a single test: POST full test JSON
@@ -1377,11 +1443,12 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // DOM query shorthand
   if (path === '/query' && req.method === 'POST') {
-    const body = await req.json()
+    const body = await req.json() as { selector: string; all?: boolean; window?: string }
+    const windowId = body.window || targetWindowId
     const response = await requestFromBrowser('dom', 'query', {
       selector: body.selector,
       all: body.all,
-    })
+    }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1394,8 +1461,9 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // Eval shorthand
   if (path === '/eval' && req.method === 'POST') {
-    const body = await req.json()
-    const response = await requestFromBrowser('eval', 'exec', { code: body.code })
+    const body = await req.json() as { code: string; window?: string }
+    const windowId = body.window || targetWindowId
+    const response = await requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1895,6 +1963,112 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       stepCount: test.steps.length,
     }, { headers })
   }
+
+  // Helper: Check if actual value matches a VerifyExpectation
+  function matchesExpectation(actual: any, expect: VerifyExpectation): boolean {
+    // Handle null/undefined
+    if (expect === null) return actual === null
+    if (expect === undefined) return actual === undefined
+
+    // Check for expectation objects with specific matchers
+    if (typeof expect === 'object' && expect !== null) {
+      // { equals: value } - explicit exact match
+      if ('equals' in expect) {
+        return JSON.stringify(actual) === JSON.stringify(expect.equals)
+      }
+
+      // { matches: "regex" } - regex for strings
+      if ('matches' in expect) {
+        if (typeof actual !== 'string') return false
+        return new RegExp(expect.matches).test(actual)
+      }
+
+      // { contains: value } - subset match for objects/arrays
+      if ('contains' in expect) {
+        if (Array.isArray(actual) && Array.isArray(expect.contains)) {
+          // Every item in expected should exist in actual
+          return expect.contains.every((expectedItem: any) =>
+            actual.some((actualItem: any) =>
+              JSON.stringify(actualItem) === JSON.stringify(expectedItem) ||
+              (typeof expectedItem === 'object' && matchesExpectation(actualItem, { contains: expectedItem }))
+            )
+          )
+        }
+        if (typeof actual === 'object' && actual !== null && typeof expect.contains === 'object') {
+          // Every key in expected should match in actual
+          for (const key of Object.keys(expect.contains)) {
+            if (!(key in actual)) return false
+            const expectedVal = expect.contains[key]
+            const actualVal = actual[key]
+            // Recursively check nested objects
+            if (typeof expectedVal === 'object' && expectedVal !== null) {
+              if (!matchesExpectation(actualVal, { contains: expectedVal })) return false
+            } else if (actualVal !== expectedVal) {
+              return false
+            }
+          }
+          return true
+        }
+        // For strings, check if actual contains expected
+        if (typeof actual === 'string' && typeof expect.contains === 'string') {
+          return actual.includes(expect.contains)
+        }
+        return false
+      }
+
+      // { truthy: true } - value is truthy
+      if ('truthy' in expect && expect.truthy === true) {
+        return !!actual
+      }
+
+      // { falsy: true } - value is falsy
+      if ('falsy' in expect && expect.falsy === true) {
+        return !actual
+      }
+
+      // { gt: n } - greater than
+      if ('gt' in expect) {
+        return typeof actual === 'number' && actual > expect.gt
+      }
+
+      // { gte: n } - greater than or equal
+      if ('gte' in expect) {
+        return typeof actual === 'number' && actual >= expect.gte
+      }
+
+      // { lt: n } - less than
+      if ('lt' in expect) {
+        return typeof actual === 'number' && actual < expect.lt
+      }
+
+      // { lte: n } - less than or equal
+      if ('lte' in expect) {
+        return typeof actual === 'number' && actual <= expect.lte
+      }
+
+      // No special matcher found - fall through to deep equality
+    }
+
+    // Default: deep equality via JSON comparison
+    return JSON.stringify(actual) === JSON.stringify(expect)
+  }
+
+  // Helper: Wait for browser to reconnect after navigation
+  async function waitForBrowserReconnect(timeoutMs = 10000): Promise<boolean> {
+    const start = Date.now()
+    // First, wait a moment for disconnect to happen
+    await new Promise(r => setTimeout(r, 100))
+    
+    while (Date.now() - start < timeoutMs) {
+      if (browsers.size > 0) {
+        // Give widget time to fully initialize after reconnect
+        await new Promise(r => setTimeout(r, 300))
+        return true
+      }
+      await new Promise(r => setTimeout(r, 100))
+    }
+    return false
+  }
   
   // Run a test and return results
   if (path === '/test/run' && req.method === 'POST') {
@@ -1929,6 +2103,13 @@ Security: Widget always shows when agent sends commands (no silent snooping)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'
+              break
+            }
+            // Wait for browser to reconnect after page load (widget reloads)
+            const reconnected = await waitForBrowserReconnect(options.timeout)
+            if (!reconnected) {
+              stepPassed = false
+              error = 'Browser did not reconnect after navigation'
             }
             break
           }
@@ -2240,6 +2421,51 @@ Security: Widget always shows when agent sends commands (no silent snooping)
             }
             break
           }
+
+          case 'verify': {
+            const verifyStep = step as VerifyStep
+            const timeout = verifyStep.timeout ?? 5000
+            const interval = verifyStep.interval ?? 100
+            const deadline = Date.now() + timeout
+            let lastActual: any
+            let matched = false
+
+            while (Date.now() < deadline) {
+              // Wrap expression to support async and handle errors
+              const wrappedCode = `(async () => { try { return await (${verifyStep.eval}); } catch(e) { return { __error: e.message }; } })()`
+              const response = await requestFromBrowser('eval', 'exec', { code: wrappedCode }, Math.min(interval * 2, 2000))
+              
+              if (response.success) {
+                lastActual = response.data
+                
+                // Check for eval error
+                if (lastActual && typeof lastActual === 'object' && '__error' in lastActual) {
+                  // Expression threw - keep polling in case it's a timing issue
+                  await new Promise(r => setTimeout(r, interval))
+                  continue
+                }
+
+                if (matchesExpectation(lastActual, verifyStep.expect)) {
+                  matched = true
+                  break
+                }
+              }
+              
+              await new Promise(r => setTimeout(r, interval))
+            }
+
+            if (!matched) {
+              stepPassed = false
+              error = `Verify timeout after ${timeout}ms: expression did not match expected value`
+              context = { 
+                expression: verifyStep.eval,
+                expected: verifyStep.expect, 
+                actual: lastActual,
+                timeout
+              }
+            }
+            break
+          }
         }
       } catch (err) {
         stepPassed = false
@@ -2474,6 +2700,191 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ deleted }, { headers })
   }
   
+  // ==========================================
+  // Selection Tool Endpoints
+  // ==========================================
+  
+  // POST /select/start - Start selection mode (user drags to select area)
+  if (path === '/select/start' && req.method === 'POST') {
+    const response = await requestFromBrowser('selection', 'start', {})
+    return Response.json(response, { headers })
+  }
+  
+  // POST /select/cancel - Cancel selection mode
+  if (path === '/select/cancel' && req.method === 'POST') {
+    const response = await requestFromBrowser('selection', 'cancel', {})
+    return Response.json(response, { headers })
+  }
+  
+  // GET /select/status - Check if selection is active or has result
+  if (path === '/select/status' && req.method === 'GET') {
+    const response = await requestFromBrowser('selection', 'status', {})
+    return Response.json(response, { headers })
+  }
+  
+  // GET /select/result - Get the current selection result
+  if (path === '/select/result' && req.method === 'GET') {
+    const response = await requestFromBrowser('selection', 'result', {})
+    return Response.json(response, { headers })
+  }
+  
+  // POST /select/clear - Clear the stored selection
+  if (path === '/select/clear' && req.method === 'POST') {
+    const response = await requestFromBrowser('selection', 'clear', {})
+    return Response.json(response, { headers })
+  }
+  
+  // ==========================================
+  // Window Management Endpoints
+  // ==========================================
+  
+  // GET /windows - List all connected windows
+  if (path === '/windows' && req.method === 'GET') {
+    const windowList = Array.from(windows.values()).map(w => ({
+      id: w.id,
+      url: w.url,
+      title: w.title,
+      active: w.active,
+      connectedAt: w.connectedAt,
+      lastSeen: w.lastSeen,
+      label: w.label,
+    }))
+    return Response.json({
+      windows: windowList,
+      focused: focusedWindowId,
+      count: windowList.length,
+    }, { headers })
+  }
+  
+  // GET /windows/:id - Get specific window info
+  if (path.startsWith('/windows/') && req.method === 'GET' && !path.includes('/focus') && !path.includes('/activate') && !path.includes('/deactivate') && !path.includes('/label')) {
+    const windowId = path.slice('/windows/'.length)
+    const win = windows.get(windowId)
+    
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    
+    return Response.json({
+      id: win.id,
+      url: win.url,
+      title: win.title,
+      active: win.active,
+      connectedAt: win.connectedAt,
+      lastSeen: win.lastSeen,
+      label: win.label,
+      focused: focusedWindowId === win.id,
+    }, { headers })
+  }
+  
+  // POST /windows/:id/focus - Focus a window (bring to front and make active)
+  if (path.match(/^\/windows\/[^/]+\/focus$/) && req.method === 'POST') {
+    const windowId = path.split('/')[2]
+    const win = windows.get(windowId)
+    
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    
+    // Set as focused
+    focusedWindowId = windowId
+    
+    // Send focus command to the browser
+    const msg: DevMessage = {
+      id: uid(),
+      channel: 'system',
+      action: 'focus',
+      payload: { windowId },
+      timestamp: Date.now(),
+      source: 'server',
+    }
+    win.ws.send(JSON.stringify(msg))
+    
+    return Response.json({ 
+      success: true, 
+      windowId, 
+      focused: true 
+    }, { headers })
+  }
+  
+  // POST /windows/:id/activate - Activate a window (respond to commands)
+  if (path.match(/^\/windows\/[^/]+\/activate$/) && req.method === 'POST') {
+    const windowId = path.split('/')[2]
+    const win = windows.get(windowId)
+    
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    
+    win.active = true
+    
+    const msg: DevMessage = {
+      id: uid(),
+      channel: 'system',
+      action: 'activate',
+      payload: { windowId },
+      timestamp: Date.now(),
+      source: 'server',
+    }
+    win.ws.send(JSON.stringify(msg))
+    
+    return Response.json({ 
+      success: true, 
+      windowId, 
+      active: true 
+    }, { headers })
+  }
+  
+  // POST /windows/:id/deactivate - Deactivate a window (stop responding to untargeted commands)
+  if (path.match(/^\/windows\/[^/]+\/deactivate$/) && req.method === 'POST') {
+    const windowId = path.split('/')[2]
+    const win = windows.get(windowId)
+    
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    
+    win.active = false
+    
+    const msg: DevMessage = {
+      id: uid(),
+      channel: 'system',
+      action: 'deactivate',
+      payload: { windowId },
+      timestamp: Date.now(),
+      source: 'server',
+    }
+    win.ws.send(JSON.stringify(msg))
+    
+    return Response.json({ 
+      success: true, 
+      windowId, 
+      active: false 
+    }, { headers })
+  }
+  
+  // POST /windows/:id/label - Set a label for a window
+  if (path.match(/^\/windows\/[^/]+\/label$/) && req.method === 'POST') {
+    const windowId = path.split('/')[2]
+    const win = windows.get(windowId)
+    
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    
+    try {
+      const body = await req.json() as { label?: string }
+      win.label = body.label
+      return Response.json({ 
+        success: true, 
+        windowId, 
+        label: win.label 
+      }, { headers })
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers })
+    }
+  }
+  
   return Response.json({ error: 'Not found' }, { status: 404, headers })
 }
 
@@ -2518,13 +2929,45 @@ const serverConfig = {
       const type = ws.data?.type
       const wsTyped = ws as unknown as WebSocket
       
-      // Track browser IDs when they send 'connected' message
+      // Track browser IDs and windows when they send 'connected' message
       if (type === 'browser') {
         try {
           const data = JSON.parse(message.toString())
           if (data.channel === 'system' && data.action === 'connected' && data.payload?.browserId) {
-            browsers.set(wsTyped, data.payload.browserId)
-            activeBrowserId = data.payload.browserId
+            const { windowId, browserId, url, title, active } = data.payload
+            
+            browsers.set(wsTyped, browserId)
+            activeBrowserId = browserId
+            
+            // Track window info
+            if (windowId) {
+              const existingWindow = windows.get(windowId)
+              const now = Date.now()
+              
+              // If window already exists with different websocket, close old one
+              if (existingWindow && existingWindow.ws !== wsTyped) {
+                try { existingWindow.ws.close() } catch {}
+              }
+              
+              windows.set(windowId, {
+                id: windowId,
+                browserId,
+                ws: wsTyped,
+                url: url || '',
+                title: title || '',
+                active: active !== false, // Default to active
+                connectedAt: existingWindow?.connectedAt || now,
+                lastSeen: now,
+                label: existingWindow?.label,
+              })
+              
+              // Set as focused if no window is focused, or if this was previously focused
+              if (!focusedWindowId || focusedWindowId === windowId) {
+                focusedWindowId = windowId
+              }
+              
+              console.log(`${LOG_PREFIX} Window connected: ${windowId} (${url})`)
+            }
             
             // Check if widget has the correct server session ID
             const widgetSessionId = data.payload.serverSessionId
@@ -2541,6 +2984,27 @@ const serverConfig = {
               }))
             }
           }
+          
+          // Handle window-updated messages (URL/title changes)
+          if (data.channel === 'system' && data.action === 'window-updated' && data.payload?.windowId) {
+            const { windowId, url, title } = data.payload
+            const win = windows.get(windowId)
+            if (win) {
+              win.url = url || win.url
+              win.title = title || win.title
+              win.lastSeen = Date.now()
+            }
+          }
+          
+          // Handle window-state messages (active/inactive changes)
+          if (data.channel === 'system' && data.action === 'window-state' && data.payload?.windowId) {
+            const { windowId, active } = data.payload
+            const win = windows.get(windowId)
+            if (win) {
+              win.active = active
+              win.lastSeen = Date.now()
+            }
+          }
         } catch {}
       }
       
@@ -2550,10 +3014,24 @@ const serverConfig = {
     close(ws: { data: { type: string } }) {
       const type = ws.data?.type
       if (type === 'browser') {
-        const browserId = browsers.get(ws as unknown as WebSocket)
-        browsers.delete(ws as unknown as WebSocket)
+        const wsTyped = ws as unknown as WebSocket
+        const browserId = browsers.get(wsTyped)
+        browsers.delete(wsTyped)
         if (browserId === activeBrowserId) {
           activeBrowserId = null
+        }
+        
+        // Clean up window tracking
+        for (const [windowId, win] of windows) {
+          if (win.ws === wsTyped) {
+            windows.delete(windowId)
+            console.log(`${LOG_PREFIX} Window disconnected: ${windowId}`)
+            if (focusedWindowId === windowId) {
+              // Focus next available window
+              focusedWindowId = windows.size > 0 ? windows.keys().next().value : null
+            }
+            break
+          }
         }
       } else if (type === 'agent') {
         agents.delete(ws as unknown as WebSocket)

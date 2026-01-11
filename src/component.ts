@@ -986,8 +986,10 @@ export class DevChannel extends HTMLElement {
   private originalConsole: Partial<Console> = {}
   private widgetHidden = false
   private serverUrl = 'wss://localhost:8700/ws/browser'
-  private browserId = uid() // Unique ID for this browser instance
+  private windowId: string // Stable ID persisted in sessionStorage (survives refresh)
+  private browserId = uid() // Unique ID for this browser instance (changes each page load)
   private killed = false // Prevents reconnection after kill()
+  private isActive = true // Whether this window is active (responding to commands)
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
   
@@ -1065,6 +1067,27 @@ export class DevChannel extends HTMLElement {
     mousedown?: (e: MouseEvent) => void
     mouseup?: (e: MouseEvent) => void
   } = {}
+  
+  // Selection tool state
+  private selectionActive = false
+  private selectionStart: { x: number, y: number } | null = null
+  private selectionRect: { x: number, y: number, width: number, height: number } | null = null
+  private selectionResult: {
+    region: { x: number, y: number, width: number, height: number }
+    elements: Array<{
+      selector: string
+      tagName: string
+      text: string
+      html: string
+      rect: { x: number, y: number, width: number, height: number }
+      attributes: Record<string, string>
+    }>
+    screenshot?: string
+    timestamp: number
+  } | null = null
+  private selectionOverlay: HTMLDivElement | null = null
+  private selectionBox: HTMLDivElement | null = null
+  private highlightedElements: HTMLDivElement[] = []
   
   static get observedAttributes() {
     return ['server', 'hidden']
@@ -1159,6 +1182,16 @@ export class DevChannel extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
+    
+    // Initialize windowId from sessionStorage or generate new one
+    // This survives page refreshes but not tab close
+    const WINDOW_ID_KEY = 'haltija-window-id'
+    let storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
+    if (!storedWindowId) {
+      storedWindowId = uid()
+      sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
+    }
+    this.windowId = storedWindowId
   }
   
   connectedCallback() {
@@ -1714,6 +1747,7 @@ export class DevChannel extends HTMLElement {
           <div class="title">${PRODUCT_NAME}</div>
           <div class="indicators"></div>
           <div class="controls">
+            <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">👆</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">🎬</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
@@ -1783,6 +1817,7 @@ export class DevChannel extends HTMLElement {
         if (action === 'logs') this.toggleLogPanel()
         if (action === 'clear-logs') this.clearLogPanel()
         if (action === 'record') this.toggleRecording()
+        if (action === 'select') this.startSelection()
         if (action === 'close-modal') this.closeTestModal()
         if (action === 'copy-test') this.copyTest()
         if (action === 'download-test') this.downloadTest()
@@ -2476,6 +2511,279 @@ export class DevChannel extends HTMLElement {
         setTimeout(() => { successMsg.textContent = '' }, 3000)
       }
     }
+  }
+  
+  // ============================================
+  // Selection Tool (Phase 10)
+  // ============================================
+  
+  private startSelection() {
+    if (this.selectionActive) {
+      this.cancelSelection()
+      return
+    }
+    
+    this.selectionActive = true
+    this.selectionResult = null
+    
+    // Update button state
+    const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
+    if (selectBtn) {
+      selectBtn.classList.add('active')
+      selectBtn.setAttribute('title', 'Cancel selection (click or Esc)')
+    }
+    
+    // Create overlay
+    this.selectionOverlay = document.createElement('div')
+    this.selectionOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.1);
+      cursor: crosshair;
+      z-index: 2147483645;
+    `
+    
+    // Create selection box (hidden initially)
+    this.selectionBox = document.createElement('div')
+    this.selectionBox.style.cssText = `
+      position: fixed;
+      border: 2px dashed #6366f1;
+      background: rgba(99, 102, 241, 0.1);
+      pointer-events: none;
+      z-index: 2147483646;
+      display: none;
+    `
+    
+    document.body.appendChild(this.selectionOverlay)
+    document.body.appendChild(this.selectionBox)
+    
+    // Event handlers
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      this.selectionStart = { x: e.clientX, y: e.clientY }
+      this.selectionBox!.style.display = 'block'
+      this.selectionBox!.style.left = `${e.clientX}px`
+      this.selectionBox!.style.top = `${e.clientY}px`
+      this.selectionBox!.style.width = '0'
+      this.selectionBox!.style.height = '0'
+    }
+    
+    const onMouseMove = (e: MouseEvent) => {
+      if (!this.selectionStart) return
+      
+      const x = Math.min(this.selectionStart.x, e.clientX)
+      const y = Math.min(this.selectionStart.y, e.clientY)
+      const width = Math.abs(e.clientX - this.selectionStart.x)
+      const height = Math.abs(e.clientY - this.selectionStart.y)
+      
+      this.selectionBox!.style.left = `${x}px`
+      this.selectionBox!.style.top = `${y}px`
+      this.selectionBox!.style.width = `${width}px`
+      this.selectionBox!.style.height = `${height}px`
+      
+      this.selectionRect = { x, y, width, height }
+      
+      // Update element highlights as user drags
+      this.updateSelectionHighlights()
+    }
+    
+    const onMouseUp = (e: MouseEvent) => {
+      if (!this.selectionStart || !this.selectionRect) {
+        this.cancelSelection()
+        return
+      }
+      
+      // Finalize selection
+      this.finalizeSelection()
+    }
+    
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.cancelSelection()
+      }
+    }
+    
+    this.selectionOverlay.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    document.addEventListener('keydown', onKeyDown)
+    
+    // Store cleanup function
+    ;(this.selectionOverlay as any)._cleanup = () => {
+      this.selectionOverlay?.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }
+  
+  private updateSelectionHighlights() {
+    // Clear previous highlights
+    this.clearHighlights()
+    
+    if (!this.selectionRect || this.selectionRect.width < 5 || this.selectionRect.height < 5) {
+      return
+    }
+    
+    // Find elements intersecting the selection rectangle
+    const elements = this.getElementsInRect(this.selectionRect)
+    
+    // Highlight each element
+    for (const el of elements) {
+      const rect = el.getBoundingClientRect()
+      const highlight = document.createElement('div')
+      highlight.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        border: 2px solid #ef4444;
+        background: rgba(239, 68, 68, 0.15);
+        pointer-events: none;
+        z-index: 2147483646;
+        box-sizing: border-box;
+      `
+      document.body.appendChild(highlight)
+      this.highlightedElements.push(highlight)
+    }
+  }
+  
+  private getElementsInRect(rect: { x: number, y: number, width: number, height: number }): Element[] {
+    const elements: Element[] = []
+    
+    // Check all elements for intersection with selection rectangle
+    const allElements = document.body.querySelectorAll('*')
+    
+    for (const el of allElements) {
+      // Skip our own elements
+      if (el.closest(TAG_NAME)) continue
+      
+      const elRect = el.getBoundingClientRect()
+      
+      // Skip zero-size elements
+      if (elRect.width === 0 || elRect.height === 0) continue
+      
+      // Check if element is fully enclosed by selection rectangle
+      const enclosed = (
+        elRect.left >= rect.x &&
+        elRect.right <= rect.x + rect.width &&
+        elRect.top >= rect.y &&
+        elRect.bottom <= rect.y + rect.height
+      )
+      
+      if (enclosed) {
+        elements.push(el)
+      }
+    }
+    
+    return elements
+  }
+  
+  private clearHighlights() {
+    for (const highlight of this.highlightedElements) {
+      highlight.remove()
+    }
+    this.highlightedElements = []
+  }
+  
+  private async finalizeSelection() {
+    if (!this.selectionRect) {
+      this.cancelSelection()
+      return
+    }
+    
+    const elements = this.getElementsInRect(this.selectionRect)
+    
+    // Build result
+    this.selectionResult = {
+      region: { ...this.selectionRect },
+      elements: elements.map(el => {
+        const rect = el.getBoundingClientRect()
+        const attrs: Record<string, string> = {}
+        for (const attr of el.attributes) {
+          attrs[attr.name] = attr.value
+        }
+        return {
+          selector: getSelector(el),
+          tagName: el.tagName.toLowerCase(),
+          text: (el.textContent || '').trim().slice(0, 200),
+          html: el.outerHTML.slice(0, 500),
+          rect: {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          },
+          attributes: attrs,
+        }
+      }),
+      timestamp: Date.now(),
+    }
+    
+    // Send selection to server
+    this.send('selection', 'completed', this.selectionResult)
+    
+    console.log(`${LOG_PREFIX} Selection completed: ${elements.length} elements`)
+    
+    // Clean up selection UI but keep highlights briefly
+    this.selectionOverlay?.remove()
+    this.selectionBox?.remove()
+    this.selectionOverlay = null
+    this.selectionBox = null
+    this.selectionActive = false
+    this.selectionStart = null
+    this.selectionRect = null
+    
+    // Update button
+    const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
+    if (selectBtn) {
+      selectBtn.classList.remove('active')
+      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+    }
+    
+    // Keep highlights visible for 2 seconds
+    setTimeout(() => {
+      this.clearHighlights()
+    }, 2000)
+  }
+  
+  private cancelSelection() {
+    // Cleanup
+    if ((this.selectionOverlay as any)?._cleanup) {
+      (this.selectionOverlay as any)._cleanup()
+    }
+    this.selectionOverlay?.remove()
+    this.selectionBox?.remove()
+    this.clearHighlights()
+    
+    this.selectionOverlay = null
+    this.selectionBox = null
+    this.selectionActive = false
+    this.selectionStart = null
+    this.selectionRect = null
+    
+    // Update button
+    const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
+    if (selectBtn) {
+      selectBtn.classList.remove('active')
+      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+    }
+  }
+  
+  // Get current selection result (for API)
+  getSelectionResult() {
+    return this.selectionResult
+  }
+  
+  // Clear stored selection
+  clearSelection() {
+    this.selectionResult = null
+    this.clearHighlights()
   }
   
   private setupDrag(handle: Element) {
@@ -3867,12 +4175,16 @@ export class DevChannel extends HTMLElement {
         this.state = 'connected'
         this.show() // Always show when connection established
         this.send('system', 'connected', { 
+          windowId: this.windowId,
           browserId: this.browserId, 
           version: VERSION,
           serverSessionId: SERVER_SESSION_ID,
           url: location.href, 
-          title: document.title 
+          title: document.title,
+          active: this.isActive
         })
+        // Watch for URL/title changes to report to server
+        this.setupNavigationWatcher()
       }
       
       this.ws.onmessage = (e) => {
@@ -3913,6 +4225,65 @@ export class DevChannel extends HTMLElement {
     this.state = 'disconnected'
     this.pending.forEach(p => p.reject(new Error('Disconnected')))
     this.pending.clear()
+    this.cleanupNavigationWatcher()
+  }
+  
+  // Track URL/title changes for multi-window management
+  private lastReportedUrl = ''
+  private lastReportedTitle = ''
+  private navigationWatcherInterval: ReturnType<typeof setInterval> | null = null
+  
+  private setupNavigationWatcher() {
+    this.lastReportedUrl = location.href
+    this.lastReportedTitle = document.title
+    
+    // Poll for changes (catches SPA navigation, title changes, etc.)
+    this.navigationWatcherInterval = setInterval(() => {
+      const currentUrl = location.href
+      const currentTitle = document.title
+      
+      if (currentUrl !== this.lastReportedUrl || currentTitle !== this.lastReportedTitle) {
+        this.lastReportedUrl = currentUrl
+        this.lastReportedTitle = currentTitle
+        this.send('system', 'window-updated', {
+          windowId: this.windowId,
+          url: currentUrl,
+          title: currentTitle
+        })
+      }
+    }, 500)
+  }
+  
+  private cleanupNavigationWatcher() {
+    if (this.navigationWatcherInterval) {
+      clearInterval(this.navigationWatcherInterval)
+      this.navigationWatcherInterval = null
+    }
+  }
+  
+  /**
+   * Activate this window - it will respond to commands
+   */
+  activate() {
+    this.isActive = true
+    this.send('system', 'window-state', {
+      windowId: this.windowId,
+      active: true
+    })
+    this.render()
+  }
+  
+  /**
+   * Deactivate this window - it stays connected but won't respond to commands
+   * (unless specifically targeted by windowId)
+   */
+  deactivate() {
+    this.isActive = false
+    this.send('system', 'window-state', {
+      windowId: this.windowId,
+      active: false
+    })
+    this.render()
   }
   
   private send(channel: string, action: string, payload: any, id?: string) {
@@ -3951,6 +4322,22 @@ export class DevChannel extends HTMLElement {
       this.show()
     }
     
+    // Check if this message is targeted at a specific window
+    const targetWindowId = msg.payload?.windowId
+    const isTargeted = !!targetWindowId
+    const isForUs = !targetWindowId || targetWindowId === this.windowId
+    
+    // If message is targeted at another window, ignore it
+    if (isTargeted && !isForUs) {
+      return
+    }
+    
+    // If we're inactive and the message isn't specifically for us, ignore non-system messages
+    // (System messages are always handled so we can be activated/focused)
+    if (!this.isActive && !isForUs && msg.channel !== 'system') {
+      return
+    }
+    
     switch (msg.channel) {
       case 'system':
         this.handleSystemMessage(msg)
@@ -3969,6 +4356,9 @@ export class DevChannel extends HTMLElement {
         break
       case 'recording':
         this.handleRecordingMessage(msg)
+        break
+      case 'selection':
+        this.handleSelectionMessage(msg)
         break
       case 'navigation':
         this.handleNavigationMessage(msg)
@@ -4067,18 +4457,67 @@ export class DevChannel extends HTMLElement {
     const { action, payload } = msg
     
     // When we see another browser connect, kill ourselves
+    // But only if it's a different browser in the same window (same windowId, different browserId)
+    // This prevents killing other tabs
     if (action === 'connected' && payload?.browserId && payload.browserId !== this.browserId) {
-      this.kill()
+      // Only kill if same windowId (this is a refresh of the same tab)
+      if (payload.windowId === this.windowId) {
+        this.kill()
+      }
     }
     
     // Respond to version request
     if (action === 'version') {
       this.respond(msg.id, true, { 
         version: VERSION,
+        windowId: this.windowId,
         browserId: this.browserId,
         url: location.href,
         title: document.title,
         state: this.state,
+        active: this.isActive,
+      })
+    }
+    
+    // Activate this window
+    if (action === 'activate') {
+      // Check if this message is for us (either no target or targets our window)
+      if (!payload?.windowId || payload.windowId === this.windowId) {
+        this.isActive = true
+        this.render()
+        this.respond(msg.id, true, { windowId: this.windowId, active: true })
+      }
+    }
+    
+    // Deactivate this window
+    if (action === 'deactivate') {
+      if (!payload?.windowId || payload.windowId === this.windowId) {
+        this.isActive = false
+        this.render()
+        this.respond(msg.id, true, { windowId: this.windowId, active: false })
+      }
+    }
+    
+    // Focus this window (bring browser tab to front)
+    if (action === 'focus') {
+      if (!payload?.windowId || payload.windowId === this.windowId) {
+        // Try to focus the window/tab
+        window.focus()
+        // Also activate it
+        this.isActive = true
+        this.render()
+        this.respond(msg.id, true, { windowId: this.windowId, focused: true })
+      }
+    }
+    
+    // Get window info
+    if (action === 'window-info') {
+      this.respond(msg.id, true, {
+        windowId: this.windowId,
+        browserId: this.browserId,
+        url: location.href,
+        title: document.title,
+        active: this.isActive,
       })
     }
     
@@ -4303,6 +4742,38 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'replay') {
       this.replaySession(payload.session, payload.speed || 1, msg.id)
+    }
+  }
+  
+  // ==========================================
+  // Selection Tool Message Handling
+  // ==========================================
+  
+  private handleSelectionMessage(msg: DevMessage) {
+    const { action } = msg
+    
+    if (action === 'start') {
+      this.startSelection()
+      this.respond(msg.id, true, { active: true })
+    } else if (action === 'cancel') {
+      this.cancelSelection()
+      this.respond(msg.id, true, { active: false })
+    } else if (action === 'status') {
+      this.respond(msg.id, true, {
+        active: this.selectionActive,
+        hasResult: this.selectionResult !== null,
+      })
+    } else if (action === 'result') {
+      if (this.selectionResult) {
+        this.respond(msg.id, true, this.selectionResult)
+      } else {
+        this.respond(msg.id, false, null, 'No selection available')
+      }
+    } else if (action === 'clear') {
+      this.clearSelection()
+      this.respond(msg.id, true, { cleared: true })
+    } else {
+      this.respond(msg.id, false, null, `Unknown selection action: ${action}`)
     }
   }
   
