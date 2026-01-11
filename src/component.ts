@@ -1710,7 +1710,8 @@ export class DevChannel extends HTMLElement {
     this.updateUI()
     
     // Event handlers (only set up once)
-    shadow.querySelectorAll('.btn').forEach(btn => {
+    // Handle all buttons with data-action (including modal buttons)
+    shadow.querySelectorAll('[data-action]').forEach(btn => {
       btn.addEventListener('mousedown', (e) => {
         e.stopPropagation() // Don't trigger drag
       })
@@ -2102,12 +2103,16 @@ export class DevChannel extends HTMLElement {
           break
           
         case 'navigation:navigate':
-          // Only add if not triggered by click (handled above)
-          if (event.payload?.trigger !== 'click' && event.payload?.trigger !== 'submit') {
+          // Skip initial navigation (we set the test URL separately)
+          // Only add if not triggered by click (handled above) or initial page load
+          if (event.payload?.trigger !== 'click' && 
+              event.payload?.trigger !== 'submit' && 
+              event.payload?.trigger !== 'initial') {
+            const navUrl = event.payload?.url || event.payload?.to || ''
             steps.push({
               action: 'navigate',
-              url: event.payload?.url || '',
-              description: `Navigate to ${event.payload?.url}`,
+              url: navUrl,
+              description: `Navigate to ${navUrl}`,
             })
           }
           break
