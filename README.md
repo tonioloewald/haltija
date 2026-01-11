@@ -221,7 +221,8 @@ curl http://localhost:8700/events/stats
 Click the 📋 button on the widget to open the interactive event log. It auto-starts semantic event watching so you can immediately see what's happening.
 
 **Features:**
-- **Filter by category** - clicks, input, navigation, hover, focus
+- **Filter by category** - clicks, input, navigation, hover, focus, console
+- **Console errors** - click the ⚠ indicator to jump straight to errors
 - **Color-coded entries** - instantly distinguish event types
 - **Expandable details** - click any entry to see the full payload
 - **Auto-scroll** - stays at bottom for new events, pauses when you scroll up
@@ -322,9 +323,9 @@ Tests are pure JSON - no code, just data. The AI writes them by exploring the pa
 
 **One-click recording from the widget:**
 
-1. Click the ⏺ button in the widget header to start recording
+1. Click the 🎬 button in the widget header to start recording
 2. Use the app normally - click, type, navigate
-3. Click ⏺ again to stop
+3. Click 💾 to stop and save
 4. A modal appears with the generated test JSON
 5. Edit the test name, then Copy or Save
 

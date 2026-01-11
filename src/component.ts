@@ -1708,9 +1708,8 @@ export class DevChannel extends HTMLElement {
           <div class="title">${PRODUCT_NAME}</div>
           <div class="indicators"></div>
           <div class="controls">
-            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">⏺</button>
+            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">🎬</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
-            <button class="btn" data-action="pause" title="Pause/Resume connection" aria-label="Pause or resume">⏸</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
             <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
           </div>
@@ -1773,7 +1772,6 @@ export class DevChannel extends HTMLElement {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const action = (e.currentTarget as HTMLElement).dataset.action
-        if (action === 'pause') this.togglePause()
         if (action === 'minimize') this.toggleMinimize()
         if (action === 'kill') this.kill()
         if (action === 'logs') this.toggleLogPanel()
@@ -1864,11 +1862,7 @@ export class DevChannel extends HTMLElement {
       statusRing.className = `status-ring ${this.state}`
     }
     
-    // Update pause button
-    const pauseBtn = shadow.querySelector('[data-action="pause"]')
-    if (pauseBtn) {
-      pauseBtn.textContent = this.state === 'paused' ? '▶' : '⏸'
-    }
+
     
     // Update indicators
     const indicators = shadow.querySelector('.indicators')
@@ -1876,7 +1870,7 @@ export class DevChannel extends HTMLElement {
       const errorCount = this.consoleBuffer.filter(e => e.level === 'error').length
       let html = ''
       if (errorCount > 0) {
-        html += `<span class="indicator errors">${errorCount} error${errorCount > 1 ? 's' : ''}</span>`
+        html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? 's' : ''}">⚠ ${errorCount}</span>`
       }
       if (this.recording) {
         html += `<span class="indicator recording">REC</span>`
@@ -2116,6 +2110,7 @@ export class DevChannel extends HTMLElement {
     // Update button state
     const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
     if (recordBtn) {
+      recordBtn.textContent = '💾'
       recordBtn.classList.add('recording')
       recordBtn.setAttribute('title', 'Stop recording (click to finish)')
     }
@@ -2132,6 +2127,7 @@ export class DevChannel extends HTMLElement {
     // Update button state
     const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
     if (recordBtn) {
+      recordBtn.textContent = '🎬'
       recordBtn.classList.remove('recording')
       recordBtn.setAttribute('title', 'Record test (click to start)')
     }
