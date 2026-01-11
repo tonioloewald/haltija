@@ -292,20 +292,21 @@ user:entered     (element boundary crossing)
 user:dwelled     (hovered > threshold)
 ```
 
-## Planned
-
 ### Phase 7: Log Viewer Widget ✅
 
 - Toggle with 📋 button in widget header
 - Auto-starts semantic event watching when opened
-- Filterable by category (clicks, input, nav, hover, focus)
-- Color-coded entries by category
+- Filterable by category (clicks, input, nav, hover, focus, console)
+- Console error indicator (⚠ count) with click-to-filter
+- Color-coded entries by category (including console error/warn/log styling)
 - Details/summary expand for payload (compact key-value table)
 - Auto-scroll with pause on manual scroll
 - Drag detection with smart thresholds (>10px fast, or >200ms deliberate)
 - Bookmarklet auto-replaces stale widgets (version check)
 - Hot reload via `POST /reload` - widget updates without page refresh
 - Custom element re-registration (auto-renames to `haltija-1`, etc.)
+- Widget min-width 240px for better readability
+- Recording buttons: 🎬 (start) / 💾 (stop/save)
 
 **Future enhancements:**
 - Direction change detection for drags (reversal = intentional)
@@ -339,6 +340,54 @@ With smart events, recording becomes useful:
 - Comprehensive test suites in `tests/` directory:
   - `test-page-actions.json` - 14 tests exercising all interactive elements
   - `test-recording-capture.json` - Verifies semantic event capture for all action types
+
+### Phase 8.5: Shadow DOM Mutation Watching ✅
+
+**Problem:** Mutations inside shadow DOMs weren't being watched, missing changes in web components.
+
+**Solution:** Recursive shadow DOM piercing for mutation observers
+
+- Mutation watching now pierces shadow boundaries
+- Proper selectors for shadow DOM elements (e.g., `haltija-dev >>> .widget-header`)
+- Auto-watches new shadow roots as they're attached
+- Tree inspector also pierces shadow DOM with depth control
+- React/framework detection works inside shadow DOMs
+
+**Implementation:**
+- `watchShadowRoots()` recursively finds and observes shadow DOMs
+- Shadow-aware selector generation with `>>>` piercing combinator
+- MutationObserver on each shadow root with same config as main observer
+
+### Phase 8.6: Noise Reduction Metrics ✅
+
+**Problem:** How effective is semantic aggregation? Need hard data.
+
+**Solution:** On-demand stats endpoint (not per-event overhead)
+
+- `GET /events/stats` returns noise reduction metrics
+- Tracks raw DOM events vs emitted semantic events
+- Breakdown by event type and category
+- Per-preset event counts (minimal, interactive, detailed, debug)
+- Duration tracking for rate calculations
+
+**Real-world benchmarks (4 minutes heavy interaction):**
+
+| Raw DOM Events | With `minimal` | With `interactive` |
+|----------------|----------------|-------------------|
+| 2,153 events | 78 events (96% reduction) | 244 events (89% reduction) |
+
+**Savings by type:**
+- Scrolling: 625 → 26 events (96% reduction)
+- Typing: 446 → 53 events (88% reduction)
+- Mouse movement: aggregated to hover/dwell events
+
+**Implementation details:**
+- `countRawEvent()` called in all DOM event handlers
+- `semanticEventCounts` incremented when events emitted
+- Stats reset when watching starts
+- Dynamic component.js loading (fresh on each request for hot reload)
+
+## Planned
 
 ### Phase 9: AI-Assisted Testing
 

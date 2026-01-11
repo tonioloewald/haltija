@@ -1,4 +1,10 @@
 /**
+ * Haltija - Browser Control for AI Agents
+ * https://github.com/anthropics/claude-code
+ * 
+ * Copyright 2025 Tonio Loewald
+ * SPDX-License-Identifier: Apache-2.0
+ * 
  * Haltija Bookmarklet
  * 
  * Minimal loader that fetches and executes the injector from the server.

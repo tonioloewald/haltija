@@ -308,115 +308,31 @@ haltija --both             # Both HTTP and HTTPS
 haltija --port 3000        # Custom HTTP port
 haltija --headless         # Start Playwright browser with widget auto-injected
 haltija --headless-url URL # Headless mode, navigate to specific URL
+haltija --snapshots-dir ./snapshots  # Save failure snapshots to disk (for CI)
 ```
 
 Environment variables:
 - `DEV_CHANNEL_PORT` - HTTP port (default: 8700)
 - `DEV_CHANNEL_HTTPS_PORT` - HTTPS port (default: 8701)
 - `DEV_CHANNEL_MODE` - `http`, `https`, or `both`
+- `DEV_CHANNEL_SNAPSHOTS_DIR` - Save snapshots to disk (for CI artifacts)
 
-## JSON Tests
+## AI-Powered Testing
 
-Tests are pure JSON - no code, just data. The AI writes them by exploring the page - or you can **record them automatically** from user interactions.
+Tests are pure JSON - no code, just data. The AI explores your page, understands the UI semantically, and writes tests that survive UI changes.
 
-### Recording Tests
+**This isn't Playwright with extra steps.** Traditional recorders capture brittle selectors that break when CSS changes. Haltija captures *semantic events* - the AI understands you meant "click the submit button", not "click `body > div:nth-child(3) > form > button.btn-primary`".
 
-**One-click recording from the widget:**
+### How AI Writes Tests
 
-1. Click the 🎬 button in the widget header to start recording
-2. Use the app normally - click, type, navigate
-3. Click 💾 to stop and save
-4. A modal appears with the generated test JSON
-5. Edit the test name, then Copy or Save
-
-**Via API** (for automation):
-
-```bash
-# Start watching semantic events
-curl -X POST http://localhost:8700/events/watch -d '{"preset":"interactive"}'
-
-# ... use the app (click, type, navigate) ...
-
-# Generate a test from the recorded events
-curl -X POST http://localhost:8700/recording/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Login Flow",
-    "description": "Test user login",
-    "url": "http://localhost:3000/login",
-    "addAssertions": true
-  }'
-```
-
-The generator converts semantic events to test steps:
-- `input:typed` → TypeStep with value assertion
-- `interaction:click` → ClickStep (with URL assertion if navigation follows)
-- Calculates realistic delays between steps
-- Generates human-readable descriptions: "Type 'user@example.com' in Email"
-
-### Editing Generated Tests
-
-The generated JSON is a starting point. Common edits:
-
-**Add assertions** - verify the app did what you expected:
-```json
-{
-  "action": "assert",
-  "assertion": { "type": "exists", "selector": ".success-message" },
-  "description": "Success message appears"
-}
-```
-
-**Add waits** - for slow operations:
-```json
-{
-  "action": "wait",
-  "wait": { "type": "selector", "selector": ".loading", "state": "hidden" },
-  "description": "Wait for loading to complete"
-}
-```
-
-**Fix selectors** - recorded selectors might be brittle:
-```json
-// Before (fragile)
-"selector": "body > div:nth-child(3) > form > button"
-
-// After (robust)  
-"selector": "button[type='submit']"
-// or
-"selector": "button:has-text('Submit')"
-```
-
-**Remove noise** - delete accidental clicks or redundant steps
-
-**Add descriptions** - explain intent for future maintainers:
-```json
-{
-  "action": "click",
-  "selector": "#checkout",
-  "description": "Proceed to checkout",
-  "purpose": "User completes their purchase flow"
-}
-```
-
-**Assertion types available:**
-- `exists` / `not-exists` - element presence
-- `text` - element text content (exact or pattern)
-- `value` - input field value
-- `visible` / `hidden` - visibility state
-- `url` - current URL (exact or pattern)
-- `console-contains` - check console output
-
-### Writing Tests Manually
-
-The AI can also write tests by exploring the page:
-1. Inspects the page via `/tree` and `/inspectAll`
-2. Understands the UI semantically (not just pixels)
+1. AI inspects the page via `/tree` and `/inspectAll`
+2. Understands the UI semantically (buttons, forms, navigation - not just pixels)
 3. Writes a test plan as JSON
 4. Runs it via `/test/run`
 5. On failure, captures a snapshot for "time travel" debugging
+6. **Adapts when selectors change** - the AI can fix its own tests
 
-Test format:
+### Test Format
 
 ```json
 {
@@ -456,7 +372,15 @@ Test format:
 }
 ```
 
-Run tests via API:
+**Assertion types:**
+- `exists` / `not-exists` - element presence
+- `text` - element text content (exact or pattern)
+- `value` - input field value
+- `visible` / `hidden` - visibility state
+- `url` - current URL (exact or pattern)
+- `console-contains` - check console output
+
+### Running Tests
 
 ```bash
 # Run a single test
@@ -474,6 +398,17 @@ curl -X POST http://localhost:8700/test/suite \
   -H "Content-Type: application/json" \
   -d '{"tests": ["./tests/login.json", "./tests/checkout.json"]}'
 ```
+
+### Manual Recording (Escape Hatch)
+
+If you prefer traditional recording, it's still available - but the AI will understand the *intent*, not just replay clicks:
+
+1. Click 🎬 in the widget to start recording
+2. Use the app normally
+3. Click 💾 to stop and generate test JSON
+4. The AI can then review and improve the generated test
+
+Unlike Playwright's recorder, we capture semantic events ("user typed email in login form") not raw DOM events ("keydown on `input#email`"). When the UI changes, the AI can adapt the test instead of breaking.
 
 ### Snapshots (Time Travel Debugging)
 
@@ -523,7 +458,9 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          npx haltija --headless --headless-url http://localhost:3000 &
+          # Save snapshots to disk for artifact upload
+          npx haltija --headless --headless-url http://localhost:3000 \
+            --snapshots-dir ./haltija-snapshots &
           sleep 3
           
           # Let Claude run the tests
@@ -538,6 +475,14 @@ jobs:
         with:
           name: qa-report
           path: qa-report.md
+          
+      - name: Upload failure snapshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-snapshots
+          path: ./haltija-snapshots/
+          retention-days: 5
 ```
 
 ### GitLab CI
@@ -547,7 +492,8 @@ ai-qa:
   stage: test
   script:
     - npm start &
-    - npx haltija --headless --headless-url http://localhost:3000 &
+    - npx haltija --headless --headless-url http://localhost:3000 
+        --snapshots-dir ./haltija-snapshots &
     - sleep 3
     - |
       npx claude --print "
@@ -555,8 +501,11 @@ ai-qa:
         Report results as markdown with analysis.
       " > qa-report.md
   artifacts:
+    when: always
     paths:
       - qa-report.md
+      - haltija-snapshots/
+    expire_in: 5 days
 ```
 
 ### Why AI QA?
@@ -606,4 +555,4 @@ curl http://localhost:8700/docs
 
 ## License
 
-MIT
+Apache 2.0 - includes patent grant for defensive protection of the semantic event aggregation and DOM tree inspection innovations.

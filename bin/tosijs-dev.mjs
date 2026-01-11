@@ -35,14 +35,16 @@ Options:
   --both          Both HTTP (8700) and HTTPS (8701)
   --headless      Start headless Chromium browser (for CI)
   --headless-url <url>  URL to open in headless browser (default: none)
+  --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
   --help, -h      Show this help
 
 Environment Variables:
-  DEV_CHANNEL_PORT       HTTP port (default: 8700)
-  DEV_CHANNEL_HTTPS_PORT HTTPS port (default: 8701)
-  DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'http')
+  DEV_CHANNEL_PORT         HTTP port (default: 8700)
+  DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
+  DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')
+  DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)
 
 Examples:
   npx tosijs-dev                          # HTTP on 8700
@@ -83,6 +85,12 @@ if (httpsPortIdx !== -1 && args[httpsPortIdx + 1]) {
 const firstArg = args.find(a => !a.startsWith('-'))
 if (firstArg && !isNaN(parseInt(firstArg))) {
   env.DEV_CHANNEL_PORT = firstArg
+}
+
+// Snapshots directory for CI artifact upload
+const snapshotsDirIdx = args.indexOf('--snapshots-dir')
+if (snapshotsDirIdx !== -1 && args[snapshotsDirIdx + 1]) {
+  env.DEV_CHANNEL_SNAPSHOTS_DIR = args[snapshotsDirIdx + 1]
 }
 
 // Headless mode options

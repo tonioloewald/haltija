@@ -44,7 +44,7 @@
     "browser"
   ],
   "author": "Tonio Loewald",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "typescript": "^5.0.0"

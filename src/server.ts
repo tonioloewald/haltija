@@ -1,4 +1,10 @@
 /**
+ * Haltija - Browser Control for AI Agents
+ * https://github.com/anthropics/claude-code
+ * 
+ * Copyright 2025 Tonio Loewald
+ * SPDX-License-Identifier: Apache-2.0
+ * 
  * Haltija Server
  * 
  * A Bun-based server that:
@@ -23,6 +29,7 @@ const LOG_PREFIX = '[haltija]'
 
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
 const HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
+const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const certsDir = join(__dirname, '../certs')
 
@@ -97,6 +104,27 @@ const MAX_BUFFER = 100
 const snapshots = new Map<string, PageSnapshot>()
 const MAX_SNAPSHOTS = 50
 
+// Create snapshots directory if configured
+if (SNAPSHOTS_DIR) {
+  try {
+    mkdirSync(SNAPSHOTS_DIR, { recursive: true })
+    console.log(`${LOG_PREFIX} Snapshots will be saved to: ${SNAPSHOTS_DIR}`)
+  } catch (err) {
+    console.error(`${LOG_PREFIX} Failed to create snapshots directory:`, err)
+  }
+}
+
+// Save snapshot to disk if directory is configured
+function saveSnapshotToDisk(snapshot: PageSnapshot): void {
+  if (!SNAPSHOTS_DIR) return
+  try {
+    const filePath = join(SNAPSHOTS_DIR, `${snapshot.id}.json`)
+    writeFileSync(filePath, JSON.stringify(snapshot, null, 2))
+  } catch (err) {
+    console.error(`${LOG_PREFIX} Failed to save snapshot to disk:`, err)
+  }
+}
+
 // Helper to capture a snapshot
 async function captureSnapshot(trigger: PageSnapshot['trigger'], context?: PageSnapshot['context']): Promise<string | undefined> {
   try {
@@ -133,6 +161,7 @@ async function captureSnapshot(trigger: PageSnapshot['trigger'], context?: PageS
       if (oldest) snapshots.delete(oldest)
     }
     snapshots.set(snapshotId, snapshot)
+    saveSnapshotToDisk(snapshot)
     
     return snapshotId
   } catch {
@@ -2197,6 +2226,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         if (oldest) snapshots.delete(oldest)
       }
       snapshots.set(snapshotId, snapshot)
+      saveSnapshotToDisk(snapshot)
       
       return Response.json({ 
         snapshotId,
