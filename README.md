@@ -287,7 +287,15 @@ Tests are pure JSON - no code, just data. The AI writes them by exploring the pa
 
 ### Recording Tests
 
-The easiest way to create tests: just use the app while semantic events are being captured, then generate a test:
+**One-click recording from the widget:**
+
+1. Click the ⏺ button in the widget header to start recording
+2. Use the app normally - click, type, navigate
+3. Click ⏺ again to stop
+4. A modal appears with the generated test JSON
+5. Edit the test name, then Copy or Save
+
+**Via API** (for automation):
 
 ```bash
 # Start watching semantic events
@@ -311,6 +319,59 @@ The generator converts semantic events to test steps:
 - `interaction:click` → ClickStep (with URL assertion if navigation follows)
 - Calculates realistic delays between steps
 - Generates human-readable descriptions: "Type 'user@example.com' in Email"
+
+### Editing Generated Tests
+
+The generated JSON is a starting point. Common edits:
+
+**Add assertions** - verify the app did what you expected:
+```json
+{
+  "action": "assert",
+  "assertion": { "type": "exists", "selector": ".success-message" },
+  "description": "Success message appears"
+}
+```
+
+**Add waits** - for slow operations:
+```json
+{
+  "action": "wait",
+  "wait": { "type": "selector", "selector": ".loading", "state": "hidden" },
+  "description": "Wait for loading to complete"
+}
+```
+
+**Fix selectors** - recorded selectors might be brittle:
+```json
+// Before (fragile)
+"selector": "body > div:nth-child(3) > form > button"
+
+// After (robust)  
+"selector": "button[type='submit']"
+// or
+"selector": "button:has-text('Submit')"
+```
+
+**Remove noise** - delete accidental clicks or redundant steps
+
+**Add descriptions** - explain intent for future maintainers:
+```json
+{
+  "action": "click",
+  "selector": "#checkout",
+  "description": "Proceed to checkout",
+  "purpose": "User completes their purchase flow"
+}
+```
+
+**Assertion types available:**
+- `exists` / `not-exists` - element presence
+- `text` - element text content (exact or pattern)
+- `value` - input field value
+- `visible` / `hidden` - visibility state
+- `url` - current URL (exact or pattern)
+- `console-contains` - check console output
 
 ### Writing Tests Manually
 

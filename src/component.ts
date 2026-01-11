@@ -984,6 +984,11 @@ export class DevChannel extends HTMLElement {
   private logPanelOpen = false
   private logAutoScroll = true
   
+  // Recording state
+  private isRecording = false
+  private recordingStartTime = 0
+  private recordingEvents: SemanticEvent[] = []
+  
   // Pending requests waiting for response
   private pending = new Map<string, { resolve: (r: DevResponse) => void, reject: (e: Error) => void }>()
   
@@ -1306,6 +1311,11 @@ export class DevChannel extends HTMLElement {
         .btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .btn.active { color: #6366f1; }
         .btn.danger:hover { color: #ef4444; }
+        .btn.recording { color: #ef4444; animation: pulse 1s infinite; }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
         
         .body {
           padding: 8px 12px;
@@ -1520,6 +1530,100 @@ export class DevChannel extends HTMLElement {
           color: #aaa;
           word-break: break-all;
         }
+        
+        /* Test output modal */
+        .test-modal {
+          display: none;
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.8);
+          z-index: 999999;
+          justify-content: center;
+          align-items: center;
+        }
+        .test-modal.open { display: flex; }
+        .test-modal-content {
+          background: #1a1a1a;
+          border: 1px solid #333;
+          border-radius: 8px;
+          width: 90%;
+          max-width: 600px;
+          max-height: 80vh;
+          display: flex;
+          flex-direction: column;
+        }
+        .test-modal-header {
+          padding: 12px 16px;
+          border-bottom: 1px solid #333;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .test-modal-header h3 {
+          margin: 0;
+          font-size: 14px;
+          color: #fff;
+        }
+        .test-modal-body {
+          padding: 16px;
+          overflow: auto;
+          flex: 1;
+        }
+        .test-modal-body input {
+          width: 100%;
+          padding: 8px;
+          margin-bottom: 12px;
+          background: #222;
+          border: 1px solid #444;
+          border-radius: 4px;
+          color: #fff;
+          font-size: 13px;
+        }
+        .test-modal-body textarea {
+          width: 100%;
+          height: 200px;
+          padding: 8px;
+          background: #111;
+          border: 1px solid #333;
+          border-radius: 4px;
+          color: #0f0;
+          font-family: monospace;
+          font-size: 11px;
+          resize: vertical;
+        }
+        .test-modal-footer {
+          padding: 12px 16px;
+          border-top: 1px solid #333;
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+        }
+        .test-modal-footer button {
+          padding: 8px 16px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+        }
+        .test-modal-footer .btn-primary {
+          background: #6366f1;
+          color: #fff;
+        }
+        .test-modal-footer .btn-primary:hover {
+          background: #4f46e5;
+        }
+        .test-modal-footer .btn-secondary {
+          background: #333;
+          color: #fff;
+        }
+        .test-modal-footer .btn-secondary:hover {
+          background: #444;
+        }
+        .test-modal .success-msg {
+          color: #22c55e;
+          font-size: 11px;
+          margin-left: 8px;
+        }
       </style>
       
       <div class="widget">
@@ -1528,6 +1632,7 @@ export class DevChannel extends HTMLElement {
           <div class="title">🦉 tosijs-dev</div>
           <div class="indicators"></div>
           <div class="controls">
+            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">⏺</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
             <button class="btn" data-action="pause" title="Pause/Resume connection" aria-label="Pause or resume">⏸</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
@@ -1559,6 +1664,24 @@ export class DevChannel extends HTMLElement {
           </div>
         </div>
       </div>
+      
+      <div class="test-modal">
+        <div class="test-modal-content">
+          <div class="test-modal-header">
+            <h3>Generated Test</h3>
+            <button class="btn" data-action="close-modal" title="Close">✕</button>
+          </div>
+          <div class="test-modal-body">
+            <input type="text" class="test-name" placeholder="Test name" value="Recorded Test">
+            <textarea class="test-json" readonly></textarea>
+          </div>
+          <div class="test-modal-footer">
+            <span class="success-msg"></span>
+            <button class="btn-secondary" data-action="download-test">💾 Save</button>
+            <button class="btn-primary" data-action="copy-test">📋 Copy</button>
+          </div>
+        </div>
+      </div>
     `
     
     this.updateUI()
@@ -1576,6 +1699,10 @@ export class DevChannel extends HTMLElement {
         if (action === 'kill') this.kill()
         if (action === 'logs') this.toggleLogPanel()
         if (action === 'clear-logs') this.clearLogPanel()
+        if (action === 'record') this.toggleRecording()
+        if (action === 'close-modal') this.closeTestModal()
+        if (action === 'copy-test') this.copyTest()
+        if (action === 'download-test') this.downloadTest()
       })
     })
     
@@ -1817,6 +1944,216 @@ export class DevChannel extends HTMLElement {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
+  }
+  
+  // ============================================
+  // Recording Methods
+  // ============================================
+  
+  private toggleRecording() {
+    if (this.isRecording) {
+      this.stopRecording()
+    } else {
+      this.startRecording()
+    }
+  }
+  
+  private startRecording() {
+    this.isRecording = true
+    this.recordingStartTime = Date.now()
+    this.recordingEvents = []
+    
+    // Start semantic event watching if not already active
+    if (!this.semanticEventsEnabled) {
+      this.semanticSubscription = { preset: 'interactive' }
+      this.startSemanticEvents()
+    }
+    
+    // Update button state
+    const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
+    if (recordBtn) {
+      recordBtn.classList.add('recording')
+      recordBtn.setAttribute('title', 'Stop recording (click to finish)')
+    }
+  }
+  
+  private stopRecording() {
+    this.isRecording = false
+    
+    // Capture events that occurred during recording
+    this.recordingEvents = this.semanticEventBuffer.filter(
+      e => e.timestamp >= this.recordingStartTime
+    )
+    
+    // Update button state
+    const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
+    if (recordBtn) {
+      recordBtn.classList.remove('recording')
+      recordBtn.setAttribute('title', 'Record test (click to start)')
+    }
+    
+    // Generate the test and show modal
+    this.generateAndShowTest()
+  }
+  
+  private generateAndShowTest() {
+    const test = this.eventsToTest(this.recordingEvents, {
+      name: 'Recorded Test',
+      url: window.location.href,
+      addAssertions: true,
+    })
+    
+    const modal = this.shadowRoot?.querySelector('.test-modal')
+    const nameInput = this.shadowRoot?.querySelector('.test-name') as HTMLInputElement
+    const jsonArea = this.shadowRoot?.querySelector('.test-json') as HTMLTextAreaElement
+    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    
+    if (modal && nameInput && jsonArea) {
+      nameInput.value = test.name
+      jsonArea.value = JSON.stringify(test, null, 2)
+      modal.classList.add('open')
+      
+      // Clear any previous success message
+      if (successMsg) successMsg.textContent = ''
+      
+      // Update JSON when name changes
+      nameInput.oninput = () => {
+        test.name = nameInput.value
+        jsonArea.value = JSON.stringify(test, null, 2)
+      }
+    }
+  }
+  
+  private eventsToTest(events: SemanticEvent[], options: { name: string, url: string, addAssertions: boolean }): DevChannelTest {
+    const steps: TestStep[] = []
+    let prevTimestamp = events[0]?.timestamp || Date.now()
+    
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i]
+      const delay = i > 0 ? Math.min(event.timestamp - prevTimestamp, 5000) : undefined
+      prevTimestamp = event.timestamp
+      
+      const selector = event.target?.selector || ''
+      const text = event.target?.text || event.target?.label || ''
+      
+      switch (event.type) {
+        case 'interaction:click':
+          steps.push({
+            action: 'click',
+            selector,
+            description: text ? `Click "${text}"` : `Click ${selector}`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          
+          // Check if next event is navigation (click triggered it)
+          const nextEvent = events[i + 1]
+          if (nextEvent?.type === 'navigation:navigate' && options.addAssertions) {
+            steps.push({
+              action: 'assert',
+              assertion: { type: 'url', pattern: nextEvent.payload?.url || '' },
+              description: `Verify navigation to ${nextEvent.payload?.url}`,
+            })
+            i++ // Skip the navigation event
+          }
+          break
+          
+        case 'input:typed':
+          const typedText = event.payload?.text || event.payload?.value || ''
+          const fieldName = event.target?.label || event.target?.tag || 'field'
+          steps.push({
+            action: 'type',
+            selector,
+            text: typedText,
+            description: `Type "${typedText}" in ${fieldName}`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          
+          // Add value assertion
+          if (options.addAssertions && typedText) {
+            steps.push({
+              action: 'assert',
+              assertion: { type: 'value', selector, expected: typedText },
+              description: `Verify field contains "${typedText}"`,
+            })
+          }
+          break
+          
+        case 'navigation:navigate':
+          // Only add if not triggered by click (handled above)
+          if (event.payload?.trigger !== 'click' && event.payload?.trigger !== 'submit') {
+            steps.push({
+              action: 'navigate',
+              url: event.payload?.url || '',
+              description: `Navigate to ${event.payload?.url}`,
+            })
+          }
+          break
+          
+        case 'interaction:submit':
+          steps.push({
+            action: 'click',
+            selector: event.target?.selector || 'button[type="submit"]',
+            description: `Submit form`,
+            ...(delay && delay > 50 ? { delay } : {}),
+          })
+          break
+      }
+    }
+    
+    return {
+      version: 1,
+      name: options.name,
+      url: options.url,
+      createdAt: Date.now(),
+      createdBy: 'human',
+      steps,
+    }
+  }
+  
+  private closeTestModal() {
+    const modal = this.shadowRoot?.querySelector('.test-modal')
+    if (modal) {
+      modal.classList.remove('open')
+    }
+  }
+  
+  private copyTest() {
+    const jsonArea = this.shadowRoot?.querySelector('.test-json') as HTMLTextAreaElement
+    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    
+    if (jsonArea) {
+      navigator.clipboard.writeText(jsonArea.value).then(() => {
+        if (successMsg) {
+          successMsg.textContent = 'Copied!'
+          setTimeout(() => { successMsg.textContent = '' }, 2000)
+        }
+      })
+    }
+  }
+  
+  private downloadTest() {
+    const nameInput = this.shadowRoot?.querySelector('.test-name') as HTMLInputElement
+    const jsonArea = this.shadowRoot?.querySelector('.test-json') as HTMLTextAreaElement
+    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    
+    if (jsonArea && nameInput) {
+      const filename = nameInput.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '.test.json'
+      const blob = new Blob([jsonArea.value], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      
+      if (successMsg) {
+        successMsg.textContent = `Saved as ${filename}`
+        setTimeout(() => { successMsg.textContent = '' }, 3000)
+      }
+    }
   }
   
   private setupDrag(handle: Element) {
