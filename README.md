@@ -283,9 +283,38 @@ Environment variables:
 
 ## JSON Tests
 
-Tests are pure JSON - no code, just data. The AI writes them by exploring the page.
+Tests are pure JSON - no code, just data. The AI writes them by exploring the page - or you can **record them automatically** from user interactions.
 
-The AI:
+### Recording Tests
+
+The easiest way to create tests: just use the app while semantic events are being captured, then generate a test:
+
+```bash
+# Start watching semantic events
+curl -X POST http://localhost:8700/events/watch -d '{"preset":"interactive"}'
+
+# ... use the app (click, type, navigate) ...
+
+# Generate a test from the recorded events
+curl -X POST http://localhost:8700/recording/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Login Flow",
+    "description": "Test user login",
+    "url": "http://localhost:3000/login",
+    "addAssertions": true
+  }'
+```
+
+The generator converts semantic events to test steps:
+- `input:typed` → TypeStep with value assertion
+- `interaction:click` → ClickStep (with URL assertion if navigation follows)
+- Calculates realistic delays between steps
+- Generates human-readable descriptions: "Type 'user@example.com' in Email"
+
+### Writing Tests Manually
+
+The AI can also write tests by exploring the page:
 1. Inspects the page via `/tree` and `/inspectAll`
 2. Understands the UI semantically (not just pixels)
 3. Writes a test plan as JSON
