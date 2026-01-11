@@ -311,13 +311,22 @@ user:dwelled     (hovered > threshold)
 - Direction change detection for drags (reversal = intentional)
 - Virtual scrolling if buffer size increases beyond 100
 
-### Phase 8: Recording & Test Generation
+### Phase 8: Recording & Test Generation ✅
 
 With smart events, recording becomes useful:
 - Record semantic actions, not raw events
-- Generate readable test steps
+- Generate readable test steps via `/recording/generate`
 - AI can understand *intent* not just actions
 - Suggest assertions based on observed behavior
+
+**Implementation:**
+- `POST /recording/generate` converts semantic events to DevChannelTest JSON
+- Maps `input:typed` → TypeStep, `interaction:click` → ClickStep, etc.
+- Auto-generates value assertions after typing
+- Auto-generates URL assertions after navigation-triggering clicks
+- Calculates realistic delays between steps from timestamps
+- Human-readable descriptions: "Type 'user@example.com' in Email"
+- Purpose annotations: "Enter email value", "Confirm navigation completed"
 
 ### Phase 9: AI-Assisted Testing
 

@@ -781,6 +781,7 @@ CSS variables for theming:
 |----------|--------|------|-------------|
 | /recording/start | POST | {name} | Start recording session |
 | /recording/stop | POST | - | Stop and return recorded events |
+| /recording/generate | POST | {name, url, addAssertions, events?} | Generate test JSON from semantic events |
 
 ## Build Events
 
@@ -1138,6 +1139,44 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   if (path === '/recording/stop' && req.method === 'POST') {
     const response = await requestFromBrowser('recording', 'stop', {})
     return Response.json(response, { headers })
+  }
+  
+  // Generate test from semantic events
+  if (path === '/recording/generate' && req.method === 'POST') {
+    const body = await req.json()
+    
+    // Get semantic events from buffer or from request body
+    let events = body.events
+    if (!events) {
+      // Get events from the semantic event buffer via browser
+      const eventsResponse = await requestFromBrowser('semantic', 'get', { since: body.since || 0 })
+      if (!eventsResponse.success) {
+        return Response.json({ success: false, error: 'Failed to get events' }, { headers })
+      }
+      events = eventsResponse.data?.events || []
+    }
+    
+    // Import the test generator
+    const { semanticEventsToTest, suggestAssertions } = await import('./test-generator')
+    
+    // Generate the test
+    const test = semanticEventsToTest(events, {
+      name: body.name || 'Recorded Test',
+      description: body.description,
+      url: body.url || events[0]?.payload?.to || 'http://localhost:3000',
+      addAssertions: body.addAssertions !== false,
+      minDelay: body.minDelay,
+      createdBy: body.createdBy || 'human',
+      tags: body.tags,
+    })
+    
+    // Optionally add suggested assertions at the end
+    if (body.suggestAssertions) {
+      const suggestions = suggestAssertions(events)
+      test.steps.push(...suggestions)
+    }
+    
+    return Response.json({ success: true, test }, { headers })
   }
   
   // Publish build event (for dev servers to call)
