@@ -37,11 +37,10 @@
 - Human-like typing with variable latency and typos
 - Node-compatible CLI (`npx tosijs-dev` works)
 
-## In Progress
-
-### Phase 5: JSON Test Framework
+### Phase 5: JSON Test Framework ✅
 
 Pure JSON tests that map to atomic actions. No code files - just data.
+AI writes tests, runs them, captures snapshots on failure.
 
 #### Test Format
 ```json
@@ -76,13 +75,6 @@ Pure JSON tests that map to atomic actions. No code files - just data.
   ]
 }
 ```
-
-#### Human Test Recording (Widget UI)
-- **Record button**: Start capturing user actions as JSON steps
-- **Check button**: Insert assertion at current state (exists, text, value, visible)
-- **Save button**: Stop recording, prompt for name/description, save to file/server
-- Actions captured: clicks, typing, navigation, form submissions
-- Auto-generates selectors (prefer id > data-testid > stable classes > path)
 
 #### AI Test Generation
 - AI inspects page via `/tree`, `/inspectAll`, proposes test plan
@@ -226,51 +218,7 @@ ai-qa:
 | "Timeout after 30s" | "Spinner never dismissed - loading state stuck, check network tab" |
 | "Expected 'Dashboard' got 'Login'" | "Auth cookie not set, CORS issue with new API domain" |
 
-#### AI as QA Professional
-- **Exploratory testing**: Agent fuzzes around, finds edge cases
-- **Test plan generation**: Agent inspects page, proposes what to test
-- **Bug reports**: Structured reports with repro steps, screenshots, DOM state
-- **Regression verification**: "Is bug #123 fixed?" → Agent checks
-- **Accessibility audits**: WCAG compliance, contrast ratios, focus order, ARIA
-- **Responsive/Mobile testing**:
-  - Viewport resizing, device emulation
-  - Screen rotation (portrait ↔ landscape)
-  - Touch vs mouse interactions
-  - Tap target sizes (48px minimum)
-  - Viewport meta tag validation
-  - Content reflow, no horizontal scroll
-
-#### Smart Input Behaviors
-- **Segmented inputs**: Detect split fields (OTP, credit card 4-4-4-4, SSN, phone)
-  - Auto-tab between segments with natural pause
-  - Type at human speed across the group
-- **Password fields**: Occasional show/hide toggle, variable timing
-- **Restricted inputs**: Respect maxlength, input masks, validation
-- **Form field detection**: Know when it's email vs phone vs credit card
-- **Phone/Zip nightmare handling**: 
-  - Detect expected format from placeholder, mask, or validation errors
-  - Try raw digits first, adapt if rejected
-  - Handle country code dropdowns
-  - Cope with auto-formatting that fights input
-  - Report badly-behaved fields as accessibility/UX bugs
-- **Country/State dropdowns**: 
-  - Flag "200 countries, US not defaulted despite en-US locale"
-  - Handle type-ahead (or lack thereof)
-  - Detect duplicate entries (UK vs Great Britain vs United Kingdom)
-- **Language selectors**:
-  - Flag unreadable: "12 languages listed in Japanese, user locale en-US"
-  - Detect missing lang attribute on html element
-  - Find the selector (footer? hamburger? settings? globe icon? random flag?)
-  - Report if no way to switch from auto-detected wrong language
-
-#### Idle Behaviors (Bug Discovery + Human Mimicry)
-- Random micro-movements when "thinking"
-- Occasional scroll jitter
-- Tab between fields without typing
-- Hover over elements before clicking
-- These uncover bugs (hover states, focus traps, tooltip issues)
-
-## Planned
+## In Progress
 
 ### Phase 6: Smart Event Streams (THE BIG ONE)
 
@@ -345,6 +293,8 @@ page:loaded      not system:connected
 user:entered     (element boundary crossing)
 user:dwelled     (hovered > threshold)
 ```
+
+## Planned
 
 ### Phase 7: Log Viewer Widget
 
@@ -516,6 +466,50 @@ Makes replays feel alive and helps users understand what the agent is doing.
 
 ## Ideas Parking Lot
 
+### Smart Input Behaviors
+- **Segmented inputs**: Detect split fields (OTP, credit card 4-4-4-4, SSN, phone)
+  - Auto-tab between segments with natural pause
+  - Type at human speed across the group
+- **Password fields**: Occasional show/hide toggle, variable timing
+- **Restricted inputs**: Respect maxlength, input masks, validation
+- **Form field detection**: Know when it's email vs phone vs credit card
+- **Phone/Zip nightmare handling**: 
+  - Detect expected format from placeholder, mask, or validation errors
+  - Try raw digits first, adapt if rejected
+  - Handle country code dropdowns
+  - Cope with auto-formatting that fights input
+  - Report badly-behaved fields as accessibility/UX bugs
+- **Country/State dropdowns**: 
+  - Flag "200 countries, US not defaulted despite en-US locale"
+  - Handle type-ahead (or lack thereof)
+  - Detect duplicate entries (UK vs Great Britain vs United Kingdom)
+- **Language selectors**:
+  - Flag unreadable: "12 languages listed in Japanese, user locale en-US"
+  - Detect missing lang attribute on html element
+  - Find the selector (footer? hamburger? settings? globe icon? random flag?)
+  - Report if no way to switch from auto-detected wrong language
+
+### AI as QA Professional (Extended)
+- **Exploratory testing**: Agent fuzzes around, finds edge cases
+- **Bug reports**: Structured reports with repro steps, screenshots, DOM state
+- **Regression verification**: "Is bug #123 fixed?" → Agent checks
+- **Accessibility audits**: WCAG compliance, contrast ratios, focus order, ARIA
+- **Responsive/Mobile testing**:
+  - Viewport resizing, device emulation
+  - Screen rotation (portrait ↔ landscape)
+  - Touch vs mouse interactions
+  - Tap target sizes (48px minimum)
+  - Viewport meta tag validation
+  - Content reflow, no horizontal scroll
+
+### Idle Behaviors (Bug Discovery + Human Mimicry)
+- Random micro-movements when "thinking"
+- Occasional scroll jitter
+- Tab between fields without typing
+- Hover over elements before clicking
+- These uncover bugs (hover states, focus traps, tooltip issues)
+
+### Other Ideas
 - Sourcemaps for transpiled code debugging
 - Session replay (video-like scrubbing)
 - Heatmaps from hover/click data
