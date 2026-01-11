@@ -122,11 +122,99 @@ Pure JSON tests that map to atomic actions. No code files - just data.
 ```
 
 #### CI/Cloud Testing
-- **Headless execution**: Run saved JSON tests without browser UI
-- **AI QA in cloud**: Execute test suite, AI analyzes failures
-- **Test amendment**: AI updates failing tests (selector changed, flow changed)
-- **Batch runner**: `POST /test/suite` - Run multiple tests, aggregate results
-- **Webhook support**: POST results to CI system on completion
+
+**The Goal**: Replace meaningless test failures and log spam with AI that understands what broke and why.
+
+##### GitHub Actions Example
+```yaml
+jobs:
+  ai-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start app + tosijs-dev
+        run: |
+          npm start &
+          npx playwright install chromium
+          bunx tosijs-dev --headless &
+          sleep 5
+          
+      - name: AI executes test plan
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx claude-code -p "$(cat .tosijs/prompts/run-tests.md)" \
+            --output-file results.json \
+            --max-tokens 50000 \
+            --timeout 300
+          
+      - name: Check results
+        run: jq -e '.summary.failed == 0' results.json
+        
+      - name: Upload failure analysis
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-qa-report
+          path: results.json
+```
+
+##### Headless Mode
+- `bunx tosijs-dev --headless` - Starts Playwright browser automatically
+- No manual browser/bookmarklet needed
+- Chromium runs headless in CI environment
+- Widget auto-injected into every page
+
+##### AI QA Prompt Template (`.tosijs/prompts/run-tests.md`)
+```markdown
+You are a QA engineer. Connect to http://localhost:8700.
+
+1. Load test files from ./tests/*.test.json
+2. For each test, POST to /test/run
+3. If a test fails:
+   - Inspect the page state via /tree
+   - Check /console for errors
+   - Determine root cause (selector changed? element disabled? timing?)
+   - Suggest fix or flag as real bug
+4. Output JSON: { summary: {passed, failed}, results: [...], analysis: "..." }
+
+Be concise. Focus on actionable insights, not log dumps.
+```
+
+##### Structured Output
+- `POST /test/run` returns machine-readable JSON
+- Exit codes: 0 = all passed, 1 = failures, 2 = infrastructure error
+- `--output-file` flag writes results for CI artifact upload
+
+##### Cost Control
+- `--max-tokens` limits AI spend
+- `--timeout` kills runaway agents  
+- Test suite timeout separate from per-test timeout
+
+##### GitLab CI Example
+```yaml
+ai-qa:
+  image: mcr.microsoft.com/playwright:v1.40.0
+  script:
+    - npm start &
+    - bunx tosijs-dev --headless &
+    - sleep 5
+    - npx claude-code -p "$(cat .tosijs/prompts/run-tests.md)" > results.json
+    - jq -e '.summary.failed == 0' results.json
+  artifacts:
+    when: on_failure
+    paths:
+      - results.json
+```
+
+##### What AI QA Provides Over Traditional CI
+| Traditional CI | AI QA |
+|---------------|-------|
+| "Element #submit not found" | "Submit button moved to .form-actions > button:first-child, selector needs update" |
+| 500 lines of browser logs | "API returned 401, login token expired" |
+| "Timeout after 30s" | "Spinner never dismissed - loading state stuck, check network tab" |
+| "Expected 'Dashboard' got 'Login'" | "Auth cookie not set, CORS issue with new API domain" |
 
 #### AI as QA Professional
 - **Exploratory testing**: Agent fuzzes around, finds edge cases

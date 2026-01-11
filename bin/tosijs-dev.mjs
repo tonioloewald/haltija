@@ -9,6 +9,7 @@
  *   npx tosijs-dev              # Start HTTP server on port 8700
  *   npx tosijs-dev --https      # Start HTTPS server (auto-generates certs)
  *   npx tosijs-dev --both       # Start both HTTP and HTTPS
+ *   npx tosijs-dev --headless   # Start with headless Chromium (for CI)
  *   npx tosijs-dev --help       # Show help
  */
 
@@ -32,6 +33,8 @@ Options:
   --http          HTTP only on port 8700 (default)
   --https         HTTPS only on port 8701 (auto-generates certs)
   --both          Both HTTP (8700) and HTTPS (8701)
+  --headless      Start headless Chromium browser (for CI)
+  --headless-url <url>  URL to open in headless browser (default: none)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
   --help, -h      Show this help
@@ -42,9 +45,11 @@ Environment Variables:
   DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'http')
 
 Examples:
-  npx tosijs-dev                # HTTP on 8700
-  npx tosijs-dev --https        # HTTPS on 8701
-  npx tosijs-dev --both         # HTTP on 8700 + HTTPS on 8701
+  npx tosijs-dev                          # HTTP on 8700
+  npx tosijs-dev --https                  # HTTPS on 8701
+  npx tosijs-dev --both                   # HTTP on 8700 + HTTPS on 8701
+  npx tosijs-dev --headless               # Start with headless browser for CI
+  npx tosijs-dev --headless --headless-url http://localhost:3000  # Open URL
 
 Note: For best performance, use Bun: bunx tosijs-dev
 
@@ -80,6 +85,85 @@ if (firstArg && !isNaN(parseInt(firstArg))) {
   env.DEV_CHANNEL_PORT = firstArg
 }
 
+// Headless mode options
+const headlessMode = args.includes('--headless')
+const headlessUrlIdx = args.indexOf('--headless-url')
+const headlessUrl = headlessUrlIdx !== -1 ? args[headlessUrlIdx + 1] : null
+
+// Start headless browser after server is ready
+const startHeadlessBrowser = async (port) => {
+  console.log('[tosijs-dev] Starting headless Chromium browser...')
+  
+  try {
+    // Dynamic import to avoid requiring playwright if not using headless mode
+    const { chromium } = await import('playwright')
+    
+    const browser = await chromium.launch({
+      headless: true,
+    })
+    
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+    })
+    
+    const page = await context.newPage()
+    
+    // Inject tosijs-dev widget into every page
+    await context.addInitScript({
+      content: `
+        // Auto-inject tosijs-dev widget
+        (function() {
+          if (document.querySelector('tosijs-dev')) return;
+          
+          console.log(
+            '%c🦉 tosijs-dev%c headless mode',
+            'background:#6366f1;color:white;padding:2px 8px;border-radius:3px 0 0 3px;font-weight:bold',
+            'background:#22c55e;color:white;padding:2px 8px;border-radius:0 3px 3px 0'
+          );
+          
+          fetch('http://localhost:${port}/inject.js')
+            .then(r => r.text())
+            .then(eval)
+            .catch(e => console.error('[tosijs-dev] Failed to inject:', e));
+        })();
+      `
+    })
+    
+    // Navigate to URL if specified
+    if (headlessUrl) {
+      console.log(\`[tosijs-dev] Opening \${headlessUrl}...\`)
+      await page.goto(headlessUrl, { waitUntil: 'domcontentloaded' })
+    } else {
+      // Navigate to test page by default
+      await page.goto(\`http://localhost:\${port}/\`, { waitUntil: 'domcontentloaded' })
+    }
+    
+    console.log('[tosijs-dev] Headless browser ready. Widget auto-injected.')
+    console.log('[tosijs-dev] Use POST /navigate to change pages.')
+    
+    // Keep browser alive
+    process.on('SIGINT', async () => {
+      console.log('\\n[tosijs-dev] Closing browser...')
+      await browser.close()
+      process.exit(0)
+    })
+    
+    process.on('SIGTERM', async () => {
+      await browser.close()
+      process.exit(0)
+    })
+    
+  } catch (err) {
+    if (err.code === 'ERR_MODULE_NOT_FOUND') {
+      console.error('[tosijs-dev] Playwright not installed. Run: npm install playwright')
+      console.error('[tosijs-dev] Then: npx playwright install chromium')
+    } else {
+      console.error('[tosijs-dev] Failed to start headless browser:', err.message)
+    }
+    process.exit(1)
+  }
+}
+
 // Try bun first, fall back to node
 const tryBun = () => {
   const bun = spawn('bun', ['run', serverPath], {
@@ -95,6 +179,13 @@ const tryBun = () => {
   bun.on('exit', code => {
     process.exit(code || 0)
   })
+  
+  // Start headless browser after a short delay for server to start
+  if (headlessMode) {
+    setTimeout(() => {
+      startHeadlessBrowser(env.DEV_CHANNEL_PORT || 8700)
+    }, 2000)
+  }
 }
 
 const tryNode = () => {
@@ -113,6 +204,13 @@ const tryNode = () => {
   node.on('exit', code => {
     process.exit(code || 0)
   })
+  
+  // Start headless browser after a short delay for server to start
+  if (headlessMode) {
+    setTimeout(() => {
+      startHeadlessBrowser(env.DEV_CHANNEL_PORT || 8700)
+    }, 2000)
+  }
 }
 
 tryBun()

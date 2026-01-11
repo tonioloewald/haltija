@@ -1,0 +1,124 @@
+# AI-Powered QA with tosijs-dev for GitLab CI
+#
+# Add this to your .gitlab-ci.yml or include it
+#
+# Required CI/CD variables:
+#   ANTHROPIC_API_KEY - Your Anthropic API key (masked)
+#
+# Usage:
+#   1. Add ANTHROPIC_API_KEY to Settings > CI/CD > Variables
+#   2. Include this file or copy the job to your .gitlab-ci.yml
+#   3. Adjust the application start command
+
+stages:
+  - test
+
+ai-qa:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.40.0-jammy
+  
+  variables:
+    NODE_ENV: test
+    
+  before_script:
+    # Install Bun
+    - curl -fsSL https://bun.sh/install | bash
+    - export PATH="$HOME/.bun/bin:$PATH"
+    
+    # Install dependencies
+    - npm ci
+    
+  script:
+    # ================================================
+    # CUSTOMIZE THIS FOR YOUR APPLICATION
+    # ================================================
+    - |
+      echo "Starting application..."
+      npm start &
+      APP_PID=$!
+      
+      # Wait for app to be ready
+      for i in {1..30}; do
+        curl -s http://localhost:3000 && break
+        sleep 1
+      done
+      
+    # Start tosijs-dev
+    - |
+      bunx tosijs-dev &
+      sleep 3
+      curl http://localhost:8700/status
+      
+    # Run AI QA
+    - |
+      npx claude -p "$(cat .tosijs/prompts/run-tests.md)" \
+        --max-turns 50 \
+        --output results.json \
+        2>&1 | tee ai-qa.log
+        
+    # Check results
+    - |
+      if [ -f results.json ]; then
+        echo "=== AI QA Results ==="
+        cat results.json | jq '.'
+        
+        FAILED=$(cat results.json | jq -r '.summary.failed // 0')
+        if [ "$FAILED" -gt 0 ]; then
+          echo "ERROR: $FAILED test(s) failed"
+          exit 1
+        fi
+      else
+        echo "WARNING: No results.json produced"
+        cat ai-qa.log
+        exit 1
+      fi
+      
+  artifacts:
+    when: always
+    paths:
+      - results.json
+      - ai-qa.log
+    expire_in: 30 days
+    reports:
+      # GitLab can parse JUnit format - could add converter
+      # junit: results-junit.xml
+      
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: manual
+      allow_failure: true
+
+# Optional: Exploratory testing (manual trigger)
+ai-exploratory:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.40.0-jammy
+  
+  variables:
+    NODE_ENV: test
+    
+  before_script:
+    - curl -fsSL https://bun.sh/install | bash
+    - export PATH="$HOME/.bun/bin:$PATH"
+    - npm ci
+    
+  script:
+    - npm start &
+    - sleep 10
+    - bunx tosijs-dev &
+    - sleep 3
+    - |
+      npx claude -p "$(cat .tosijs/prompts/exploratory-test.md)" \
+        --max-turns 100 \
+        --output exploratory-report.json \
+        2>&1 | tee exploratory.log
+        
+  artifacts:
+    when: always
+    paths:
+      - exploratory-report.json
+      - exploratory.log
+    expire_in: 30 days
+    
+  rules:
+    - when: manual
