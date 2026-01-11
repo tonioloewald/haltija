@@ -1226,7 +1226,7 @@ export class DevChannel extends HTMLElement {
           border-radius: 8px;
           box-shadow: 0 4px 20px rgba(0,0,0,0.3);
           overflow: hidden;
-          min-width: 180px;
+          min-width: 240px;
           transition: all 0.3s ease-out;
         }
         
@@ -1311,6 +1311,11 @@ export class DevChannel extends HTMLElement {
         .indicator.errors {
           background: #ef4444;
           color: white;
+          cursor: pointer;
+        }
+        
+        .indicator.errors:hover {
+          background: #dc2626;
         }
         
         .indicator.recording {
@@ -1521,6 +1526,31 @@ export class DevChannel extends HTMLElement {
         .log-cat.focus { background: #06b6d4; color: white; }
         .log-cat.mutation { background: #ec4899; color: white; }
         .log-cat.console { background: #ef4444; color: white; }
+        .log-cat.error { background: #ef4444; color: white; }
+        .log-cat.warn { background: #f59e0b; color: black; }
+        .log-cat.log { background: #6b7280; color: white; }
+        
+        .console-entry.error { border-left: 3px solid #ef4444; }
+        .console-entry.warn { border-left: 3px solid #f59e0b; }
+        
+        .log-console-detail {
+          padding: 8px;
+          background: #1a1a2e;
+        }
+        
+        .log-console-detail pre {
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-all;
+          font-size: 10px;
+          color: #ccc;
+        }
+        
+        .log-stack {
+          margin-top: 8px !important;
+          color: #888 !important;
+          font-size: 9px !important;
+        }
         
         .log-type {
           color: #aaa;
@@ -1701,6 +1731,7 @@ export class DevChannel extends HTMLElement {
               <option value="navigation">Nav</option>
               <option value="hover">Hover</option>
               <option value="focus">Focus</option>
+              <option value="console">Console</option>
             </select>
             <button class="log-scroll-btn active" title="Auto-scroll to new events (click to toggle)" aria-label="Toggle auto-scroll">⤓</button>
             <button class="btn" data-action="clear-logs" title="Clear all events" aria-label="Clear event log">🗑</button>
@@ -1753,6 +1784,28 @@ export class DevChannel extends HTMLElement {
         if (action === 'download-test') this.downloadTest()
       })
     })
+    
+    // Error indicator click - open log panel with console filter
+    const indicators = shadow.querySelector('.indicators')
+    if (indicators) {
+      indicators.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement
+        if (target.classList.contains('errors')) {
+          // Set filter to console first, then open panel
+          const logFilter = shadow.querySelector('.log-filter') as HTMLSelectElement
+          if (logFilter) {
+            logFilter.value = 'console'
+          }
+          // Open log panel if not already open
+          if (!this.logPanelOpen) {
+            this.toggleLogPanel()
+          } else {
+            // Already open, just update the display
+            this.updateLogPanel()
+          }
+        }
+      })
+    }
     
     // Log panel controls
     const logFilter = shadow.querySelector('.log-filter') as HTMLSelectElement
@@ -1920,6 +1973,49 @@ export class DevChannel extends HTMLElement {
     if (!content) return
     
     const filter = (this.shadowRoot?.querySelector('.log-filter') as HTMLSelectElement)?.value || 'all'
+    
+    // Handle console filter separately - show console buffer entries
+    if (filter === 'console') {
+      if (this.consoleBuffer.length === 0) {
+        content.innerHTML = `<div class="log-empty">No console messages captured.</div>`
+        return
+      }
+      
+      content.innerHTML = this.consoleBuffer.map(entry => {
+        const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit',
+          fractionalSecondDigits: 1
+        } as Intl.DateTimeFormatOptions)
+        
+        const levelClass = entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log'
+        const args = entry.args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')
+        const displayArgs = args.length > 100 ? args.slice(0, 100) + '…' : args
+        
+        return `
+          <details class="log-entry console-entry ${levelClass}" data-ts="${entry.timestamp}">
+            <summary class="log-entry-main">
+              <span class="log-time">${time}</span>
+              <span class="log-cat ${levelClass}">${entry.level.slice(0, 3)}</span>
+              <span class="log-type">console.${entry.level}</span>
+              <span class="log-target" title="${this.escapeHtml(args)}">${this.escapeHtml(displayArgs)}</span>
+            </summary>
+            <div class="log-console-detail">
+              <pre>${this.escapeHtml(args)}</pre>
+              ${entry.stack ? `<pre class="log-stack">${this.escapeHtml(entry.stack)}</pre>` : ''}
+            </div>
+          </details>
+        `
+      }).join('')
+      
+      if (this.logAutoScroll) {
+        this.scrollLogToBottom()
+      }
+      return
+    }
+    
     const events = filter === 'all' 
       ? this.semanticEventBuffer 
       : this.semanticEventBuffer.filter(e => e.category === filter)
@@ -4774,8 +4870,12 @@ export class DevChannel extends HTMLElement {
         }
         
         // Only send errors to server automatically (others are queryable via REST)
-        if (this.state === 'connected' && level === 'error') {
-          this.send('console', level, entry)
+        if (level === 'error') {
+          if (this.state === 'connected') {
+            this.send('console', level, entry)
+          }
+          // Update UI to show error indicator
+          this.updateUI()
         }
       }
     }
