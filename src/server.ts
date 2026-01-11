@@ -10,6 +10,7 @@
 
 import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode } from './types'
 import { injectorCode } from './bookmarklet'
+import { VERSION } from './version'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -291,6 +292,7 @@ async function handleRest(req: Request): Promise<Response> {
     const code = injectorCode
       .replace('__SERVER_URL__', serverUrl)
       .replace('__WS_URL__', wsUrl)
+      .replace('__VERSION__', VERSION)
     
     return new Response(code, { 
       headers: { ...headers, 'Content-Type': 'application/javascript' } 

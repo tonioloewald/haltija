@@ -42,8 +42,8 @@ import type {
   SemanticEventPreset,
 } from './types'
 
-// Component version - update when making changes
-export const VERSION = '0.1.7'
+// Component version - imported from shared version file
+export { VERSION } from './version'
 
 // Server session ID - injected by server when serving component.js
 // This allows the server to detect stale widgets and tell them to reload
@@ -1024,6 +1024,8 @@ export class DevChannel extends HTMLElement {
     blur?: (e: FocusEvent) => void
     submit?: (e: SubmitEvent) => void
     popstate?: (e: PopStateEvent) => void
+    mousedown?: (e: MouseEvent) => void
+    mouseup?: (e: MouseEvent) => void
   } = {}
   
   static get observedAttributes() {
@@ -1412,26 +1414,35 @@ export class DevChannel extends HTMLElement {
         }
         
         .log-entry {
-          display: flex;
-          gap: 8px;
-          padding: 4px 12px;
           border-bottom: 1px solid #222;
-          cursor: pointer;
         }
         
         .log-entry:hover {
           background: #222;
         }
         
-        .log-entry.expanded {
-          flex-direction: column;
-          background: #1e1e3e;
+        details.log-entry > summary {
+          cursor: pointer;
+          list-style: none;
+        }
+        
+        details.log-entry > summary::-webkit-details-marker {
+          display: none;
+        }
+        
+        details.log-entry[open] {
+          background: #1a1a2e;
         }
         
         .log-entry-main {
           display: flex;
           gap: 8px;
+          padding: 4px 12px;
           align-items: baseline;
+        }
+        
+        .log-entry.no-payload .log-entry-main {
+          padding: 4px 12px;
         }
         
         .log-time {
@@ -1471,15 +1482,27 @@ export class DevChannel extends HTMLElement {
           flex: 1;
         }
         
-        .log-payload {
-          margin-top: 6px;
-          padding: 6px 8px;
-          background: #0a0a1a;
-          border-radius: 4px;
-          color: #888;
-          white-space: pre-wrap;
-          word-break: break-all;
+        .log-payload-table {
+          width: 100%;
+          margin: 4px 12px 8px 12px;
           font-size: 9px;
+          border-collapse: collapse;
+        }
+        
+        .log-payload-table td {
+          padding: 2px 8px 2px 0;
+          vertical-align: top;
+        }
+        
+        .log-key {
+          color: #888;
+          white-space: nowrap;
+          width: 1%;
+        }
+        
+        .log-val {
+          color: #aaa;
+          word-break: break-all;
         }
       </style>
       
@@ -1489,10 +1512,10 @@ export class DevChannel extends HTMLElement {
           <div class="title">🦉 tosijs-dev</div>
           <div class="indicators"></div>
           <div class="controls">
-            <button class="btn" data-action="logs" title="Event Log">📋</button>
-            <button class="btn" data-action="pause" title="Pause/Resume">⏸</button>
-            <button class="btn" data-action="minimize" title="Minimize (⌥Tab)">─</button>
-            <button class="btn danger" data-action="kill" title="Close">✕</button>
+            <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
+            <button class="btn" data-action="pause" title="Pause/Resume connection" aria-label="Pause or resume">⏸</button>
+            <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
+            <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
           </div>
         </div>
         <div class="body">
@@ -1504,7 +1527,7 @@ export class DevChannel extends HTMLElement {
         <div class="log-panel">
           <div class="log-header">
             <span class="log-title">Events</span>
-            <select class="log-filter">
+            <select class="log-filter" title="Filter events by category" aria-label="Event category filter">
               <option value="all">All</option>
               <option value="interaction">Clicks</option>
               <option value="input">Input</option>
@@ -1512,8 +1535,8 @@ export class DevChannel extends HTMLElement {
               <option value="hover">Hover</option>
               <option value="focus">Focus</option>
             </select>
-            <button class="log-scroll-btn active" title="Auto-scroll">⬇</button>
-            <button class="btn" data-action="clear-logs" title="Clear">🗑</button>
+            <button class="log-scroll-btn active" title="Auto-scroll to new events (click to toggle)" aria-label="Toggle auto-scroll">⤓</button>
+            <button class="btn" data-action="clear-logs" title="Clear all events" aria-label="Clear event log">🗑</button>
           </div>
           <div class="log-content">
             <div class="log-empty">No events yet. Events will appear when semantic event watching is active.</div>
@@ -1567,14 +1590,6 @@ export class DevChannel extends HTMLElement {
         if (!atBottom && this.logAutoScroll) {
           this.logAutoScroll = false
           shadow.querySelector('.log-scroll-btn')?.classList.remove('active')
-        }
-      })
-      
-      // Click to expand/collapse entries
-      logContent.addEventListener('click', (e) => {
-        const entry = (e.target as HTMLElement).closest('.log-entry')
-        if (entry) {
-          entry.classList.toggle('expanded')
         }
       })
     }
@@ -1642,13 +1657,59 @@ export class DevChannel extends HTMLElement {
     if (panel) {
       panel.classList.toggle('open', this.logPanelOpen)
       if (this.logPanelOpen) {
+        // Auto-start semantic events with 'interactive' preset
+        if (!this.semanticEventsEnabled) {
+          this.semanticSubscription = { preset: 'interactive' }
+          this.startSemanticEvents()
+        }
         this.updateLogPanel()
         if (this.logAutoScroll) {
           this.scrollLogToBottom()
         }
+        // Reposition if panel goes off screen
+        requestAnimationFrame(() => this.ensureOnScreen())
+      } else {
+        // Auto-stop when closing (unless agent started it via API)
+        // Only stop if we started it ourselves (no explicit subscription from API)
+        if (this.semanticEventsEnabled && this.semanticSubscription?.preset === 'interactive') {
+          this.stopSemanticEvents()
+          this.semanticSubscription = null
+        }
       }
     }
     this.updateUI()
+  }
+  
+  private ensureOnScreen() {
+    const rect = this.getBoundingClientRect()
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+    
+    let newBottom = parseInt(this.style.bottom) || 16
+    let newLeft = parseInt(this.style.left) || this.homeLeft
+    
+    // If top is off screen, move down (increase bottom)
+    if (rect.top < 0) {
+      newBottom = viewportHeight - rect.height - 8
+    }
+    
+    // If bottom is off screen, move up
+    if (rect.bottom > viewportHeight) {
+      newBottom = 8
+    }
+    
+    // If right is off screen, move left
+    if (rect.right > viewportWidth) {
+      newLeft = viewportWidth - rect.width - 8
+    }
+    
+    // If left is off screen, move right
+    if (rect.left < 0) {
+      newLeft = 8
+    }
+    
+    this.style.bottom = `${newBottom}px`
+    this.style.left = `${newLeft}px`
   }
   
   private clearLogPanel() {
@@ -1673,11 +1734,7 @@ export class DevChannel extends HTMLElement {
       : this.semanticEventBuffer.filter(e => e.category === filter)
     
     if (events.length === 0) {
-      content.innerHTML = `<div class="log-empty">${
-        this.semanticEventsEnabled 
-          ? 'No events yet. Interact with the page to see events.' 
-          : 'Event watching not active. Use POST /events/watch to start.'
-      }</div>`
+      content.innerHTML = `<div class="log-empty">No events yet. Interact with the page to see events.</div>`
       return
     }
     
@@ -1694,21 +1751,43 @@ export class DevChannel extends HTMLElement {
         ? (event.target.label || event.target.text || event.target.selector || event.target.tag)
         : ''
       
-      const payloadStr = Object.keys(event.payload).length > 0 
-        ? JSON.stringify(event.payload, null, 2) 
-        : ''
+      const payloadEntries = Object.entries(event.payload).filter(([_, v]) => v != null && v !== '')
+      const hasPayload = payloadEntries.length > 0
       
-      return `
-        <div class="log-entry" data-ts="${event.timestamp}">
-          <div class="log-entry-main">
-            <span class="log-time">${time}</span>
-            <span class="log-cat ${event.category}">${event.category.slice(0, 3)}</span>
-            <span class="log-type">${event.type}</span>
-            <span class="log-target" title="${target}">${target}</span>
+      const payloadTable = hasPayload ? `
+        <table class="log-payload-table">
+          ${payloadEntries.map(([k, v]) => {
+            const val = typeof v === 'object' ? JSON.stringify(v) : String(v)
+            const displayVal = val.length > 60 ? val.slice(0, 60) + '…' : val
+            return `<tr><td class="log-key">${this.escapeHtml(k)}</td><td class="log-val" title="${this.escapeHtml(val)}">${this.escapeHtml(displayVal)}</td></tr>`
+          }).join('')}
+        </table>
+      ` : ''
+      
+      if (hasPayload) {
+        return `
+          <details class="log-entry" data-ts="${event.timestamp}">
+            <summary class="log-entry-main">
+              <span class="log-time">${time}</span>
+              <span class="log-cat ${event.category}">${event.category.slice(0, 3)}</span>
+              <span class="log-type">${event.type}</span>
+              <span class="log-target" title="${this.escapeHtml(target)}">${this.escapeHtml(target)}</span>
+            </summary>
+            ${payloadTable}
+          </details>
+        `
+      } else {
+        return `
+          <div class="log-entry no-payload" data-ts="${event.timestamp}">
+            <div class="log-entry-main">
+              <span class="log-time">${time}</span>
+              <span class="log-cat ${event.category}">${event.category.slice(0, 3)}</span>
+              <span class="log-type">${event.type}</span>
+              <span class="log-target" title="${this.escapeHtml(target)}">${this.escapeHtml(target)}</span>
+            </div>
           </div>
-          ${payloadStr ? `<div class="log-payload">${this.escapeHtml(payloadStr)}</div>` : ''}
-        </div>
-      `
+        `
+      }
     }).join('')
     
     if (this.logAutoScroll) {
@@ -2343,7 +2422,7 @@ export class DevChannel extends HTMLElement {
     // Input handler - aggregates typing
     this.semanticHandlers.input = (e: Event) => {
       const target = e.target as HTMLInputElement | HTMLTextAreaElement
-      if (!target || !('value' in target)) return
+      if (!target || !('value' in target) || this.contains(target)) return
       
       // If typing in same field, extend the timeout
       if (this.typingState.field === target) {
@@ -2429,7 +2508,7 @@ export class DevChannel extends HTMLElement {
     // Focus handlers
     this.semanticHandlers.focus = (e: FocusEvent) => {
       const target = e.target as Element
-      if (!target) return
+      if (!target || this.contains(target)) return
       
       this.emitSemanticEvent({
         type: 'focus:in',
@@ -2446,7 +2525,7 @@ export class DevChannel extends HTMLElement {
     
     this.semanticHandlers.blur = (e: FocusEvent) => {
       const target = e.target as Element
-      if (!target) return
+      if (!target || this.contains(target)) return
       
       this.emitSemanticEvent({
         type: 'focus:out',
@@ -2464,7 +2543,7 @@ export class DevChannel extends HTMLElement {
     // Form submit
     this.semanticHandlers.submit = (e: SubmitEvent) => {
       const form = e.target as HTMLFormElement
-      if (!form) return
+      if (!form || this.contains(form)) return
       
       this.emitSemanticEvent({
         type: 'interaction:submit',
@@ -2494,6 +2573,65 @@ export class DevChannel extends HTMLElement {
       })
     }
     
+    // Drag tracking state
+    let dragState: { 
+      target: Element | null
+      startX: number
+      startY: number
+      startTime: number
+    } | null = null
+    
+    // Mousedown - potential drag start
+    this.semanticHandlers.mousedown = (e: MouseEvent) => {
+      const target = e.target as Element
+      if (!target || this.contains(target)) return
+      
+      dragState = {
+        target,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTime: Date.now(),
+      }
+    }
+    
+    // Mouseup - check if it was a drag
+    this.semanticHandlers.mouseup = (e: MouseEvent) => {
+      if (!dragState) return
+      
+      const dx = e.clientX - dragState.startX
+      const dy = e.clientY - dragState.startY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+      const duration = Date.now() - dragState.startTime
+      
+      // Emit drag if:
+      // - distance > 10px (any duration), OR
+      // - duration > 200ms (deliberate hold, any distance)
+      const isSignificantMove = distance > 10
+      const isDeliberateHold = duration > 200
+      
+      if (isSignificantMove || isDeliberateHold) {
+        this.emitSemanticEvent({
+          type: 'interaction:drag',
+          timestamp: Date.now(),
+          category: 'interaction',
+          target: this.getTargetInfo(dragState.target!),
+          payload: {
+            startX: dragState.startX,
+            startY: dragState.startY,
+            endX: e.clientX,
+            endY: e.clientY,
+            distance: Math.round(distance),
+            duration,
+            direction: Math.abs(dx) > Math.abs(dy) 
+              ? (dx > 0 ? 'right' : 'left')
+              : (dy > 0 ? 'down' : 'up'),
+          },
+        })
+      }
+      
+      dragState = null
+    }
+    
     // Add all listeners
     document.addEventListener('click', this.semanticHandlers.click, true)
     document.addEventListener('input', this.semanticHandlers.input, true)
@@ -2504,6 +2642,8 @@ export class DevChannel extends HTMLElement {
     document.addEventListener('focusout', this.semanticHandlers.blur, true)
     document.addEventListener('submit', this.semanticHandlers.submit, true)
     window.addEventListener('popstate', this.semanticHandlers.popstate)
+    document.addEventListener('mousedown', this.semanticHandlers.mousedown, true)
+    document.addEventListener('mouseup', this.semanticHandlers.mouseup, true)
     
     // Emit initial navigation event
     this.emitSemanticEvent({
@@ -2554,6 +2694,12 @@ export class DevChannel extends HTMLElement {
     }
     if (this.semanticHandlers.popstate) {
       window.removeEventListener('popstate', this.semanticHandlers.popstate)
+    }
+    if (this.semanticHandlers.mousedown) {
+      document.removeEventListener('mousedown', this.semanticHandlers.mousedown, true)
+    }
+    if (this.semanticHandlers.mouseup) {
+      document.removeEventListener('mouseup', this.semanticHandlers.mouseup, true)
     }
     
     this.semanticHandlers = {}

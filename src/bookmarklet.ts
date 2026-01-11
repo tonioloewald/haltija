@@ -13,26 +13,34 @@
  */
 
 // This file contains the actual injection code that gets served from /inject.js
-// The __SERVER_URL__ and __WS_URL__ placeholders are replaced by the server at runtime
+// The __SERVER_URL__, __WS_URL__, and __VERSION__ placeholders are replaced by the server at runtime
 export const injectorCode = `
 (function() {
-  if (document.querySelector('tosijs-dev')) {
-    console.log('[tosijs-dev] Already active');
-    var existing = document.querySelector('tosijs-dev');
-    if (existing && existing.show) existing.show();
-    return;
-  }
-  
-  // These get replaced by the server based on the request protocol
   var serverUrl = '__SERVER_URL__';
   var wsUrl = '__WS_URL__';
+  var serverVersion = '__VERSION__';
+  
+  var existing = document.querySelector('tosijs-dev');
+  if (existing) {
+    // Check if existing widget is stale (different version)
+    var existingVersion = existing.getAttribute('data-version') || '0.0.0';
+    if (existingVersion === serverVersion) {
+      console.log('[tosijs-dev] Already active (v' + serverVersion + ')');
+      if (existing.show) existing.show();
+      return;
+    }
+    // Remove stale widget
+    console.log('[tosijs-dev] Replacing stale widget (v' + existingVersion + ' -> v' + serverVersion + ')');
+    existing.remove();
+  }
   
   var script = document.createElement('script');
-  script.src = serverUrl + '/component.js';
+  script.src = serverUrl + '/component.js?v=' + serverVersion;
   script.onload = function() {
     if (window.DevChannel) {
       var el = document.createElement('tosijs-dev');
       el.setAttribute('server', wsUrl);
+      el.setAttribute('data-version', serverVersion);
       document.body.appendChild(el);
     }
   };
