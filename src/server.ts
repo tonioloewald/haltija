@@ -532,6 +532,73 @@ async function handleRest(req: Request): Promise<Response> {
     <a href="#" id="tab-link">Link</a>
   </div>
   
+  <h2>Scrollable Containers</h2>
+  <div style="display: grid; gap: 16px; grid-template-columns: 1fr 1fr; max-width: 600px;">
+    <div>
+      <p style="margin: 0 0 8px;">Vertical scroll:</p>
+      <div id="scroll-vertical" style="height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px;">
+        <p>Item 1</p><p>Item 2</p><p>Item 3</p><p>Item 4</p><p>Item 5</p>
+        <p>Item 6</p><p>Item 7</p><p>Item 8</p><p>Item 9</p><p>Item 10</p>
+      </div>
+    </div>
+    <div>
+      <p style="margin: 0 0 8px;">Horizontal scroll:</p>
+      <div id="scroll-horizontal" style="width: 200px; overflow-x: auto; border: 1px solid #ccc; padding: 8px; white-space: nowrap;">
+        <span style="display: inline-block; width: 100px; height: 50px; background: #6366f1; margin-right: 8px;"></span>
+        <span style="display: inline-block; width: 100px; height: 50px; background: #22c55e; margin-right: 8px;"></span>
+        <span style="display: inline-block; width: 100px; height: 50px; background: #f59e0b; margin-right: 8px;"></span>
+        <span style="display: inline-block; width: 100px; height: 50px; background: #ef4444; margin-right: 8px;"></span>
+      </div>
+    </div>
+  </div>
+  
+  <h2>Resizable Elements</h2>
+  <div style="display: grid; gap: 16px; max-width: 600px;">
+    <div>
+      <p style="margin: 0 0 8px;">Resizable textarea (native):</p>
+      <textarea id="resize-textarea" style="width: 100%; min-height: 60px; resize: both;">Drag the corner to resize me...</textarea>
+    </div>
+    <div>
+      <p style="margin: 0 0 8px;">Resizable div (CSS resize):</p>
+      <div id="resize-div" style="width: 200px; height: 100px; resize: both; overflow: auto; border: 2px solid #6366f1; padding: 8px; background: #f3f4f6;">
+        Drag the corner to resize this div
+      </div>
+    </div>
+    <div>
+      <p style="margin: 0 0 8px;">Split panel (drag divider):</p>
+      <div id="split-container" style="display: flex; height: 100px; border: 1px solid #ccc;">
+        <div id="split-left" style="flex: 1; background: #dbeafe; padding: 8px; min-width: 50px;">Left panel</div>
+        <div id="split-divider" style="width: 8px; background: #6366f1; cursor: col-resize;" 
+             onmousedown="startSplitDrag(event)"></div>
+        <div id="split-right" style="flex: 1; background: #dcfce7; padding: 8px; min-width: 50px;">Right panel</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Split panel drag handling
+    var splitDragging = false;
+    function startSplitDrag(e) {
+      splitDragging = true;
+      document.addEventListener('mousemove', onSplitDrag);
+      document.addEventListener('mouseup', stopSplitDrag);
+      e.preventDefault();
+    }
+    function onSplitDrag(e) {
+      if (!splitDragging) return;
+      var container = document.getElementById('split-container');
+      var left = document.getElementById('split-left');
+      var rect = container.getBoundingClientRect();
+      var newWidth = e.clientX - rect.left - 4;
+      left.style.flex = 'none';
+      left.style.width = Math.max(50, Math.min(rect.width - 58, newWidth)) + 'px';
+    }
+    function stopSplitDrag() {
+      splitDragging = false;
+      document.removeEventListener('mousemove', onSplitDrag);
+      document.removeEventListener('mouseup', stopSplitDrag);
+    }
+  </script>
+  
   <h2>Form Validation</h2>
   <form id="test-form" novalidate style="display: grid; gap: 12px; max-width: 400px; padding: 16px; border: 1px solid #ccc; border-radius: 8px;">
     <div>
