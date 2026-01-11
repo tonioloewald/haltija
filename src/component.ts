@@ -1285,18 +1285,6 @@ export class DevChannel extends HTMLElement {
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">🦉 bookmark</a>
-            <div class="test-controls">
-              <button class="test-btn" data-test-action="record" title="Record test steps">
-                <span>⏺</span> Record
-              </button>
-              <button class="test-btn" data-test-action="check" title="Add assertion" disabled>
-                <span>✓</span> Check
-              </button>
-              <button class="test-btn" data-test-action="save" title="Save test" disabled>
-                <span>💾</span> Save
-              </button>
-            </div>
-            <div class="step-count"></div>
         </div>
       </div>
     `
@@ -1328,17 +1316,7 @@ export class DevChannel extends HTMLElement {
       })
     }
     
-    // Test recording buttons
-    shadow.querySelectorAll('.test-btn').forEach(btn => {
-      btn.addEventListener('mousedown', (e) => e.stopPropagation())
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const action = (e.currentTarget as HTMLElement).dataset.testAction
-        if (action === 'record') this.toggleTestRecording()
-        if (action === 'check') this.addTestAssertion()
-        if (action === 'save') this.saveTest()
-      })
-    })
+
     
     // Drag support
     this.setupDrag(shadow.querySelector('.header')!)
@@ -1370,43 +1348,9 @@ export class DevChannel extends HTMLElement {
       if (this.recording) {
         html += `<span class="indicator recording">REC</span>`
       }
-      if (this.testRecording) {
-        html += `<span class="indicator recording">TEST</span>`
-      }
       indicators.innerHTML = html
     }
     
-    // Update test recording buttons
-    const recordBtn = shadow.querySelector('[data-test-action="record"]') as HTMLButtonElement
-    const checkBtn = shadow.querySelector('[data-test-action="check"]') as HTMLButtonElement
-    const saveBtn = shadow.querySelector('[data-test-action="save"]') as HTMLButtonElement
-    const stepCount = shadow.querySelector('.step-count')
-    
-    if (recordBtn) {
-      if (this.testRecording) {
-        recordBtn.classList.add('recording')
-        recordBtn.innerHTML = '<span>⏹</span> Stop'
-      } else {
-        recordBtn.classList.remove('recording')
-        recordBtn.innerHTML = '<span>⏺</span> Record'
-      }
-    }
-    
-    if (checkBtn) {
-      checkBtn.disabled = !this.testRecording
-    }
-    
-    if (saveBtn) {
-      saveBtn.disabled = !this.testRecording || this.testRecording.steps.length === 0
-    }
-    
-    if (stepCount) {
-      if (this.testRecording && this.testRecording.steps.length > 0) {
-        stepCount.textContent = `${this.testRecording.steps.length} step${this.testRecording.steps.length > 1 ? 's' : ''} recorded`
-      } else {
-        stepCount.textContent = ''
-      }
-    }
   }
   
   private setupDrag(handle: Element) {

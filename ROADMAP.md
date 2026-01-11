@@ -105,6 +105,7 @@ Pure JSON tests that map to atomic actions. No code files - just data.
   "test": "Login flow",
   "passed": false,
   "duration": 2340,
+  "snapshotId": "snap_1736600123456",
   "steps": [
     { "index": 0, "passed": true, "duration": 120 },
     { "index": 1, "passed": true, "duration": 85 },
@@ -115,11 +116,20 @@ Pure JSON tests that map to atomic actions. No code files - just data.
       "error": "Timeout waiting for URL to match /dashboard",
       "description": "Verify redirect to dashboard",
       "purpose": "Confirm successful authentication",
-      "context": { "actualUrl": "/login?error=invalid" }
+      "context": { "actualUrl": "/login?error=invalid" },
+      "snapshotId": "snap_1736600128456"
     }
   ]
 }
 ```
+
+#### Failure Snapshots (Time Travel Debugging)
+When a test fails, capture a lightweight DOM snapshot:
+- `snapshotId` returned in test results
+- `GET /snapshot/:id` - Retrieve snapshot HTML
+- Snapshot includes: DOM tree, computed styles, console logs, network state
+- Developers can "time travel" to exact failure state locally
+- CI artifacts include snapshots, not just JSON results
 
 #### CI/Cloud Testing
 
@@ -308,6 +318,19 @@ system        - internal only, never broadcast to agents
 - "User explored" (moused over several options before clicking)
 - "User confidently clicked" vs "User hesitated then clicked"
 
+#### Event Payloads (Hindsight Buffer)
+**Key insight**: Events must carry their *payload*, not just their type.
+
+Bad: `mutation(div.error)` - Agent must query DOM to know what changed
+Good: `mutation(div.error, text="Invalid Password")` - Context is self-contained
+
+- Mutations include text content, attribute values, added/removed nodes
+- Clicks include element text, state (disabled, aria-pressed, etc.)
+- Form changes include old and new values
+- Navigation includes referrer, timing, resource count
+- Rolling buffer captures element tree snapshots at key moments
+- Agent can answer "what happened?" without re-querying the DOM
+
 #### Filtering/Debouncing
 - Debounce tiny movements (< 5px)
 - Collapse sequential keystrokes into single "typed" event
@@ -350,7 +373,9 @@ The holy grail - AI that can:
 - Suggest better UX based on observed behavior
 - "User seemed confused here" insights
 
-### Phase 10: Native App Shell (Electron/Tauri)
+### Phase 10: Haltija - Native App Shell (Electron/Tauri)
+
+**Product name**: Haltija (Finnish: guardian spirit that protects places/homes)
 
 **The "God Mode" Browser** - CSP bypass for universal compatibility.
 
@@ -374,10 +399,15 @@ The holy grail - AI that can:
 1. **DIY (open source)** - Build script, user code-signs
 2. **Pre-built (paid)** - Signed, notarized, auto-updates
 
-#### App Store Version
-- Mac App Store distribution (sandboxed, trusted)
-- One-click install for non-technical users
-- Apple handles payments
+#### Distribution Reality
+**Skip the Mac App Store.** Apple will reject apps that strip CSP headers or 
+aggressively manipulate web contexts. Don't fight their review team.
+
+Instead:
+- **Notarized DMG/Zip** - Direct download from website
+- **electron-builder** with S3 auto-update server
+- Code signing for Gatekeeper approval
+- One-click install, just not through Apple's store
 
 ### Phase 11: Apple Intelligence Integration
 
@@ -425,6 +455,36 @@ The holy grail - AI that can:
 - Feed as context to AI agents
 - "I've seen 500 bad phone fields. Yours is the 501st."
 - Turns basic automation into expert UX review
+
+#### Built-in Heuristics (Widget Auto-Detection)
+Encode crimes as detectable patterns that run automatically:
+
+```javascript
+// Example heuristics
+{ 
+  selector: 'input[type="text"]', 
+  condition: 'label contains "password"',
+  crime: 'Security Risk: Password field using type="text"',
+  severity: 'critical'
+},
+{
+  selector: 'div[onclick]',
+  condition: 'no role="button"',
+  crime: 'Accessibility: Clickable div without button role',
+  severity: 'high'
+},
+{
+  selector: 'input[type="tel"]',
+  condition: 'no inputmode, strict pattern',
+  crime: 'UX: Phone field fighting user input',
+  severity: 'medium'
+}
+```
+
+- Widget runs heuristics on page load
+- Flags issues before agent even starts
+- Standalone "Audit" mode for quick UX review
+- Viral potential: shareable UX crime reports
 
 ## Architecture Principles
 

@@ -33,7 +33,24 @@ bunx tosijs-dev --https
 bunx tosijs-dev --both
 ```
 
+### Option 1: Bookmarklet
 Visit the server URL, drag the bookmarklet to your toolbar. Click it on any page.
+
+### Option 2: One-liner (recommended for development)
+Add this to your app - it only runs on localhost:
+
+```javascript
+/^localhost$|^127\./.test(location.hostname)&&import('http://localhost:8700/dev.js')
+```
+
+Safe to leave in your codebase - it's a no-op in production. You'll see a colored console badge when connected.
+
+### Option 3: Headless Mode (for CI)
+```bash
+bunx tosijs-dev --headless --headless-url http://localhost:3000
+```
+
+Starts Playwright Chromium with the widget auto-injected. Perfect for CI pipelines.
 
 **For AI agents** - one endpoint has everything:
 ```bash
@@ -148,16 +165,182 @@ Works with Bun (preferred) or Node.js.
 ## CLI Options
 
 ```bash
-tosijs-dev              # HTTP on port 8700
-tosijs-dev --https      # HTTPS on port 8701 (auto-generates certs)
-tosijs-dev --both       # Both HTTP and HTTPS
-tosijs-dev --port 3000  # Custom HTTP port
+tosijs-dev                    # HTTP on port 8700
+tosijs-dev --https            # HTTPS on port 8701 (auto-generates certs)
+tosijs-dev --both             # Both HTTP and HTTPS
+tosijs-dev --port 3000        # Custom HTTP port
+tosijs-dev --headless         # Start Playwright browser with widget auto-injected
+tosijs-dev --headless-url URL # Headless mode, navigate to specific URL
 ```
 
 Environment variables:
 - `DEV_CHANNEL_PORT` - HTTP port (default: 8700)
 - `DEV_CHANNEL_HTTPS_PORT` - HTTPS port (default: 8701)
 - `DEV_CHANNEL_MODE` - `http`, `https`, or `both`
+
+## JSON Tests
+
+Tests are pure JSON - no code, just data. The AI writes them by exploring the page.
+
+The AI:
+1. Inspects the page via `/tree` and `/inspectAll`
+2. Understands the UI semantically (not just pixels)
+3. Writes a test plan as JSON
+4. Runs it via `/test/run`
+5. On failure, captures a snapshot for "time travel" debugging
+
+Test format:
+
+```json
+{
+  "version": 1,
+  "name": "Login flow",
+  "description": "Verify user can log in with valid credentials",
+  "url": "http://localhost:3000/login",
+  "createdAt": 1736600000000,
+  "createdBy": "human",
+  "steps": [
+    {
+      "action": "type",
+      "selector": "#email",
+      "text": "user@example.com",
+      "description": "Enter email address",
+      "purpose": "Fill in the email field with valid email"
+    },
+    {
+      "action": "type", 
+      "selector": "#password",
+      "text": "password123",
+      "description": "Enter password"
+    },
+    {
+      "action": "click",
+      "selector": "button[type=submit]",
+      "description": "Click login button"
+    },
+    {
+      "action": "assert",
+      "type": "exists",
+      "selector": ".dashboard",
+      "description": "Dashboard appears",
+      "purpose": "Verify login succeeded and user lands on dashboard"
+    }
+  ]
+}
+```
+
+Run tests via API:
+
+```bash
+# Run a single test
+curl -X POST http://localhost:8700/test/run \
+  -H "Content-Type: application/json" \
+  -d @login-test.json
+
+# Validate test format
+curl -X POST http://localhost:8700/test/validate \
+  -H "Content-Type: application/json" \
+  -d @login-test.json
+
+# Run a test suite
+curl -X POST http://localhost:8700/test/suite \
+  -H "Content-Type: application/json" \
+  -d '{"tests": ["./tests/login.json", "./tests/checkout.json"]}'
+```
+
+### Snapshots (Time Travel Debugging)
+
+When a test fails, a snapshot is automatically captured. The `snapshotId` is included in the test result.
+
+```bash
+# Get the snapshot
+curl http://localhost:8700/snapshot/snap_1736600123456_abc123
+```
+
+The snapshot includes:
+- DOM tree at the moment of failure
+- Console logs up to that point
+- Viewport dimensions
+- Test context (which step failed, why)
+
+This lets you "time travel" to the exact state when the test broke - no more guessing.
+
+```bash
+# Capture a snapshot manually
+curl -X POST http://localhost:8700/snapshot
+
+# List all snapshots
+curl http://localhost:8700/snapshots
+```
+
+## CI Integration
+
+Replace brittle test scripts with AI-powered QA. Instead of meaningless stack traces and flaky tests, get intelligent analysis of what went wrong.
+
+### GitHub Actions
+
+```yaml
+name: AI QA
+on: [push, pull_request]
+
+jobs:
+  ai-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start app
+        run: npm start &
+        
+      - name: Run AI QA
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx tosijs-dev --headless --headless-url http://localhost:3000 &
+          sleep 3
+          
+          # Let Claude run the tests
+          npx claude --print "
+            Run the test suite at ./tests/*.json using the tosijs-dev API at localhost:8700.
+            For each test, report: passed/failed, and if failed explain what went wrong
+            and suggest a fix. Output as markdown.
+          " > qa-report.md
+          
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: qa-report.md
+```
+
+### GitLab CI
+
+```yaml
+ai-qa:
+  stage: test
+  script:
+    - npm start &
+    - npx tosijs-dev --headless --headless-url http://localhost:3000 &
+    - sleep 3
+    - |
+      npx claude --print "
+        Run the JSON tests in ./tests/ against localhost:8700.
+        Report results as markdown with analysis.
+      " > qa-report.md
+  artifacts:
+    paths:
+      - qa-report.md
+```
+
+### Why AI QA?
+
+| Traditional CI | AI QA |
+|----------------|-------|
+| `Error: element not found` | "The submit button moved from #submit to .btn-primary after the redesign" |
+| `Timeout after 30000ms` | "The API is returning 503. Check if the database connection pool is exhausted" |
+| `AssertionError: false !== true` | "Login fails because the session cookie isn't being set - likely a SameSite issue" |
+
+The AI reads your tests, understands the intent, runs them, and explains failures in context.
 
 ## Use Cases
 

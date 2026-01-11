@@ -286,6 +286,40 @@ export interface DomSnapshot {
 }
 
 // ============================================
+// Page Snapshots (for test failure debugging)
+// ============================================
+
+/**
+ * A lightweight snapshot of page state at a point in time.
+ * Designed for "time travel" debugging of test failures.
+ */
+export interface PageSnapshot {
+  /** Unique snapshot ID */
+  id: string
+  /** When the snapshot was taken */
+  timestamp: number
+  /** Current URL */
+  url: string
+  /** Page title */
+  title: string
+  /** DOM tree (compact representation) */
+  tree: DomTreeNode
+  /** Console logs captured up to this point */
+  console: ConsoleEntry[]
+  /** Viewport dimensions */
+  viewport: { width: number; height: number }
+  /** Optional: what triggered this snapshot */
+  trigger?: 'manual' | 'test-failure' | 'assertion-failure' | 'error'
+  /** Optional: associated test/step info */
+  context?: {
+    testName?: string
+    stepIndex?: number
+    stepDescription?: string
+    error?: string
+  }
+}
+
+// ============================================
 // Test Format (JSON)
 // ============================================
 
@@ -408,6 +442,8 @@ export interface TestResult {
   endTime: number
   steps: StepResult[]
   error?: string
+  /** Snapshot ID of final state (especially useful on failure) */
+  snapshotId?: string
 }
 
 export interface StepResult {
@@ -427,6 +463,8 @@ export interface StepResult {
   purpose?: string
   /** Additional context about the failure (e.g., actual vs expected values) */
   context?: Record<string, any>
+  /** Snapshot ID at point of failure (only present on failed steps) */
+  snapshotId?: string
 }
 
 // ============================================

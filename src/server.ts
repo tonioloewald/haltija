@@ -8,7 +8,7 @@
  * - Buffers recent messages for late joiners
  */
 
-import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult } from './types'
+import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode } from './types'
 import { injectorCode } from './bookmarklet'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
@@ -84,6 +84,53 @@ let activeBrowserId: string | null = null
 // Message buffer for late joiners
 const messageBuffer: DevMessage[] = []
 const MAX_BUFFER = 100
+
+// Snapshot storage (in-memory, keyed by ID)
+const snapshots = new Map<string, PageSnapshot>()
+const MAX_SNAPSHOTS = 50
+
+// Helper to capture a snapshot
+async function captureSnapshot(trigger: PageSnapshot['trigger'], context?: PageSnapshot['context']): Promise<string | undefined> {
+  try {
+    const locationResponse = await requestFromBrowser('navigation', 'location', {})
+    if (!locationResponse.success) return undefined
+    
+    const treeResponse = await requestFromBrowser('dom', 'tree', { 
+      selector: 'body', 
+      depth: 5,
+      compact: true 
+    })
+    
+    const consoleResponse = await requestFromBrowser('console', 'get', {})
+    
+    const viewportResponse = await requestFromBrowser('eval', 'exec', {
+      code: 'JSON.stringify({width: window.innerWidth, height: window.innerHeight})'
+    })
+    
+    const snapshotId = `snap_${Date.now()}_${uid()}`
+    const snapshot: PageSnapshot = {
+      id: snapshotId,
+      timestamp: Date.now(),
+      url: locationResponse.data?.url || '',
+      title: locationResponse.data?.title || '',
+      tree: treeResponse.data || { tag: 'body', text: '[unavailable]' },
+      console: consoleResponse.data || [],
+      viewport: viewportResponse.success ? JSON.parse(viewportResponse.data) : { width: 0, height: 0 },
+      trigger,
+      context,
+    }
+    
+    if (snapshots.size >= MAX_SNAPSHOTS) {
+      const oldest = snapshots.keys().next().value
+      if (oldest) snapshots.delete(oldest)
+    }
+    snapshots.set(snapshotId, snapshot)
+    
+    return snapshotId
+  } catch {
+    return undefined
+  }
+}
 
 // Pending responses (request id -> resolver)
 const pendingResponses = new Map<string, {
@@ -438,6 +485,19 @@ See the DOM tree:
 - POST /recording/start - Record user interactions
 - POST /recording/stop  - Stop and get recorded events
 
+### Test Runner
+- POST /test/validate   - Validate test JSON format
+- POST /test/run        - Run a single test: POST full test JSON
+- POST /test/suite      - Run multiple tests: {"tests": [test1, test2, ...]}
+
+### Snapshots (Time Travel Debugging)
+- POST /snapshot        - Capture current page state (DOM tree, console, viewport)
+- GET  /snapshot/:id    - Retrieve a snapshot by ID
+- GET  /snapshots       - List all snapshots (metadata only)
+- DELETE /snapshot/:id  - Delete a snapshot
+
+Test failures automatically capture snapshots. The snapshotId is included in test results.
+
 ## Tips
 
 1. Use /tree first to understand page structure before querying specific elements
@@ -460,6 +520,31 @@ curl -X POST ${baseUrl}/inspectAll -d '{"selector":"button, a, input"}' -H "Cont
 
 # Click something
 curl -X POST ${baseUrl}/click -d '{"selector":"#login-btn"}' -H "Content-Type: application/json"
+
+## Example: Run a Test
+
+Tests are JSON files with atomic actions. Run them via the API:
+
+# Validate test format
+curl -X POST ${baseUrl}/test/validate -H "Content-Type: application/json" -d @my-test.json
+
+# Run a single test
+curl -X POST ${baseUrl}/test/run -H "Content-Type: application/json" -d @my-test.json
+
+# Run a test suite
+curl -X POST ${baseUrl}/test/suite -H "Content-Type: application/json" -d '{"tests":[...]}'
+
+Test format:
+{
+  "version": 1,
+  "name": "Test name",
+  "url": "http://localhost:3000",
+  "steps": [
+    {"action": "click", "selector": "#btn", "description": "Click button"},
+    {"action": "type", "selector": "input", "text": "hello"},
+    {"action": "assert", "type": "exists", "selector": ".result"}
+  ]
+}
 
 ## Developer Integration
 
@@ -1580,6 +1665,17 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         error = err instanceof Error ? err.message : String(err)
       }
       
+      // Capture snapshot on failure
+      let stepSnapshotId: string | undefined
+      if (!stepPassed) {
+        stepSnapshotId = await captureSnapshot('test-failure', {
+          testName: test.name,
+          stepIndex: i,
+          stepDescription: step.description,
+          error,
+        })
+      }
+      
       stepResults.push({
         index: i,
         step,
@@ -1589,6 +1685,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         description: step.description,
         purpose: step.purpose,
         context,
+        snapshotId: stepSnapshotId,
       })
       
       if (!stepPassed) {
@@ -1597,10 +1694,20 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       }
     }
     
+    // Capture final snapshot if test failed
+    let testSnapshotId: string | undefined
+    if (!passed) {
+      testSnapshotId = await captureSnapshot('test-failure', {
+        testName: test.name,
+        error: stepResults.find(s => !s.passed)?.error,
+      })
+    }
+    
     return Response.json({
       test: test.name,
       passed,
       duration: Date.now() - startTime,
+      snapshotId: testSnapshotId,
       steps: stepResults,
       summary: {
         total: test.steps.length,
@@ -1652,6 +1759,100 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         failed: results.filter(r => !r.passed).length,
       },
     }, { headers })
+  }
+  
+  // ============================================
+  // Snapshot endpoints
+  // ============================================
+  
+  // Capture a snapshot of current page state
+  if (path === '/snapshot' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    const trigger = body.trigger || 'manual'
+    const context = body.context || {}
+    
+    try {
+      // Get current location
+      const locationResponse = await requestFromBrowser('navigation', 'location', {})
+      if (!locationResponse.success) {
+        return Response.json({ error: 'No browser connected' }, { status: 503, headers })
+      }
+      
+      // Get DOM tree
+      const treeResponse = await requestFromBrowser('dom', 'tree', { 
+        selector: 'body', 
+        depth: 5,
+        compact: true 
+      })
+      
+      // Get console logs
+      const consoleResponse = await requestFromBrowser('console', 'get', {})
+      
+      // Get viewport
+      const viewportResponse = await requestFromBrowser('eval', 'exec', {
+        code: 'JSON.stringify({width: window.innerWidth, height: window.innerHeight})'
+      })
+      
+      const snapshotId = `snap_${Date.now()}_${uid()}`
+      const snapshot: PageSnapshot = {
+        id: snapshotId,
+        timestamp: Date.now(),
+        url: locationResponse.data?.url || '',
+        title: locationResponse.data?.title || '',
+        tree: treeResponse.data || { tag: 'body', text: '[unavailable]' },
+        console: consoleResponse.data || [],
+        viewport: viewportResponse.success ? JSON.parse(viewportResponse.data) : { width: 0, height: 0 },
+        trigger,
+        context,
+      }
+      
+      // Store snapshot (with eviction if over limit)
+      if (snapshots.size >= MAX_SNAPSHOTS) {
+        const oldest = snapshots.keys().next().value
+        if (oldest) snapshots.delete(oldest)
+      }
+      snapshots.set(snapshotId, snapshot)
+      
+      return Response.json({ 
+        snapshotId,
+        timestamp: snapshot.timestamp,
+        url: snapshot.url,
+        title: snapshot.title,
+      }, { headers })
+    } catch (err) {
+      return Response.json({ error: String(err) }, { status: 500, headers })
+    }
+  }
+  
+  // Get a snapshot by ID
+  if (path.startsWith('/snapshot/') && req.method === 'GET') {
+    const snapshotId = path.slice('/snapshot/'.length)
+    const snapshot = snapshots.get(snapshotId)
+    
+    if (!snapshot) {
+      return Response.json({ error: 'Snapshot not found' }, { status: 404, headers })
+    }
+    
+    return Response.json(snapshot, { headers })
+  }
+  
+  // List all snapshots (metadata only)
+  if (path === '/snapshots' && req.method === 'GET') {
+    const list = Array.from(snapshots.values()).map(s => ({
+      id: s.id,
+      timestamp: s.timestamp,
+      url: s.url,
+      title: s.title,
+      trigger: s.trigger,
+    }))
+    return Response.json(list, { headers })
+  }
+  
+  // Delete a snapshot
+  if (path.startsWith('/snapshot/') && req.method === 'DELETE') {
+    const snapshotId = path.slice('/snapshot/'.length)
+    const deleted = snapshots.delete(snapshotId)
+    return Response.json({ deleted }, { headers })
   }
   
   return Response.json({ error: 'Not found' }, { status: 404, headers })
