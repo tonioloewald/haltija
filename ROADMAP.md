@@ -387,9 +387,7 @@ With smart events, recording becomes useful:
 - Stats reset when watching starts
 - Dynamic component.js loading (fresh on each request for hot reload)
 
-## Planned
-
-### Phase 9: AI-Assisted Testing
+### Phase 9: AI-Assisted Testing ✅
 
 The holy grail - AI that can:
 - Watch you use a UI
@@ -397,6 +395,31 @@ The holy grail - AI that can:
 - Generate robust tests that survive UI changes
 - Suggest better UX based on observed behavior
 - "User seemed confused here" insights
+
+**Implementation:**
+- Semantic event stream captures user intent, not raw DOM events
+- `/recording/generate` converts events to test JSON
+- AI can adapt selectors when UI changes
+- CI integration with snapshot artifacts for debugging
+
+**User Recording Flow:**
+- User clicks 🎬 → `recording:started` event emitted
+- User interacts with page → semantic events captured
+- User clicks 💾 → `recording:stopped` event + recording saved server-side
+- Agent fetches recording via `GET /recordings` and `GET /recording/:id`
+- Perfect for "show me how you do X" workflows
+
+**Endpoints:**
+- `GET /recordings` - List all recordings (metadata)
+- `GET /recording/:id` - Get full recording with events
+- `DELETE /recording/:id` - Delete a recording
+
+**Future enhancements (parking lot):**
+- "User seemed confused here" detection (hesitation, backtracking)
+- Automatic UX suggestions based on interaction patterns
+- Heatmap generation from event data
+
+## Planned
 
 ### Phase 10: Haltija - Native App Shell (Electron/Tauri)
 

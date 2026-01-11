@@ -251,6 +251,7 @@ export type SemanticEventCategory =
   | 'mutation'      // DOM changes with payloads
   | 'console'       // errors always, logs optional
   | 'focus'         // focus/blur on interactive elements
+  | 'recording'     // user started/stopped recording a test
 
 /**
  * Filter presets for common use cases.

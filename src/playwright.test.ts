@@ -1091,3 +1091,83 @@ test.describe('haltija-dev test generation', () => {
     expect((data.test.steps[1] as any).text).toBe('hello')
   })
 })
+
+test.describe('haltija-dev user recordings', () => {
+  test('user recording is saved server-side and retrievable by agent', async ({ page }) => {
+    // Navigate and wait for widget to connect
+    await page.goto(SERVER_URL)
+    await page.waitForSelector('haltija-dev')
+    await page.waitForTimeout(500)
+    
+    // Start event watching to capture recording events
+    await fetch(`${SERVER_URL}/events/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset: 'interactive' })
+    })
+    
+    // Click the record button in the widget (🎬)
+    const widget = await page.$('haltija-dev')
+    const recordBtn = await widget!.evaluateHandle((el) => {
+      return el.shadowRoot?.querySelector('[data-action="record"]')
+    })
+    await (recordBtn as any).click()
+    
+    // Wait a moment for recording to start
+    await page.waitForTimeout(300)
+    
+    // Do some interactions
+    await page.click('#test-button')
+    await page.fill('#test-input', 'test recording')
+    
+    // Wait for typing to aggregate
+    await page.waitForTimeout(600)
+    
+    // Click record button again to stop (💾)
+    await (recordBtn as any).click()
+    
+    // Wait for recording to be saved
+    await page.waitForTimeout(500)
+    
+    // Close the modal that appears by clicking outside or pressing Escape
+    await page.keyboard.press('Escape')
+    
+    // Now verify the agent can retrieve the recording
+    const recordingsRes = await fetch(`${SERVER_URL}/recordings`)
+    const recordings = await recordingsRes.json()
+    
+    expect(recordings.length).toBeGreaterThanOrEqual(1)
+    
+    // Get the most recent recording
+    const latestRecording = recordings[recordings.length - 1]
+    expect(latestRecording.id).toMatch(/^rec_/)
+    expect(latestRecording.eventCount).toBeGreaterThan(0)
+    
+    // Fetch the full recording
+    const fullRecordingRes = await fetch(`${SERVER_URL}/recording/${latestRecording.id}`)
+    const fullRecording = await fullRecordingRes.json()
+    
+    expect(fullRecording.id).toBe(latestRecording.id)
+    expect(fullRecording.events).toBeInstanceOf(Array)
+    expect(fullRecording.events.length).toBe(latestRecording.eventCount)
+    
+    // Verify events include our interactions
+    const eventTypes = fullRecording.events.map((e: any) => e.type)
+    expect(eventTypes.some((t: string) => t.includes('click'))).toBe(true)
+    expect(eventTypes.some((t: string) => t.includes('typed'))).toBe(true)
+    
+    // Check that recording:started and recording:stopped events were emitted
+    const eventsRes = await fetch(`${SERVER_URL}/events`)
+    const eventsData = await eventsRes.json()
+    // Response format is { success, data: { events, enabled } }
+    const events = eventsData.data?.events || []
+    const recordingEvents = events.filter((e: any) => e.category === 'recording')
+    
+    expect(recordingEvents.some((e: any) => e.type === 'recording:started')).toBe(true)
+    expect(recordingEvents.some((e: any) => e.type === 'recording:stopped')).toBe(true)
+    
+    // Clean up
+    await fetch(`${SERVER_URL}/events/unwatch`, { method: 'POST' })
+    await fetch(`${SERVER_URL}/recording/${latestRecording.id}`, { method: 'DELETE' })
+  })
+})

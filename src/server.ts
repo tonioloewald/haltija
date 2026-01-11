@@ -104,6 +104,19 @@ const MAX_BUFFER = 100
 const snapshots = new Map<string, PageSnapshot>()
 const MAX_SNAPSHOTS = 50
 
+// Recording storage (in-memory, keyed by ID)
+interface StoredRecording {
+  id: string
+  url: string
+  title: string
+  startTime: number
+  endTime: number
+  events: unknown[]
+  createdAt: number
+}
+const recordings = new Map<string, StoredRecording>()
+const MAX_RECORDINGS = 20
+
 // Create snapshots directory if configured
 if (SNAPSHOTS_DIR) {
   try {
@@ -284,6 +297,28 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
     }
     
     const msg = data as DevMessage
+    
+    // Handle recording save messages - store the recording server-side
+    if (msg.channel === 'recording' && msg.action === 'save' && msg.payload) {
+      const payload = msg.payload as { id: string; url: string; title: string; startTime: number; endTime: number; events: unknown[] }
+      const recording: StoredRecording = {
+        id: payload.id,
+        url: payload.url,
+        title: payload.title,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        events: payload.events,
+        createdAt: Date.now(),
+      }
+      
+      // Evict oldest if over limit
+      if (recordings.size >= MAX_RECORDINGS) {
+        const oldest = recordings.keys().next().value
+        if (oldest) recordings.delete(oldest)
+      }
+      recordings.set(recording.id, recording)
+      console.log(`${LOG_PREFIX} Saved recording: ${recording.id} (${recording.events.length} events)`)
+    }
     
     // Don't buffer system messages, but do broadcast them
     if (msg.channel !== 'system') {
@@ -823,6 +858,15 @@ See the DOM tree:
 - DELETE /snapshot/:id  - Delete a snapshot
 
 Test failures automatically capture snapshots. The snapshotId is included in test results.
+
+### Recordings (User-Created Test Sessions)
+- GET  /recordings      - List all recordings (metadata: id, url, duration, eventCount)
+- GET  /recording/:id   - Get a recording by ID (includes full semantic events)
+- DELETE /recording/:id - Delete a recording
+
+When the user clicks 🎬 to start and 💾 to stop, semantic events are saved server-side.
+The agent sees recording:started and recording:stopped in the event stream, then can 
+fetch the full recording. Perfect for "show me how you do X" workflows.
 
 ### Semantic Events (The Hindsight Buffer)
 - POST /events/watch    - Start watching semantic events
@@ -2267,6 +2311,43 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   if (path.startsWith('/snapshot/') && req.method === 'DELETE') {
     const snapshotId = path.slice('/snapshot/'.length)
     const deleted = snapshots.delete(snapshotId)
+    return Response.json({ deleted }, { headers })
+  }
+  
+  // ==========================================
+  // RECORDINGS (user-created test recordings)
+  // ==========================================
+  
+  // List all recordings (metadata only)
+  if (path === '/recordings' && req.method === 'GET') {
+    const list = Array.from(recordings.values()).map(r => ({
+      id: r.id,
+      url: r.url,
+      title: r.title,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      duration: r.endTime - r.startTime,
+      eventCount: r.events.length,
+      createdAt: r.createdAt,
+    }))
+    return Response.json(list, { headers })
+  }
+  
+  // Get a recording by ID (full events included)
+  if (path.startsWith('/recording/') && req.method === 'GET') {
+    const recordingId = path.slice('/recording/'.length)
+    const recording = recordings.get(recordingId)
+    
+    if (!recording) {
+      return Response.json({ error: 'Recording not found' }, { status: 404, headers })
+    }
+    return Response.json(recording, { headers })
+  }
+  
+  // Delete a recording
+  if (path.startsWith('/recording/') && req.method === 'DELETE') {
+    const recordingId = path.slice('/recording/'.length)
+    const deleted = recordings.delete(recordingId)
     return Response.json({ deleted }, { headers })
   }
   

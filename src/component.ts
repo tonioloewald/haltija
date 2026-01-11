@@ -1013,16 +1013,16 @@ export class DevChannel extends HTMLElement {
   
   // Preset definitions
   private readonly SEMANTIC_PRESETS: Record<SemanticEventPreset, SemanticEventCategory[]> = {
-    minimal: ['interaction', 'navigation'],
-    interactive: ['interaction', 'navigation', 'input', 'focus'],
-    detailed: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll'],
-    debug: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll', 'mutation', 'console'],
+    minimal: ['interaction', 'navigation', 'recording'],
+    interactive: ['interaction', 'navigation', 'input', 'focus', 'recording'],
+    detailed: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll', 'recording'],
+    debug: ['interaction', 'navigation', 'input', 'focus', 'hover', 'scroll', 'mutation', 'console', 'recording'],
   }
   
   // Noise reduction metrics - count raw DOM events vs emitted semantic events
   private rawEventCounts: Record<string, number> = {}
   private semanticEventCounts: Record<SemanticEventCategory, number> = {
-    interaction: 0, navigation: 0, input: 0, hover: 0, scroll: 0, mutation: 0, console: 0, focus: 0
+    interaction: 0, navigation: 0, input: 0, hover: 0, scroll: 0, mutation: 0, console: 0, focus: 0, recording: 0
   }
   private statsStartTime = 0
   
@@ -2113,6 +2113,18 @@ export class DevChannel extends HTMLElement {
       this.startSemanticEvents()
     }
     
+    // Emit recording:started semantic event
+    this.emitSemanticEvent({
+      type: 'recording:started',
+      timestamp: this.recordingStartTime,
+      category: 'recording',
+      target: { selector: 'document', tag: 'document' },
+      payload: {
+        url: window.location.href,
+        title: document.title,
+      },
+    })
+    
     // Update button state
     const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
     if (recordBtn) {
@@ -2124,11 +2136,35 @@ export class DevChannel extends HTMLElement {
   
   private stopRecording() {
     this.isRecording = false
+    const stopTime = Date.now()
     
     // Capture events that occurred during recording
     this.recordingEvents = this.semanticEventBuffer.filter(
       e => e.timestamp >= this.recordingStartTime
     )
+    
+    // Generate a recording ID
+    const recordingId = `rec_${this.recordingStartTime}_${Math.random().toString(36).slice(2, 8)}`
+    
+    // Emit recording:stopped semantic event with the recording data
+    this.emitSemanticEvent({
+      type: 'recording:stopped',
+      timestamp: stopTime,
+      category: 'recording',
+      target: { selector: 'document', tag: 'document' },
+      payload: {
+        id: recordingId,
+        url: window.location.href,
+        title: document.title,
+        startTime: this.recordingStartTime,
+        endTime: stopTime,
+        duration: stopTime - this.recordingStartTime,
+        eventCount: this.recordingEvents.length,
+      },
+    })
+    
+    // Send recording to server for storage
+    this.saveRecordingToServer(recordingId, stopTime)
     
     // Update button state
     const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
@@ -2140,6 +2176,18 @@ export class DevChannel extends HTMLElement {
     
     // Generate the test and show modal
     this.generateAndShowTest()
+  }
+  
+  private saveRecordingToServer(recordingId: string, endTime: number) {
+    // Send the recording to the server so agents can retrieve it
+    this.send('recording', 'save', {
+      id: recordingId,
+      url: window.location.href,
+      title: document.title,
+      startTime: this.recordingStartTime,
+      endTime: endTime,
+      events: this.recordingEvents,
+    })
   }
   
   private generateAndShowTest() {
