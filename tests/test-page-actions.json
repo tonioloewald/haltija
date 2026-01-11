@@ -1,0 +1,296 @@
+{
+  "name": "Test Page Synthetic Actions",
+  "description": "Exercise all interactive elements on the test page via API",
+  "tests": [
+    {
+      "name": "Button clicks",
+      "steps": [
+        {
+          "action": "navigate",
+          "url": "http://localhost:8700/"
+        },
+        {
+          "action": "click",
+          "selector": "button:first-of-type",
+          "description": "Click Log to Console button"
+        },
+        {
+          "action": "click",
+          "selector": "#test-button",
+          "description": "Click Me button"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "text",
+            "selector": "#result",
+            "text": "Clicked!"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Text input",
+      "steps": [
+        {
+          "action": "type",
+          "selector": "#test-input",
+          "text": "Hello World"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#test-input",
+            "value": "Hello World"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Date input",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "document.querySelector('#test-date').value = '2024-06-15'; document.querySelector('#test-date').dispatchEvent(new Event('change', {bubbles: true})); 'done'"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#test-date",
+            "value": "2024-06-15"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Range slider",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "document.querySelector('#test-range').value = 75; document.querySelector('#test-range').dispatchEvent(new Event('input', {bubbles: true})); 'done'"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#test-range",
+            "value": "75"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Select dropdown",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "document.querySelector('#test-select').value = 'banana'; document.querySelector('#test-select').dispatchEvent(new Event('change', {bubbles: true})); 'done'"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#test-select",
+            "value": "banana"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Checkbox toggle",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "#check-1"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "exists",
+            "selector": "#check-1:checked"
+          }
+        },
+        {
+          "action": "click",
+          "selector": "#check-1"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "not-exists",
+            "selector": "#check-1:checked"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Radio button selection",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "input[name='size'][value='large']"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "exists",
+            "selector": "input[name='size'][value='large']:checked"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Textarea multi-line",
+      "steps": [
+        {
+          "action": "type",
+          "selector": "#test-textarea",
+          "text": "Line 1\nLine 2\nLine 3"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#test-textarea",
+            "value": "Line 1\nLine 2\nLine 3"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Details expand/collapse",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "#test-details summary"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "exists",
+            "selector": "#test-details[open]"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dialog open/close",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "document.querySelector('#test-dialog').showModal(); 'opened'"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "exists",
+            "selector": "#test-dialog[open]"
+          }
+        },
+        {
+          "action": "click",
+          "selector": "#test-dialog button"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "not-exists",
+            "selector": "#test-dialog[open]"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Split panel drag",
+      "steps": [
+        {
+          "action": "drag",
+          "selector": "#split-divider",
+          "deltaX": 50,
+          "deltaY": 0
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "exists",
+            "selector": "#split-divider"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Form validation - invalid submit",
+      "steps": [
+        {
+          "action": "navigate",
+          "url": "http://localhost:8700/"
+        },
+        {
+          "action": "click",
+          "selector": "#test-form button[type='submit']",
+          "description": "Submit empty form"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "text",
+            "selector": "#form-result",
+            "text": "fix the errors",
+            "contains": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Form validation - valid submit",
+      "steps": [
+        {
+          "action": "type",
+          "selector": "#form-name",
+          "text": "John Doe"
+        },
+        {
+          "action": "type",
+          "selector": "#form-email",
+          "text": "john@example.com"
+        },
+        {
+          "action": "click",
+          "selector": "#form-terms"
+        },
+        {
+          "action": "click",
+          "selector": "#test-form button[type='submit']"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "text",
+            "selector": "#form-result",
+            "text": "Form submitted",
+            "contains": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Form reset",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "#test-form button[type='reset']"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "value",
+            "selector": "#form-name",
+            "value": ""
+          }
+        }
+      ]
+    }
+  ]
+}
