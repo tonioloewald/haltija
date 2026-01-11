@@ -2,7 +2,7 @@
  * Dev Channel Browser Component
  * 
  * A floating widget that:
- * - Connects to local tosijs-dev server via WebSocket
+ * - Connects to local Haltija server via WebSocket
  * - Exposes DOM query/manipulation capabilities
  * - Captures console output
  * - Watches and dispatches DOM events
@@ -45,6 +45,11 @@ import type {
 // Component version - imported from shared version file
 import { VERSION as _VERSION } from './version'
 export const VERSION = _VERSION
+
+// Product name and element tag
+const PRODUCT_NAME = 'Haltija'
+const TAG_NAME = 'haltija-dev'
+const LOG_PREFIX = '[haltija]'
 
 // Server session ID - injected by server when serving component.js
 // This allows the server to detect stale widgets and tell them to reload
@@ -472,7 +477,7 @@ function detectFramework(): MutationFilterPreset[] {
     }
   } catch (err) {
     // If detection fails, just return empty - we'll use default rules
-    console.warn('[tosijs-dev] Framework detection failed:', err)
+    console.warn(`${LOG_PREFIX} Framework detection failed:`, err)
   }
   
   return detected
@@ -850,7 +855,7 @@ function createHighlightOverlay() {
       --tosijs-highlight-glow: rgba(99, 102, 241, 0.3);
     }
     
-    #tosijs-dev-highlight {
+    #haltija-highlight {
       position: fixed;
       pointer-events: none;
       z-index: 999998;
@@ -862,7 +867,7 @@ function createHighlightOverlay() {
       display: none;
     }
     
-    #tosijs-dev-highlight-label {
+    #haltija-highlight-label {
       position: absolute;
       top: -28px;
       left: -3px;
@@ -880,10 +885,10 @@ function createHighlightOverlay() {
   document.head.appendChild(highlightStyles)
   
   highlightOverlay = document.createElement('div')
-  highlightOverlay.id = 'tosijs-dev-highlight'
+  highlightOverlay.id = 'haltija-highlight'
   
   highlightLabel = document.createElement('div')
-  highlightLabel.id = 'tosijs-dev-highlight-label'
+  highlightLabel.id = 'haltija-highlight-label'
   
   highlightOverlay.appendChild(highlightLabel)
   document.body.appendChild(highlightOverlay)
@@ -942,7 +947,7 @@ function pulseHighlight(el: Element, label?: string, color?: string, duration = 
 }
 
 // Track the current tag name (may be renamed on re-registration)
-let currentTagName = 'tosijs-dev'
+let currentTagName = TAG_NAME
 let registrationCount = 0
 
 export class DevChannel extends HTMLElement {
@@ -1057,10 +1062,10 @@ export class DevChannel extends HTMLElement {
    * Usage: DevChannel.runTests() or from agent: POST /eval { code: "DevChannel.runTests()" }
    */
   static async runTests() {
-    const el = document.querySelector('tosijs-dev') as DevChannel
+    const el = document.querySelector(TAG_NAME) as DevChannel
     if (!el) {
-      console.error('[tosijs-dev] No tosijs-dev element found. Inject first.')
-      return { passed: 0, failed: 1, error: 'No tosijs-dev element' }
+      console.error(`${LOG_PREFIX} No ${TAG_NAME} element found. Inject first.`)
+      return { passed: 0, failed: 1, error: `No ${TAG_NAME} element` }
     }
     
     const results: Array<{ name: string; passed: boolean; error?: string }> = []
@@ -1079,11 +1084,11 @@ export class DevChannel extends HTMLElement {
       }
     }
     
-    console.log('%c[tosijs-dev] Running tests...', 'color: #6366f1; font-weight: bold')
+    console.log(`%c${LOG_PREFIX} Running tests...`, 'color: #6366f1; font-weight: bold')
     
     // Run tests
     await test('element exists', () => {
-      if (!document.querySelector('tosijs-dev')) throw new Error('Missing')
+      if (!document.querySelector(TAG_NAME)) throw new Error('Missing')
     })()
     
     await test('has shadow root', () => {
@@ -1133,7 +1138,7 @@ export class DevChannel extends HTMLElement {
     const failed = results.filter(r => !r.passed).length
     const color = failed === 0 ? '#22c55e' : '#ef4444'
     
-    console.log(`%c[tosijs-dev] ${passed}/${results.length} tests passed`, `color: ${color}; font-weight: bold`)
+    console.log(`%c${LOG_PREFIX} ${passed}/${results.length} tests passed`, `color: ${color}; font-weight: bold`)
     
     return { passed, failed, results }
   }
@@ -1629,7 +1634,7 @@ export class DevChannel extends HTMLElement {
       <div class="widget">
         <div class="header">
           <div class="status"></div>
-          <div class="title">🦉 tosijs-dev</div>
+          <div class="title">🧝 ${PRODUCT_NAME}</div>
           <div class="indicators"></div>
           <div class="controls">
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">⏺</button>
@@ -1640,10 +1645,10 @@ export class DevChannel extends HTMLElement {
           </div>
         </div>
         <div class="body">
-            <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: Cannot reach server'))})();" 
+            <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();" 
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
-               class="bookmark-link">🦉 bookmark</a>
+               class="bookmark-link">🧝 bookmark</a>
         </div>
         <div class="log-panel">
           <div class="log-header">
@@ -1737,14 +1742,14 @@ export class DevChannel extends HTMLElement {
       })
     }
     
-    // Bookmark link - show "🦉 tosijs-dev" on hover so drag gets useful name
+    // Bookmark link - show product name on hover so drag gets useful name
     const bookmarkLink = shadow.querySelector('.bookmark-link') as HTMLAnchorElement
     if (bookmarkLink) {
       bookmarkLink.addEventListener('mouseenter', () => {
-        bookmarkLink.textContent = '🦉 tosijs-dev'
+        bookmarkLink.textContent = `🧝 ${PRODUCT_NAME}`
       })
       bookmarkLink.addEventListener('mouseleave', () => {
-        bookmarkLink.textContent = '🦉 bookmark'
+        bookmarkLink.textContent = '🧝 bookmark'
       })
     }
     
@@ -2322,7 +2327,7 @@ export class DevChannel extends HTMLElement {
       if (!this.testRecording) return
       
       const target = e.target as Element
-      if (!target || target.closest('tosijs-dev')) return // Ignore widget clicks
+      if (!target || target.closest(TAG_NAME)) return // Ignore widget clicks
       
       const step = this.eventToTestStep(e)
       if (step) {
@@ -3409,7 +3414,7 @@ export class DevChannel extends HTMLElement {
           document.body.appendChild(newWidget)
         })
         .catch(err => {
-          console.error('[tosijs-dev] Failed to reload:', err)
+          console.error(`${LOG_PREFIX} Failed to reload:`, err)
         })
     }
   }
@@ -4237,20 +4242,20 @@ export class DevChannel extends HTMLElement {
 // Register the custom element, handling re-registration with new tag names
 function registerDevChannel() {
   // Try to register with preferred tag name, fall back to numbered versions
-  let tagToUse = 'tosijs-dev'
+  let tagToUse = TAG_NAME
   
   if (customElements.get(tagToUse)) {
     // Already registered - generate a new tag name
     registrationCount++
-    tagToUse = `tosijs-dev-${registrationCount}`
+    tagToUse = `${TAG_NAME}-${registrationCount}`
     
     // Keep trying until we find an unused tag
     while (customElements.get(tagToUse)) {
       registrationCount++
-      tagToUse = `tosijs-dev-${registrationCount}`
+      tagToUse = `${TAG_NAME}-${registrationCount}`
     }
     
-    console.log(`[tosijs-dev] Re-registering as ${tagToUse}`)
+    console.log(`${LOG_PREFIX} Re-registering as ${tagToUse}`)
   }
   
   customElements.define(tagToUse, DevChannel)
@@ -4263,7 +4268,7 @@ registerDevChannel()
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
   // Check for existing widget using the current tag name
   if (document.querySelector(currentTagName)) {
-    console.log('[tosijs-dev] Already injected')
+    console.log(`${LOG_PREFIX} Already injected`)
     return
   }
   
@@ -4272,7 +4277,7 @@ export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
   el.setAttribute('server', serverUrl)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log('[tosijs-dev] Injected as', currentTagName)
+  console.log(`${LOG_PREFIX} Injected as`, currentTagName)
 }
 
 // Attach to window for console access

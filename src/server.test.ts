@@ -65,7 +65,7 @@ describe('tosijs-dev server', () => {
       expect(res.headers.get('content-type')).toContain('javascript')
       
       const code = await res.text()
-      expect(code).toContain('tosijs-dev')
+      expect(code).toContain('haltija')
       expect(code).toContain('function')
     })
     

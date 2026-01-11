@@ -57,7 +57,7 @@ test.afterAll(async () => {
   serverProcess?.kill()
 })
 
-// Helper to inject tosijs-dev into page
+// Helper to inject haltija-dev into page
 async function injectDevChannel(page: Page) {
   await page.setContent(`
     <!DOCTYPE html>
@@ -68,13 +68,13 @@ async function injectDevChannel(page: Page) {
     </head>
     <body>
       <h1>Test Page</h1>
-      <tosijs-dev server="${WS_URL}"></tosijs-dev>
+      <haltija-dev server="${WS_URL}"></haltija-dev>
     </body>
     </html>
   `)
   
   // Wait for element to be ready
-  await page.waitForSelector('tosijs-dev')
+  await page.waitForSelector('haltija-dev')
   
   // Poll /status until a browser is connected (WebSocket established)
   const maxAttempts = 20
@@ -89,7 +89,7 @@ async function injectDevChannel(page: Page) {
   throw new Error('Timeout waiting for browser to connect to server')
 }
 
-test.describe('tosijs-dev CLI', () => {
+test.describe('haltija-dev CLI', () => {
   test('starts server and serves test page', async ({ page }) => {
     // The server is already running from beforeAll, just verify it works
     const response = await page.goto(`${SERVER_URL}/`)
@@ -99,9 +99,9 @@ test.describe('tosijs-dev CLI', () => {
     const title = await page.title()
     expect(title).toBe('Dev Channel Test')
     
-    // Check tosijs-dev element exists
+    // Check haltija-dev element exists
     const hasComponent = await page.evaluate(() => 
-      document.querySelector('tosijs-dev') !== null
+      document.querySelector('haltija-dev') !== null
     )
     expect(hasComponent).toBe(true)
   })
@@ -110,7 +110,7 @@ test.describe('tosijs-dev CLI', () => {
     const res = await fetch(`${SERVER_URL}/inject.js`)
     expect(res.status).toBe(200)
     const text = await res.text()
-    expect(text).toContain('tosijs-dev')
+    expect(text).toContain('haltija-dev')
   })
   
   test('serves component.js', async () => {
@@ -132,19 +132,19 @@ test.describe('tosijs-dev CLI', () => {
   })
 })
 
-test.describe('tosijs-dev component', () => {
+test.describe('haltija-dev component', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)
   })
   
   test('injects into page', async ({ page }) => {
-    const el = await page.$('tosijs-dev')
+    const el = await page.$('haltija-dev')
     expect(el).not.toBeNull()
   })
   
   test('has shadow DOM', async ({ page }) => {
     const hasShadow = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev')
+      const el = document.querySelector('haltija-dev')
       return el?.shadowRoot !== null
     })
     expect(hasShadow).toBe(true)
@@ -152,7 +152,7 @@ test.describe('tosijs-dev component', () => {
   
   test('shows widget', async ({ page }) => {
     const isVisible = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev')
+      const el = document.querySelector('haltija-dev')
       const widget = el?.shadowRoot?.querySelector('.widget')
       return widget !== null && !widget.classList.contains('hidden')
     })
@@ -164,7 +164,7 @@ test.describe('tosijs-dev component', () => {
     await page.waitForTimeout(500)
     
     const state = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state
     })
     
@@ -174,7 +174,7 @@ test.describe('tosijs-dev component', () => {
   test('Option+Tab toggles minimize', async ({ page }) => {
     // Get initial state - minimized class is on the host element, not .widget
     const initial = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev')
+      const el = document.querySelector('haltija-dev')
       return {
         exists: !!el,
         minimized: el?.classList.contains('minimized')
@@ -195,7 +195,7 @@ test.describe('tosijs-dev component', () => {
     await page.waitForTimeout(400) // Wait for animation
     
     const after = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev')
+      const el = document.querySelector('haltija-dev')
       return {
         minimized: el?.classList.contains('minimized')
       }
@@ -214,7 +214,7 @@ test.describe('tosijs-dev component', () => {
     
     // Check if captured
     const captured = await page.evaluate((msg) => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.consoleBuffer?.some((entry: any) => 
         entry.args?.some((arg: any) => String(arg).includes(msg))
       )
@@ -237,7 +237,7 @@ test.describe('tosijs-dev component', () => {
   })
 })
 
-test.describe('tosijs-dev tab switching', () => {
+test.describe('haltija-dev tab switching', () => {
   test('new tab deactivates old tab', async ({ browser }) => {
     // Open first page/tab
     const page1 = await browser.newPage()
@@ -246,14 +246,14 @@ test.describe('tosijs-dev tab switching', () => {
     
     // Verify first page is connected
     const state1Before = await page1.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state
     })
     expect(state1Before).toBe('connected')
     
     // Check widget is visible on page1
     const widget1VisibleBefore = await page1.evaluate(() => {
-      const el = document.querySelector('tosijs-dev')
+      const el = document.querySelector('haltija-dev')
       return el?.shadowRoot?.querySelector('.widget') !== null
     })
     expect(widget1VisibleBefore).toBe(true)
@@ -265,20 +265,20 @@ test.describe('tosijs-dev tab switching', () => {
     
     // Verify second page is connected
     const state2 = await page2.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state
     })
     expect(state2).toBe('connected')
     
     // Verify first page's component was killed (removed from DOM)
     const page1HasComponent = await page1.evaluate(() => {
-      return document.querySelector('tosijs-dev') !== null
+      return document.querySelector('haltija-dev') !== null
     })
     expect(page1HasComponent).toBe(false)
     
     // Verify second page's component is still there
     const page2HasComponent = await page2.evaluate(() => {
-      return document.querySelector('tosijs-dev') !== null
+      return document.querySelector('haltija-dev') !== null
     })
     expect(page2HasComponent).toBe(true)
     
@@ -296,16 +296,16 @@ test.describe('tosijs-dev tab switching', () => {
     await page2.waitForTimeout(500)
     
     // Page1 should be dead, page2 alive
-    expect(await page1.evaluate(() => document.querySelector('tosijs-dev') !== null)).toBe(false)
-    expect(await page2.evaluate(() => document.querySelector('tosijs-dev') !== null)).toBe(true)
+    expect(await page1.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(false)
+    expect(await page2.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(true)
     
     const page3 = await browser.newPage()
     await injectDevChannel(page3)
     await page3.waitForTimeout(500)
     
     // Page2 should now be dead, page3 alive
-    expect(await page2.evaluate(() => document.querySelector('tosijs-dev') !== null)).toBe(false)
-    expect(await page3.evaluate(() => document.querySelector('tosijs-dev') !== null)).toBe(true)
+    expect(await page2.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(false)
+    expect(await page3.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(true)
     
     await page1.close()
     await page2.close()
@@ -313,7 +313,7 @@ test.describe('tosijs-dev tab switching', () => {
   })
 })
 
-test.describe('tosijs-dev server integration', () => {
+test.describe('haltija-dev server integration', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)
     // Wait for connection
@@ -420,7 +420,7 @@ test.describe('tosijs-dev server integration', () => {
   test('mutation watching via REST', async ({ page }) => {
     // Verify connection is established first
     const connected = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state === 'connected'
     })
     
@@ -428,7 +428,7 @@ test.describe('tosijs-dev server integration', () => {
       // Wait a bit more and check again
       await page.waitForTimeout(500)
       const retryConnected = await page.evaluate(() => {
-        const el = document.querySelector('tosijs-dev') as any
+        const el = document.querySelector('haltija-dev') as any
         return el?.state === 'connected'
       })
       if (!retryConnected) {
@@ -482,7 +482,7 @@ test.describe('tosijs-dev server integration', () => {
     
     // Verify connection
     const connected = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state === 'connected'
     })
     if (!connected) {
@@ -527,7 +527,7 @@ test.describe('tosijs-dev server integration', () => {
     
     // Verify connection
     const connected = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state === 'connected'
     })
     if (!connected) {
@@ -569,7 +569,7 @@ test.describe('tosijs-dev server integration', () => {
   })
 })
 
-test.describe('tosijs-dev DOM tree inspector', () => {
+test.describe('haltija-dev DOM tree inspector', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)
     await page.waitForTimeout(500)
@@ -835,14 +835,14 @@ test.describe('tosijs-dev DOM tree inspector', () => {
   test('mutation watching with shadow DOM piercing', async ({ page }) => {
     // Verify connection is established first
     const connected = await page.evaluate(() => {
-      const el = document.querySelector('tosijs-dev') as any
+      const el = document.querySelector('haltija-dev') as any
       return el?.state === 'connected'
     })
     
     if (!connected) {
       await page.waitForTimeout(500)
       const retryConnected = await page.evaluate(() => {
-        const el = document.querySelector('tosijs-dev') as any
+        const el = document.querySelector('haltija-dev') as any
         return el?.state === 'connected'
       })
       if (!retryConnected) {
@@ -947,7 +947,7 @@ test.describe('tosijs-dev DOM tree inspector', () => {
   })
 })
 
-test.describe('tosijs-dev test generation', () => {
+test.describe('haltija-dev test generation', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)
   })

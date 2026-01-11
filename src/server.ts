@@ -1,5 +1,5 @@
 /**
- * Dev Channel Server
+ * Haltija Server
  * 
  * A Bun-based server that:
  * - Accepts WebSocket connections from browser components
@@ -15,6 +15,11 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
+
+// Product naming - single source of truth
+const PRODUCT_NAME = 'Haltija'
+const TAG_NAME = 'haltija-dev'
+const LOG_PREFIX = '[haltija]'
 
 const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
 const HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
@@ -38,17 +43,17 @@ if (WANT_HTTPS && !certsAvailable) {
     mkdirSync(certsDir, { recursive: true })
     try {
       execSync(`mkcert -cert-file "${certPath}" -key-file "${keyPath}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
-      console.log('[tosijs-dev] Generated trusted certificates with mkcert')
+      console.log(`${LOG_PREFIX} Generated trusted certificates with mkcert`)
     } catch {
       // Fall back to openssl self-signed cert
       execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
-      console.log('[tosijs-dev] Generated self-signed certificates with openssl')
-      console.log('[tosijs-dev] For trusted certs, install mkcert: brew install mkcert && mkcert -install')
+      console.log(`${LOG_PREFIX} Generated self-signed certificates with openssl`)
+      console.log(`${LOG_PREFIX} For trusted certs, install mkcert: brew install mkcert && mkcert -install`)
     }
     certsAvailable = true
   } catch (err) {
-    console.error('[tosijs-dev] Failed to generate certificates:', err)
-    console.error('[tosijs-dev] HTTPS will not be available')
+    console.error(`${LOG_PREFIX} Failed to generate certificates:`, err)
+    console.error(`${LOG_PREFIX} HTTPS will not be available`)
   }
 }
 
@@ -70,7 +75,7 @@ try {
     `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
   )
 } catch {
-  console.warn('[tosijs-dev] Could not load component.js from dist/')
+  console.warn(`${LOG_PREFIX} Could not load component.js from dist/`)
 }
 
 // Connected browser clients (WebSocket -> browserId)
@@ -258,7 +263,7 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
     broadcast(msg, ws)
     
   } catch (err) {
-    console.error('[tosijs-dev] Invalid message:', err)
+    console.error(`${LOG_PREFIX} Invalid message:`, err)
   }
 }
 
@@ -321,23 +326,23 @@ async function handleRest(req: Request): Promise<Response> {
     const wsUrl = `${wsProtocol}://localhost:${port}/ws/browser`
     
     const devCode = `
-// tosijs-dev: Browser control for AI agents
+// ${PRODUCT_NAME}: Browser control for AI agents
 // Remove this before deploying to production!
 (function() {
   // Only run on localhost
   if (!/^localhost$|^127\\./.test(location.hostname)) {
-    console.warn('%c[tosijs-dev]%c Skipped - not localhost', 
+    console.warn('%c${LOG_PREFIX}%c Skipped - not localhost', 
       'background:#ef4444;color:white;padding:2px 6px;border-radius:3px;font-weight:bold',
       'color:#ef4444');
     return;
   }
   
   // Don't inject twice
-  if (document.querySelector('tosijs-dev')) return;
+  if (document.querySelector('${TAG_NAME}')) return;
   
   // Announce ourselves
   console.log(
-    '%c🦉 tosijs-dev%c connected %c⚠️ Remove before production!',
+    '%c🧝 ${PRODUCT_NAME}%c connected %c⚠️ Remove before production!',
     'background:#6366f1;color:white;padding:2px 8px;border-radius:3px 0 0 3px;font-weight:bold',
     'background:#22c55e;color:white;padding:2px 8px',
     'background:#f97316;color:white;padding:2px 8px;border-radius:0 3px 3px 0'
@@ -348,7 +353,7 @@ async function handleRest(req: Request): Promise<Response> {
     .then(r => r.text())
     .then(eval)
     .catch(e => {
-      console.error('%c[tosijs-dev]%c Failed to connect:', 
+      console.error('%c${LOG_PREFIX}%c Failed to connect:', 
         'background:#ef4444;color:white;padding:2px 6px;border-radius:3px;font-weight:bold',
         'color:#ef4444', e.message);
     });
@@ -379,12 +384,12 @@ async function handleRest(req: Request): Promise<Response> {
   </style>
 </head>
 <body>
-  <h1>Dev Channel</h1>
+  <h1>${PRODUCT_NAME}</h1>
   <p>The widget should appear in the bottom-right corner.</p>
   
   <h2>Bookmarklet</h2>
   <p>Drag this to your bookmarks bar:</p>
-  <a class="bookmarklet" id="bookmarklet-link" href="#">🦉 tosijs-dev</a>
+  <a class="bookmarklet" id="bookmarklet-link" href="#">🧝 ${PRODUCT_NAME}</a>
   <script>
     // Generate bookmarklet that matches the protocol we're viewing this page on
     (function() {
@@ -393,7 +398,7 @@ async function handleRest(req: Request): Promise<Response> {
       var wsProto = proto === 'https:' ? 'wss:' : 'ws:';
       var baseUrl = proto + '//localhost:' + port;
       var wsUrl = wsProto + '//localhost:' + port + '/ws/browser';
-      var code = "(function(){fetch('" + baseUrl + "/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('tosijs-dev: '+e.message))})()";
+      var code = "(function(){fetch('" + baseUrl + "/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: '+e.message))})()";
       document.getElementById('bookmarklet-link').href = 'javascript:' + code;
     })();
   </script>
@@ -408,7 +413,7 @@ async function handleRest(req: Request): Promise<Response> {
   <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
   <div id="result"></div>
   
-  <tosijs-dev id="dev-widget"></tosijs-dev>
+  <${TAG_NAME} id="dev-widget"></${TAG_NAME}>
   <script>
     // Set the server URL based on page protocol
     (function() {
@@ -432,7 +437,7 @@ async function handleRest(req: Request): Promise<Response> {
     const baseUrl = USE_HTTPS ? `https://localhost:${PORT}` : `http://localhost:${PORT}`
     const wsProtocol = USE_HTTPS ? 'wss' : 'ws'
     
-    const docs = `# tosijs-dev: Browser Control for AI Agents
+    const docs = `# ${PRODUCT_NAME}: Browser Control for AI Agents
 
 You have access to a live browser tab. You can see the DOM, click elements, type text, 
 run JavaScript, watch for changes, and control navigation. The human has injected a 
@@ -476,7 +481,7 @@ See the DOM tree:
 ### Navigation
 - POST /navigate        - Go to URL: {"url": "https://example.com"}
 - POST /refresh         - Reload the page
-- POST /reload          - Reload the tosijs-dev widget
+- POST /reload          - Reload the ${PRODUCT_NAME} widget
 
 ### Mutation Watching
 - POST /mutations/watch   - Start watching: {"selector": "body", "subtree": true}
@@ -582,7 +587,7 @@ For complete API reference with all options and response formats:
   if (path === '/api' && req.method === 'GET') {
     const baseUrl = USE_HTTP ? `http://localhost:${PORT}` : `https://localhost:${HTTPS_PORT}`
     
-    const api = `# tosijs-dev API Reference
+    const api = `# ${PRODUCT_NAME} API Reference
 
 Complete API documentation. For quick start, see: curl ${baseUrl}/docs
 
@@ -728,7 +733,7 @@ CSS variables for theming:
 | /refresh | POST | {hard?} | Refresh the page |
 | /navigate | POST | {url} | Navigate to URL |
 | /location | GET | - | Get current location |
-| /reload | POST | - | Reload the tosijs-dev widget |
+| /reload | POST | - | Reload the ${PRODUCT_NAME} widget |
 
 ## DOM Mutation Watching
 
@@ -1218,7 +1223,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // Restart the server
   if (path === '/restart' && req.method === 'POST') {
-    console.log('[tosijs-dev] Restart requested, exiting...')
+    console.log(`${LOG_PREFIX} Restart requested, exiting...`)
     setTimeout(() => process.exit(0), 100)
     return Response.json({ success: true, message: 'Server restarting...' }, { headers })
   }
@@ -1226,7 +1231,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // Clear message buffer (useful for debugging)
   if (path === '/clear' && req.method === 'POST') {
     messageBuffer.length = 0
-    console.log('[tosijs-dev] Message buffer cleared')
+    console.log(`${LOG_PREFIX} Message buffer cleared`)
     return Response.json({ success: true }, { headers })
   }
   
@@ -1995,7 +2000,7 @@ const serverConfig = {
             const widgetSessionId = data.payload.serverSessionId
             if (widgetSessionId && widgetSessionId !== SERVER_SESSION_ID) {
               // Widget is from a different server session - tell it to reload
-              console.log(`[tosijs-dev] Widget session mismatch (${widgetSessionId} vs ${SERVER_SESSION_ID}), sending reload`)
+              console.log(`${LOG_PREFIX} Widget session mismatch (${widgetSessionId} vs ${SERVER_SESSION_ID}), sending reload`)
               wsTyped.send(JSON.stringify({
                 id: uid(),
                 channel: 'system',
@@ -2056,7 +2061,7 @@ const primaryUrl = httpsUrl || httpUrl
 
 console.log(`
 ================================================================================
-  tosijs-dev v0.1.7 - Browser Control for AI Agents
+  ${PRODUCT_NAME} v${VERSION} - Browser Control for AI Agents
 ================================================================================
 `)
 
