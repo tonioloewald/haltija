@@ -1,0 +1,59 @@
+{
+  "name": "Recording Capture Verification",
+  "description": "Tests that semantic events are captured correctly during synthetic actions",
+  "tests": [
+    {
+      "name": "Click event capture",
+      "steps": [
+        {"action": "navigate", "url": "http://localhost:8700/"},
+        {"action": "eval", "code": "window.__haltija?.startSemanticEvents?.() || 'already enabled'"},
+        {"action": "click", "selector": "#test-button"},
+        {"action": "wait", "ms": 500},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'interaction:click') || null)"}
+      ]
+    },
+    {
+      "name": "Type event capture", 
+      "steps": [
+        {"action": "type", "selector": "#test-input", "text": "Hello"},
+        {"action": "wait", "ms": 1000},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'input:typed') || null)"}
+      ]
+    },
+    {
+      "name": "Checkbox event capture",
+      "steps": [
+        {"action": "click", "selector": "#check-1"},
+        {"action": "wait", "ms": 500},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'input:checked' && e.target?.selector?.includes('check-1')) || null)"}
+      ]
+    },
+    {
+      "name": "Select event capture",
+      "steps": [
+        {"action": "eval", "code": "document.querySelector('#test-select').value = 'cherry'; document.querySelector('#test-select').dispatchEvent(new Event('change', {bubbles: true})); 'done'"},
+        {"action": "wait", "ms": 500},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'input:changed' && e.payload?.value === 'cherry') || null)"}
+      ]
+    },
+    {
+      "name": "Form submit event capture",
+      "steps": [
+        {"action": "type", "selector": "#form-name", "text": "Test User"},
+        {"action": "type", "selector": "#form-email", "text": "test@test.com"},
+        {"action": "click", "selector": "#form-terms"},
+        {"action": "click", "selector": "#test-form button[type='submit']"},
+        {"action": "wait", "ms": 500},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'form:submit') || null)"}
+      ]
+    },
+    {
+      "name": "Drag event capture",
+      "steps": [
+        {"action": "drag", "selector": "#split-divider", "deltaX": 30, "deltaY": 0},
+        {"action": "wait", "ms": 500},
+        {"action": "eval", "code": "JSON.stringify(window.__haltija?.getSemanticEvents?.()?.find(e => e.type === 'interaction:drag') || null)"}
+      ]
+    }
+  ]
+}
