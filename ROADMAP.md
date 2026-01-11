@@ -72,6 +72,11 @@
   - Flag "200 countries, US not defaulted despite en-US locale"
   - Handle type-ahead (or lack thereof)
   - Detect duplicate entries (UK vs Great Britain vs United Kingdom)
+- **Language selectors**:
+  - Flag unreadable: "12 languages listed in Japanese, user locale en-US"
+  - Detect missing lang attribute on html element
+  - Find the selector (footer? hamburger? settings? globe icon? random flag?)
+  - Report if no way to switch from auto-detected wrong language
 
 #### Idle Behaviors (Bug Discovery + Human Mimicry)
 - Random micro-movements when "thinking"
