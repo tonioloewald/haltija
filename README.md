@@ -6,6 +6,28 @@ tosijs-dev lets AI agents see and control live browser tabs - not headless puppe
 
 ## Why This Matters
 
+### The Immediate Win: AI That Can See
+
+Before this tool, working with an AI on frontend code was painful:
+
+1. You describe what's wrong: "the tab isn't underlining"
+2. AI guesses at the cause, suggests a fix
+3. It doesn't work
+4. You try to explain what happened - screenshots, copy-pasted HTML, "it's still not working"
+5. AI guesses again
+6. Frustration. Context lost. Velocity destroyed.
+
+**Now:**
+
+1. AI looks at the page via `/tree`
+2. Sees the actual DOM, the actual classes, the actual structure
+3. Understands immediately: "the `active` class is there but your CSS selector expects `.tab-bar > .active` and the structure is `.tab-bar > .tab-container > .tab.active`"
+4. Fixes it. Two minutes.
+
+An AI that can see is fundamentally different from an AI that has to be told.
+
+### The Bigger Picture
+
 **Current state of AI + browsers:**
 - Puppeteer/Playwright control headless browsers the agent spawns
 - The agent can't see what the user is looking at
@@ -18,7 +40,7 @@ tosijs-dev lets AI agents see and control live browser tabs - not headless puppe
 - Finds real bugs, writes repro steps in plain English
 - Verifies fixes without maintaining brittle test code
 
-This isn't "better test automation." It's replacing manual QA with an agent that works 24/7, never gets bored, and catches race conditions humans miss.
+This isn't "better test automation." It's giving AI the ability to understand what's actually on screen - during development, during testing, during debugging. Everything else follows from that.
 
 ## Quick Start
 
