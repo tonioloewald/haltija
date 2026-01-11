@@ -1620,58 +1620,156 @@ export class DevChannel extends HTMLElement {
   }
   
   /**
-   * Generate a stable, unique selector for an element
-   * Priority: id > data-testid > name > stable classes > path
+   * Generate the best human-readable selector for an element.
+   * Priority: meaningful identifiers an engineer would use to find it.
+   * 
+   * This incentivizes good accessibility: apps with proper ARIA labels,
+   * semantic landmarks, and form labels get useful selectors.
+   * Apps without them get "div[47] in body" - a nudge to improve.
    */
   private getBestSelector(el: Element): string {
-    // ID is best
-    if (el.id) {
+    const tag = el.tagName.toLowerCase()
+    const htmlEl = el as HTMLElement
+    
+    // 1. ID (if not auto-generated looking)
+    if (el.id && !el.id.match(/^(ember|react|vue|ng-|:r|:R|\d)/)) {
       return `#${el.id}`
     }
     
-    // data-testid is designed for testing
+    // 2. ARIA label - exactly what screen readers announce
+    const ariaLabel = el.getAttribute('aria-label')
+    if (ariaLabel) {
+      return `${tag}[aria-label="${ariaLabel.slice(0, 40)}"]`
+    }
+    
+    // 3. Title attribute - tooltip text
+    const title = el.getAttribute('title')
+    if (title) {
+      return `${tag}[title="${title.slice(0, 40)}"]`
+    }
+    
+    // 4. For form elements: associated label
+    if (el.matches('input, select, textarea')) {
+      const input = el as HTMLInputElement
+      // Explicit label via for attribute
+      const labelFor = input.id && document.querySelector(`label[for="${input.id}"]`)
+      if (labelFor) {
+        const labelText = (labelFor as HTMLElement).innerText?.trim().slice(0, 30)
+        if (labelText) {
+          return `${tag} labeled "${labelText}"`
+        }
+      }
+      // Implicit label (input inside label)
+      const parentLabel = el.closest('label')
+      if (parentLabel) {
+        const labelText = parentLabel.innerText?.trim().slice(0, 30)
+        if (labelText) {
+          return `${tag} labeled "${labelText}"`
+        }
+      }
+      // aria-labelledby
+      const labelledBy = el.getAttribute('aria-labelledby')
+      if (labelledBy) {
+        const labelEl = document.getElementById(labelledBy)
+        if (labelEl) {
+          return `${tag} labeled "${labelEl.innerText?.trim().slice(0, 30)}"`
+        }
+      }
+      // Placeholder as last resort for inputs
+      if (input.placeholder) {
+        return `${tag}[placeholder="${input.placeholder.slice(0, 30)}"]`
+      }
+    }
+    
+    // 5. data-testid (designed for testing)
     const testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id')
     if (testId) {
       return `[data-testid="${testId}"]`
     }
     
-    // For form elements, name attribute is stable
+    // 6. Form element name attribute
     const name = el.getAttribute('name')
-    if (name && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) {
-      return `${el.tagName.toLowerCase()}[name="${name}"]`
+    if (name && el.matches('input, select, textarea, button')) {
+      return `${tag}[name="${name}"]`
     }
     
-    // For buttons/links, unique text content
-    if (el.tagName === 'BUTTON' || el.tagName === 'A') {
-      const text = (el as HTMLElement).innerText?.trim()
+    // 7. ARIA role with accessible name
+    const role = el.getAttribute('role')
+    if (role) {
+      const accName = ariaLabel || htmlEl.innerText?.trim().slice(0, 30)
+      if (accName) {
+        return `${role} "${accName}"`
+      }
+      return `[role="${role}"]`
+    }
+    
+    // 8. Semantic landmarks
+    if (el.matches('main, nav, header, footer, aside, article, section')) {
+      // Try to identify by heading inside
+      const heading = el.querySelector('h1, h2, h3, h4')
+      if (heading) {
+        const headingText = (heading as HTMLElement).innerText?.trim().slice(0, 30)
+        if (headingText) {
+          return `${tag} "${headingText}"`
+        }
+      }
+      return tag
+    }
+    
+    // 9. Buttons and links by their text
+    if (tag === 'button' || tag === 'a') {
+      const text = htmlEl.innerText?.trim()
       if (text && text.length < 50 && !text.includes('\n')) {
-        // Check if this text is unique on the page
-        const matches = document.querySelectorAll(`${el.tagName.toLowerCase()}`)
-        const textMatches = Array.from(matches).filter(m => 
-          (m as HTMLElement).innerText?.trim() === text
-        )
-        if (textMatches.length === 1) {
-          return `${el.tagName.toLowerCase()}:contains("${text.slice(0, 30)}")`
+        return `${tag} "${text.slice(0, 30)}"`
+      }
+      // Link by href
+      if (tag === 'a') {
+        const href = (el as HTMLAnchorElement).getAttribute('href')
+        if (href && !href.startsWith('javascript:')) {
+          return `link to "${href.slice(0, 40)}"`
         }
       }
     }
     
-    // Fall back to class-based selector if classes look stable (not utility classes)
+    // 10. Images by alt text
+    if (tag === 'img') {
+      const alt = el.getAttribute('alt')
+      if (alt) {
+        return `img "${alt.slice(0, 40)}"`
+      }
+    }
+    
+    // 11. Stable classes (filtering out utility classes)
     const classList = Array.from(el.classList).filter(c => 
-      !c.match(/^(p|m|w|h|text|bg|flex|grid|hidden|block|inline)-/) && // Tailwind
+      !c.match(/^(p|m|w|h|text|bg|flex|grid|hidden|block|inline|absolute|relative|overflow|cursor|transition|transform|opacity|z-)-/) && // Tailwind
       !c.match(/^-?xin-/) && // xinjs transient
+      !c.match(/^(ng-|ember-|react-|vue-)/) && // Framework internals
       c.length > 2
     )
     
     if (classList.length > 0) {
-      const selector = `${el.tagName.toLowerCase()}.${classList.slice(0, 2).join('.')}`
+      const selector = `${tag}.${classList.slice(0, 2).join('.')}`
       // Check uniqueness
       if (document.querySelectorAll(selector).length === 1) {
         return selector
       }
     }
     
-    // Fall back to getSelector (full path)
+    // 12. Context-based: describe by parent landmark + position
+    const landmark = el.closest('main, nav, header, footer, aside, article, section, form')
+    if (landmark && landmark !== el) {
+      const landmarkDesc = this.getBestSelector(landmark)
+      // Simple position within parent
+      const siblings = Array.from(landmark.querySelectorAll(tag))
+      const index = siblings.indexOf(el)
+      if (siblings.length === 1) {
+        return `${tag} in ${landmarkDesc}`
+      } else if (index >= 0) {
+        return `${tag}[${index + 1}] in ${landmarkDesc}`
+      }
+    }
+    
+    // 13. Last resort: path-based selector
     return getSelector(el)
   }
   
