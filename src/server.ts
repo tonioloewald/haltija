@@ -368,7 +368,7 @@ See the DOM tree:
 
 ### Interaction
 - POST /click           - Click element: {"selector": "#submit"}
-- POST /type            - Type text: {"selector": "input[name=email]", "text": "user@example.com"}
+- POST /type            - Type text (human-like): {"selector": "input", "text": "hello"}
 - POST /drag            - Drag element: {"selector": ".item", "deltaX": 100, "deltaY": 0}
 - POST /eval            - Run JavaScript: {"code": "document.title"}
 
@@ -527,11 +527,28 @@ All interaction endpoints automatically scroll the element into view first.
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
 | /click | POST | {selector} | Click element (full mouse lifecycle) |
-| /type | POST | {selector, text} | Type into an input |
+| /type | POST | {selector, text, ...} | Type into an input (human-like by default) |
 | /drag | POST | {selector, deltaX, deltaY, duration?} | Drag an element |
 | /eval | POST | {code} | Execute JavaScript |
 
 /click fires: mouseenter -> mouseover -> mousemove -> mousedown -> mouseup -> click
+
+### /type Options
+| Option | Default | Description |
+|--------|---------|-------------|
+| selector | required | CSS selector for input element |
+| text | required | Text to type |
+| humanlike | true | Enable human-like typing with variable timing |
+| typoRate | 0.03 | Chance of typo per character (0-1) |
+| minDelay | 50 | Minimum ms between keystrokes |
+| maxDelay | 150 | Maximum ms between keystrokes |
+
+Human-like mode types character by character with:
+- Variable delays between keystrokes (50-150ms)
+- Occasional typos using adjacent keys, immediately corrected
+- Random hesitation pauses (5% chance of 200-500ms pause)
+
+Use humanlike:false for fast mode (instant value set)
 
 ### /drag Example
 curl -X POST ${baseUrl}/drag -H "Content-Type: application/json" \\
@@ -822,9 +839,14 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
   }
   
-  // Type shorthand
+  // Type shorthand - human-like typing with variable latency and occasional typos
   if (path === '/type' && req.method === 'POST') {
     const body = await req.json()
+    const text: string = body.text || ''
+    const humanlike: boolean = body.humanlike !== false // default true
+    const typoRate: number = body.typoRate ?? 0.03 // 3% chance of typo per character
+    const minDelay: number = body.minDelay ?? 50 // ms between keystrokes
+    const maxDelay: number = body.maxDelay ?? 150 // ms between keystrokes
     
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
@@ -832,12 +854,124 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     })
     await new Promise(r => setTimeout(r, 100))
     
-    const response = await requestFromBrowser('events', 'dispatch', {
-      selector: body.selector,
-      event: 'input',
-      options: { value: body.text },
+    // Focus the element
+    await requestFromBrowser('eval', 'exec', {
+      code: `document.querySelector(${JSON.stringify(body.selector)})?.focus()`
     })
-    return Response.json(response, { headers })
+    await new Promise(r => setTimeout(r, 50))
+    
+    if (!humanlike) {
+      // Fast mode: just set the value directly
+      const response = await requestFromBrowser('events', 'dispatch', {
+        selector: body.selector,
+        event: 'input',
+        options: { value: text },
+      })
+      return Response.json(response, { headers })
+    }
+    
+    // Human-like typing: character by character with variable timing and typos
+    // Adjacent keys for realistic typos
+    const adjacentKeys: Record<string, string[]> = {
+      'a': ['s', 'q', 'w', 'z'],
+      'b': ['v', 'g', 'h', 'n'],
+      'c': ['x', 'd', 'f', 'v'],
+      'd': ['s', 'e', 'r', 'f', 'c', 'x'],
+      'e': ['w', 'r', 'd', 's'],
+      'f': ['d', 'r', 't', 'g', 'v', 'c'],
+      'g': ['f', 't', 'y', 'h', 'b', 'v'],
+      'h': ['g', 'y', 'u', 'j', 'n', 'b'],
+      'i': ['u', 'o', 'k', 'j'],
+      'j': ['h', 'u', 'i', 'k', 'm', 'n'],
+      'k': ['j', 'i', 'o', 'l', 'm'],
+      'l': ['k', 'o', 'p', ';'],
+      'm': ['n', 'j', 'k', ','],
+      'n': ['b', 'h', 'j', 'm'],
+      'o': ['i', 'p', 'l', 'k'],
+      'p': ['o', 'l', '['],
+      'q': ['w', 'a'],
+      'r': ['e', 't', 'f', 'd'],
+      's': ['a', 'w', 'e', 'd', 'x', 'z'],
+      't': ['r', 'y', 'g', 'f'],
+      'u': ['y', 'i', 'j', 'h'],
+      'v': ['c', 'f', 'g', 'b'],
+      'w': ['q', 'e', 's', 'a'],
+      'x': ['z', 's', 'd', 'c'],
+      'y': ['t', 'u', 'h', 'g'],
+      'z': ['a', 's', 'x'],
+      '0': ['9', '-'],
+      '1': ['2', '`'],
+      '2': ['1', '3'],
+      '3': ['2', '4'],
+      '4': ['3', '5'],
+      '5': ['4', '6'],
+      '6': ['5', '7'],
+      '7': ['6', '8'],
+      '8': ['7', '9'],
+      '9': ['8', '0'],
+    }
+    
+    let currentValue = ''
+    let typoCount = 0
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i]
+      const delay = minDelay + Math.random() * (maxDelay - minDelay)
+      
+      // Occasionally make a typo
+      if (Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
+        const wrongKeys = adjacentKeys[char.toLowerCase()]
+        const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)]
+        const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
+        
+        // Type the wrong character
+        currentValue += typoChar
+        await requestFromBrowser('eval', 'exec', {
+          code: `(function(){
+            const el = document.querySelector(${JSON.stringify(body.selector)});
+            if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(typoChar)}})); }
+          })()`
+        })
+        await new Promise(r => setTimeout(r, delay))
+        
+        // Pause slightly longer before noticing the mistake
+        await new Promise(r => setTimeout(r, 100 + Math.random() * 200))
+        
+        // Backspace to fix it
+        currentValue = currentValue.slice(0, -1)
+        await requestFromBrowser('eval', 'exec', {
+          code: `(function(){
+            const el = document.querySelector(${JSON.stringify(body.selector)});
+            if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'})); }
+          })()`
+        })
+        await new Promise(r => setTimeout(r, delay * 0.5))
+        
+        typoCount++
+      }
+      
+      // Type the correct character
+      currentValue += char
+      await requestFromBrowser('eval', 'exec', {
+        code: `(function(){
+          const el = document.querySelector(${JSON.stringify(body.selector)});
+          if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(char)}})); }
+        })()`
+      })
+      await new Promise(r => setTimeout(r, delay))
+      
+      // Occasional longer pause (thinking/hesitation)
+      if (Math.random() < 0.05) {
+        await new Promise(r => setTimeout(r, 200 + Math.random() * 300))
+      }
+    }
+    
+    return Response.json({ 
+      success: true, 
+      typed: text, 
+      typos: typoCount,
+      humanlike: true 
+    }, { headers })
   }
   
   // Start recording
