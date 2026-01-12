@@ -976,10 +976,15 @@
       super();
       this.attachShadow({ mode: "open" });
       const WINDOW_ID_KEY = "haltija-window-id";
-      let storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
-      if (!storedWindowId) {
+      let storedWindowId = null;
+      try {
+        storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
+        if (!storedWindowId) {
+          storedWindowId = uid();
+          sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
+        }
+      } catch {
         storedWindowId = uid();
-        sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
       }
       this.windowId = storedWindowId;
     }
@@ -4440,32 +4445,71 @@
     }
   }
   function registerDevChannel() {
-    let tagToUse = TAG_NAME;
-    if (customElements.get(tagToUse)) {
-      registrationCount++;
-      tagToUse = `${TAG_NAME}-${registrationCount}`;
-      while (customElements.get(tagToUse)) {
-        registrationCount++;
-        tagToUse = `${TAG_NAME}-${registrationCount}`;
-      }
-      console.log(`${LOG_PREFIX} Re-registering as ${tagToUse}`);
+    if (customElements.get(TAG_NAME)) {
+      currentTagName = TAG_NAME;
+      return;
     }
-    customElements.define(tagToUse, DevChannel);
-    currentTagName = tagToUse;
+    customElements.define(TAG_NAME, DevChannel);
+    currentTagName = TAG_NAME;
   }
   registerDevChannel();
   function inject(serverUrl2 = "wss://localhost:8700/ws/browser") {
-    if (document.querySelector(currentTagName)) {
-      console.log(`${LOG_PREFIX} Already injected`);
-      return;
+    const existingId = window.__haltija_widget_id__;
+    if (existingId) {
+      const existing = document.getElementById(existingId);
+      if (existing) {
+        console.log(`${LOG_PREFIX} Already injected`);
+        const existingVersion = existing.getAttribute("data-version") || "0.0.0";
+        if (existingVersion !== VERSION2) {
+          console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION2}), replacing`);
+          existing.remove();
+          window.__haltija_widget_id__ = null;
+        } else {
+          return existing;
+        }
+      }
     }
+    const widgetId = "haltija-" + Math.random().toString(36).slice(2);
+    window.__haltija_widget_id__ = widgetId;
     const el = DevChannel.elementCreator()();
+    el.id = widgetId;
     el.setAttribute("server", serverUrl2);
     el.setAttribute("data-version", VERSION2);
     document.body.appendChild(el);
-    console.log(`${LOG_PREFIX} Injected as`, currentTagName);
+    console.log(`${LOG_PREFIX} Injected (${widgetId})`);
+    return el;
+  }
+  function autoInject() {
+    if (typeof window === "undefined")
+      return;
+    const config = window.__haltija_config__;
+    if (config?.autoInject !== false) {
+      if (config) {
+        inject(config.serverUrl || config.wsUrl);
+        return;
+      }
+    }
+    try {
+      const scripts = document.querySelectorAll('script[src*="component.js"]');
+      for (const script of scripts) {
+        const src = script.getAttribute("src");
+        if (!src)
+          continue;
+        const url = new URL(src, location.href);
+        if (url.searchParams.get("autoInject") === "true") {
+          const serverUrl2 = url.searchParams.get("serverUrl") || url.searchParams.get("wsUrl");
+          inject(serverUrl2 || undefined);
+          return;
+        }
+      }
+    } catch {}
   }
   if (typeof window !== "undefined") {
     window.DevChannel = DevChannel;
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", autoInject);
+    } else {
+      autoInject();
+    }
   }
 })();

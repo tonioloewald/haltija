@@ -142,21 +142,16 @@ async function injectWidget(webContents) {
   }
   
   try {
-    // Atomically check and set loading flag - returns true if we should proceed
-    const shouldInject = await webContents.executeJavaScript(`
-      (function() {
-        if (document.getElementById('haltija-widget') || window.__haltija_loading__) return false;
-        window.__haltija_loading__ = true;
-        return true;
-      })()
+    // Check if already injected
+    const alreadyPresent = await webContents.executeJavaScript(`
+      !!(window.__haltija_widget_id__ && document.getElementById(window.__haltija_widget_id__))
     `)
-    if (!shouldInject) {
+    if (alreadyPresent) {
       console.log('[Haltija Desktop] Widget already present')
       return
     }
     
     // Fetch component.js from our local server (main process can do this, bypasses CORS)
-    const http = require('http')
     const componentCode = await new Promise((resolve, reject) => {
       http.get(`${HALTIJA_SERVER}/component.js`, (res) => {
         let data = ''
@@ -167,30 +162,12 @@ async function injectWidget(webContents) {
     
     console.log('[Haltija Desktop] Got component.js, length:', componentCode.length)
     
-    // Execute the component code directly in the webview
+    // Set config for auto-inject, then execute component code
+    // component.ts will handle deduplication, ID generation, and element creation
+    const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
+    await webContents.executeJavaScript(`window.__haltija_config__ = { serverUrl: '${wsUrl}' };`)
     await webContents.executeJavaScript(componentCode)
     
-    // Now create and attach the widget element
-    const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
-    const initScript = `
-      (function() {
-        if (document.getElementById('haltija-widget')) {
-          console.log('[Haltija Desktop] Widget already exists');
-          return;
-        }
-        if (window.DevChannel) {
-          var creator = window.DevChannel.elementCreator();
-          var el = creator();
-          el.id = 'haltija-widget';
-          el.setAttribute('server', '${wsUrl}');
-          document.body.appendChild(el);
-          console.log('[Haltija Desktop] Widget element added');
-        } else {
-          console.error('[Haltija Desktop] DevChannel not found after injection');
-        }
-      })();
-    `
-    await webContents.executeJavaScript(initScript)
     console.log('[Haltija Desktop] Widget injected successfully')
   } catch (err) {
     console.error('[Haltija Desktop] Failed to inject widget:', err.message)

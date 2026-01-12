@@ -246,6 +246,14 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
 <head>
   <title>${PRODUCT_NAME} - Browser Control for AI Agents</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
+${isElectronApp ? '' : `  <script>
+    // Set config BEFORE component.js loads so auto-inject works
+    (function() {
+      var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      var port = location.port || (location.protocol === 'https:' ? '443' : '80');
+      window.__haltija_config__ = { serverUrl: wsProto + '//localhost:' + port + '/ws/browser' };
+    })();
+  </script>`}
   <script type="module" src="/component.js"></script>
   <style>
     * { box-sizing: border-box; }
@@ -540,8 +548,6 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
     ${playgroundHtml}
   </div>
   
-${isElectronApp ? '' : `  <${TAG_NAME} id="haltija-widget"></${TAG_NAME}>`}
-  
   <script>
     // Tab switching
     document.querySelectorAll('.tab').forEach(function(tab) {
@@ -593,13 +599,6 @@ ${isElectronApp ? '' : `  <${TAG_NAME} id="haltija-widget"></${TAG_NAME}>`}
         link.href = 'javascript:' + code;
       }
     })();
-    
-${isElectronApp ? '' : `    // Set the server URL for widget
-    (function() {
-      var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      var port = location.port || (location.protocol === 'https:' ? '443' : '80');
-      document.getElementById('haltija-widget').setAttribute('server', wsProto + '//localhost:' + port + '/ws/browser');
-    })();`}
   </script>
 </body>
 </html>`

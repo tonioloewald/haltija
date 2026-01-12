@@ -32,14 +32,23 @@ Haltija gives AI agents eyes and hands in the browser. Instead of guessing what'
 bun run build
 
 # Test
-bun test                    # unit tests
-bun run test:e2e           # playwright tests
+bun test                    # unit tests (Bun runtime)
+bun run test:e2e           # playwright tests (Node runtime)
 
 # Run server
 bun run dist/server.js
 # or
 bunx haltija
 ```
+
+## Testing Gotcha: Bun vs Playwright
+
+**Playwright runs on Node.js, not Bun.** This matters because:
+
+- Unit tests (`*.test.ts` except `playwright.test.ts`) can use Bun APIs like `bun:spawn`
+- Playwright tests CANNOT use Bun APIs - they run in Node.js
+- `playwright.config.ts` must use `testMatch: '**/playwright.test.ts'` (not `**/*.test.ts`)
+- If you see errors like "Cannot find package 'bun'" in Playwright, check the testMatch pattern
 
 ## Architecture
 

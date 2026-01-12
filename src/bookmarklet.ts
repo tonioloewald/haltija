@@ -7,10 +7,11 @@
  * 
  * Haltija Bookmarklet
  * 
- * Minimal loader that fetches and executes the injector from the server.
+ * Minimal loader that sets config and loads component.js.
+ * All spinup logic lives in component.ts - this is just a loader.
  * 
  * Usage:
- * 1. Start server: bunx tosijs-dev (HTTP on 8700) or DEV_CHANNEL_MODE=https bunx tosijs-dev
+ * 1. Start server: bunx haltija (HTTP on 8700)
  * 2. Visit the server URL and drag the bookmarklet to your toolbar
  * 3. Click bookmark on any page to inject Haltija
  * 
@@ -26,40 +27,25 @@ export const injectorCode = `
   var wsUrl = '__WS_URL__';
   var serverVersion = '__VERSION__';
   
-  var WIDGET_ID = 'haltija-widget';
-  
-  // Check for existing widget by ID
-  var existing = document.getElementById(WIDGET_ID);
-  if (existing) {
-    // Check if existing widget is stale (different version)
-    var existingVersion = existing.getAttribute('data-version') || '0.0.0';
-    if (existingVersion === serverVersion) {
-      console.log('[haltija] Already active (v' + serverVersion + ')');
-      if (existing.show) existing.show();
-      return;
+  // Check if already loaded with same version
+  if (window.__haltija_widget_id__) {
+    var existing = document.getElementById(window.__haltija_widget_id__);
+    if (existing) {
+      var existingVersion = existing.getAttribute('data-version') || '0.0.0';
+      if (existingVersion === serverVersion) {
+        console.log('[haltija] Already active (v' + serverVersion + ')');
+        return;
+      }
+      // Version mismatch - component.ts inject() will handle replacement
     }
-    // Remove stale widget
-    console.log('[haltija] Replacing stale widget (v' + existingVersion + ' -> v' + serverVersion + ')');
-    existing.remove();
   }
   
+  // Set config for auto-inject (component.ts reads this on load)
+  window.__haltija_config__ = { serverUrl: wsUrl };
+  
+  // Load component.js - it auto-injects when it sees the config
   var script = document.createElement('script');
   script.src = serverUrl + '/component.js?v=' + serverVersion;
-  script.onload = function() {
-    // Check again in case of race condition
-    if (document.getElementById(WIDGET_ID)) {
-      console.log('[haltija] Already injected');
-      return;
-    }
-    if (window.DevChannel) {
-      var creator = window.DevChannel.elementCreator();
-      var el = creator();
-      el.id = WIDGET_ID;
-      el.setAttribute('server', wsUrl);
-      el.setAttribute('data-version', serverVersion);
-      document.body.appendChild(el);
-    }
-  };
   script.onerror = function() {
     alert('[Haltija] Could not load component. Check that the server is running.');
   };

@@ -1185,11 +1185,18 @@ export class DevChannel extends HTMLElement {
     
     // Initialize windowId from sessionStorage or generate new one
     // This survives page refreshes but not tab close
+    // Note: sessionStorage may be unavailable in some contexts (e.g., sandboxed iframes, Playwright setContent)
     const WINDOW_ID_KEY = 'haltija-window-id'
-    let storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
-    if (!storedWindowId) {
+    let storedWindowId: string | null = null
+    try {
+      storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
+      if (!storedWindowId) {
+        storedWindowId = uid()
+        sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
+      }
+    } catch {
+      // sessionStorage not available - generate a new ID each time
       storedWindowId = uid()
-      sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
     }
     this.windowId = storedWindowId
   }
@@ -5453,9 +5460,6 @@ export class DevChannel extends HTMLElement {
   }
 }
 
-// Widget ID for deduplication
-const WIDGET_ID = 'haltija-widget'
-
 // Register the custom element - only once per page
 function registerDevChannel() {
   // If already registered, just use the existing tag
@@ -5470,24 +5474,96 @@ function registerDevChannel() {
 
 registerDevChannel()
 
-// Export for bookmarklet injection
-export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
-  // Check for existing widget by ID
-  if (document.getElementById(WIDGET_ID)) {
-    console.log(`${LOG_PREFIX} Already injected`)
-    return
+/**
+ * Inject the widget into the page.
+ * All spinup logic is centralized here - external scripts just call this.
+ * 
+ * @param serverUrl WebSocket server URL (default: wss://localhost:8700/ws/browser)
+ * @returns The widget element, or null if already present
+ */
+export function inject(serverUrl = 'wss://localhost:8700/ws/browser'): DevChannel | null {
+  // Check if already claimed
+  const existingId = (window as any).__haltija_widget_id__
+  if (existingId) {
+    const existing = document.getElementById(existingId) as DevChannel | null
+    if (existing) {
+      console.log(`${LOG_PREFIX} Already injected`)
+      // Check for version mismatch and hot-reload
+      const existingVersion = existing.getAttribute('data-version') || '0.0.0'
+      if (existingVersion !== VERSION) {
+        console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION}), replacing`)
+        existing.remove()
+        ;(window as any).__haltija_widget_id__ = null
+        // Fall through to create new widget
+      } else {
+        return existing
+      }
+    }
   }
+  
+  // Claim with unique ID atomically
+  const widgetId = 'haltija-' + Math.random().toString(36).slice(2)
+  ;(window as any).__haltija_widget_id__ = widgetId
   
   // Use the element creator to get the correct tag
   const el = DevChannel.elementCreator()()
-  el.id = WIDGET_ID
+  el.id = widgetId
   el.setAttribute('server', serverUrl)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log(`${LOG_PREFIX} Injected`)
+  console.log(`${LOG_PREFIX} Injected (${widgetId})`)
+  return el
+}
+
+/**
+ * Auto-inject on script load if config is present.
+ * This allows minimal injection scripts - just set config and load component.js.
+ * 
+ * Config via window.__haltija_config__:
+ *   { serverUrl: 'ws://...' }
+ * 
+ * Or via URL query param (for script src):
+ *   component.js?autoInject=true&serverUrl=ws://...
+ */
+function autoInject() {
+  if (typeof window === 'undefined') return
+  
+  // Check for config object
+  const config = (window as any).__haltija_config__
+  if (config?.autoInject !== false) {
+    // If config exists and doesn't explicitly disable, inject
+    if (config) {
+      inject(config.serverUrl || config.wsUrl)
+      return
+    }
+  }
+  
+  // Check script URL for autoInject param
+  try {
+    const scripts = document.querySelectorAll('script[src*="component.js"]')
+    for (const script of scripts) {
+      const src = script.getAttribute('src')
+      if (!src) continue
+      const url = new URL(src, location.href)
+      if (url.searchParams.get('autoInject') === 'true') {
+        const serverUrl = url.searchParams.get('serverUrl') || url.searchParams.get('wsUrl')
+        inject(serverUrl || undefined)
+        return
+      }
+    }
+  } catch {
+    // URL parsing failed, ignore
+  }
 }
 
 // Attach to window for console access
 if (typeof window !== 'undefined') {
   (window as any).DevChannel = DevChannel
+  
+  // Auto-inject if configured
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoInject)
+  } else {
+    autoInject()
+  }
 }
