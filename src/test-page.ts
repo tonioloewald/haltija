@@ -540,7 +540,7 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
     ${playgroundHtml}
   </div>
   
-  <${TAG_NAME} id="dev-widget"></${TAG_NAME}>
+  <${TAG_NAME} id="haltija-widget"></${TAG_NAME}>
   
   <script>
     // Tab switching
@@ -598,7 +598,7 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
     (function() {
       var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       var port = location.port || (location.protocol === 'https:' ? '443' : '80');
-      document.getElementById('dev-widget').setAttribute('server', wsProto + '//localhost:' + port + '/ws/browser');
+      document.getElementById('haltija-widget').setAttribute('server', wsProto + '//localhost:' + port + '/ws/browser');
     })();
   </script>
 </body>
