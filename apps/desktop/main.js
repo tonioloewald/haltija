@@ -168,9 +168,14 @@ async function injectWidget(webContents) {
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
     const initScript = `
       (function() {
+        if (document.getElementById('haltija-widget')) {
+          console.log('[Haltija Desktop] Widget already exists');
+          return;
+        }
         if (window.DevChannel) {
           var creator = window.DevChannel.elementCreator();
           var el = creator();
+          el.id = 'haltija-widget';
           el.setAttribute('server', '${wsUrl}');
           document.body.appendChild(el);
           console.log('[Haltija Desktop] Widget element added');
