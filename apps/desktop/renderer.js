@@ -300,7 +300,7 @@ function setupWebviewEvents(tab) {
       updateNavButtons()
       checkHaltija()
     }
-    injectWidget(webview)
+    // Widget injection is handled by main.js
   })
   
   webview.addEventListener('did-navigate', (e) => {
@@ -309,7 +309,6 @@ function setupWebviewEvents(tab) {
       urlInput.value = e.url
       updateNavButtons()
     }
-    setTimeout(() => injectWidget(webview), 500)
   })
   
   webview.addEventListener('did-navigate-in-page', (e) => {
@@ -321,14 +320,14 @@ function setupWebviewEvents(tab) {
   })
   
   webview.addEventListener('did-finish-load', () => {
-    injectWidget(webview)
+    // Widget injection is handled by main.js
     if (window.haltija) {
       window.haltija.webviewReady(webview.getWebContentsId())
     }
   })
   
   webview.addEventListener('dom-ready', () => {
-    injectWidget(webview)
+    // Widget injection is handled by main.js
   })
   
   webview.addEventListener('page-title-updated', (e) => {

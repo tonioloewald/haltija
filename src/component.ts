@@ -5453,11 +5453,13 @@ export class DevChannel extends HTMLElement {
   }
 }
 
+// Widget ID for deduplication
+const WIDGET_ID = 'haltija-widget'
+
 // Register the custom element - only once per page
 function registerDevChannel() {
   // If already registered, just use the existing tag
   if (customElements.get(TAG_NAME)) {
-    console.log(`${LOG_PREFIX} Already registered as ${TAG_NAME}`)
     currentTagName = TAG_NAME
     return
   }
@@ -5467,9 +5469,6 @@ function registerDevChannel() {
 }
 
 registerDevChannel()
-
-// Widget ID for deduplication
-const WIDGET_ID = 'haltija-widget'
 
 // Export for bookmarklet injection
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {

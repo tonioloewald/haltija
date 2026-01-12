@@ -540,7 +540,7 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
     ${playgroundHtml}
   </div>
   
-  <${TAG_NAME} id="haltija-widget"></${TAG_NAME}>
+${isElectronApp ? '' : `  <${TAG_NAME} id="haltija-widget"></${TAG_NAME}>`}
   
   <script>
     // Tab switching
@@ -594,12 +594,12 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
       }
     })();
     
-    // Set the server URL for widget
+${isElectronApp ? '' : `    // Set the server URL for widget
     (function() {
       var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       var port = location.port || (location.protocol === 'https:' ? '443' : '80');
       document.getElementById('haltija-widget').setAttribute('server', wsProto + '//localhost:' + port + '/ws/browser');
-    })();
+    })();`}
   </script>
 </body>
 </html>`

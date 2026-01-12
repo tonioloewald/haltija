@@ -142,9 +142,15 @@ async function injectWidget(webContents) {
   }
   
   try {
-    // First check if widget is already present
-    const hasWidget = await webContents.executeJavaScript(`!!document.getElementById('haltija-widget')`)
-    if (hasWidget) {
+    // Atomically check and set loading flag - returns true if we should proceed
+    const shouldInject = await webContents.executeJavaScript(`
+      (function() {
+        if (document.getElementById('haltija-widget') || window.__haltija_loading__) return false;
+        window.__haltija_loading__ = true;
+        return true;
+      })()
+    `)
+    if (!shouldInject) {
       console.log('[Haltija Desktop] Widget already present')
       return
     }

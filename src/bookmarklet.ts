@@ -26,9 +26,10 @@ export const injectorCode = `
   var wsUrl = '__WS_URL__';
   var serverVersion = '__VERSION__';
   
-  // Check for existing widget - use DevChannel.tagName if available (handles renamed tags)
-  var currentTag = (window.DevChannel && window.DevChannel.tagName) || 'haltija-dev';
-  var existing = document.querySelector(currentTag);
+  var WIDGET_ID = 'haltija-widget';
+  
+  // Check for existing widget by ID
+  var existing = document.getElementById(WIDGET_ID);
   if (existing) {
     // Check if existing widget is stale (different version)
     var existingVersion = existing.getAttribute('data-version') || '0.0.0';
@@ -45,10 +46,15 @@ export const injectorCode = `
   var script = document.createElement('script');
   script.src = serverUrl + '/component.js?v=' + serverVersion;
   script.onload = function() {
+    // Check again in case of race condition
+    if (document.getElementById(WIDGET_ID)) {
+      console.log('[haltija] Already injected');
+      return;
+    }
     if (window.DevChannel) {
-      // Use elementCreator to get correct (possibly auto-renamed) tag
       var creator = window.DevChannel.elementCreator();
       var el = creator();
+      el.id = WIDGET_ID;
       el.setAttribute('server', wsUrl);
       el.setAttribute('data-version', serverVersion);
       document.body.appendChild(el);
