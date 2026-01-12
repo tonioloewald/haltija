@@ -5773,40 +5773,44 @@ export class DevChannel extends HTMLElement {
     for (const level of levels) {
       this.originalConsole[level] = console[level]
       console[level] = (...args: any[]) => {
-        // Call original
+        // Call original FIRST, before any capture logic that might fail
         this.originalConsole[level]!.apply(console, args)
         
-        // Capture
-        const entry: ConsoleEntry = {
-          level,
-          args: args.map(arg => {
-            try {
-              return JSON.parse(JSON.stringify(arg))
-            } catch {
-              return String(arg)
-            }
-          }),
-          timestamp: Date.now(),
-        }
-        
-        if (level === 'error') {
-          entry.stack = new Error().stack
-        }
-        
-        this.consoleBuffer.push(entry)
-        
-        // Limit buffer size
-        if (this.consoleBuffer.length > 1000) {
-          this.consoleBuffer = this.consoleBuffer.slice(-500)
-        }
-        
-        // Only send errors to server automatically (others are queryable via REST)
-        if (level === 'error') {
-          if (this.state === 'connected') {
-            this.send('console', level, entry)
+        // Capture - wrapped in try/catch to never break console output
+        try {
+          const entry: ConsoleEntry = {
+            level,
+            args: args.map(arg => {
+              try {
+                return JSON.parse(JSON.stringify(arg))
+              } catch {
+                return String(arg)
+              }
+            }),
+            timestamp: Date.now(),
           }
-          // Update UI to show error indicator
-          this.updateUI()
+          
+          if (level === 'error') {
+            entry.stack = new Error().stack
+          }
+          
+          this.consoleBuffer.push(entry)
+          
+          // Limit buffer size
+          if (this.consoleBuffer.length > 1000) {
+            this.consoleBuffer = this.consoleBuffer.slice(-500)
+          }
+          
+          // Only send errors to server automatically (others are queryable via REST)
+          if (level === 'error') {
+            if (this.state === 'connected') {
+              this.send('console', level, entry)
+            }
+            // Update UI to show error indicator
+            this.updateUI()
+          }
+        } catch {
+          // Never let capture errors break console output
         }
       }
     }
@@ -5835,6 +5839,9 @@ function registerDevChannel() {
 
 registerDevChannel()
 
+// Fixed widget ID for deduplication
+const WIDGET_ID = 'haltija-widget'
+
 /**
  * Inject the widget into the page.
  * All spinup logic is centralized here - external scripts just call this.
@@ -5843,36 +5850,28 @@ registerDevChannel()
  * @returns The widget element, or null if already present
  */
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser'): DevChannel | null {
-  // Check if already claimed
-  const existingId = (window as any).__haltija_widget_id__
-  if (existingId) {
-    const existing = document.getElementById(existingId) as DevChannel | null
-    if (existing) {
-      console.log(`${LOG_PREFIX} Already injected`)
-      // Check for version mismatch and hot-reload
-      const existingVersion = existing.getAttribute('data-version') || '0.0.0'
-      if (existingVersion !== VERSION) {
-        console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION}), replacing`)
-        existing.remove()
-        ;(window as any).__haltija_widget_id__ = null
-        // Fall through to create new widget
-      } else {
-        return existing
-      }
+  // Check for existing widget by fixed ID
+  const existing = document.getElementById(WIDGET_ID) as DevChannel | null
+  if (existing) {
+    console.log(`${LOG_PREFIX} Already injected`)
+    // Check for version mismatch and hot-reload
+    const existingVersion = existing.getAttribute('data-version') || '0.0.0'
+    if (existingVersion !== VERSION) {
+      console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION}), replacing`)
+      existing.remove()
+      // Fall through to create new widget
+    } else {
+      return existing
     }
   }
   
-  // Claim with unique ID atomically
-  const widgetId = 'haltija-' + Math.random().toString(36).slice(2)
-  ;(window as any).__haltija_widget_id__ = widgetId
-  
   // Use the element creator to get the correct tag
   const el = DevChannel.elementCreator()()
-  el.id = widgetId
+  el.id = WIDGET_ID
   el.setAttribute('server', serverUrl)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log(`${LOG_PREFIX} Injected (${widgetId})`)
+  console.log(`${LOG_PREFIX} Injected`)
   return el
 }
 
