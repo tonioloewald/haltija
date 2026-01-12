@@ -18,6 +18,9 @@ I have Haltija running at http://localhost:8700. You can see and control my brow
 **Check connection:**
 curl http://localhost:8700/status
 
+**List all open tabs:**
+curl http://localhost:8700/windows
+
 **Get current page info:**
 curl http://localhost:8700/location
 
@@ -33,9 +36,11 @@ curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '
 **Run JavaScript:**
 curl -X POST http://localhost:8700/eval -H "Content-Type: application/json" -d '{"code": "document.title"}'
 
+**Target a specific tab:** Add ?window=<id> to any endpoint (get IDs from /windows)
+
 All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}
 
-Start with /status to confirm we're connected, then /location to see what page I'm on.
+Start with /status to confirm we're connected, then /windows to see open tabs.
 ```
 
 ## Useful Commands
