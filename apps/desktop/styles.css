@@ -4,11 +4,15 @@
   box-sizing: border-box;
 }
 
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #1a1a2e;
   color: #fff;
-  height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -262,6 +266,7 @@ body {
 /* Webview container */
 #webview-container {
   flex: 1;
+  min-height: 0; /* Critical for flexbox to allow shrinking */
   position: relative;
   background: #fff;
 }
@@ -277,7 +282,7 @@ body {
 }
 
 #webview-container webview.active {
-  display: block;
+  display: flex;
 }
 
 /* Loading indicator */
