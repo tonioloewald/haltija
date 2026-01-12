@@ -436,6 +436,19 @@ async function handleRest(req: Request): Promise<Response> {
     })
   }
   
+  // Serve the icon SVG
+  if (path === '/icon.svg') {
+    const iconPath = join(__dirname, '../haltija-icon.svg')
+    try {
+      const icon = readFileSync(iconPath, 'utf-8')
+      return new Response(icon, {
+        headers: { ...headers, 'Content-Type': 'image/svg+xml' }
+      })
+    } catch {
+      return new Response('Icon not found', { status: 404, headers })
+    }
+  }
+  
   // Dev mode one-liner endpoint - injects widget with localhost check and console badge
   if (path === '/dev.js') {
     const isSecure = req.url.startsWith('https:')
@@ -486,59 +499,233 @@ async function handleRest(req: Request): Promise<Response> {
   
   // Serve a simple test page
   if (path === '/' || path === '/test' || path === '/test.html') {
+    const isSecure = req.url.startsWith('https:')
+    const protocol = isSecure ? 'https' : 'http'
+    const port = isSecure ? HTTPS_PORT : PORT
     const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>Dev Channel Test</title>
+  <title>${PRODUCT_NAME} - Browser Control for AI Agents</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <script type="module" src="/component.js"></script>
   <style>
-    body { font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 20px; }
-    h1 { color: #333; }
-    .bookmarklet { 
-      display: inline-block; padding: 12px 24px; background: #6366f1; 
-      color: white; text-decoration: none; border-radius: 8px; font-weight: 600; 
+    * { box-sizing: border-box; }
+    body { 
+      font-family: system-ui, -apple-system, sans-serif; 
+      max-width: 720px; 
+      margin: 0 auto; 
+      padding: 24px;
+      background: #f8fafc;
+      color: #1e293b;
     }
-    .bookmarklet:hover { background: #4f46e5; }
-    code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
-    pre { background: #f3f4f6; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    .header {
+      text-align: center;
+      padding: 32px 0 24px;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 32px;
+    }
+    .header img { width: 128px; height: 128px; margin-bottom: 16px; }
+    .header h1 { margin: 0 0 8px; font-size: 28px; color: #0f172a; }
+    .header .version { color: #64748b; font-size: 14px; }
+    
+    .banner {
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 20px 24px;
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .banner .highlight { color: #38bdf8; }
+    .banner .url { color: #4ade80; }
+    .banner .dim { color: #64748b; }
+    
+    .section { margin-bottom: 32px; }
+    .section h2 { 
+      font-size: 16px; 
+      color: #475569; 
+      margin: 0 0 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    
+    .bookmarklet { 
+      display: inline-block; 
+      padding: 12px 24px; 
+      background: linear-gradient(135deg, #326ec6 0%, #1b2851 100%);
+      color: white; 
+      text-decoration: none; 
+      border-radius: 8px; 
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(27, 40, 81, 0.3);
+    }
+    .bookmarklet:hover { 
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(27, 40, 81, 0.4);
+    }
+    
+    pre, code { 
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+    }
+    pre { 
+      background: #1e293b; 
+      color: #e2e8f0;
+      padding: 12px 16px; 
+      border-radius: 6px; 
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    code { 
+      background: #f1f5f9; 
+      padding: 2px 6px; 
+      border-radius: 4px; 
+    }
+    
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .test-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .test-card h3 {
+      font-size: 14px;
+      margin: 0 0 12px;
+      color: #334155;
+    }
+    
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: #2563eb; }
+    
+    input, select, textarea {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 14px;
+      width: 100%;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    label { display: block; margin-bottom: 8px; font-size: 14px; color: #475569; }
+    
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    
+    details { margin-top: 32px; }
+    summary { 
+      cursor: pointer; 
+      font-weight: 600; 
+      color: #475569;
+      padding: 8px 0;
+    }
   </style>
 </head>
 <body>
-  <h1>${PRODUCT_NAME}</h1>
-  <p>The widget should appear in the bottom-left corner.</p>
-  
-  <h2>For AI Agents</h2>
-  <pre style="background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; font-size: 13px;">curl http://localhost:${PORT}/docs</pre>
-  
-  <h2>Dev Mode One-Liner</h2>
-  <p>Add this to your app (auto-disabled in production):</p>
-  <pre style="background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; font-size: 13px; word-break: break-all;">/^localhost$|^127\\./.test(location.hostname)&&import('http://localhost:${PORT}/dev.js')</pre>
-  
-  <h2>Bookmarklet</h2>
-  <p>Drag this to your bookmarks bar. Click it on any page to connect that tab:</p>
-  <a class="bookmarklet" id="bookmarklet-link" href="#">&#129494; ${PRODUCT_NAME}</a>
+  <div class="header">
+    <img src="/icon.svg" alt="${PRODUCT_NAME}">
+    <h1>${PRODUCT_NAME}</h1>
+    <div class="version">v${VERSION} · Browser Control for AI Agents</div>
+  </div>
+
+  <div class="banner"><span class="highlight">HTTP:</span>      <span class="url">${protocol}://localhost:${port}</span>
+
+<span class="dim">To connect:</span> Drag the bookmarklet below to your toolbar, or add the dev snippet.
+
+<span class="highlight">AI AGENTS:</span>  <span class="url">curl ${protocol}://localhost:${port}/docs</span></div>
+
+  <div class="section">
+    <h2>Connect Your Browser</h2>
+    <div class="card">
+      <p style="margin: 0 0 16px; color: #64748b;">Drag this to your bookmarks bar:</p>
+      <a class="bookmarklet" id="bookmarklet-link" href="#">${PRODUCT_NAME}</a>
+      
+      <p style="margin: 24px 0 8px; color: #64748b;">Or add this to your app (auto-disabled in production):</p>
+      <pre>/^localhost$|^127\\./.test(location.hostname)&&import('${protocol}://localhost:${port}/dev.js')</pre>
+    </div>
+  </div>
+
   <script>
-    // Generate bookmarklet that matches the protocol we're viewing this page on
     (function() {
       var proto = location.protocol;
       var port = location.port || (proto === 'https:' ? '443' : '80');
-      var wsProto = proto === 'https:' ? 'wss:' : 'ws:';
       var baseUrl = proto + '//localhost:' + port;
-      var wsUrl = wsProto + '//localhost:' + port + '/ws/browser';
       var code = "(function(){fetch('" + baseUrl + "/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: '+e.message))})()";
       document.getElementById('bookmarklet-link').href = 'javascript:' + code;
     })();
   </script>
-  
-  <h2>Test Controls</h2>
-  <button onclick="console.log('Test log', Date.now())">Log to Console</button>
-  <button onclick="console.error('Test error', Date.now())">Log Error</button>
-  <button onclick="alert('Hello!')">Show Alert</button>
-  
-  <h2>Test Input</h2>
-  <input id="test-input" placeholder="Type here...">
-  <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
-  <div id="result"></div>
+
+  <div class="section">
+    <h2>Test Controls</h2>
+    <div class="test-grid">
+      <div class="test-card">
+        <h3>Console</h3>
+        <div class="btn-row">
+          <button onclick="console.log('Test log', Date.now())">Log</button>
+          <button onclick="console.warn('Test warn', Date.now())" style="background:#f59e0b">Warn</button>
+          <button onclick="console.error('Test error', Date.now())" style="background:#ef4444">Error</button>
+        </div>
+      </div>
+      
+      <div class="test-card">
+        <h3>Input</h3>
+        <input id="test-input" placeholder="Type here...">
+        <div class="btn-row" style="margin-top: 8px;">
+          <button id="test-button" onclick="document.getElementById('result').textContent = 'Clicked!'">Click Me</button>
+        </div>
+        <div id="result" style="margin-top: 8px; color: #22c55e; font-weight: 600;"></div>
+      </div>
+      
+      <div class="test-card">
+        <h3>Select</h3>
+        <select id="test-select">
+          <option value="">Choose...</option>
+          <option value="apple">Apple</option>
+          <option value="banana">Banana</option>
+          <option value="cherry">Cherry</option>
+        </select>
+      </div>
+      
+      <div class="test-card">
+        <h3>Checkbox &amp; Radio</h3>
+        <label style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="check-1" style="width: auto;"> Feature 1
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px;">
+          <input type="radio" name="size" value="small" style="width: auto;"> Small
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px;">
+          <input type="radio" name="size" value="large" style="width: auto;"> Large
+        </label>
+      </div>
+    </div>
+  </div>
   
   <h2>More Form Elements</h2>
   <div style="display: grid; gap: 12px; max-width: 400px;">

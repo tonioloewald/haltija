@@ -24,8 +24,15 @@
     }
   },
   "bin": {
-    "tosijs-dev": "./bin/tosijs-dev.mjs"
+    "tosijs-dev": "./bin/tosijs-dev.mjs",
+    "haltija": "./bin/tosijs-dev.mjs"
   },
+  "files": [
+    "dist",
+    "bin",
+    "docs",
+    "haltija-icon.svg"
+  ],
   "scripts": {
     "build": "bun build ./src/component.ts --outdir=dist --target=browser --format=iife && bun build ./src/server.ts ./src/client.ts ./src/index.ts --outdir=dist --target=bun",
     "build:bookmarklet": "bun run bin/build-bookmarklet.ts",
