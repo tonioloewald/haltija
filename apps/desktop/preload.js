@@ -22,4 +22,9 @@ contextBridge.exposeInMainWorld('haltija', {
   onCaptureElementRequest: (callback) => {
     ipcRenderer.on('capture-element-request', (event, selector) => callback(selector))
   },
+  
+  // Open URL in new tab (from main process intercepting window.open)
+  onOpenUrlInTab: (callback) => {
+    ipcRenderer.on('open-url-in-tab', (event, url) => callback(url))
+  },
 })

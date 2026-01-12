@@ -1048,7 +1048,7 @@
           border-radius: 8px;
           box-shadow: 0 4px 20px rgba(0,0,0,0.3);
           overflow: hidden;
-          min-width: 240px;
+          min-width: 320px;
           transition: all 0.3s ease-out;
         }
         
@@ -1121,6 +1121,10 @@
           display: flex;
           gap: 6px;
           align-items: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 120px;
         }
         
         .indicator {
@@ -1128,6 +1132,7 @@
           padding: 2px 6px;
           border-radius: 4px;
           font-weight: 500;
+          white-space: nowrap;
         }
         
         .indicator.errors {
@@ -1676,7 +1681,7 @@
         const errorCount = this.consoleBuffer.filter((e) => e.level === "error").length;
         let html = "";
         if (errorCount > 0) {
-          html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? "s" : ""}">⚠ ${errorCount}</span>`;
+          html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? "s" : ""}">${errorCount} ⚠</span>`;
         }
         if (this.recording) {
           html += `<span class="indicator recording">REC</span>`;
@@ -3443,6 +3448,7 @@
         this.ws.onopen = () => {
           this.state = "connected";
           this.show();
+          const windowType = window.opener ? "popup" : window.parent !== window ? "iframe" : "tab";
           this.send("system", "connected", {
             windowId: this.windowId,
             browserId: this.browserId,
@@ -3450,7 +3456,8 @@
             serverSessionId: SERVER_SESSION_ID,
             url: location.href,
             title: document.title,
-            active: this.isActive
+            active: this.isActive,
+            windowType
           });
           this.setupNavigationWatcher();
         };

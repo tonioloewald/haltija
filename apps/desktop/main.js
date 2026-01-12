@@ -96,10 +96,49 @@ function setupWidgetInjection() {
 }
 
 function setupWebContentsInjection(wc) {
-  // Only inject into webview type
-  if (wc.getType() !== 'webview') return
+  const wcType = wc.getType()
+  
+  // Inject into webviews (tabs) and popup windows (auth flows, etc.)
+  // Skip the main Electron renderer (browserView/webview parent)
+  if (wcType !== 'webview' && wcType !== 'window') return
+  
+  // For windows, skip the main Electron shell
+  if (wcType === 'window') {
+    // The main window loads index.html - don't inject there
+    // But do inject into popup windows (auth, etc.)
+    const url = wc.getURL()
+    if (url.startsWith('file://') || url === 'about:blank') return
+  }
   
   console.log('[Haltija Desktop] Monitoring webContents:', wc.id, wc.getType())
+  
+  // Intercept window.open() calls - redirect to tabs instead of new windows
+  // Exception: allow auth popups which need to close and callback
+  wc.setWindowOpenHandler(({ url, frameName, features }) => {
+    console.log('[Haltija Desktop] Intercepted window.open:', url)
+    
+    // Allow OAuth/auth popups - they need popup behavior to work
+    const isAuthPopup = 
+      url.includes('accounts.google.com') ||
+      url.includes('/__/auth/') ||
+      url.includes('/emulator/auth') ||
+      url.includes('firebaseapp.com/__/auth') ||
+      url.includes('oauth') ||
+      url.includes('signin') ||
+      url.includes('login') ||
+      frameName === 'firebaseAuth'
+    
+    if (isAuthPopup) {
+      console.log('[Haltija Desktop] Allowing auth popup:', url)
+      return { action: 'allow' }
+    }
+    
+    // Regular links: open as new tab instead of window
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('open-url-in-tab', url)
+    }
+    return { action: 'deny' }
+  })
   
   // Capture console messages from the webview
   wc.on('console-message', (event, level, message, line, sourceId) => {
@@ -136,8 +175,8 @@ async function injectWidget(webContents) {
   const url = webContents.getURL()
   console.log('[Haltija Desktop] Injecting widget into:', url)
   
-  // Skip about:blank
-  if (!url || url === 'about:blank') {
+  // Skip about:blank and file:// URLs (Electron shell itself)
+  if (!url || url === 'about:blank' || url.startsWith('file://')) {
     return
   }
   
@@ -152,8 +191,12 @@ async function injectWidget(webContents) {
     }
     
     // Fetch component.js from our local server (main process can do this, bypasses CORS)
+    // Add cache-buster to ensure we always get fresh code
+    const cacheBuster = Date.now()
     const componentCode = await new Promise((resolve, reject) => {
-      http.get(`${HALTIJA_SERVER}/component.js`, (res) => {
+      http.get(`${HALTIJA_SERVER}/component.js?_=${cacheBuster}`, (res) => {
+        // Set encoding to UTF-8 to properly handle Unicode characters
+        res.setEncoding('utf8')
         let data = ''
         res.on('data', chunk => data += chunk)
         res.on('end', () => resolve(data))

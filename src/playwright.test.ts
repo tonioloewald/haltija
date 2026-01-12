@@ -240,6 +240,28 @@ test.describe('haltija-dev CLI', () => {
       expect(js).toContain('shadowRoot')
     })
     
+    test('component.js Unicode characters are properly encoded', async ({ page }) => {
+      // This test verifies that UTF-8 special characters in component.js
+      // are properly served and rendered in the browser.
+      // Previously, characters like ─ ✕ ⌥ were corrupted to âœ• etc.
+      
+      await page.goto(`${SERVER_URL}/`)
+      await page.waitForSelector('haltija-dev')
+      
+      // Check the actual rendered text in the widget's shadow DOM
+      const controlsText = await page.evaluate(() => {
+        const widget = document.querySelector('haltija-dev')
+        if (!widget || !widget.shadowRoot) return null
+        const controls = widget.shadowRoot.querySelector('.controls')
+        return controls ? controls.innerText : null
+      })
+      
+      expect(controlsText).not.toBeNull()
+      // These are the actual Unicode characters that should appear
+      expect(controlsText).toContain('─')  // Box drawing horizontal (minimize)
+      expect(controlsText).toContain('✕')  // Multiplication X (close)
+    })
+    
     test('inject.js is served and loads component', async () => {
       const res = await fetch(`${SERVER_URL}/inject.js`)
       expect(res.status).toBe(200)

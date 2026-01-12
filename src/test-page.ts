@@ -227,6 +227,7 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
   return `<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>${PRODUCT_NAME} - Browser Control for AI Agents</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
 ${isElectronApp ? '' : `  <script>

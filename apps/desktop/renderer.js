@@ -549,3 +549,12 @@ window.haltija.focusTab = (windowId) => {
   // For now, this is a no-op since we'd need to map window IDs to tab IDs
   return false
 }
+
+// Listen for open-url-in-tab from main process
+// This handles window.open() calls that should become tabs instead of windows
+if (window.haltija && window.haltija.onOpenUrlInTab) {
+  window.haltija.onOpenUrlInTab((url) => {
+    console.log('[Haltija Desktop] Opening URL in new tab:', url)
+    createTab(url)
+  })
+}

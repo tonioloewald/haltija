@@ -113,6 +113,7 @@ interface TrackedWindow {
   connectedAt: number  // When first connected
   lastSeen: number     // Last message time
   label?: string       // Optional agent-assigned label
+  windowType?: string  // 'tab', 'popup', or 'iframe'
 }
 const windows = new Map<string, TrackedWindow>()
 
@@ -477,8 +478,8 @@ async function handleRest(req: Request): Promise<Response> {
     'background:#f97316;color:white;padding:2px 8px;border-radius:0 3px 3px 0'
   );
   
-  // Fetch and inject the component
-  fetch('${serverUrl}/inject.js')
+  // Fetch and inject the component (cache-bust with timestamp)
+  fetch('${serverUrl}/inject.js?_=' + Date.now())
     .then(r => r.text())
     .then(eval)
     .catch(e => {
@@ -2456,6 +2457,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       connectedAt: w.connectedAt,
       lastSeen: w.lastSeen,
       label: w.label,
+      windowType: w.windowType || 'tab',
     }))
     return Response.json({
       windows: windowList,
@@ -2642,7 +2644,7 @@ const serverConfig = {
         try {
           const data = JSON.parse(message.toString())
           if (data.channel === 'system' && data.action === 'connected' && data.payload?.browserId) {
-            const { windowId, browserId, url, title, active } = data.payload
+            const { windowId, browserId, url, title, active, windowType } = data.payload
             
             browsers.set(wsTyped, browserId)
             activeBrowserId = browserId
@@ -2667,6 +2669,7 @@ const serverConfig = {
                 connectedAt: existingWindow?.connectedAt || now,
                 lastSeen: now,
                 label: existingWindow?.label,
+                windowType: windowType || 'tab', // 'tab', 'popup', or 'iframe'
               })
               
               // Set as focused if no window is focused, or if this was previously focused

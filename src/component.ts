@@ -1272,7 +1272,7 @@ export class DevChannel extends HTMLElement {
           border-radius: 8px;
           box-shadow: 0 4px 20px rgba(0,0,0,0.3);
           overflow: hidden;
-          min-width: 240px;
+          min-width: 320px;
           transition: all 0.3s ease-out;
         }
         
@@ -1345,6 +1345,10 @@ export class DevChannel extends HTMLElement {
           display: flex;
           gap: 6px;
           align-items: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 120px;
         }
         
         .indicator {
@@ -1352,6 +1356,7 @@ export class DevChannel extends HTMLElement {
           padding: 2px 6px;
           border-radius: 4px;
           font-weight: 500;
+          white-space: nowrap;
         }
         
         .indicator.errors {
@@ -1918,7 +1923,7 @@ export class DevChannel extends HTMLElement {
       const errorCount = this.consoleBuffer.filter(e => e.level === 'error').length
       let html = ''
       if (errorCount > 0) {
-        html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? 's' : ''}">⚠ ${errorCount}</span>`
+        html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? 's' : ''}">${errorCount} ⚠</span>`
       }
       if (this.recording) {
         html += `<span class="indicator recording">REC</span>`
@@ -4181,6 +4186,10 @@ export class DevChannel extends HTMLElement {
       this.ws.onopen = () => {
         this.state = 'connected'
         this.show() // Always show when connection established
+        
+        // Detect window type: popup (has opener), iframe, or tab
+        const windowType = window.opener ? 'popup' : (window.parent !== window ? 'iframe' : 'tab')
+        
         this.send('system', 'connected', { 
           windowId: this.windowId,
           browserId: this.browserId, 
@@ -4188,7 +4197,8 @@ export class DevChannel extends HTMLElement {
           serverSessionId: SERVER_SESSION_ID,
           url: location.href, 
           title: document.title,
-          active: this.isActive
+          active: this.isActive,
+          windowType
         })
         // Watch for URL/title changes to report to server
         this.setupNavigationWatcher()
