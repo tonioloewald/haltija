@@ -256,6 +256,109 @@ describe('tosijs-dev server', () => {
       expect(res.status).toBe(404)
     })
   })
+  
+  describe('POST endpoint validation', () => {
+    it('returns helpful error when GET is used instead of POST on /eval', async () => {
+      const res = await fetch(`${BASE_URL}/eval`)
+      expect(res.status).toBe(405)
+      
+      const data = await res.json()
+      expect(data.success).toBe(false)
+      expect(data.error).toContain('requires POST')
+      expect(data.hint).toContain('curl -X POST')
+    })
+    
+    it('returns helpful error when required field is missing on /eval', async () => {
+      const res = await fetch(`${BASE_URL}/eval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script: '1+1' }) // wrong field name
+      })
+      expect(res.status).toBe(400)
+      
+      const data = await res.json()
+      expect(data.success).toBe(false)
+      expect(data.error).toContain('missing required field "code"')
+      expect(data.hint).toContain('code: string')
+    })
+    
+    it('returns helpful error when wrong type is provided on /eval', async () => {
+      const res = await fetch(`${BASE_URL}/eval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 123 }) // wrong type
+      })
+      expect(res.status).toBe(400)
+      
+      const data = await res.json()
+      expect(data.success).toBe(false)
+      expect(data.error).toContain('"code" should be string')
+    })
+    
+    it('returns helpful error when GET is used on /click', async () => {
+      const res = await fetch(`${BASE_URL}/click`)
+      expect(res.status).toBe(405)
+      
+      const data = await res.json()
+      expect(data.error).toContain('requires POST')
+    })
+    
+    it('returns helpful error when selector is missing on /click', async () => {
+      const res = await fetch(`${BASE_URL}/click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      expect(res.status).toBe(400)
+      
+      const data = await res.json()
+      expect(data.error).toContain('missing required field "selector"')
+    })
+    
+    it('returns helpful error when GET is used on /navigate', async () => {
+      const res = await fetch(`${BASE_URL}/navigate`)
+      expect(res.status).toBe(405)
+      
+      const data = await res.json()
+      expect(data.error).toContain('requires POST')
+      expect(data.hint).toContain('curl -X POST')
+    })
+    
+    it('returns helpful error when url is missing on /navigate', async () => {
+      const res = await fetch(`${BASE_URL}/navigate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      expect(res.status).toBe(400)
+      
+      const data = await res.json()
+      expect(data.error).toContain('missing required field "url"')
+    })
+    
+    it('validates /send requires channel and action', async () => {
+      const res = await fetch(`${BASE_URL}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: {} }) // missing channel and action
+      })
+      expect(res.status).toBe(400)
+      
+      const data = await res.json()
+      expect(data.error).toContain('missing required field')
+    })
+    
+    it('validates /tree accepts empty body', async () => {
+      // /tree should work with empty body (defaults to body selector)
+      const res = await fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      // Will fail because no browser connected, but should not be 400
+      expect(res.status).not.toBe(400)
+    })
+  })
 })
 
 describe('tosijs-dev WebSocket', () => {

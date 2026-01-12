@@ -221,6 +221,68 @@ const pendingResponses = new Map<string, {
 // Generate unique IDs
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+// Validation helper for POST endpoints
+interface FieldSpec {
+  name: string
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+  required?: boolean
+}
+
+function validateBody(
+  body: Record<string, unknown>,
+  fields: FieldSpec[],
+  endpoint: string
+): { valid: true } | { valid: false; error: string; hint?: string } {
+  const errors: string[] = []
+  const expectedFields: string[] = []
+  
+  for (const field of fields) {
+    expectedFields.push(`${field.name}: ${field.type}${field.required ? '' : '?'}`)
+    const value = body[field.name]
+    
+    if (field.required && (value === undefined || value === null)) {
+      errors.push(`missing required field "${field.name}"`)
+      continue
+    }
+    
+    if (value !== undefined && value !== null) {
+      const actualType = Array.isArray(value) ? 'array' : typeof value
+      if (actualType !== field.type) {
+        errors.push(`"${field.name}" should be ${field.type}, got ${actualType}`)
+      }
+    }
+  }
+  
+  if (errors.length > 0) {
+    return {
+      valid: false,
+      error: `${endpoint}: ${errors.join(', ')}`,
+      hint: `Expected: { ${expectedFields.join(', ')} }`
+    }
+  }
+  
+  return { valid: true }
+}
+
+// Helper to return validation error response
+function validationError(result: { error: string; hint?: string }, headers: Record<string, string>): Response {
+  return Response.json({ 
+    success: false, 
+    error: result.error,
+    hint: result.hint 
+  }, { status: 400, headers })
+}
+
+// Helper for "wrong method" responses
+function wrongMethod(endpoint: string, correctMethod: string, headers: Record<string, string>): Response {
+  return Response.json({
+    success: false,
+    error: `${endpoint} requires ${correctMethod}`,
+    hint: `Use: curl -X ${correctMethod} http://localhost:${PORT}${endpoint}` + 
+          (correctMethod === 'POST' ? ' -H "Content-Type: application/json" -d \'{"..."}\'': '')
+  }, { status: 405, headers })
+}
+
 function bufferMessage(msg: DevMessage) {
   messageBuffer.push(msg)
   if (messageBuffer.length > MAX_BUFFER) {
@@ -1079,8 +1141,19 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Send message (for agents without WebSocket)
+  if (path === '/send' && req.method === 'GET') {
+    return wrongMethod('/send', 'POST', headers)
+  }
   if (path === '/send' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'channel', type: 'string', required: true },
+      { name: 'action', type: 'string', required: true },
+      { name: 'payload', type: 'object' },
+      { name: 'id', type: 'string' }
+    ], '/send')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const msg: DevMessage = {
       id: body.id || uid(),
       channel: body.channel,
@@ -1095,8 +1168,19 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Request/response (for agents without WebSocket)
+  if (path === '/request' && req.method === 'GET') {
+    return wrongMethod('/request', 'POST', headers)
+  }
   if (path === '/request' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'channel', type: 'string', required: true },
+      { name: 'action', type: 'string', required: true },
+      { name: 'payload', type: 'object' },
+      { name: 'timeout', type: 'number' }
+    ], '/request')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const response = await requestFromBrowser(
       body.channel,
       body.action,
@@ -1107,8 +1191,18 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // DOM query shorthand
+  if (path === '/query' && req.method === 'GET') {
+    return wrongMethod('/query', 'POST', headers)
+  }
   if (path === '/query' && req.method === 'POST') {
     const body = await req.json() as { selector: string; all?: boolean; window?: string }
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'all', type: 'boolean' },
+      { name: 'window', type: 'string' }
+    ], '/query')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const windowId = body.window || targetWindowId
     const response = await requestFromBrowser('dom', 'query', {
       selector: body.selector,
@@ -1125,16 +1219,35 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Eval shorthand
+  if (path === '/eval' && req.method === 'GET') {
+    return wrongMethod('/eval', 'POST', headers)
+  }
   if (path === '/eval' && req.method === 'POST') {
     const body = await req.json() as { code: string; window?: string }
+    const validation = validateBody(body, [
+      { name: 'code', type: 'string', required: true },
+      { name: 'window', type: 'string' }
+    ], '/eval')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const windowId = body.window || targetWindowId
     const response = await requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
   // Click shorthand - fires full mouse event lifecycle
+  if (path === '/click' && req.method === 'GET') {
+    return wrongMethod('/click', 'POST', headers)
+  }
   if (path === '/click' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'options', type: 'object' },
+      { name: 'window', type: 'string' }
+    ], '/click')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const selector = body.selector
     const options = body.options || {}
     
@@ -1158,8 +1271,20 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // Drag shorthand - simulates a drag operation
   // POST /drag { selector, deltaX, deltaY, duration? }
+  if (path === '/drag' && req.method === 'GET') {
+    return wrongMethod('/drag', 'POST', headers)
+  }
   if (path === '/drag' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'deltaX', type: 'number' },
+      { name: 'deltaY', type: 'number' },
+      { name: 'duration', type: 'number' },
+      { name: 'window', type: 'string' }
+    ], '/drag')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const selector = body.selector
     const deltaX = body.deltaX || 0
     const deltaY = body.deltaY || 0
@@ -1218,8 +1343,22 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Type shorthand - human-like typing with variable latency and occasional typos
+  if (path === '/type' && req.method === 'GET') {
+    return wrongMethod('/type', 'POST', headers)
+  }
   if (path === '/type' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'text', type: 'string', required: true },
+      { name: 'humanlike', type: 'boolean' },
+      { name: 'typoRate', type: 'number' },
+      { name: 'minDelay', type: 'number' },
+      { name: 'maxDelay', type: 'number' },
+      { name: 'window', type: 'string' }
+    ], '/type')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const text: string = body.text || ''
     const humanlike: boolean = body.humanlike !== false // default true
     const typoRate: number = body.typoRate ?? 0.03 // 3% chance of typo per character
@@ -1428,8 +1567,17 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Navigate to URL
+  if (path === '/navigate' && req.method === 'GET') {
+    return wrongMethod('/navigate', 'POST', headers)
+  }
   if (path === '/navigate' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'url', type: 'string', required: true },
+      { name: 'window', type: 'string' }
+    ], '/navigate')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const response = await requestFromBrowser('navigation', 'goto', { url: body.url })
     return Response.json(response, { headers })
   }
@@ -1442,24 +1590,35 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // Open a new tab (Electron app only)
   // POST /tabs/open { "url": "https://example.com" }
+  if (path === '/tabs/open' && req.method === 'GET') {
+    return wrongMethod('/tabs/open', 'POST', headers)
+  }
   if (path === '/tabs/open' && req.method === 'POST') {
     const body = await req.json()
-    const url = body.url
-    if (!url) {
-      return Response.json({ success: false, error: 'url is required' }, { status: 400, headers })
-    }
+    const validation = validateBody(body, [
+      { name: 'url', type: 'string', required: true }
+    ], '/tabs/open')
+    if (!validation.valid) return validationError(validation, headers)
+    
     // Send to browser component which will relay to Electron
-    const response = await requestFromBrowser('tabs', 'open', { url })
+    const response = await requestFromBrowser('tabs', 'open', { url: body.url })
     return Response.json(response, { headers })
   }
   
   // Close a tab by window ID
   // POST /tabs/close { "window": "windowId" } or ?window=windowId
+  if (path === '/tabs/close' && req.method === 'GET') {
+    return wrongMethod('/tabs/close', 'POST', headers)
+  }
   if (path === '/tabs/close' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
     const windowId = body.window || targetWindowId
     if (!windowId) {
-      return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers })
+      return Response.json({ 
+        success: false, 
+        error: '/tabs/close: window id is required',
+        hint: 'Pass window ID in body or query string: ?window=<id>'
+      }, { status: 400, headers })
     }
     const response = await requestFromBrowser('tabs', 'close', { windowId })
     return Response.json(response, { headers })
@@ -1467,11 +1626,18 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // Focus/activate a tab by window ID
   // POST /tabs/focus { "window": "windowId" } or ?window=windowId  
+  if (path === '/tabs/focus' && req.method === 'GET') {
+    return wrongMethod('/tabs/focus', 'POST', headers)
+  }
   if (path === '/tabs/focus' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
     const windowId = body.window || targetWindowId
     if (!windowId) {
-      return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers })
+      return Response.json({ 
+        success: false, 
+        error: '/tabs/focus: window id is required',
+        hint: 'Pass window ID in body or query string: ?window=<id>'
+      }, { status: 400, headers })
     }
     const response = await requestFromBrowser('tabs', 'focus', { windowId })
     return Response.json(response, { headers })
@@ -1573,15 +1739,34 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Inspect element (detailed view)
+  if (path === '/inspect' && req.method === 'GET') {
+    return wrongMethod('/inspect', 'POST', headers)
+  }
   if (path === '/inspect' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'window', type: 'string' }
+    ], '/inspect')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector })
     return Response.json(response, { headers })
   }
   
   // Inspect multiple elements
+  if (path === '/inspectAll' && req.method === 'GET') {
+    return wrongMethod('/inspectAll', 'POST', headers)
+  }
   if (path === '/inspectAll' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'limit', type: 'number' },
+      { name: 'window', type: 'string' }
+    ], '/inspectAll')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const response = await requestFromBrowser('dom', 'inspectAll', { 
       selector: body.selector, 
       limit: body.limit || 10 
@@ -1590,8 +1775,19 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Highlight element (visual pointer)
+  if (path === '/highlight' && req.method === 'GET') {
+    return wrongMethod('/highlight', 'POST', headers)
+  }
   if (path === '/highlight' && req.method === 'POST') {
     const body = await req.json()
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string', required: true },
+      { name: 'label', type: 'string' },
+      { name: 'color', type: 'string' },
+      { name: 'duration', type: 'number' },
+      { name: 'window', type: 'string' }
+    ], '/highlight')
+    if (!validation.valid) return validationError(validation, headers)
     
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
@@ -1616,8 +1812,20 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   
   // DOM tree inspector
   // POST /tree { selector, depth?, includeText?, allAttributes?, includeBox?, compact?, pierceShadow?, ... }
+  if (path === '/tree' && req.method === 'GET') {
+    return wrongMethod('/tree', 'POST', headers)
+  }
   if (path === '/tree' && req.method === 'POST') {
     const body = await req.json()
+    // /tree has many optional fields, just validate types if present
+    const validation = validateBody(body, [
+      { name: 'selector', type: 'string' },
+      { name: 'depth', type: 'number' },
+      { name: 'mode', type: 'string' },
+      { name: 'window', type: 'string' }
+    ], '/tree')
+    if (!validation.valid) return validationError(validation, headers)
+    
     const response = await requestFromBrowser('dom', 'tree', {
       selector: body.selector || 'body',
       depth: body.depth,
