@@ -114,36 +114,32 @@ Give your agent this prompt to get started:
 \`\`\`prompt
 I have Haltija running at http://localhost:8700. You can see and control my browser.
 
-**Check connection:**
-curl http://localhost:8700/status
+**Quick start:**
+1. Check server: curl http://localhost:8700/status
+2. Find tabs: curl http://localhost:8700/windows
+3. See what's on page: curl -X POST http://localhost:8700/tree -d '{"selector":"body","mode":"actionable"}'
+4. Do something: curl -X POST http://localhost:8700/click -d '{"selector":"button"}'
 
-**List all open tabs:**
-curl http://localhost:8700/windows
+**Key endpoints:**
+- GET /windows - list connected tabs
+- GET /location?window=ID - current URL
+- POST /tree - see page structure (use mode:"actionable" for summary of buttons/links/inputs)
+- POST /click - click an element
+- POST /type - type into a field
+- POST /eval - run JavaScript (escape hatch)
+- GET /events - recent events including network errors
 
-**Get current page info:**
-curl http://localhost:8700/location
+**Tree options:**
+- mode:"actionable" - returns buttons, links, inputs, headings (recommended)
+- visibleOnly:true - filter out hidden elements
+- depth:3 - how deep to traverse
 
-**See the DOM structure:**
-curl -X POST http://localhost:8700/tree -H "Content-Type: application/json" -d '{"selector": "body", "depth": 3}'
-
-**Click an element:**
-curl -X POST http://localhost:8700/click -H "Content-Type: application/json" -d '{"selector": "#button-id"}'
-
-**Type text:**
-curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '{"selector": "input", "text": "hello"}'
-
-**Run JavaScript:**
-curl -X POST http://localhost:8700/eval -H "Content-Type: application/json" -d '{"code": "document.title"}'
-
-**Open a new tab (Electron app only):**
-curl -X POST http://localhost:8700/tabs/open -H "Content-Type: application/json" -d '{"url": "https://example.com"}'
-
-**Target a specific tab:** Add ?window=<id> to any endpoint (get IDs from /windows)
+**Target a specific tab:** Add ?window=<id> or include "window":"id" in POST body
 
 All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}
-
-Start with /status to confirm we're connected, then /windows to see open tabs.
 \`\`\`
+
+For the full agent prompt with more examples, see [agent-prompt.md](../agent-prompt.md).
 
 ## Useful Commands
 
