@@ -6,7 +6,13 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Minimal toolbar -->
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <div id="tabs"></div>
+    <button id="new-tab" title="New Tab">+</button>
+  </div>
+  
+  <!-- Toolbar -->
   <div id="toolbar">
     <div class="nav-buttons">
       <button id="back" title="Back">←</button>
@@ -21,17 +27,71 @@
     
     <div class="status">
       <span id="haltija-status" class="status-dot disconnected" title="Haltija: Disconnected"></span>
-      <span class="logo">🧝</span>
+      <button id="settings-btn" title="Settings">⚙</button>
     </div>
   </div>
   
-  <!-- The actual browser -->
-  <webview 
-    id="browser" 
-    src="about:blank"
-    webpreferences="contextIsolation=no, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes"
-    allowpopups
-  ></webview>
+  <!-- Webview container (multiple webviews for tabs) -->
+  <div id="webview-container"></div>
+  
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button id="close-settings">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group">
+          <h3>Server</h3>
+          <label>
+            <input type="radio" name="server-mode" value="auto" checked>
+            Use any available Haltija server
+          </label>
+          <label>
+            <input type="radio" name="server-mode" value="builtin">
+            Prefer built-in server
+          </label>
+          <label>
+            <input type="radio" name="server-mode" value="external">
+            External server only
+          </label>
+          <div class="setting-row">
+            <label for="server-url">Server URL:</label>
+            <input type="text" id="server-url" value="http://localhost:8700" placeholder="http://localhost:8700">
+          </div>
+        </div>
+        
+        <div class="setting-group">
+          <h3>Tabs</h3>
+          <label>
+            <input type="checkbox" id="confirm-new-tabs">
+            Ask permission before opening new tabs
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-settings">Save</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- New tab confirmation dialog -->
+  <div id="new-tab-dialog" class="modal hidden">
+    <div class="modal-content dialog">
+      <div class="modal-header">
+        <h2>Open New Tab?</h2>
+      </div>
+      <div class="modal-body">
+        <p>A page wants to open:</p>
+        <p id="new-tab-url" class="url-preview"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="deny-new-tab" class="secondary">Cancel</button>
+        <button id="allow-new-tab">Open Tab</button>
+      </div>
+    </div>
+  </div>
   
   <script src="renderer.js"></script>
 </body>

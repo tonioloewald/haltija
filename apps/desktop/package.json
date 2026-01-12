@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "prebuild": "npm run compile:server",
+    "icons": "./scripts/generate-icons.sh",
+    "prebuild": "npm run icons && npm run compile:server",
     "compile:server": "cd ../.. && bun run build && bun build --compile --target=bun-darwin-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64 && bun build --compile --target=bun-darwin-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && cp dist/component.js apps/desktop/resources/component.js",
     "compile:server:win": "cd ../.. && bun build --compile --target=bun-windows-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64.exe",
     "compile:server:linux": "cd ../.. && bun build --compile --target=bun-linux-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-linux-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64",
@@ -27,6 +28,7 @@
       "output": "dist"
     },
     "mac": {
+      "icon": "icons/icon.icns",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -44,9 +46,11 @@
       ]
     },
     "win": {
+      "icon": "icons/icon.png",
       "target": ["nsis", "portable"]
     },
     "linux": {
+      "icon": "icons/icon.png",
       "target": ["AppImage", "deb"]
     },
     "files": [

@@ -1969,6 +1969,13 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ success: true, message: 'Server restarting...' }, { headers })
   }
   
+  // Shutdown the server (for Electron app to kill external servers)
+  if (path === '/shutdown' && req.method === 'POST') {
+    console.log(`${LOG_PREFIX} Shutdown requested`)
+    setTimeout(() => process.exit(0), 100)
+    return Response.json({ success: true, message: 'Server shutting down...' }, { headers })
+  }
+  
   // Clear message buffer (useful for debugging)
   if (path === '/clear' && req.method === 'POST') {
     messageBuffer.length = 0
