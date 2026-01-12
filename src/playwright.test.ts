@@ -140,6 +140,37 @@ test.describe('haltija-dev CLI', () => {
     expect(text).toContain('DevChannel')
   })
   
+  test('serves icon.svg', async () => {
+    const res = await fetch(`${SERVER_URL}/icon.svg`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/svg+xml')
+    const text = await res.text()
+    expect(text).toContain('<svg')
+    expect(text).toContain('</svg>')
+  })
+  
+  test('test page loads icon without errors', async ({ page }) => {
+    // Track failed requests
+    const failedRequests: string[] = []
+    page.on('requestfailed', request => {
+      failedRequests.push(request.url())
+    })
+    
+    await page.goto(`${SERVER_URL}/`)
+    await page.waitForLoadState('networkidle')
+    
+    // Check no icon requests failed
+    const iconFailures = failedRequests.filter(url => url.includes('icon'))
+    expect(iconFailures).toHaveLength(0)
+    
+    // Verify the image element loaded successfully
+    const imgLoaded = await page.evaluate(() => {
+      const img = document.querySelector('.header img') as HTMLImageElement
+      return img && img.complete && img.naturalWidth > 0
+    })
+    expect(imgLoaded).toBe(true)
+  })
+  
   test('status endpoint works', async () => {
     const res = await fetch(`${SERVER_URL}/status`)
     expect(res.status).toBe(200)

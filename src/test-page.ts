@@ -254,7 +254,7 @@ ${isElectronApp ? '' : `  <script>
       window.__haltija_config__ = { serverUrl: wsProto + '//localhost:' + port + '/ws/browser' };
     })();
   </script>`}
-  <script type="module" src="/component.js"></script>
+  <script src="/component.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { 
