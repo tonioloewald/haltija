@@ -265,7 +265,7 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
       border-bottom: 1px solid #e2e8f0;
       margin-bottom: 24px;
     }
-    .header img { width: 80px; height: 80px; margin-bottom: 12px; }
+    .header img { width: 256px; height: 256px; margin-bottom: 16px; border-radius: 24px; }
     .header h1 { margin: 0 0 4px; font-size: 24px; color: #0f172a; }
     .header .version { color: #64748b; font-size: 13px; }
     
@@ -372,18 +372,21 @@ export function generateTestPage(protocol: string, port: number, isElectronApp: 
       position: absolute;
       top: 8px;
       right: 8px;
-      padding: 4px 10px;
-      font-size: 11px;
-      background: #475569;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #3b82f6;
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      opacity: 0.7;
-      transition: opacity 0.15s;
+      transition: all 0.15s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
     .copy-btn:hover {
-      opacity: 1;
+      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.25);
     }
     .copy-btn.copied {
       background: #22c55e;
