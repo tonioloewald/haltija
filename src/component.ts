@@ -46,6 +46,7 @@ import type {
   SemanticEventCategory,
   SemanticEventSubscription,
   SemanticEventPreset,
+  ActionableSummary,
 } from './types'
 
 // Component version - imported from shared version file
@@ -624,6 +625,247 @@ const DEFAULT_IGNORE_SELECTORS = [
 ]
 
 /**
+ * Visibility detection result
+ */
+interface VisibilityInfo {
+  visible: boolean
+  reason?: 'display' | 'visibility' | 'hidden-attr' | 'aria-hidden' | 'opacity' | 'zero-size' | 'off-screen' | 'collapsed-details'
+}
+
+/**
+ * Check if an element is visible to the user.
+ * Returns visibility status and reason if hidden.
+ */
+function checkVisibility(el: Element): VisibilityInfo {
+  const htmlEl = el as HTMLElement
+  
+  // Check [hidden] attribute
+  if (htmlEl.hidden) {
+    return { visible: false, reason: 'hidden-attr' }
+  }
+  
+  // Check aria-hidden
+  if (el.getAttribute('aria-hidden') === 'true') {
+    return { visible: false, reason: 'aria-hidden' }
+  }
+  
+  // Check if inside a closed <details> element
+  const closedDetails = el.closest('details:not([open])')
+  if (closedDetails && !el.closest('summary')) {
+    // Element is inside closed details but not the summary
+    return { visible: false, reason: 'collapsed-details' }
+  }
+  
+  // Check computed styles
+  const computed = getComputedStyle(el)
+  
+  if (computed.display === 'none') {
+    return { visible: false, reason: 'display' }
+  }
+  
+  if (computed.visibility === 'hidden') {
+    return { visible: false, reason: 'visibility' }
+  }
+  
+  if (parseFloat(computed.opacity) === 0) {
+    return { visible: false, reason: 'opacity' }
+  }
+  
+  // Check for zero dimensions
+  const rect = el.getBoundingClientRect()
+  if (rect.width === 0 && rect.height === 0) {
+    return { visible: false, reason: 'zero-size' }
+  }
+  
+  // Check if off-screen
+  const inViewport = rect.bottom > 0 && 
+                     rect.top < window.innerHeight && 
+                     rect.right > 0 && 
+                     rect.left < window.innerWidth
+  if (!inViewport && (rect.width > 0 || rect.height > 0)) {
+    return { visible: false, reason: 'off-screen' }
+  }
+  
+  return { visible: true }
+}
+
+/**
+ * Get the label for an input element (from <label> or aria-label)
+ */
+function getInputLabel(el: Element): string | undefined {
+  const htmlEl = el as HTMLInputElement
+  
+  // Check aria-label first
+  const ariaLabel = el.getAttribute('aria-label')
+  if (ariaLabel) return ariaLabel
+  
+  // Check aria-labelledby
+  const labelledBy = el.getAttribute('aria-labelledby')
+  if (labelledBy) {
+    const labelEl = document.getElementById(labelledBy)
+    if (labelEl) return labelEl.textContent?.trim()
+  }
+  
+  // Check for associated <label>
+  if (htmlEl.id) {
+    const label = document.querySelector(`label[for="${htmlEl.id}"]`)
+    if (label) return label.textContent?.trim()
+  }
+  
+  // Check for wrapping <label>
+  const parentLabel = el.closest('label')
+  if (parentLabel) {
+    // Get text content excluding the input itself
+    const clone = parentLabel.cloneNode(true) as HTMLElement
+    const inputs = clone.querySelectorAll('input, select, textarea')
+    inputs.forEach(input => input.remove())
+    const text = clone.textContent?.trim()
+    if (text) return text
+  }
+  
+  // Check placeholder as fallback
+  if (htmlEl.placeholder) return htmlEl.placeholder
+  
+  return undefined
+}
+
+/**
+ * Build an actionable summary of the page
+ */
+function buildActionableSummary(root: Element): ActionableSummary {
+  const summary: ActionableSummary = {
+    url: window.location.href,
+    title: document.title,
+    headings: [],
+    buttons: [],
+    links: [],
+    inputs: [],
+    selects: [],
+    summary: {
+      totalInteractive: 0,
+      visibleInteractive: 0,
+      hiddenCount: 0,
+      formCount: document.forms.length,
+    }
+  }
+  
+  // Collect headings
+  const headings = root.querySelectorAll('h1, h2, h3, h4, h5, h6')
+  for (const h of headings) {
+    const vis = checkVisibility(h)
+    if (vis.visible) {
+      const level = parseInt(h.tagName[1])
+      summary.headings.push({
+        level,
+        text: (h as HTMLElement).innerText?.trim().slice(0, 100) || '',
+        selector: getSelector(h),
+      })
+    }
+  }
+  
+  // Collect buttons
+  const buttons = root.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]')
+  for (const btn of buttons) {
+    const vis = checkVisibility(btn)
+    const htmlBtn = btn as HTMLButtonElement
+    const text = htmlBtn.innerText?.trim() || htmlBtn.value || btn.getAttribute('aria-label') || ''
+    
+    summary.summary.totalInteractive++
+    if (vis.visible) {
+      summary.summary.visibleInteractive++
+    } else {
+      summary.summary.hiddenCount++
+    }
+    
+    summary.buttons.push({
+      text: text.slice(0, 100),
+      selector: getSelector(btn),
+      disabled: htmlBtn.disabled || undefined,
+      hidden: vis.visible ? undefined : true,
+    })
+  }
+  
+  // Collect links
+  const links = root.querySelectorAll('a[href]')
+  for (const link of links) {
+    const vis = checkVisibility(link)
+    const htmlLink = link as HTMLAnchorElement
+    const text = htmlLink.innerText?.trim() || htmlLink.getAttribute('aria-label') || ''
+    
+    summary.summary.totalInteractive++
+    if (vis.visible) {
+      summary.summary.visibleInteractive++
+    } else {
+      summary.summary.hiddenCount++
+    }
+    
+    // Skip empty links and anchor-only links
+    if (!text && !htmlLink.getAttribute('aria-label')) continue
+    
+    summary.links.push({
+      text: text.slice(0, 100),
+      href: htmlLink.href,
+      selector: getSelector(link),
+      hidden: vis.visible ? undefined : true,
+    })
+  }
+  
+  // Collect inputs
+  const inputs = root.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea')
+  for (const input of inputs) {
+    const vis = checkVisibility(input)
+    const htmlInput = input as HTMLInputElement
+    
+    summary.summary.totalInteractive++
+    if (vis.visible) {
+      summary.summary.visibleInteractive++
+    } else {
+      summary.summary.hiddenCount++
+    }
+    
+    summary.inputs.push({
+      type: htmlInput.type || 'text',
+      name: htmlInput.name || undefined,
+      label: getInputLabel(input),
+      placeholder: htmlInput.placeholder || undefined,
+      value: htmlInput.type === 'password' ? undefined : htmlInput.value || undefined,
+      selector: getSelector(input),
+      disabled: htmlInput.disabled || undefined,
+      required: htmlInput.required || undefined,
+      hidden: vis.visible ? undefined : true,
+    })
+  }
+  
+  // Collect selects
+  const selects = root.querySelectorAll('select')
+  for (const select of selects) {
+    const vis = checkVisibility(select)
+    const htmlSelect = select as HTMLSelectElement
+    
+    summary.summary.totalInteractive++
+    if (vis.visible) {
+      summary.summary.visibleInteractive++
+    } else {
+      summary.summary.hiddenCount++
+    }
+    
+    const options = Array.from(htmlSelect.options).map(opt => opt.text.trim()).slice(0, 20)
+    
+    summary.selects.push({
+      name: htmlSelect.name || undefined,
+      label: getInputLabel(select),
+      options,
+      selected: htmlSelect.options[htmlSelect.selectedIndex]?.text.trim(),
+      selector: getSelector(select),
+      disabled: htmlSelect.disabled || undefined,
+      hidden: vis.visible ? undefined : true,
+    })
+  }
+  
+  return summary
+}
+
+/**
  * Build a DOM tree representation
  */
 function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): DomTreeNode | null {
@@ -638,6 +880,7 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
     compact = false,
     pierceShadow = false,
+    visibleOnly = false,
   } = options
 
   // Check if should be ignored
@@ -647,6 +890,12 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     } catch {
       if (el.tagName.toLowerCase() === selector.toLowerCase()) return null
     }
+  }
+
+  // Check visibility if visibleOnly mode
+  const visibility = checkVisibility(el)
+  if (visibleOnly && !visibility.visible) {
+    return null
   }
 
   const tagName = el.tagName.toLowerCase()
@@ -736,9 +985,18 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     flags.shadowRoot = true
   }
   
-  // Hidden
-  if (htmlEl.hidden || el.getAttribute('aria-hidden') === 'true') {
+  // Visibility flags (use already-computed visibility info)
+  if (!visibility.visible) {
     flags.hidden = true
+    if (visibility.reason) {
+      flags.hiddenReason = visibility.reason
+    }
+    if (visibility.reason === 'off-screen') {
+      flags.offScreen = true
+    }
+    if (visibility.reason === 'collapsed-details') {
+      flags.collapsed = true
+    }
   }
   
   // Has ARIA
@@ -1066,6 +1324,7 @@ export class DevChannel extends HTMLElement {
     popstate?: (e: PopStateEvent) => void
     mousedown?: (e: MouseEvent) => void
     mouseup?: (e: MouseEvent) => void
+    originalFetch?: typeof fetch
   } = {}
   
   // Selection tool state
@@ -3943,6 +4202,55 @@ export class DevChannel extends HTMLElement {
         trigger: 'initial',
       },
     })
+    
+    // Intercept fetch to capture network errors
+    const originalFetch = window.fetch
+    const self = this
+    window.fetch = async function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const method = init?.method || 'GET'
+      const startTime = Date.now()
+      
+      try {
+        const response = await originalFetch.call(window, input, init)
+        
+        // Log failed responses (4xx, 5xx)
+        if (!response.ok) {
+          self.emitSemanticEvent({
+            type: 'network:error',
+            timestamp: Date.now(),
+            category: 'console',
+            payload: {
+              url,
+              method,
+              status: response.status,
+              statusText: response.statusText,
+              duration: Date.now() - startTime,
+            },
+          })
+        }
+        
+        return response
+      } catch (error) {
+        // Log network failures (connection refused, CORS, etc.)
+        self.emitSemanticEvent({
+          type: 'network:error',
+          timestamp: Date.now(),
+          category: 'console',
+          payload: {
+            url,
+            method,
+            status: 0,
+            statusText: error instanceof Error ? error.message : 'Network error',
+            duration: Date.now() - startTime,
+          },
+        })
+        throw error
+      }
+    }
+    
+    // Store original fetch for cleanup
+    this.semanticHandlers.originalFetch = originalFetch
   }
   
   private stopSemanticEvents() {
@@ -4011,6 +4319,11 @@ export class DevChannel extends HTMLElement {
     }
     if (this.semanticHandlers.mouseup) {
       document.removeEventListener('mouseup', this.semanticHandlers.mouseup, true)
+    }
+    
+    // Restore original fetch
+    if (this.semanticHandlers.originalFetch) {
+      window.fetch = this.semanticHandlers.originalFetch
     }
     
     this.semanticHandlers = {}
@@ -4639,7 +4952,7 @@ export class DevChannel extends HTMLElement {
     }
   }
   
-  private handleDomMessage(msg: DevMessage) {
+  private async handleDomMessage(msg: DevMessage) {
     const { action, payload } = msg
     
     if (action === 'query') {
@@ -4694,7 +5007,7 @@ export class DevChannel extends HTMLElement {
       hideHighlight()
       this.respond(msg.id, true)
     } else if (action === 'tree') {
-      // Build a DOM tree representation
+      // Build a DOM tree representation or actionable summary
       try {
         const request = payload as DomTreeRequest
         const el = document.querySelector(request.selector)
@@ -4702,16 +5015,21 @@ export class DevChannel extends HTMLElement {
           this.respond(msg.id, false, null, `Element not found: ${request.selector}`)
           return
         }
-        const tree = buildDomTree(el, request)
-        this.respond(msg.id, true, tree)
+        
+        // Check for actionable mode
+        if (request.mode === 'actionable') {
+          const summary = buildActionableSummary(el)
+          this.respond(msg.id, true, summary)
+        } else {
+          const tree = buildDomTree(el, request)
+          this.respond(msg.id, true, tree)
+        }
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }
     } else if (action === 'screenshot') {
-      // Note: This captures via the page, not the highlight overlay
-      // The highlight will be visible in the screenshot if it's showing
+      // Capture screenshot using html2canvas if available, or return viewport info
       try {
-        // Use html2canvas if available, otherwise return viewport info
         const viewport = {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -4721,8 +5039,41 @@ export class DevChannel extends HTMLElement {
           url: location.href,
           title: document.title,
         }
-        // Could integrate html2canvas here for actual screenshot
-        this.respond(msg.id, true, { viewport, note: 'Use browser devtools or Playwright for actual screenshot capture' })
+        
+        // Try html2canvas if available
+        const html2canvas = (window as any).html2canvas
+        if (html2canvas) {
+          const target = payload?.selector 
+            ? document.querySelector(payload.selector) 
+            : document.body
+          if (!target) {
+            this.respond(msg.id, false, null, `Element not found: ${payload?.selector}`)
+            return
+          }
+          
+          const canvas = await html2canvas(target, {
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scale: payload?.scale || 1,
+          })
+          const dataUrl = canvas.toDataURL('image/png')
+          this.respond(msg.id, true, { 
+            image: dataUrl, 
+            viewport,
+            format: 'png',
+            width: canvas.width,
+            height: canvas.height,
+          })
+        } else {
+          // No html2canvas - return viewport info only
+          // Electron can handle actual capture via main process
+          this.respond(msg.id, true, { 
+            viewport, 
+            image: null,
+            note: 'html2canvas not loaded. For actual capture, use Electron or load html2canvas.',
+          })
+        }
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }

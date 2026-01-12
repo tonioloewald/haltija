@@ -1260,6 +1260,267 @@ test.describe('haltija-dev test generation', () => {
   })
 })
 
+test.describe('haltija-dev visibility and actionable mode', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+  })
+  
+  test('tree with visibleOnly filters hidden elements', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'visibility-test'
+      container.innerHTML = `
+        <button id="visible-btn">Visible</button>
+        <button id="hidden-btn" hidden>Hidden via attribute</button>
+        <button id="display-none" style="display:none">Hidden via display</button>
+        <button id="visibility-hidden" style="visibility:hidden">Hidden via visibility</button>
+        <button id="aria-hidden" aria-hidden="true">Hidden via aria</button>
+        <details id="closed-details">
+          <summary>Summary</summary>
+          <button id="collapsed-btn">Inside closed details</button>
+        </details>
+        <details id="open-details" open>
+          <summary>Open Summary</summary>
+          <button id="expanded-btn">Inside open details</button>
+        </details>
+      `
+      document.body.appendChild(container)
+    })
+    
+    // Without visibleOnly - should see all elements
+    const resAll = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#visibility-test', depth: 3, visibleOnly: false })
+    })
+    const dataAll = await resAll.json()
+    expect(dataAll.success).toBe(true)
+    
+    // Count buttons with specific IDs (our test buttons)
+    const findButtons = (node: any, ids: string[]): string[] => {
+      const found: string[] = []
+      if (node.tag === 'button' && ids.includes(node.id)) {
+        found.push(node.id)
+      }
+      if (node.children) {
+        for (const child of node.children) {
+          found.push(...findButtons(child, ids))
+        }
+      }
+      return found
+    }
+    
+    const testButtonIds = ['visible-btn', 'hidden-btn', 'display-none', 'visibility-hidden', 'aria-hidden', 'collapsed-btn', 'expanded-btn']
+    const allButtons = findButtons(dataAll.data, testButtonIds)
+    expect(allButtons.length).toBe(7) // All 7 test buttons (not counting summary buttons)
+    
+    // With visibleOnly - should only see visible elements
+    const resVisible = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#visibility-test', depth: 3, visibleOnly: true })
+    })
+    const dataVisible = await resVisible.json()
+    expect(dataVisible.success).toBe(true)
+    const visibleButtons = findButtons(dataVisible.data, testButtonIds)
+    expect(visibleButtons.length).toBe(2) // Only visible-btn and expanded-btn
+    expect(visibleButtons).toContain('visible-btn')
+    expect(visibleButtons).toContain('expanded-btn')
+  })
+  
+  test('tree flags indicate hidden reasons', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'hidden-flags-test'
+      container.innerHTML = `
+        <div id="hidden-attr" hidden>Hidden</div>
+        <div id="aria-hidden" aria-hidden="true">Aria Hidden</div>
+        <details id="closed-details">
+          <summary>Summary</summary>
+          <div id="collapsed-content">Collapsed</div>
+        </details>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#hidden-flags-test', depth: 3, visibleOnly: false })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    // Find each element and check flags
+    const findNode = (node: any, id: string): any => {
+      if (node.id === id) return node
+      if (node.children) {
+        for (const child of node.children) {
+          const found = findNode(child, id)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    
+    const hiddenAttr = findNode(data.data, 'hidden-attr')
+    expect(hiddenAttr.flags.hidden).toBe(true)
+    expect(hiddenAttr.flags.hiddenReason).toBe('hidden-attr')
+    
+    const ariaHidden = findNode(data.data, 'aria-hidden')
+    expect(ariaHidden.flags.hidden).toBe(true)
+    expect(ariaHidden.flags.hiddenReason).toBe('aria-hidden')
+    
+    const collapsedContent = findNode(data.data, 'collapsed-content')
+    expect(collapsedContent.flags.hidden).toBe(true)
+    expect(collapsedContent.flags.collapsed).toBe(true)
+    expect(collapsedContent.flags.hiddenReason).toBe('collapsed-details')
+  })
+  
+  test('tree actionable mode returns summary', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'actionable-test'
+      container.innerHTML = `
+        <h1>Page Title</h1>
+        <h2>Section</h2>
+        <button id="btn1">Click Me</button>
+        <button id="btn2" disabled>Disabled</button>
+        <a href="/about" id="link1">About</a>
+        <a href="/contact" id="link2" style="display:none">Hidden Link</a>
+        <form>
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" placeholder="Enter name" required>
+          <input type="email" id="email" name="email" value="test@example.com">
+          <select id="country" name="country">
+            <option>USA</option>
+            <option selected>Canada</option>
+            <option>UK</option>
+          </select>
+        </form>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#actionable-test', mode: 'actionable' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    // Check structure
+    expect(data.data.url).toBeDefined()
+    expect(data.data.title).toBeDefined()
+    
+    // Check headings
+    expect(data.data.headings.length).toBe(2)
+    expect(data.data.headings[0].level).toBe(1)
+    expect(data.data.headings[0].text).toBe('Page Title')
+    
+    // Check buttons
+    expect(data.data.buttons.length).toBe(2)
+    const btn1 = data.data.buttons.find((b: any) => b.text === 'Click Me')
+    expect(btn1).toBeDefined()
+    expect(btn1.disabled).toBeUndefined()
+    const btn2 = data.data.buttons.find((b: any) => b.text === 'Disabled')
+    expect(btn2.disabled).toBe(true)
+    
+    // Check links
+    expect(data.data.links.length).toBe(2)
+    const visibleLink = data.data.links.find((l: any) => l.text === 'About')
+    expect(visibleLink.hidden).toBeUndefined()
+    const hiddenLink = data.data.links.find((l: any) => l.text === 'Hidden Link')
+    expect(hiddenLink.hidden).toBe(true)
+    
+    // Check inputs
+    expect(data.data.inputs.length).toBe(2)
+    const nameInput = data.data.inputs.find((i: any) => i.name === 'name')
+    expect(nameInput.label).toBe('Name')
+    expect(nameInput.required).toBe(true)
+    expect(nameInput.placeholder).toBe('Enter name')
+    const emailInput = data.data.inputs.find((i: any) => i.name === 'email')
+    expect(emailInput.value).toBe('test@example.com')
+    
+    // Check selects
+    expect(data.data.selects.length).toBe(1)
+    expect(data.data.selects[0].options).toContain('Canada')
+    expect(data.data.selects[0].selected).toBe('Canada')
+    
+    // Check summary
+    expect(data.data.summary.totalInteractive).toBeGreaterThan(0)
+    expect(data.data.summary.formCount).toBe(1)
+  })
+})
+
+test.describe('haltija-dev network error tracking', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+  })
+  
+  test('captures failed fetch requests in semantic events', async ({ page }) => {
+    // Start watching semantic events
+    await fetch(`${SERVER_URL}/events/watch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset: 'debug' }) // debug preset includes console events
+    })
+    
+    await page.waitForTimeout(100)
+    
+    // Make a fetch request that will fail (404)
+    await page.evaluate(async () => {
+      try {
+        await fetch('/api/nonexistent-endpoint-12345')
+      } catch (e) {
+        // Expected to fail
+      }
+    })
+    
+    await page.waitForTimeout(300)
+    
+    // Check events for network error
+    const eventsRes = await fetch(`${SERVER_URL}/events`)
+    const eventsData = await eventsRes.json()
+    const events = eventsData.data?.events || []
+    
+    const networkError = events.find((e: any) => e.type === 'network:error')
+    expect(networkError).toBeDefined()
+    expect(networkError.payload.url).toContain('nonexistent-endpoint-12345')
+    // Status could be 404 (server responded with error) or 0 (network/CORS error)
+    expect([0, 404]).toContain(networkError.payload.status)
+    expect(networkError.payload.method).toBe('GET')
+    
+    await fetch(`${SERVER_URL}/events/unwatch`, { method: 'POST' })
+  })
+})
+
+test.describe('haltija-dev screenshot endpoint', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+  })
+  
+  test('screenshot returns viewport info', async ({ page }) => {
+    const res = await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.viewport).toBeDefined()
+    expect(data.data.viewport.width).toBeGreaterThan(0)
+    expect(data.data.viewport.height).toBeGreaterThan(0)
+    expect(data.data.viewport.url).toBeDefined()
+    expect(data.data.viewport.title).toBeDefined()
+  })
+})
+
 test.describe('haltija-dev user recordings', () => {
   test('user recording is saved server-side and retrievable by agent', async ({ page }) => {
     // Navigate and wait for widget to connect

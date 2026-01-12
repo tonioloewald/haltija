@@ -1630,6 +1630,20 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       ignoreSelectors: body.ignoreSelectors,
       compact: body.compact,
       pierceShadow: body.pierceShadow,
+      visibleOnly: body.visibleOnly,
+      mode: body.mode,
+    })
+    return Response.json(response, { headers })
+  }
+  
+  // Screenshot - capture page as base64 image
+  // Note: Full screenshot requires Electron integration or html2canvas
+  // This endpoint provides viewport info and can be enhanced with actual capture
+  if (path === '/screenshot' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    const response = await requestFromBrowser('dom', 'screenshot', {
+      selector: body.selector,
+      fullPage: body.fullPage,
     })
     return Response.json(response, { headers })
   }

@@ -836,6 +836,10 @@ export interface DomTreeRequest {
   compact?: boolean
   /** Pierce shadow DOM boundaries (default: false) */
   pierceShadow?: boolean
+  /** Filter out hidden elements (default: false). When true, elements that are not visible are excluded from the tree. */
+  visibleOnly?: boolean
+  /** Return actionable summary instead of full tree (buttons, links, inputs, headings) */
+  mode?: 'tree' | 'actionable'
 }
 
 /**
@@ -869,10 +873,16 @@ export interface DomTreeNode {
     customElement?: boolean
     /** Has shadow DOM */
     shadowRoot?: boolean
-    /** Is hidden */
+    /** Is hidden (display:none, visibility:hidden, [hidden], aria-hidden, etc.) */
     hidden?: boolean
     /** Has ARIA attributes */
     hasAria?: boolean
+    /** Is off-screen (outside viewport) */
+    offScreen?: boolean
+    /** Is inside a closed <details> element */
+    collapsed?: boolean
+    /** Reason why element is not visible (if hidden, offScreen, or collapsed) */
+    hiddenReason?: 'display' | 'visibility' | 'hidden-attr' | 'aria-hidden' | 'opacity' | 'zero-size' | 'off-screen' | 'collapsed-details'
   }
   /** Position info (if requested) */
   box?: { x: number; y: number; w: number; h: number; visible: boolean }
@@ -880,6 +890,66 @@ export interface DomTreeNode {
   truncated?: boolean
   /** Child count if children were truncated */
   childCount?: number
+}
+
+/**
+ * Actionable summary - what an AI agent can interact with on the page.
+ * Returned when DomTreeRequest.mode === 'actionable'
+ */
+export interface ActionableSummary {
+  /** Page URL */
+  url: string
+  /** Page title */
+  title: string
+  /** Headings on the page (h1-h6) */
+  headings: Array<{
+    level: number
+    text: string
+    selector: string
+  }>
+  /** Buttons that can be clicked */
+  buttons: Array<{
+    text: string
+    selector: string
+    disabled?: boolean
+    hidden?: boolean
+  }>
+  /** Links that can be navigated */
+  links: Array<{
+    text: string
+    href: string
+    selector: string
+    hidden?: boolean
+  }>
+  /** Form inputs that can be filled */
+  inputs: Array<{
+    type: string
+    name?: string
+    label?: string
+    placeholder?: string
+    value?: string
+    selector: string
+    disabled?: boolean
+    required?: boolean
+    hidden?: boolean
+  }>
+  /** Select dropdowns */
+  selects: Array<{
+    name?: string
+    label?: string
+    options: string[]
+    selected?: string
+    selector: string
+    disabled?: boolean
+    hidden?: boolean
+  }>
+  /** Summary of what's on the page */
+  summary: {
+    totalInteractive: number
+    visibleInteractive: number
+    hiddenCount: number
+    formCount: number
+  }
 }
 
 // ============================================

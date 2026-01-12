@@ -580,6 +580,178 @@
     "#__vconsole",
     '[id^="__"]'
   ];
+  function checkVisibility(el) {
+    const htmlEl = el;
+    if (htmlEl.hidden) {
+      return { visible: false, reason: "hidden-attr" };
+    }
+    if (el.getAttribute("aria-hidden") === "true") {
+      return { visible: false, reason: "aria-hidden" };
+    }
+    const closedDetails = el.closest("details:not([open])");
+    if (closedDetails && !el.closest("summary")) {
+      return { visible: false, reason: "collapsed-details" };
+    }
+    const computed = getComputedStyle(el);
+    if (computed.display === "none") {
+      return { visible: false, reason: "display" };
+    }
+    if (computed.visibility === "hidden") {
+      return { visible: false, reason: "visibility" };
+    }
+    if (parseFloat(computed.opacity) === 0) {
+      return { visible: false, reason: "opacity" };
+    }
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return { visible: false, reason: "zero-size" };
+    }
+    const inViewport = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+    if (!inViewport && (rect.width > 0 || rect.height > 0)) {
+      return { visible: false, reason: "off-screen" };
+    }
+    return { visible: true };
+  }
+  function getInputLabel(el) {
+    const htmlEl = el;
+    const ariaLabel = el.getAttribute("aria-label");
+    if (ariaLabel)
+      return ariaLabel;
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const labelEl = document.getElementById(labelledBy);
+      if (labelEl)
+        return labelEl.textContent?.trim();
+    }
+    if (htmlEl.id) {
+      const label = document.querySelector(`label[for="${htmlEl.id}"]`);
+      if (label)
+        return label.textContent?.trim();
+    }
+    const parentLabel = el.closest("label");
+    if (parentLabel) {
+      const clone = parentLabel.cloneNode(true);
+      const inputs = clone.querySelectorAll("input, select, textarea");
+      inputs.forEach((input) => input.remove());
+      const text = clone.textContent?.trim();
+      if (text)
+        return text;
+    }
+    if (htmlEl.placeholder)
+      return htmlEl.placeholder;
+    return;
+  }
+  function buildActionableSummary(root) {
+    const summary = {
+      url: window.location.href,
+      title: document.title,
+      headings: [],
+      buttons: [],
+      links: [],
+      inputs: [],
+      selects: [],
+      summary: {
+        totalInteractive: 0,
+        visibleInteractive: 0,
+        hiddenCount: 0,
+        formCount: document.forms.length
+      }
+    };
+    const headings = root.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    for (const h of headings) {
+      const vis = checkVisibility(h);
+      if (vis.visible) {
+        const level = parseInt(h.tagName[1]);
+        summary.headings.push({
+          level,
+          text: h.innerText?.trim().slice(0, 100) || "",
+          selector: getSelector(h)
+        });
+      }
+    }
+    const buttons = root.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]');
+    for (const btn of buttons) {
+      const vis = checkVisibility(btn);
+      const htmlBtn = btn;
+      const text = htmlBtn.innerText?.trim() || htmlBtn.value || btn.getAttribute("aria-label") || "";
+      summary.summary.totalInteractive++;
+      if (vis.visible) {
+        summary.summary.visibleInteractive++;
+      } else {
+        summary.summary.hiddenCount++;
+      }
+      summary.buttons.push({
+        text: text.slice(0, 100),
+        selector: getSelector(btn),
+        disabled: htmlBtn.disabled || undefined,
+        hidden: vis.visible ? undefined : true
+      });
+    }
+    const links = root.querySelectorAll("a[href]");
+    for (const link of links) {
+      const vis = checkVisibility(link);
+      const htmlLink = link;
+      const text = htmlLink.innerText?.trim() || htmlLink.getAttribute("aria-label") || "";
+      summary.summary.totalInteractive++;
+      if (vis.visible) {
+        summary.summary.visibleInteractive++;
+      } else {
+        summary.summary.hiddenCount++;
+      }
+      if (!text && !htmlLink.getAttribute("aria-label"))
+        continue;
+      summary.links.push({
+        text: text.slice(0, 100),
+        href: htmlLink.href,
+        selector: getSelector(link),
+        hidden: vis.visible ? undefined : true
+      });
+    }
+    const inputs = root.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea');
+    for (const input of inputs) {
+      const vis = checkVisibility(input);
+      const htmlInput = input;
+      summary.summary.totalInteractive++;
+      if (vis.visible) {
+        summary.summary.visibleInteractive++;
+      } else {
+        summary.summary.hiddenCount++;
+      }
+      summary.inputs.push({
+        type: htmlInput.type || "text",
+        name: htmlInput.name || undefined,
+        label: getInputLabel(input),
+        placeholder: htmlInput.placeholder || undefined,
+        value: htmlInput.type === "password" ? undefined : htmlInput.value || undefined,
+        selector: getSelector(input),
+        disabled: htmlInput.disabled || undefined,
+        required: htmlInput.required || undefined,
+        hidden: vis.visible ? undefined : true
+      });
+    }
+    const selects = root.querySelectorAll("select");
+    for (const select of selects) {
+      const vis = checkVisibility(select);
+      const htmlSelect = select;
+      summary.summary.totalInteractive++;
+      if (vis.visible) {
+        summary.summary.visibleInteractive++;
+      } else {
+        summary.summary.hiddenCount++;
+      }
+      const options = Array.from(htmlSelect.options).map((opt) => opt.text.trim()).slice(0, 20);
+      summary.selects.push({
+        name: htmlSelect.name || undefined,
+        label: getInputLabel(select),
+        options,
+        selected: htmlSelect.options[htmlSelect.selectedIndex]?.text.trim(),
+        selector: getSelector(select),
+        disabled: htmlSelect.disabled || undefined,
+        hidden: vis.visible ? undefined : true
+      });
+    }
+    return summary;
+  }
   function buildDomTree(el, options, currentDepth = 0) {
     const {
       depth = 3,
@@ -591,7 +763,8 @@
       interestingAttributes = DEFAULT_INTERESTING_ATTRS,
       ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
       compact = false,
-      pierceShadow = false
+      pierceShadow = false,
+      visibleOnly = false
     } = options;
     for (const selector of ignoreSelectors) {
       try {
@@ -601,6 +774,10 @@
         if (el.tagName.toLowerCase() === selector.toLowerCase())
           return null;
       }
+    }
+    const visibility = checkVisibility(el);
+    if (visibleOnly && !visibility.visible) {
+      return null;
     }
     const tagName = el.tagName.toLowerCase();
     const htmlEl = el;
@@ -661,8 +838,17 @@
     if (el.shadowRoot) {
       flags.shadowRoot = true;
     }
-    if (htmlEl.hidden || el.getAttribute("aria-hidden") === "true") {
+    if (!visibility.visible) {
       flags.hidden = true;
+      if (visibility.reason) {
+        flags.hiddenReason = visibility.reason;
+      }
+      if (visibility.reason === "off-screen") {
+        flags.offScreen = true;
+      }
+      if (visibility.reason === "collapsed-details") {
+        flags.collapsed = true;
+      }
     }
     if (Array.from(el.attributes).some((a) => a.name.startsWith("aria-") || a.name === "role")) {
       flags.hasAria = true;
@@ -3250,6 +3436,46 @@
           trigger: "initial"
         }
       });
+      const originalFetch = window.fetch;
+      const self = this;
+      window.fetch = async function(input, init) {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const method = init?.method || "GET";
+        const startTime = Date.now();
+        try {
+          const response = await originalFetch.call(window, input, init);
+          if (!response.ok) {
+            self.emitSemanticEvent({
+              type: "network:error",
+              timestamp: Date.now(),
+              category: "console",
+              payload: {
+                url,
+                method,
+                status: response.status,
+                statusText: response.statusText,
+                duration: Date.now() - startTime
+              }
+            });
+          }
+          return response;
+        } catch (error) {
+          self.emitSemanticEvent({
+            type: "network:error",
+            timestamp: Date.now(),
+            category: "console",
+            payload: {
+              url,
+              method,
+              status: 0,
+              statusText: error instanceof Error ? error.message : "Network error",
+              duration: Date.now() - startTime
+            }
+          });
+          throw error;
+        }
+      };
+      this.semanticHandlers.originalFetch = originalFetch;
     }
     stopSemanticEvents() {
       if (!this.semanticEventsEnabled)
@@ -3314,6 +3540,9 @@
       }
       if (this.semanticHandlers.mouseup) {
         document.removeEventListener("mouseup", this.semanticHandlers.mouseup, true);
+      }
+      if (this.semanticHandlers.originalFetch) {
+        window.fetch = this.semanticHandlers.originalFetch;
       }
       this.semanticHandlers = {};
     }
@@ -3800,7 +4029,7 @@
         this.respond(msg2.id, false, null, `Unknown tabs action: ${action2}`);
       }
     }
-    handleDomMessage(msg2) {
+    async handleDomMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
       if (action2 === "query") {
         const req = payload2;
@@ -3861,8 +4090,13 @@
             this.respond(msg2.id, false, null, `Element not found: ${request.selector}`);
             return;
           }
-          const tree = buildDomTree(el, request);
-          this.respond(msg2.id, true, tree);
+          if (request.mode === "actionable") {
+            const summary = buildActionableSummary(el);
+            this.respond(msg2.id, true, summary);
+          } else {
+            const tree = buildDomTree(el, request);
+            this.respond(msg2.id, true, tree);
+          }
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
@@ -3877,7 +4111,34 @@
             url: location.href,
             title: document.title
           };
-          this.respond(msg2.id, true, { viewport, note: "Use browser devtools or Playwright for actual screenshot capture" });
+          const html2canvas = window.html2canvas;
+          if (html2canvas) {
+            const target = payload2?.selector ? document.querySelector(payload2.selector) : document.body;
+            if (!target) {
+              this.respond(msg2.id, false, null, `Element not found: ${payload2?.selector}`);
+              return;
+            }
+            const canvas = await html2canvas(target, {
+              useCORS: true,
+              allowTaint: true,
+              logging: false,
+              scale: payload2?.scale || 1
+            });
+            const dataUrl = canvas.toDataURL("image/png");
+            this.respond(msg2.id, true, {
+              image: dataUrl,
+              viewport,
+              format: "png",
+              width: canvas.width,
+              height: canvas.height
+            });
+          } else {
+            this.respond(msg2.id, true, {
+              viewport,
+              image: null,
+              note: "html2canvas not loaded. For actual capture, use Electron or load html2canvas."
+            });
+          }
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
