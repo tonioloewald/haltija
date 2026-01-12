@@ -5480,9 +5480,12 @@ registerDevChannel()
 
 // Export for bookmarklet injection
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
-  // Check for existing widget using the current tag name
-  if (document.querySelector(currentTagName)) {
-    console.log(`${LOG_PREFIX} Already injected`)
+  // Check for any existing haltija widget (handles renamed tags like haltija-dev-1, haltija-dev-2)
+  const existingWidget = Array.from(document.querySelectorAll('*')).find(
+    el => el.tagName.toLowerCase().startsWith('haltija-dev')
+  )
+  if (existingWidget) {
+    console.log(`${LOG_PREFIX} Already injected as`, existingWidget.tagName.toLowerCase())
     return
   }
   

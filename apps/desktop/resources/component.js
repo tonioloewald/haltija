@@ -3586,6 +3586,9 @@
         case "navigation":
           this.handleNavigationMessage(msg2);
           break;
+        case "tabs":
+          this.handleTabsMessage(msg2);
+          break;
         case "mutations":
           this.handleMutationsMessage(msg2);
           break;
@@ -3751,6 +3754,38 @@
           search: location.search,
           hash: location.hash
         });
+      }
+    }
+    handleTabsMessage(msg2) {
+      const { action: action2, payload: payload2 } = msg2;
+      const haltija = window.haltija;
+      if (action2 === "open") {
+        if (haltija?.openTab) {
+          haltija.openTab(payload2.url).then((opened) => {
+            this.respond(msg2.id, true, { opened });
+          }).catch((err) => {
+            this.respond(msg2.id, false, null, err.message);
+          });
+        } else {
+          window.open(payload2.url, "_blank");
+          this.respond(msg2.id, true, { opened: true, fallback: true });
+        }
+      } else if (action2 === "close") {
+        if (haltija?.closeTab) {
+          haltija.closeTab(payload2.windowId);
+          this.respond(msg2.id, true);
+        } else {
+          this.respond(msg2.id, false, null, "Tab close not available outside Electron app");
+        }
+      } else if (action2 === "focus") {
+        if (haltija?.focusTab) {
+          haltija.focusTab(payload2.windowId);
+          this.respond(msg2.id, true);
+        } else {
+          this.respond(msg2.id, false, null, "Tab focus not available outside Electron app");
+        }
+      } else {
+        this.respond(msg2.id, false, null, `Unknown tabs action: ${action2}`);
       }
     }
     handleDomMessage(msg2) {

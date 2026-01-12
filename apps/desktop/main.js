@@ -142,8 +142,8 @@ async function injectWidget(webContents) {
   }
   
   try {
-    // First check if widget is already present
-    const hasWidget = await webContents.executeJavaScript(`!!document.querySelector('haltija-dev')`)
+    // First check if widget is already present (handles renamed tags like haltija-dev-1, haltija-dev-2)
+    const hasWidget = await webContents.executeJavaScript(`!!Array.from(document.querySelectorAll('*')).find(el => el.tagName.toLowerCase().startsWith('haltija-dev'))`)
     if (hasWidget) {
       console.log('[Haltija Desktop] Widget already present')
       return

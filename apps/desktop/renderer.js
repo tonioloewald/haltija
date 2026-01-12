@@ -265,7 +265,7 @@ async function injectWidget(webview) {
   const serverUrl = getServerUrl()
   const script = `
     (function() {
-      if (document.querySelector('haltija-dev')) {
+      if (Array.from(document.querySelectorAll('*')).find(el => el.tagName.toLowerCase().startsWith('haltija-dev'))) {
         return;
       }
       
