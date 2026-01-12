@@ -13,15 +13,29 @@ You're running Haltija in the desktop app. This gives you a browser with superpo
 Give your agent this prompt to get started:
 
 ```prompt
-I have Haltija running at http://localhost:8700. You can control the browser using these endpoints:
+I have Haltija running at http://localhost:8700. You can see and control my browser.
 
-- GET /status - Check connection and see connected browsers
-- GET /tree - Get the DOM structure of the current page
-- POST /click - Click an element (body: { "selector": "#button-id" })
-- POST /type - Type text (body: { "selector": "input", "text": "hello" })
-- POST /eval - Run JavaScript in the browser
+**Check connection:**
+curl http://localhost:8700/status
 
-Try GET /status first to confirm we're connected.
+**Get current page info:**
+curl http://localhost:8700/location
+
+**See the DOM structure:**
+curl -X POST http://localhost:8700/tree -H "Content-Type: application/json" -d '{"selector": "body", "depth": 3}'
+
+**Click an element:**
+curl -X POST http://localhost:8700/click -H "Content-Type: application/json" -d '{"selector": "#button-id"}'
+
+**Type text:**
+curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '{"selector": "input", "text": "hello"}'
+
+**Run JavaScript:**
+curl -X POST http://localhost:8700/eval -H "Content-Type: application/json" -d '{"code": "document.title"}'
+
+All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}
+
+Start with /status to confirm we're connected, then /location to see what page I'm on.
 ```
 
 ## Useful Commands
@@ -33,7 +47,7 @@ curl http://localhost:8700/status
 
 Get the page structure:
 ```bash
-curl http://localhost:8700/tree
+curl -X POST http://localhost:8700/tree -H "Content-Type: application/json" -d '{"selector": "body", "depth": 3}'
 ```
 
 Click a button:
