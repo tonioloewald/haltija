@@ -1444,6 +1444,43 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json(response, { headers })
   }
   
+  // Open a new tab (Electron app only)
+  // POST /tabs/open { "url": "https://example.com" }
+  if (path === '/tabs/open' && req.method === 'POST') {
+    const body = await req.json()
+    const url = body.url
+    if (!url) {
+      return Response.json({ success: false, error: 'url is required' }, { status: 400, headers })
+    }
+    // Send to browser component which will relay to Electron
+    const response = await requestFromBrowser('tabs', 'open', { url })
+    return Response.json(response, { headers })
+  }
+  
+  // Close a tab by window ID
+  // POST /tabs/close { "window": "windowId" } or ?window=windowId
+  if (path === '/tabs/close' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    const windowId = body.window || targetWindowId
+    if (!windowId) {
+      return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers })
+    }
+    const response = await requestFromBrowser('tabs', 'close', { windowId })
+    return Response.json(response, { headers })
+  }
+  
+  // Focus/activate a tab by window ID
+  // POST /tabs/focus { "window": "windowId" } or ?window=windowId  
+  if (path === '/tabs/focus' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    const windowId = body.window || targetWindowId
+    if (!windowId) {
+      return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers })
+    }
+    const response = await requestFromBrowser('tabs', 'focus', { windowId })
+    return Response.json(response, { headers })
+  }
+  
   // Restart the server
   if (path === '/restart' && req.method === 'POST') {
     console.log(`${LOG_PREFIX} Restart requested, exiting...`)

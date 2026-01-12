@@ -4363,6 +4363,9 @@ export class DevChannel extends HTMLElement {
       case 'navigation':
         this.handleNavigationMessage(msg)
         break
+      case 'tabs':
+        this.handleTabsMessage(msg)
+        break
       case 'mutations':
         this.handleMutationsMessage(msg)
         break
@@ -4577,6 +4580,45 @@ export class DevChannel extends HTMLElement {
         search: location.search,
         hash: location.hash,
       })
+    }
+  }
+  
+  private handleTabsMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    
+    // Tab management - only works in Electron app where window.haltija is exposed
+    const haltija = (window as any).haltija
+    
+    if (action === 'open') {
+      if (haltija?.openTab) {
+        haltija.openTab(payload.url)
+          .then((opened: boolean) => {
+            this.respond(msg.id, true, { opened })
+          })
+          .catch((err: any) => {
+            this.respond(msg.id, false, null, err.message)
+          })
+      } else {
+        // Fallback: open in new window (works outside Electron too)
+        window.open(payload.url, '_blank')
+        this.respond(msg.id, true, { opened: true, fallback: true })
+      }
+    } else if (action === 'close') {
+      if (haltija?.closeTab) {
+        haltija.closeTab(payload.windowId)
+        this.respond(msg.id, true)
+      } else {
+        this.respond(msg.id, false, null, 'Tab close not available outside Electron app')
+      }
+    } else if (action === 'focus') {
+      if (haltija?.focusTab) {
+        haltija.focusTab(payload.windowId)
+        this.respond(msg.id, true)
+      } else {
+        this.respond(msg.id, false, null, 'Tab focus not available outside Electron app')
+      }
+    } else {
+      this.respond(msg.id, false, null, `Unknown tabs action: ${action}`)
     }
   }
   

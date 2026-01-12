@@ -36,6 +36,9 @@ curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '
 **Run JavaScript:**
 curl -X POST http://localhost:8700/eval -H "Content-Type: application/json" -d '{"code": "document.title"}'
 
+**Open a new tab:**
+curl -X POST http://localhost:8700/tabs/open -H "Content-Type: application/json" -d '{"url": "https://example.com"}'
+
 **Target a specific tab:** Add ?window=<id> to any endpoint (get IDs from /windows)
 
 All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}

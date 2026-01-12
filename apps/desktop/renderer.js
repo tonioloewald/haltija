@@ -516,8 +516,9 @@ createTab()
 // Periodic status check
 setInterval(checkHaltija, 5000)
 
-// Expose API for widget to open new tabs
+// Expose API for widget to manage tabs
 window.haltija = window.haltija || {}
+
 window.haltija.openTab = async (url) => {
   if (settings.confirmNewTabs) {
     const allowed = await showNewTabDialog(url)
@@ -530,4 +531,22 @@ window.haltija.openTab = async (url) => {
     createTab(url)
     return true
   }
+}
+
+window.haltija.closeTab = (windowId) => {
+  // Find tab by windowId (stored in webview's window tracking)
+  // For now, we close the active tab if no specific ID
+  // TODO: implement proper windowId to tab mapping
+  if (activeTabId) {
+    closeTab(activeTabId)
+    return true
+  }
+  return false
+}
+
+window.haltija.focusTab = (windowId) => {
+  // Find tab by windowId and activate it
+  // TODO: implement proper windowId to tab mapping
+  // For now, this is a no-op since we'd need to map window IDs to tab IDs
+  return false
 }
