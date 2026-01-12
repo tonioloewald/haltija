@@ -2258,33 +2258,15 @@
     }
     getElementsInRect(rect) {
       const elements = [];
-      const seen = new Set;
-      const step = 20;
-      for (let x = rect.x;x <= rect.x + rect.width; x += step) {
-        for (let y = rect.y;y <= rect.y + rect.height; y += step) {
-          const el = document.elementFromPoint(x, y);
-          if (el && !seen.has(el) && el !== this.selectionOverlay && el !== this.selectionBox && !el.closest(TAG_NAME)) {
-            const elRect = el.getBoundingClientRect();
-            const selectionArea = rect.width * rect.height;
-            const elArea = elRect.width * elRect.height;
-            if (elArea < selectionArea * 4) {
-              seen.add(el);
-              elements.push(el);
-            }
-          }
-        }
-      }
-      const points = [
-        { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
-        { x: rect.x + 5, y: rect.y + 5 },
-        { x: rect.x + rect.width - 5, y: rect.y + 5 },
-        { x: rect.x + 5, y: rect.y + rect.height - 5 },
-        { x: rect.x + rect.width - 5, y: rect.y + rect.height - 5 }
-      ];
-      for (const pt of points) {
-        const el = document.elementFromPoint(pt.x, pt.y);
-        if (el && !seen.has(el) && el !== this.selectionOverlay && el !== this.selectionBox && !el.closest(TAG_NAME)) {
-          seen.add(el);
+      const allElements = document.body.querySelectorAll("*");
+      for (const el of allElements) {
+        if (el.closest(TAG_NAME))
+          continue;
+        const elRect = el.getBoundingClientRect();
+        if (elRect.width === 0 || elRect.height === 0)
+          continue;
+        const enclosed = elRect.left >= rect.x && elRect.right <= rect.x + rect.width && elRect.top >= rect.y && elRect.bottom <= rect.y + rect.height;
+        if (enclosed) {
           elements.push(el);
         }
       }
