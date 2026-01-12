@@ -32,7 +32,9 @@ body {
   flex-shrink: 0;
 }
 
-#tab-bar > * {
+/* Only disable drag on clickable elements, not containers */
+.tab,
+#new-tab {
   -webkit-app-region: no-drag;
 }
 

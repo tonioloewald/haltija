@@ -34,6 +34,9 @@
       "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": {
+        "teamId": "TSAD7CQ4HH"
+      },
       "target": [
         {
           "target": "dmg",
