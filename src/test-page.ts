@@ -1,24 +1,22 @@
 /**
  * Test page generator for Haltija
  * 
- * Generates a tabbed getting started page with content from markdown files.
+ * Generates a tabbed getting started page with content from embedded assets.
+ * Content is embedded at build time to work in compiled binaries.
  * Includes copy buttons for commands and prompts.
  */
 
-import { readFileSync, existsSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
 import { VERSION } from './version'
+import { APP_MD, SERVICE_MD, PLAYGROUND_MD } from './embedded-assets'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 const PRODUCT_NAME = 'Haltija'
 const TAG_NAME = 'haltija-dev'
 
-// Getting started markdown files
-const gettingStartedDocs = {
-  app: join(__dirname, '../docs/getting-started/app.md'),
-  service: join(__dirname, '../docs/getting-started/service.md'),
-  playground: join(__dirname, '../docs/getting-started/playground.md'),
+// Getting started content (embedded at build time)
+const gettingStartedContent = {
+  app: APP_MD,
+  service: SERVICE_MD,
+  playground: PLAYGROUND_MD,
 }
 
 // Simple markdown to HTML converter (handles our specific markdown features)
@@ -138,17 +136,6 @@ function formatInline(text: string): string {
   return text
 }
 
-function loadMarkdown(path: string): string {
-  try {
-    if (existsSync(path)) {
-      return readFileSync(path, 'utf-8')
-    }
-  } catch {
-    // Ignore errors
-  }
-  return ''
-}
-
 // Generate the playground HTML with test controls
 function getPlaygroundHtml(): string {
   return `
@@ -229,13 +216,9 @@ function getPlaygroundHtml(): string {
 }
 
 export function generateTestPage(protocol: string, port: number, isElectronApp: boolean = false): string {
-  // Load markdown content
-  const appMd = loadMarkdown(gettingStartedDocs.app)
-  const serviceMd = loadMarkdown(gettingStartedDocs.service)
-  
-  // Convert to HTML
-  const appHtml = markdownToHtml(appMd, protocol, port)
-  const serviceHtml = markdownToHtml(serviceMd, protocol, port)
+  // Convert embedded content to HTML
+  const appHtml = markdownToHtml(gettingStartedContent.app, protocol, port)
+  const serviceHtml = markdownToHtml(gettingStartedContent.service, protocol, port)
   const playgroundHtml = getPlaygroundHtml()
   
   // Determine default tab

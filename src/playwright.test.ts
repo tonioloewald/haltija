@@ -181,6 +181,98 @@ test.describe('haltija-dev CLI', () => {
     expect(typeof data.serverSessionId).toBe('string')
     expect(data.serverSessionId.length).toBeGreaterThan(10)
   })
+  
+  // CRITICAL: These tests verify the single source of truth pattern works.
+  // If embedded assets get out of sync with source files, these tests fail.
+  // This has been a recurring problem - DO NOT REMOVE THESE TESTS.
+  
+  test.describe('embedded assets match source files', () => {
+    
+    test('icon.svg served content matches source file exactly', async () => {
+      const fs = await import('fs')
+      const path = await import('path')
+      
+      const sourceIcon = fs.readFileSync(path.join(__dirname, '../haltija-icon.svg'), 'utf-8')
+      const res = await fetch(`${SERVER_URL}/icon.svg`)
+      const servedIcon = await res.text()
+      
+      expect(servedIcon).toBe(sourceIcon)
+    })
+    
+    test('app.md content appears in served test page', async () => {
+      const fs = await import('fs')
+      const path = await import('path')
+      
+      const appMd = fs.readFileSync(path.join(__dirname, '../docs/getting-started/app.md'), 'utf-8')
+      const res = await fetch(`${SERVER_URL}/`)
+      const html = await res.text()
+      
+      // Verify unique phrases from app.md appear in served HTML
+      expect(appMd).toContain('browser with superpowers')
+      expect(html).toContain('browser with superpowers')
+      expect(appMd).toContain('Haltija widget is automatically injected')
+      expect(html).toContain('Haltija widget is automatically injected')
+    })
+    
+    test('service.md content appears in served test page', async () => {
+      const fs = await import('fs')
+      const path = await import('path')
+      
+      const serviceMd = fs.readFileSync(path.join(__dirname, '../docs/getting-started/service.md'), 'utf-8')
+      const res = await fetch(`${SERVER_URL}/`)
+      const html = await res.text()
+      
+      // Verify unique phrases from service.md appear in served HTML
+      expect(serviceMd).toContain('Drag the bookmarklet')
+      expect(html).toContain('Drag the bookmarklet')
+      expect(serviceMd).toContain('inject the widget into a web page')
+      expect(html).toContain('inject the widget into a web page')
+    })
+    
+    test('component.js is served and contains expected code', async () => {
+      const res = await fetch(`${SERVER_URL}/component.js`)
+      expect(res.status).toBe(200)
+      const js = await res.text()
+      
+      // Verify component.js contains expected identifiers
+      expect(js).toContain('haltija-dev')
+      expect(js).toContain('DevChannel')
+      expect(js).toContain('shadowRoot')
+    })
+    
+    test('inject.js is served and loads component', async () => {
+      const res = await fetch(`${SERVER_URL}/inject.js`)
+      expect(res.status).toBe(200)
+      const js = await res.text()
+      
+      // Verify inject.js references the component
+      expect(js).toContain('component.js')
+      expect(js).toContain('__haltija_config__')
+    })
+    
+    test('all embedded assets are current (meta-test)', async () => {
+      const fs = await import('fs')
+      const path = await import('path')
+      
+      // Read the generated embedded-assets.ts to verify it exists and has content
+      const embeddedPath = path.join(__dirname, 'embedded-assets.ts')
+      expect(fs.existsSync(embeddedPath)).toBe(true)
+      
+      const embedded = fs.readFileSync(embeddedPath, 'utf-8')
+      
+      // Verify all expected assets are embedded
+      expect(embedded).toContain('export const APP_MD')
+      expect(embedded).toContain('export const SERVICE_MD')
+      expect(embedded).toContain('export const PLAYGROUND_MD')
+      expect(embedded).toContain('export const ICON_SVG')
+      expect(embedded).toContain('export const UX_CRIMES_MD')
+      
+      // Verify the content is not empty stubs
+      expect(embedded).toContain('browser with superpowers') // from app.md
+      expect(embedded).toContain('Drag the bookmarklet') // from service.md
+      expect(embedded).toContain('<svg') // from icon.svg
+    })
+  })
 })
 
 test.describe('haltija-dev component', () => {

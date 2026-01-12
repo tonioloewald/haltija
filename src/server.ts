@@ -18,6 +18,7 @@ import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest,
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { generateTestPage } from './test-page'
+import { ICON_SVG } from './embedded-assets'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -437,17 +438,11 @@ async function handleRest(req: Request): Promise<Response> {
     })
   }
   
-  // Serve the icon SVG
+  // Serve the icon SVG (embedded at build time)
   if (path === '/icon.svg') {
-    const iconPath = join(__dirname, '../haltija-icon.svg')
-    try {
-      const icon = readFileSync(iconPath, 'utf-8')
-      return new Response(icon, {
-        headers: { ...headers, 'Content-Type': 'image/svg+xml' }
-      })
-    } catch {
-      return new Response('Icon not found', { status: 404, headers })
-    }
+    return new Response(ICON_SVG, {
+      headers: { ...headers, 'Content-Type': 'image/svg+xml' }
+    })
   }
   
   // Dev mode one-liner endpoint - injects widget with localhost check and console badge
