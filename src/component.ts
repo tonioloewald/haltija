@@ -5453,48 +5453,39 @@ export class DevChannel extends HTMLElement {
   }
 }
 
-// Register the custom element, handling re-registration with new tag names
+// Register the custom element - only once per page
 function registerDevChannel() {
-  // Try to register with preferred tag name, fall back to numbered versions
-  let tagToUse = TAG_NAME
-  
-  if (customElements.get(tagToUse)) {
-    // Already registered - generate a new tag name
-    registrationCount++
-    tagToUse = `${TAG_NAME}-${registrationCount}`
-    
-    // Keep trying until we find an unused tag
-    while (customElements.get(tagToUse)) {
-      registrationCount++
-      tagToUse = `${TAG_NAME}-${registrationCount}`
-    }
-    
-    console.log(`${LOG_PREFIX} Re-registering as ${tagToUse}`)
+  // If already registered, just use the existing tag
+  if (customElements.get(TAG_NAME)) {
+    console.log(`${LOG_PREFIX} Already registered as ${TAG_NAME}`)
+    currentTagName = TAG_NAME
+    return
   }
   
-  customElements.define(tagToUse, DevChannel)
-  currentTagName = tagToUse
+  customElements.define(TAG_NAME, DevChannel)
+  currentTagName = TAG_NAME
 }
 
 registerDevChannel()
 
+// Widget ID for deduplication
+const WIDGET_ID = 'haltija-widget'
+
 // Export for bookmarklet injection
 export function inject(serverUrl = 'wss://localhost:8700/ws/browser') {
-  // Check for any existing haltija widget (handles renamed tags like haltija-dev-1, haltija-dev-2)
-  const existingWidget = Array.from(document.querySelectorAll('*')).find(
-    el => el.tagName.toLowerCase().startsWith('haltija-dev')
-  )
-  if (existingWidget) {
-    console.log(`${LOG_PREFIX} Already injected as`, existingWidget.tagName.toLowerCase())
+  // Check for existing widget by ID
+  if (document.getElementById(WIDGET_ID)) {
+    console.log(`${LOG_PREFIX} Already injected`)
     return
   }
   
   // Use the element creator to get the correct tag
   const el = DevChannel.elementCreator()()
+  el.id = WIDGET_ID
   el.setAttribute('server', serverUrl)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log(`${LOG_PREFIX} Injected as`, currentTagName)
+  console.log(`${LOG_PREFIX} Injected`)
 }
 
 // Attach to window for console access
