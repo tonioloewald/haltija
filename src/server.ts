@@ -1325,29 +1325,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     })
   }
   
-  // Click shorthand - fires full mouse event lifecycle
-  if (path === '/click') {
-    return schemaEndpoint(api.click, req, headers, async (body) => {
-      const selector = body.selector
-      const windowId = body.window || targetWindowId
-      
-      // Scroll element into view first
-      await requestFromBrowser('eval', 'exec', {
-        code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-      }, 5000, windowId)
-      await new Promise(r => setTimeout(r, 100)) // Wait for scroll
-      
-      // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
-      for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-        await requestFromBrowser('events', 'dispatch', {
-          selector,
-          event,
-        }, 5000, windowId)
-      }
-      
-      return Response.json({ success: true }, { headers })
-    })
-  }
+  // Click - now handled by api-router via api-handlers.ts
   
   // Drag shorthand - simulates a drag operation
   if (path === '/drag') {

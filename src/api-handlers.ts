@@ -69,6 +69,35 @@ export function registerHandler<T>(
 /** Sleep helper */
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// ============================================
+// Handler Implementations
+// ============================================
+
+// Import schema for type inference
+import * as api from './api-schema'
+
+// Click handler - fires full mouse event lifecycle
+registerHandler(api.click, async (body, ctx) => {
+  const selector = body.selector
+  const windowId = body.window || ctx.targetWindowId
+  
+  // Scroll element into view first
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+  }, 5000, windowId)
+  await sleep(100) // Wait for scroll
+  
+  // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
+  for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
+    await ctx.requestFromBrowser('events', 'dispatch', {
+      selector,
+      event,
+    }, 5000, windowId)
+  }
+  
+  return Response.json({ success: true }, { headers: ctx.headers })
+})
+
 /** JSON response helper */
 export function jsonResponse(
   data: any,
