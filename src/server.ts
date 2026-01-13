@@ -429,8 +429,12 @@ async function requestFromBrowser(
         pendingResponses.delete(id)
         resolve({ id, success: false, error: `Window ${windowId} not found`, timestamp: Date.now() })
       }
+    } else if (focusedWindowId && windows.has(focusedWindowId)) {
+      // Send to focused window only
+      const focusedWin = windows.get(focusedWindowId)!
+      focusedWin.ws.send(JSON.stringify(msg))
     } else {
-      // Send to all browsers (they will filter by active state)
+      // Fallback: send to all browsers when no window is focused
       sendToBrowsers(msg)
     }
   })
