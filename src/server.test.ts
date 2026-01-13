@@ -258,14 +258,14 @@ describe('tosijs-dev server', () => {
   })
   
   describe('POST endpoint validation', () => {
-    it('returns helpful error when GET is used instead of POST on /eval', async () => {
+    it('GET on /eval returns self-documenting schema (schemaEndpoint)', async () => {
+      // Endpoints using schemaEndpoint() return docs on GET instead of 405
       const res = await fetch(`${BASE_URL}/eval`)
-      expect(res.status).toBe(405)
+      expect(res.ok).toBe(true)
       
       const data = await res.json()
-      expect(data.success).toBe(false)
-      expect(data.error).toContain('requires POST')
-      expect(data.hint).toContain('curl -X POST')
+      expect(data.endpoint).toBe('/eval')
+      expect(data.method).toBe('POST')
     })
     
     it('returns helpful error when required field is missing on /eval', async () => {
@@ -278,8 +278,8 @@ describe('tosijs-dev server', () => {
       
       const data = await res.json()
       expect(data.success).toBe(false)
-      expect(data.error).toContain('missing required field "code"')
-      expect(data.hint).toContain('code: string')
+      // tosijs-schema error format
+      expect(data.error).toContain('code')
     })
     
     it('returns helpful error when wrong type is provided on /eval', async () => {
@@ -292,15 +292,18 @@ describe('tosijs-dev server', () => {
       
       const data = await res.json()
       expect(data.success).toBe(false)
-      expect(data.error).toContain('"code" should be string')
+      // tosijs-schema error format
+      expect(data.error).toContain('code')
     })
     
-    it('returns helpful error when GET is used on /click', async () => {
+    it('GET on /click returns self-documenting schema (schemaEndpoint)', async () => {
+      // Endpoints using schemaEndpoint() return docs on GET instead of 405
       const res = await fetch(`${BASE_URL}/click`)
-      expect(res.status).toBe(405)
+      expect(res.ok).toBe(true)
       
       const data = await res.json()
-      expect(data.error).toContain('requires POST')
+      expect(data.endpoint).toBe('/click')
+      expect(data.method).toBe('POST')
     })
     
     it('returns helpful error when selector is missing on /click', async () => {
@@ -312,16 +315,18 @@ describe('tosijs-dev server', () => {
       expect(res.status).toBe(400)
       
       const data = await res.json()
-      expect(data.error).toContain('missing required field "selector"')
+      // tosijs-schema error format
+      expect(data.error).toContain('selector')
     })
     
-    it('returns helpful error when GET is used on /navigate', async () => {
+    it('GET on /navigate returns self-documenting schema (schemaEndpoint)', async () => {
+      // Endpoints using schemaEndpoint() return docs on GET instead of 405
       const res = await fetch(`${BASE_URL}/navigate`)
-      expect(res.status).toBe(405)
+      expect(res.ok).toBe(true)
       
       const data = await res.json()
-      expect(data.error).toContain('requires POST')
-      expect(data.hint).toContain('curl -X POST')
+      expect(data.endpoint).toBe('/navigate')
+      expect(data.method).toBe('POST')
     })
     
     it('returns helpful error when url is missing on /navigate', async () => {
@@ -333,7 +338,8 @@ describe('tosijs-dev server', () => {
       expect(res.status).toBe(400)
       
       const data = await res.json()
-      expect(data.error).toContain('missing required field "url"')
+      // tosijs-schema error format
+      expect(data.error).toContain('url')
     })
     
     it('validates /send requires channel and action', async () => {
@@ -523,5 +529,121 @@ describe('tosijs-dev custom docs', () => {
     expect(content).toContain('project-specific')
     // Should NOT contain the built-in content
     expect(content).not.toContain('Haltija Criminal Code')
+  })
+})
+
+describe('schema-driven self-documenting endpoints', () => {
+  // These tests verify that POST endpoints using schemaEndpoint() return
+  // self-documenting JSON when accessed via GET
+  
+  it('GET on /click returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/click`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/click')
+    expect(data.method).toBe('POST')
+    expect(data.summary).toBe('Click an element')
+    expect(data.description).toContain('mouseenter')
+    expect(data.input).toBeDefined()
+    expect(data.input.type).toBe('object')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.selector.type).toBe('string')
+    expect(data.input.required).toContain('selector')
+    expect(data.usage).toContain('curl -X POST')
+  })
+  
+  it('GET on /type returns schema with all options documented', async () => {
+    const res = await fetch(`${BASE_URL}/type`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/type')
+    expect(data.method).toBe('POST')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.text).toBeDefined()
+    expect(data.input.properties.humanlike).toBeDefined()
+    expect(data.input.properties.typoRate).toBeDefined()
+    expect(data.input.properties.minDelay).toBeDefined()
+    expect(data.input.properties.maxDelay).toBeDefined()
+    // Required fields
+    expect(data.input.required).toContain('selector')
+    expect(data.input.required).toContain('text')
+  })
+  
+  it('GET on /tree returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/tree`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/tree')
+    expect(data.method).toBe('POST')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.depth).toBeDefined()
+    expect(data.input.properties.includeText).toBeDefined()
+    expect(data.input.properties.visibleOnly).toBeDefined()
+    expect(data.input.properties.pierceShadow).toBeDefined()
+    expect(data.input.properties.compact).toBeDefined()
+  })
+  
+  it('GET on /query returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/query`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/query')
+    expect(data.method).toBe('POST')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.all).toBeDefined()
+    expect(data.input.required).toContain('selector')
+  })
+  
+  it('GET on /inspect returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/inspect`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/inspect')
+    expect(data.method).toBe('POST')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.required).toContain('selector')
+  })
+  
+  it('GET on /highlight returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/highlight`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/highlight')
+    expect(data.method).toBe('POST')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.label).toBeDefined()
+    expect(data.input.properties.color).toBeDefined()
+    expect(data.input.properties.duration).toBeDefined()
+  })
+  
+  it('schema validation rejects invalid input', async () => {
+    const res = await fetch(`${BASE_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 123 }) // wrong type
+    })
+    expect(res.status).toBe(400)
+    
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.error).toBeDefined()
+    expect(data.schema).toBeDefined() // Returns schema on error for reference
+  })
+  
+  it('schema validation accepts valid input', async () => {
+    // This will fail because no browser connected, but should NOT be 400
+    const res = await fetch(`${BASE_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#test-button' })
+    })
+    // Should not be a validation error (400)
+    expect(res.status).not.toBe(400)
   })
 })

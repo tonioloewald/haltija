@@ -19,6 +19,7 @@ import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { generateTestPage } from './test-page'
 import { ICON_SVG } from './embedded-assets'
+import * as api from './api-schema'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -281,6 +282,48 @@ function wrongMethod(endpoint: string, correctMethod: string, headers: Record<st
     hint: `Use: curl -X ${correctMethod} http://localhost:${PORT}${endpoint}` + 
           (correctMethod === 'POST' ? ' -H "Content-Type: application/json" -d \'{"..."}\'': '')
   }, { status: 405, headers })
+}
+
+// Schema-based endpoint handler
+// - GET on POST endpoints returns self-documenting schema
+// - POST validates body against schema before calling handler
+function schemaEndpoint(
+  ep: api.EndpointDef,
+  req: Request,
+  headers: Record<string, string>,
+  handler: (body: any) => Promise<Response>
+): Promise<Response> | Response {
+  if (req.method === 'GET' && ep.method === 'POST') {
+    // Self-documenting: return schema info
+    return Response.json(api.getEndpointDocs(ep), { headers })
+  }
+  
+  if (req.method !== ep.method) {
+    return wrongMethod(ep.path, ep.method, headers)
+  }
+  
+  // For POST, validate body
+  if (ep.method === 'POST') {
+    return req.json().then(body => {
+      const validation = api.validateInput(ep, body)
+      if (!validation.valid) {
+        return Response.json({
+          success: false,
+          error: validation.error,
+          schema: api.getInputSchema(ep),
+        }, { status: 400, headers })
+      }
+      return handler(body)
+    }).catch(() => {
+      return Response.json({
+        success: false,
+        error: 'Invalid JSON body',
+        schema: api.getInputSchema(ep),
+      }, { status: 400, headers })
+    })
+  }
+  
+  return handler({})
 }
 
 function bufferMessage(msg: DevMessage) {
@@ -1219,24 +1262,15 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // DOM query shorthand
-  if (path === '/query' && req.method === 'GET') {
-    return wrongMethod('/query', 'POST', headers)
-  }
-  if (path === '/query' && req.method === 'POST') {
-    const body = await req.json() as { selector: string; all?: boolean; window?: string }
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'all', type: 'boolean' },
-      { name: 'window', type: 'string' }
-    ], '/query')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('dom', 'query', {
-      selector: body.selector,
-      all: body.all,
-    }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/query') {
+    return schemaEndpoint(api.query, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('dom', 'query', {
+        selector: body.selector,
+        all: body.all,
+      }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Console get shorthand
@@ -1247,148 +1281,103 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Eval shorthand
-  if (path === '/eval' && req.method === 'GET') {
-    return wrongMethod('/eval', 'POST', headers)
-  }
-  if (path === '/eval' && req.method === 'POST') {
-    const body = await req.json() as { code: string; window?: string }
-    const validation = validateBody(body, [
-      { name: 'code', type: 'string', required: true },
-      { name: 'window', type: 'string' }
-    ], '/eval')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/eval') {
+    return schemaEndpoint(api.eval_, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Click shorthand - fires full mouse event lifecycle
-  if (path === '/click' && req.method === 'GET') {
-    return wrongMethod('/click', 'POST', headers)
-  }
-  if (path === '/click' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'options', type: 'object' },
-      { name: 'window', type: 'string' }
-    ], '/click')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const selector = body.selector
-    const options = body.options || {}
-    const windowId = body.window || targetWindowId
-    
-    // Scroll element into view first
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-    await new Promise(r => setTimeout(r, 100)) // Wait for scroll
-    
-    // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
-    for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-      await requestFromBrowser('events', 'dispatch', {
-        selector,
-        event,
-        options,
+  if (path === '/click') {
+    return schemaEndpoint(api.click, req, headers, async (body) => {
+      const selector = body.selector
+      const windowId = body.window || targetWindowId
+      
+      // Scroll element into view first
+      await requestFromBrowser('eval', 'exec', {
+        code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
       }, 5000, windowId)
-    }
-    
-    return Response.json({ success: true }, { headers })
+      await new Promise(r => setTimeout(r, 100)) // Wait for scroll
+      
+      // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
+      for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
+        await requestFromBrowser('events', 'dispatch', {
+          selector,
+          event,
+        }, 5000, windowId)
+      }
+      
+      return Response.json({ success: true }, { headers })
+    })
   }
   
   // Drag shorthand - simulates a drag operation
-  // POST /drag { selector, deltaX, deltaY, duration? }
-  if (path === '/drag' && req.method === 'GET') {
-    return wrongMethod('/drag', 'POST', headers)
-  }
-  if (path === '/drag' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'deltaX', type: 'number' },
-      { name: 'deltaY', type: 'number' },
-      { name: 'duration', type: 'number' },
-      { name: 'window', type: 'string' }
-    ], '/drag')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const selector = body.selector
-    const deltaX = body.deltaX || 0
-    const deltaY = body.deltaY || 0
-    const duration = body.duration || 300 // ms
-    const steps = Math.max(5, Math.floor(duration / 16)) // ~60fps
-    const windowId = body.window || targetWindowId
-    
-    // Scroll element into view first
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-    await new Promise(r => setTimeout(r, 100))
-    
-    // Get element center position
-    const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
-    if (!inspectResponse.success || !inspectResponse.data) {
-      return Response.json({ success: false, error: 'Element not found' }, { headers })
-    }
-    const box = inspectResponse.data.box
-    const startX = box.x + box.width / 2
-    const startY = box.y + box.height / 2
-    
-    // mouseenter, mouseover, mousemove to start position
-    for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
+  if (path === '/drag') {
+    return schemaEndpoint(api.drag, req, headers, async (body) => {
+      const selector = body.selector
+      const deltaX = body.deltaX || 0
+      const deltaY = body.deltaY || 0
+      const duration = body.duration || 300 // ms
+      const steps = Math.max(5, Math.floor(duration / 16)) // ~60fps
+      const windowId = body.window || targetWindowId
+      
+      // Scroll element into view first
+      await requestFromBrowser('eval', 'exec', {
+        code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+      }, 5000, windowId)
+      await new Promise(r => setTimeout(r, 100))
+      
+      // Get element center position
+      const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
+      if (!inspectResponse.success || !inspectResponse.data) {
+        return Response.json({ success: false, error: 'Element not found' }, { headers })
+      }
+      const box = inspectResponse.data.box
+      const startX = box.x + box.width / 2
+      const startY = box.y + box.height / 2
+      
+      // mouseenter, mouseover, mousemove to start position
+      for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
+        await requestFromBrowser('events', 'dispatch', {
+          selector,
+          event,
+          options: { clientX: startX, clientY: startY },
+        }, 5000, windowId)
+      }
+      
+      // mousedown
       await requestFromBrowser('events', 'dispatch', {
         selector,
-        event,
+        event: 'mousedown',
         options: { clientX: startX, clientY: startY },
       }, 5000, windowId)
-    }
-    
-    // mousedown
-    await requestFromBrowser('events', 'dispatch', {
-      selector,
-      event: 'mousedown',
-      options: { clientX: startX, clientY: startY },
-    }, 5000, windowId)
-    
-    // mousemove steps (dispatched on document)
-    const stepDelay = duration / steps
-    for (let i = 1; i <= steps; i++) {
-      const progress = i / steps
-      const x = startX + deltaX * progress
-      const y = startY + deltaY * progress
+      
+      // mousemove steps (dispatched on document)
+      const stepDelay = duration / steps
+      for (let i = 1; i <= steps; i++) {
+        const progress = i / steps
+        const x = startX + deltaX * progress
+        const y = startY + deltaY * progress
+        await requestFromBrowser('eval', 'exec', {
+          code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
+        }, 5000, windowId)
+        await new Promise(r => setTimeout(r, stepDelay))
+      }
+      
+      // mouseup
       await requestFromBrowser('eval', 'exec', {
-        code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
+        code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
       }, 5000, windowId)
-      await new Promise(r => setTimeout(r, stepDelay))
-    }
-    
-    // mouseup
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
-    }, 5000, windowId)
-    
-    return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
+      
+      return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
+    })
   }
   
   // Type shorthand - human-like typing with variable latency and occasional typos
-  if (path === '/type' && req.method === 'GET') {
-    return wrongMethod('/type', 'POST', headers)
-  }
-  if (path === '/type' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'text', type: 'string', required: true },
-      { name: 'humanlike', type: 'boolean' },
-      { name: 'typoRate', type: 'number' },
-      { name: 'minDelay', type: 'number' },
-      { name: 'maxDelay', type: 'number' },
-      { name: 'window', type: 'string' }
-    ], '/type')
-    if (!validation.valid) return validationError(validation, headers)
-    
+  if (path === '/type') {
+    return schemaEndpoint(api.type, req, headers, async (body) => {
     const text: string = body.text || ''
     const humanlike: boolean = body.humanlike !== false // default true
     const typoRate: number = body.typoRate ?? 0.03 // 3% chance of typo per character
@@ -1520,57 +1509,61 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       typos: typoCount,
       humanlike: true 
     }, { headers })
+    })
   }
   
   // Start recording
-  if (path === '/recording/start' && req.method === 'POST') {
-    const body = await req.json()
-    const response = await requestFromBrowser('recording', 'start', { name: body.name })
-    return Response.json(response, { headers })
+  if (path === '/recording/start') {
+    return schemaEndpoint(api.recordingStart, req, headers, async (body) => {
+      const response = await requestFromBrowser('recording', 'start', { name: body.name })
+      return Response.json(response, { headers })
+    })
   }
   
   // Stop recording
-  if (path === '/recording/stop' && req.method === 'POST') {
-    const response = await requestFromBrowser('recording', 'stop', {})
-    return Response.json(response, { headers })
+  if (path === '/recording/stop') {
+    return schemaEndpoint(api.recordingStop, req, headers, async () => {
+      const response = await requestFromBrowser('recording', 'stop', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // Generate test from semantic events
-  if (path === '/recording/generate' && req.method === 'POST') {
-    const body = await req.json()
-    
-    // Get semantic events from buffer or from request body
-    let events = body.events
-    if (!events) {
-      // Get events from the semantic event buffer via browser
-      const eventsResponse = await requestFromBrowser('semantic', 'get', { since: body.since || 0 })
-      if (!eventsResponse.success) {
-        return Response.json({ success: false, error: 'Failed to get events' }, { headers })
+  if (path === '/recording/generate') {
+    return schemaEndpoint(api.recordingGenerate, req, headers, async (body) => {
+      // Get semantic events from buffer or from request body
+      let events = body.events
+      if (!events) {
+        // Get events from the semantic event buffer via browser
+        const eventsResponse = await requestFromBrowser('semantic', 'get', { since: body.since || 0 })
+        if (!eventsResponse.success) {
+          return Response.json({ success: false, error: 'Failed to get events' }, { headers })
+        }
+        events = eventsResponse.data?.events || []
       }
-      events = eventsResponse.data?.events || []
-    }
-    
-    // Import the test generator
-    const { semanticEventsToTest, suggestAssertions } = await import('./test-generator')
-    
-    // Generate the test
-    const test = semanticEventsToTest(events, {
-      name: body.name || 'Recorded Test',
-      description: body.description,
-      url: body.url || events[0]?.payload?.to || 'http://localhost:3000',
-      addAssertions: body.addAssertions !== false,
-      minDelay: body.minDelay,
-      createdBy: body.createdBy || 'human',
-      tags: body.tags,
+      
+      // Import the test generator
+      const { semanticEventsToTest, suggestAssertions } = await import('./test-generator')
+      
+      // Generate the test
+      const test = semanticEventsToTest(events, {
+        name: body.name || 'Recorded Test',
+        description: body.description,
+        url: body.url || events[0]?.payload?.to || 'http://localhost:3000',
+        addAssertions: body.addAssertions !== false,
+        minDelay: body.minDelay,
+        createdBy: body.createdBy || 'human',
+        tags: body.tags,
+      })
+      
+      // Optionally add suggested assertions at the end
+      if (body.suggestAssertions) {
+        const suggestions = suggestAssertions(events)
+        test.steps.push(...suggestions)
+      }
+      
+      return Response.json({ success: true, test }, { headers })
     })
-    
-    // Optionally add suggested assertions at the end
-    if (body.suggestAssertions) {
-      const suggestions = suggestAssertions(events)
-      test.steps.push(...suggestions)
-    }
-    
-    return Response.json({ success: true, test }, { headers })
   }
   
   // Publish build event (for dev servers to call)
@@ -1590,29 +1583,22 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Force page refresh
-  if (path === '/refresh' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const hard = body.hard ?? false  // hard refresh clears cache
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/refresh') {
+    return schemaEndpoint(api.refresh, req, headers, async (body) => {
+      const hard = body.hard ?? false  // hard refresh clears cache
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Navigate to URL
-  if (path === '/navigate' && req.method === 'GET') {
-    return wrongMethod('/navigate', 'POST', headers)
-  }
-  if (path === '/navigate' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'url', type: 'string', required: true },
-      { name: 'window', type: 'string' }
-    ], '/navigate')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/navigate') {
+    return schemaEndpoint(api.navigate, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Get current URL and title
@@ -1622,58 +1608,44 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Open a new tab (Electron app only)
-  // POST /tabs/open { "url": "https://example.com" }
-  if (path === '/tabs/open' && req.method === 'GET') {
-    return wrongMethod('/tabs/open', 'POST', headers)
-  }
-  if (path === '/tabs/open' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'url', type: 'string', required: true }
-    ], '/tabs/open')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    // Send to browser component which will relay to Electron
-    const response = await requestFromBrowser('tabs', 'open', { url: body.url })
-    return Response.json(response, { headers })
+  if (path === '/tabs/open') {
+    return schemaEndpoint(api.tabsOpen, req, headers, async (body) => {
+      // Send to browser component which will relay to Electron
+      const response = await requestFromBrowser('tabs', 'open', { url: body.url })
+      return Response.json(response, { headers })
+    })
   }
   
   // Close a tab by window ID
-  // POST /tabs/close { "window": "windowId" } or ?window=windowId
-  if (path === '/tabs/close' && req.method === 'GET') {
-    return wrongMethod('/tabs/close', 'POST', headers)
-  }
-  if (path === '/tabs/close' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const windowId = body.window || targetWindowId
-    if (!windowId) {
-      return Response.json({ 
-        success: false, 
-        error: '/tabs/close: window id is required',
-        hint: 'Pass window ID in body or query string: ?window=<id>'
-      }, { status: 400, headers })
-    }
-    const response = await requestFromBrowser('tabs', 'close', { windowId })
-    return Response.json(response, { headers })
+  if (path === '/tabs/close') {
+    return schemaEndpoint(api.tabsClose, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      if (!windowId) {
+        return Response.json({ 
+          success: false, 
+          error: '/tabs/close: window id is required',
+          hint: 'Pass window ID in body or query string: ?window=<id>'
+        }, { status: 400, headers })
+      }
+      const response = await requestFromBrowser('tabs', 'close', { windowId })
+      return Response.json(response, { headers })
+    })
   }
   
   // Focus/activate a tab by window ID
-  // POST /tabs/focus { "window": "windowId" } or ?window=windowId  
-  if (path === '/tabs/focus' && req.method === 'GET') {
-    return wrongMethod('/tabs/focus', 'POST', headers)
-  }
-  if (path === '/tabs/focus' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const windowId = body.window || targetWindowId
-    if (!windowId) {
-      return Response.json({ 
-        success: false, 
-        error: '/tabs/focus: window id is required',
-        hint: 'Pass window ID in body or query string: ?window=<id>'
-      }, { status: 400, headers })
-    }
-    const response = await requestFromBrowser('tabs', 'focus', { windowId })
-    return Response.json(response, { headers })
+  if (path === '/tabs/focus') {
+    return schemaEndpoint(api.tabsFocus, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      if (!windowId) {
+        return Response.json({ 
+          success: false, 
+          error: '/tabs/focus: window id is required',
+          hint: 'Pass window ID in body or query string: ?window=<id>'
+        }, { status: 400, headers })
+      }
+      const response = await requestFromBrowser('tabs', 'focus', { windowId })
+      return Response.json(response, { headers })
+    })
   }
   
   // Restart the server
@@ -1698,31 +1670,33 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Start watching DOM mutations
-  if (path === '/mutations/watch' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    
-    // Clear old mutation messages when starting a new watch
-    // This prevents stale data from previous watch sessions
-    clearMutationMessages()
-    
-    const response = await requestFromBrowser('mutations', 'watch', {
-      root: body.root,
-      childList: body.childList ?? true,
-      attributes: body.attributes ?? true,
-      characterData: body.characterData ?? false,
-      subtree: body.subtree ?? true,
-      debounce: body.debounce ?? 100,
-      preset: body.preset,
-      filters: body.filters,
-      pierceShadow: body.pierceShadow,
+  if (path === '/mutations/watch') {
+    return schemaEndpoint(api.mutationsWatch, req, headers, async (body) => {
+      // Clear old mutation messages when starting a new watch
+      // This prevents stale data from previous watch sessions
+      clearMutationMessages()
+      
+      const response = await requestFromBrowser('mutations', 'watch', {
+        root: body.root,
+        childList: body.childList ?? true,
+        attributes: body.attributes ?? true,
+        characterData: body.characterData ?? false,
+        subtree: body.subtree ?? true,
+        debounce: body.debounce ?? 100,
+        preset: body.preset,
+        filters: body.filters,
+        pierceShadow: body.pierceShadow,
+      })
+      return Response.json(response, { headers })
     })
-    return Response.json(response, { headers })
   }
   
   // Stop watching DOM mutations
-  if (path === '/mutations/unwatch' && req.method === 'POST') {
-    const response = await requestFromBrowser('mutations', 'unwatch', {})
-    return Response.json(response, { headers })
+  if (path === '/mutations/unwatch') {
+    return schemaEndpoint(api.mutationsUnwatch, req, headers, async () => {
+      const response = await requestFromBrowser('mutations', 'unwatch', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // Get mutation watch status
@@ -1736,20 +1710,23 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // ============================================
   
   // Start watching semantic events
-  if (path === '/events/watch' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    // Accept preset or categories
-    const response = await requestFromBrowser('semantic', 'watch', {
-      preset: body.preset,        // 'minimal', 'interactive', 'detailed', 'debug'
-      categories: body.categories, // or explicit array of categories
+  if (path === '/events/watch') {
+    return schemaEndpoint(api.eventsWatch, req, headers, async (body) => {
+      // Accept preset or categories
+      const response = await requestFromBrowser('semantic', 'watch', {
+        preset: body.preset,        // 'minimal', 'interactive', 'detailed', 'debug'
+        categories: body.categories, // or explicit array of categories
+      })
+      return Response.json(response, { headers })
     })
-    return Response.json(response, { headers })
   }
   
   // Stop watching semantic events
-  if (path === '/events/unwatch' && req.method === 'POST') {
-    const response = await requestFromBrowser('semantic', 'unwatch', {})
-    return Response.json(response, { headers })
+  if (path === '/events/unwatch') {
+    return schemaEndpoint(api.eventsUnwatch, req, headers, async () => {
+      const response = await requestFromBrowser('semantic', 'unwatch', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // Get semantic event buffer (hindsight)
@@ -1772,133 +1749,93 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // Inspect element (detailed view)
-  if (path === '/inspect' && req.method === 'GET') {
-    return wrongMethod('/inspect', 'POST', headers)
-  }
-  if (path === '/inspect' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'window', type: 'string' }
-    ], '/inspect')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/inspect') {
+    return schemaEndpoint(api.inspect, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Inspect multiple elements
-  if (path === '/inspectAll' && req.method === 'GET') {
-    return wrongMethod('/inspectAll', 'POST', headers)
-  }
-  if (path === '/inspectAll' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'limit', type: 'number' },
-      { name: 'window', type: 'string' }
-    ], '/inspectAll')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('dom', 'inspectAll', { 
-      selector: body.selector, 
-      limit: body.limit || 10 
-    }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/inspectAll') {
+    return schemaEndpoint(api.inspectAll, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('dom', 'inspectAll', { 
+        selector: body.selector, 
+        limit: body.limit || 10 
+      }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Highlight element (visual pointer)
-  if (path === '/highlight' && req.method === 'GET') {
-    return wrongMethod('/highlight', 'POST', headers)
-  }
-  if (path === '/highlight' && req.method === 'POST') {
-    const body = await req.json()
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string', required: true },
-      { name: 'label', type: 'string' },
-      { name: 'color', type: 'string' },
-      { name: 'duration', type: 'number' },
-      { name: 'window', type: 'string' }
-    ], '/highlight')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    
-    // Scroll element into view first
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-    await new Promise(r => setTimeout(r, 100))
-    
-    const response = await requestFromBrowser('dom', 'highlight', {
-      selector: body.selector,
-      label: body.label,
-      color: body.color,
-      duration: body.duration,  // If set, will auto-hide after duration ms
-    }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/highlight') {
+    return schemaEndpoint(api.highlight, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      
+      // Scroll element into view first
+      await requestFromBrowser('eval', 'exec', {
+        code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+      }, 5000, windowId)
+      await new Promise(r => setTimeout(r, 100))
+      
+      const response = await requestFromBrowser('dom', 'highlight', {
+        selector: body.selector,
+        label: body.label,
+        color: body.color,
+        duration: body.duration,  // If set, will auto-hide after duration ms
+      }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Remove highlight
-  if (path === '/unhighlight' && req.method === 'POST') {
-    const response = await requestFromBrowser('dom', 'unhighlight', {})
-    return Response.json(response, { headers })
+  if (path === '/unhighlight') {
+    return schemaEndpoint(api.unhighlight, req, headers, async () => {
+      const response = await requestFromBrowser('dom', 'unhighlight', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // DOM tree inspector
-  // POST /tree { selector, depth?, includeText?, allAttributes?, includeBox?, compact?, pierceShadow?, ... }
-  if (path === '/tree' && req.method === 'GET') {
-    return wrongMethod('/tree', 'POST', headers)
-  }
-  if (path === '/tree' && req.method === 'POST') {
-    const body = await req.json()
-    // /tree has many optional fields, just validate types if present
-    const validation = validateBody(body, [
-      { name: 'selector', type: 'string' },
-      { name: 'depth', type: 'number' },
-      { name: 'mode', type: 'string' },
-      { name: 'window', type: 'string' }
-    ], '/tree')
-    if (!validation.valid) return validationError(validation, headers)
-    
-    const windowId = body.window || targetWindowId
-    const response = await requestFromBrowser('dom', 'tree', {
-      selector: body.selector || 'body',
-      depth: body.depth,
-      includeText: body.includeText,
-      allAttributes: body.allAttributes,
-      includeStyles: body.includeStyles,
-      includeBox: body.includeBox,
-      interestingClasses: body.interestingClasses,
-      interestingAttributes: body.interestingAttributes,
-      ignoreSelectors: body.ignoreSelectors,
-      compact: body.compact,
-      pierceShadow: body.pierceShadow,
-      visibleOnly: body.visibleOnly,
-      mode: body.mode,
-    }, 5000, windowId)
-    return Response.json(response, { headers })
+  if (path === '/tree') {
+    return schemaEndpoint(api.tree, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const response = await requestFromBrowser('dom', 'tree', {
+        selector: body.selector || 'body',
+        depth: body.depth,
+        includeText: body.includeText,
+        allAttributes: body.allAttributes,
+        includeStyles: body.includeStyles,
+        includeBox: body.includeBox,
+        interestingClasses: body.interestingClasses,
+        interestingAttributes: body.interestingAttributes,
+        ignoreSelectors: body.ignoreSelectors,
+        compact: body.compact,
+        pierceShadow: body.pierceShadow,
+        visibleOnly: body.visibleOnly,
+        mode: body.mode,
+      }, 5000, windowId)
+      return Response.json(response, { headers })
+    })
   }
   
   // Screenshot - capture page as base64 image
   // In Electron: uses native capture (best quality, works on any page)
   // In browser: uses html2canvas if loaded, otherwise returns viewport info only
-  if (path === '/screenshot' && req.method === 'GET') {
-    return wrongMethod('/screenshot', 'POST', headers)
-  }
-  if (path === '/screenshot' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const response = await requestFromBrowser('dom', 'screenshot', {
-      selector: body.selector,    // CSS selector for element capture (omit for full page)
-      format: body.format,        // 'png' (default), 'webp' (smaller), 'jpeg' (smallest)
-      quality: body.quality,      // 0-1, default 0.85 for webp/jpeg
-      scale: body.scale,          // Scale factor (0.5 = half size)
-      maxWidth: body.maxWidth,    // Max width constraint (maintains aspect ratio)
-      maxHeight: body.maxHeight,  // Max height constraint (maintains aspect ratio)
+  if (path === '/screenshot') {
+    return schemaEndpoint(api.screenshot, req, headers, async (body) => {
+      const response = await requestFromBrowser('dom', 'screenshot', {
+        selector: body.selector,    // CSS selector for element capture (omit for full page)
+        format: body.format,        // 'png' (default), 'webp' (smaller), 'jpeg' (smallest)
+        quality: body.quality,      // 0-1, default 0.85 for webp/jpeg
+        scale: body.scale,          // Scale factor (0.5 = half size)
+        maxWidth: body.maxWidth,    // Max width constraint (maintains aspect ratio)
+        maxHeight: body.maxHeight,  // Max height constraint (maintains aspect ratio)
+      })
+      return Response.json(response, { headers })
     })
-    return Response.json(response, { headers })
   }
   
   // ==========================================
@@ -2549,63 +2486,64 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // ============================================
   
   // Capture a snapshot of current page state
-  if (path === '/snapshot' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const trigger = body.trigger || 'manual'
-    const context = body.context || {}
-    
-    try {
-      // Get current location
-      const locationResponse = await requestFromBrowser('navigation', 'location', {})
-      if (!locationResponse.success) {
-        return Response.json({ error: 'No browser connected' }, { status: 503, headers })
+  if (path === '/snapshot') {
+    return schemaEndpoint(api.snapshot, req, headers, async (body) => {
+      const trigger = body.trigger || 'manual'
+      const context = body.context || {}
+      
+      try {
+        // Get current location
+        const locationResponse = await requestFromBrowser('navigation', 'location', {})
+        if (!locationResponse.success) {
+          return Response.json({ error: 'No browser connected' }, { status: 503, headers })
+        }
+        
+        // Get DOM tree
+        const treeResponse = await requestFromBrowser('dom', 'tree', { 
+          selector: 'body', 
+          depth: 5,
+          compact: true 
+        })
+        
+        // Get console logs
+        const consoleResponse = await requestFromBrowser('console', 'get', {})
+        
+        // Get viewport
+        const viewportResponse = await requestFromBrowser('eval', 'exec', {
+          code: 'JSON.stringify({width: window.innerWidth, height: window.innerHeight})'
+        })
+        
+        const snapshotId = `snap_${Date.now()}_${uid()}`
+        const snapshotData: PageSnapshot = {
+          id: snapshotId,
+          timestamp: Date.now(),
+          url: locationResponse.data?.url || '',
+          title: locationResponse.data?.title || '',
+          tree: treeResponse.data || { tag: 'body', text: '[unavailable]' },
+          console: consoleResponse.data || [],
+          viewport: viewportResponse.success ? JSON.parse(viewportResponse.data) : { width: 0, height: 0 },
+          trigger,
+          context,
+        }
+        
+        // Store snapshot (with eviction if over limit)
+        if (snapshots.size >= MAX_SNAPSHOTS) {
+          const oldest = snapshots.keys().next().value
+          if (oldest) snapshots.delete(oldest)
+        }
+        snapshots.set(snapshotId, snapshotData)
+        saveSnapshotToDisk(snapshotData)
+        
+        return Response.json({ 
+          snapshotId,
+          timestamp: snapshotData.timestamp,
+          url: snapshotData.url,
+          title: snapshotData.title,
+        }, { headers })
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500, headers })
       }
-      
-      // Get DOM tree
-      const treeResponse = await requestFromBrowser('dom', 'tree', { 
-        selector: 'body', 
-        depth: 5,
-        compact: true 
-      })
-      
-      // Get console logs
-      const consoleResponse = await requestFromBrowser('console', 'get', {})
-      
-      // Get viewport
-      const viewportResponse = await requestFromBrowser('eval', 'exec', {
-        code: 'JSON.stringify({width: window.innerWidth, height: window.innerHeight})'
-      })
-      
-      const snapshotId = `snap_${Date.now()}_${uid()}`
-      const snapshot: PageSnapshot = {
-        id: snapshotId,
-        timestamp: Date.now(),
-        url: locationResponse.data?.url || '',
-        title: locationResponse.data?.title || '',
-        tree: treeResponse.data || { tag: 'body', text: '[unavailable]' },
-        console: consoleResponse.data || [],
-        viewport: viewportResponse.success ? JSON.parse(viewportResponse.data) : { width: 0, height: 0 },
-        trigger,
-        context,
-      }
-      
-      // Store snapshot (with eviction if over limit)
-      if (snapshots.size >= MAX_SNAPSHOTS) {
-        const oldest = snapshots.keys().next().value
-        if (oldest) snapshots.delete(oldest)
-      }
-      snapshots.set(snapshotId, snapshot)
-      saveSnapshotToDisk(snapshot)
-      
-      return Response.json({ 
-        snapshotId,
-        timestamp: snapshot.timestamp,
-        url: snapshot.url,
-        title: snapshot.title,
-      }, { headers })
-    } catch (err) {
-      return Response.json({ error: String(err) }, { status: 500, headers })
-    }
+    })
   }
   
   // Get a snapshot by ID
@@ -2681,15 +2619,19 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // ==========================================
   
   // POST /select/start - Start selection mode (user drags to select area)
-  if (path === '/select/start' && req.method === 'POST') {
-    const response = await requestFromBrowser('selection', 'start', {})
-    return Response.json(response, { headers })
+  if (path === '/select/start') {
+    return schemaEndpoint(api.selectStart, req, headers, async () => {
+      const response = await requestFromBrowser('selection', 'start', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // POST /select/cancel - Cancel selection mode
-  if (path === '/select/cancel' && req.method === 'POST') {
-    const response = await requestFromBrowser('selection', 'cancel', {})
-    return Response.json(response, { headers })
+  if (path === '/select/cancel') {
+    return schemaEndpoint(api.selectCancel, req, headers, async () => {
+      const response = await requestFromBrowser('selection', 'cancel', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // GET /select/status - Check if selection is active or has result
@@ -2705,9 +2647,11 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   }
   
   // POST /select/clear - Clear the stored selection
-  if (path === '/select/clear' && req.method === 'POST') {
-    const response = await requestFromBrowser('selection', 'clear', {})
-    return Response.json(response, { headers })
+  if (path === '/select/clear') {
+    return schemaEndpoint(api.selectClear, req, headers, async () => {
+      const response = await requestFromBrowser('selection', 'clear', {})
+      return Response.json(response, { headers })
+    })
   }
   
   // ==========================================

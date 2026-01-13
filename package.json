@@ -38,11 +38,12 @@
     "build": "bun run scripts/build.ts",
     "build:bookmarklet": "bun run bin/build-bookmarklet.ts",
     "dev": "bun run bin/server.ts",
-    "test": "bun test src/server.test.ts",
+    "test": "bun test",
+    "test:server": "bun test src/server.test.ts",
     "test:https": "bun test src/https.test.ts",
     "test:both": "bun test src/both-mode.test.ts",
-    "test:e2e": "bunx playwright test src/playwright.test.ts",
-    "test:all": "bun test src/server.test.ts src/https.test.ts src/both-mode.test.ts && bunx playwright test src/playwright.test.ts"
+    "test:e2e": "bunx playwright test",
+    "test:all": "bun test && bunx playwright test"
   },
   "keywords": [
     "devtools",
@@ -56,5 +57,8 @@
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "tosijs-schema": "^1.1.3"
   }
 }
