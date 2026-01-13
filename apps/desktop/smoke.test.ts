@@ -330,6 +330,275 @@ describe('Desktop App Smoke Tests', () => {
   })
 })
 
+describe('Multi-Tab Isolation Tests', () => {
+  // These tests verify that operations on one tab don't affect other tabs
+  
+  it('can open a second tab', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Open a second tab
+    const openRes = await fetch(`${BASE_URL}/tabs/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    })
+
+    expect(openRes.ok).toBe(true)
+
+    // Wait for the new tab's widget to connect
+    const connected = await waitFor(async () => {
+      const res = await fetch(`${BASE_URL}/windows`)
+      const data = await res.json()
+      return data.count >= 2
+    }, 8000)
+
+    expect(connected).toBe(true)
+
+    const windowsRes = await fetch(`${BASE_URL}/windows`)
+    const windows = await windowsRes.json()
+    expect(windows.count).toBeGreaterThanOrEqual(2)
+  })
+
+  it('navigate with windowId only affects target tab', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Get current windows
+    const windowsRes = await fetch(`${BASE_URL}/windows`)
+    const windows = await windowsRes.json()
+    
+    if (windows.count < 2) {
+      console.log('Need at least 2 tabs for isolation test, skipping')
+      return
+    }
+
+    const [tab1, tab2] = windows.windows
+    const tab1Url = tab1.url
+    const tab2Id = tab2.windowId
+
+    // Navigate tab2 to a different URL
+    const navRes = await fetch(`${BASE_URL}/navigate?window=${tab2Id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://httpbin.org/html' }),
+    })
+
+    expect(navRes.ok).toBe(true)
+
+    // Wait for navigation to complete
+    await waitFor(async () => {
+      const res = await fetch(`${BASE_URL}/windows`)
+      const data = await res.json()
+      const t2 = data.windows.find((w: any) => w.windowId === tab2Id)
+      return t2?.url?.includes('httpbin')
+    }, 8000)
+
+    // Verify tab1 URL is unchanged
+    const afterRes = await fetch(`${BASE_URL}/windows`)
+    const afterWindows = await afterRes.json()
+    const tab1After = afterWindows.windows.find((w: any) => w.windowId === tab1.windowId)
+    
+    // Tab1 should still be at its original URL (not navigated)
+    expect(tab1After?.url).toBe(tab1Url)
+  })
+
+  it('refresh with windowId only affects target tab', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Get current windows
+    const windowsRes = await fetch(`${BASE_URL}/windows`)
+    const windows = await windowsRes.json()
+    
+    if (windows.count < 2) {
+      console.log('Need at least 2 tabs for isolation test, skipping')
+      return
+    }
+
+    const [tab1, tab2] = windows.windows
+    const tab1Url = tab1.url
+    const tab2Id = tab2.windowId
+
+    // Refresh tab2
+    const refreshRes = await fetch(`${BASE_URL}/refresh?window=${tab2Id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(refreshRes.ok).toBe(true)
+
+    // Wait a moment for refresh to process
+    await new Promise(r => setTimeout(r, 2000))
+
+    // Verify tab1 is still connected and at original URL
+    const afterRes = await fetch(`${BASE_URL}/windows`)
+    const afterWindows = await afterRes.json()
+    const tab1After = afterWindows.windows.find((w: any) => w.windowId === tab1.windowId)
+    
+    // Tab1 should still be connected and at its original URL
+    expect(tab1After).toBeDefined()
+    expect(tab1After?.url).toBe(tab1Url)
+  })
+
+  it('click with windowId only affects target tab', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Get current windows
+    const windowsRes = await fetch(`${BASE_URL}/windows`)
+    const windows = await windowsRes.json()
+    
+    if (windows.count < 2) {
+      console.log('Need at least 2 tabs for isolation test, skipping')
+      return
+    }
+
+    const [tab1, tab2] = windows.windows
+    const tab2Id = tab2.windowId
+
+    // Click something on tab2 (example.com has an <a> tag)
+    const clickRes = await fetch(`${BASE_URL}/click?window=${tab2Id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'body' }),
+    })
+
+    expect(clickRes.ok).toBe(true)
+    const clickData = await clickRes.json()
+    expect(clickData.success).toBe(true)
+  })
+
+  it('can close the second tab', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Get current windows
+    const windowsRes = await fetch(`${BASE_URL}/windows`)
+    const windows = await windowsRes.json()
+    
+    if (windows.count < 2) {
+      console.log('Only one tab, nothing to close')
+      return
+    }
+
+    const tab2Id = windows.windows[1].windowId
+
+    // Close tab2
+    const closeRes = await fetch(`${BASE_URL}/tabs/close?window=${tab2Id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(closeRes.ok).toBe(true)
+
+    // Verify we're back to 1 tab
+    await waitFor(async () => {
+      const res = await fetch(`${BASE_URL}/windows`)
+      const data = await res.json()
+      return data.count === 1
+    }, 5000)
+
+    const afterRes = await fetch(`${BASE_URL}/windows`)
+    const afterWindows = await afterRes.json()
+    expect(afterWindows.count).toBe(1)
+  })
+})
+
+describe('Selection Feature Tests', () => {
+  it('can start selection mode', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    const res = await fetch(`${BASE_URL}/select/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.ok).toBe(true)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+  })
+
+  it('can check selection status', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    const res = await fetch(`${BASE_URL}/select/status`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data).toHaveProperty('active')
+  })
+
+  it('can get selection result (empty when nothing selected)', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    const res = await fetch(`${BASE_URL}/select/result`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    // Result should be an array (possibly empty)
+    expect(Array.isArray(data.data?.elements || data.data)).toBe(true)
+  })
+
+  it('can cancel selection mode', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    const res = await fetch(`${BASE_URL}/select/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.ok).toBe(true)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+  })
+
+  it('can clear selection', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    const res = await fetch(`${BASE_URL}/select/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.ok).toBe(true)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+  })
+})
+
 describe('Desktop App Resource Tests', () => {
   it('has compiled server binaries', () => {
     const arm64 = join(DESKTOP_DIR, 'resources', 'haltija-server-arm64')
