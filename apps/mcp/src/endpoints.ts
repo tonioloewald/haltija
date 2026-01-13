@@ -165,6 +165,26 @@ export const ALL_ENDPOINTS: EndpointDef[] = [
     description: 'Remove any active highlight overlay.',
     inputSchema: { type: "object" },
   },
+  {
+    path: '/scroll',
+    method: 'POST',
+    summary: 'Scroll to element or position',
+    description: 'Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector to scroll into view" },
+        x: { type: "number", description: "Absolute X position in pixels" },
+        y: { type: "number", description: "Absolute Y position in pixels" },
+        deltaX: { type: "number", description: "Relative horizontal scroll in pixels" },
+        deltaY: { type: "number", description: "Relative vertical scroll in pixels" },
+        duration: { type: "number", description: "Animation duration in ms (default 500)" },
+        easing: { type: "string", description: "Easing function: ease-out (default), ease-in-out, linear" },
+        block: { type: "string", description: "Vertical alignment: center (default), start, end, nearest" },
+        window: { type: "string", description: "Target window ID" },
+      },
+    },
+  },
 
   // Navigation
   {

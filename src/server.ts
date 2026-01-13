@@ -1798,6 +1798,179 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     })
   }
   
+  // Scroll with smooth easing
+  if (path === '/scroll') {
+    return schemaEndpoint(api.scroll, req, headers, async (body) => {
+      const windowId = body.window || targetWindowId
+      const duration = body.duration ?? 500
+      const easing = body.easing || 'ease-out'
+      const block = body.block || 'center'
+      
+      // Easing functions - slight overshoot on ease-out for natural feel
+      const easingCode = `
+        const easings = {
+          'linear': t => t,
+          'ease-out': t => {
+            // Slight overshoot then settle (feels more natural)
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+          },
+          'ease-in-out': t => t < 0.5 
+            ? 4 * t * t * t 
+            : 1 - Math.pow(-2 * t + 2, 3) / 2,
+        };
+        const easing = easings[${JSON.stringify(easing)}] || easings['ease-out'];
+      `
+      
+      if (body.selector) {
+        // Scroll to element with custom smooth animation
+        const code = `
+          (async () => {
+            const el = document.querySelector(${JSON.stringify(body.selector)});
+            if (!el) return { success: false, error: 'Element not found' };
+            
+            const rect = el.getBoundingClientRect();
+            const blockAlign = ${JSON.stringify(block)};
+            
+            let targetY;
+            if (blockAlign === 'start') {
+              targetY = window.scrollY + rect.top;
+            } else if (blockAlign === 'end') {
+              targetY = window.scrollY + rect.bottom - window.innerHeight;
+            } else if (blockAlign === 'nearest') {
+              const above = rect.top < 0;
+              const below = rect.bottom > window.innerHeight;
+              if (above) targetY = window.scrollY + rect.top;
+              else if (below) targetY = window.scrollY + rect.bottom - window.innerHeight;
+              else targetY = window.scrollY; // already visible
+            } else { // center
+              targetY = window.scrollY + rect.top + rect.height / 2 - window.innerHeight / 2;
+            }
+            
+            const startY = window.scrollY;
+            const startX = window.scrollX;
+            const distY = targetY - startY;
+            const duration = ${duration};
+            
+            ${easingCode}
+            
+            return new Promise(resolve => {
+              const startTime = performance.now();
+              
+              function step(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easedProgress = easing(progress);
+                
+                window.scrollTo(
+                  startX,
+                  startY + distY * easedProgress
+                );
+                
+                if (progress < 1) {
+                  requestAnimationFrame(step);
+                } else {
+                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+                }
+              }
+              
+              requestAnimationFrame(step);
+            });
+          })()
+        `
+        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+        return Response.json(response, { headers })
+        
+      } else if (body.x !== undefined || body.y !== undefined) {
+        // Scroll to absolute position
+        const code = `
+          (async () => {
+            const startX = window.scrollX;
+            const startY = window.scrollY;
+            const targetX = ${body.x ?? 'startX'};
+            const targetY = ${body.y ?? 'startY'};
+            const distX = targetX - startX;
+            const distY = targetY - startY;
+            const duration = ${duration};
+            
+            ${easingCode}
+            
+            return new Promise(resolve => {
+              const startTime = performance.now();
+              
+              function step(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easedProgress = easing(progress);
+                
+                window.scrollTo(
+                  startX + distX * easedProgress,
+                  startY + distY * easedProgress
+                );
+                
+                if (progress < 1) {
+                  requestAnimationFrame(step);
+                } else {
+                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+                }
+              }
+              
+              requestAnimationFrame(step);
+            });
+          })()
+        `
+        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+        return Response.json(response, { headers })
+        
+      } else if (body.deltaX !== undefined || body.deltaY !== undefined) {
+        // Scroll by relative amount
+        const code = `
+          (async () => {
+            const startX = window.scrollX;
+            const startY = window.scrollY;
+            const distX = ${body.deltaX ?? 0};
+            const distY = ${body.deltaY ?? 0};
+            const duration = ${duration};
+            
+            ${easingCode}
+            
+            return new Promise(resolve => {
+              const startTime = performance.now();
+              
+              function step(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easedProgress = easing(progress);
+                
+                window.scrollTo(
+                  startX + distX * easedProgress,
+                  startY + distY * easedProgress
+                );
+                
+                if (progress < 1) {
+                  requestAnimationFrame(step);
+                } else {
+                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+                }
+              }
+              
+              requestAnimationFrame(step);
+            });
+          })()
+        `
+        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+        return Response.json(response, { headers })
+        
+      } else {
+        return Response.json({ 
+          success: false, 
+          error: 'Must provide selector, x/y coordinates, or deltaX/deltaY' 
+        }, { headers, status: 400 })
+      }
+    })
+  }
+  
   // DOM tree inspector
   if (path === '/tree') {
     return schemaEndpoint(api.tree, req, headers, async (body) => {

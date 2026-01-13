@@ -126,6 +126,7 @@ I have Haltija running at http://localhost:8700. You can see and control my brow
 - POST /tree - see page structure (use mode:"actionable" for summary of buttons/links/inputs)
 - POST /click - click an element
 - POST /type - type into a field
+- POST /scroll - smooth scroll to element or position
 - POST /eval - run JavaScript (escape hatch)
 - POST /screenshot - capture page image (see options below)
 - GET /events - recent events including network errors

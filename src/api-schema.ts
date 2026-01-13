@@ -151,6 +151,24 @@ export const unhighlight = endpoint({
   input: s.object({}),
 })
 
+export const scroll = endpoint({
+  path: '/scroll',
+  method: 'POST',
+  summary: 'Scroll to element or position',
+  description: 'Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.',
+  input: s.object({
+    selector: s.string.describe('CSS selector to scroll into view').optional,
+    x: s.number.describe('Absolute X position in pixels').optional,
+    y: s.number.describe('Absolute Y position in pixels').optional,
+    deltaX: s.number.describe('Relative horizontal scroll in pixels').optional,
+    deltaY: s.number.describe('Relative vertical scroll in pixels').optional,
+    duration: s.number.describe('Animation duration in ms (default 500)').optional,
+    easing: s.string.describe('Easing function: ease-out (default), ease-in-out, linear').optional,
+    block: s.string.describe('Vertical alignment: center (default), start, end, nearest').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+})
+
 // ============================================
 // Navigation Endpoints
 // ============================================
@@ -489,6 +507,7 @@ export const endpoints = {
   drag,
   highlight,
   unhighlight,
+  scroll,
   
   // Navigation
   navigate,

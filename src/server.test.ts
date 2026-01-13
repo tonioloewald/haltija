@@ -622,6 +622,36 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.input.properties.duration).toBeDefined()
   })
   
+  it('GET on /scroll returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/scroll`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/scroll')
+    expect(data.method).toBe('POST')
+    expect(data.summary).toBe('Scroll to element or position')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.x).toBeDefined()
+    expect(data.input.properties.y).toBeDefined()
+    expect(data.input.properties.deltaX).toBeDefined()
+    expect(data.input.properties.deltaY).toBeDefined()
+    expect(data.input.properties.duration).toBeDefined()
+    expect(data.input.properties.easing).toBeDefined()
+    expect(data.input.properties.block).toBeDefined()
+  })
+  
+  it('/scroll requires at least one scroll target', async () => {
+    const res = await fetch(`${BASE_URL}/scroll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}) // no target specified
+    })
+    expect(res.status).toBe(400)
+    
+    const data = await res.json()
+    expect(data.error).toContain('selector')
+  })
+  
   it('schema validation rejects invalid input', async () => {
     const res = await fetch(`${BASE_URL}/click`, {
       method: 'POST',

@@ -47,6 +47,7 @@ curl localhost:8700/inspect -d '{"selector":"#nav"}'  # Deep inspection
 ```bash
 curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
 curl -X POST localhost:8700/type -d '{"selector":"#email","text":"user@example.com"}'
+curl -X POST localhost:8700/scroll -d '{"selector":"#pricing","easing":"ease-out"}'
 curl -X POST localhost:8700/navigate -d '{"url":"https://example.com"}'
 ```
 
