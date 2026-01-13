@@ -8,7 +8,7 @@
  * 4. Runs its own embedded Haltija server (or connects to existing)
  */
 
-const { app, BrowserWindow, session, ipcMain, desktopCapturer } = require('electron')
+const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -46,6 +46,134 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools()
   }
+}
+
+/**
+ * Create custom menu that prevents Cmd+R from reloading the outer shell
+ * Instead, Cmd+R is handled by renderer.js to reload the active webview
+ */
+function setupMenu() {
+  const isMac = process.platform === 'darwin'
+  
+  const template = [
+    // App menu (macOS only)
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    
+    // File menu
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Tab',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => mainWindow?.webContents.send('menu-new-tab')
+        },
+        {
+          label: 'Close Tab',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => mainWindow?.webContents.send('menu-close-tab')
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' }
+      ]
+    },
+    
+    // Edit menu
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    
+    // View menu - CRITICAL: No reload accelerators here
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Reload Tab',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => mainWindow?.webContents.send('menu-reload-tab')
+        },
+        {
+          label: 'Force Reload Tab',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => mainWindow?.webContents.send('menu-force-reload-tab')
+        },
+        { type: 'separator' },
+        {
+          label: 'Developer Tools (Shell)',
+          accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+          click: () => mainWindow?.webContents.toggleDevTools()
+        },
+        {
+          label: 'Developer Tools (Tab)',
+          accelerator: isMac ? 'Alt+Cmd+J' : 'Ctrl+Shift+J',
+          click: () => mainWindow?.webContents.send('menu-devtools-tab')
+        },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    
+    // Navigate menu
+    {
+      label: 'Navigate',
+      submenu: [
+        {
+          label: 'Back',
+          accelerator: 'CmdOrCtrl+[',
+          click: () => mainWindow?.webContents.send('menu-back')
+        },
+        {
+          label: 'Forward',
+          accelerator: 'CmdOrCtrl+]',
+          click: () => mainWindow?.webContents.send('menu-forward')
+        },
+        { type: 'separator' },
+        {
+          label: 'Focus Address Bar',
+          accelerator: 'CmdOrCtrl+L',
+          click: () => mainWindow?.webContents.send('menu-focus-url')
+        }
+      ]
+    },
+    
+    // Window menu
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' }
+        ] : [])
+      ]
+    }
+  ]
+  
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
 }
 
 /**
@@ -455,6 +583,7 @@ app.whenReady().then(async () => {
     // Continue anyway - user might start server manually
   }
   
+  setupMenu()
   setupHeaderStripping()
   setupWidgetInjection()
   setupScreenCapture()

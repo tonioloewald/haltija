@@ -1175,6 +1175,7 @@
       this.windowId = storedWindowId;
     }
     connectedCallback() {
+      this.killed = false;
       this.serverUrl = this.getAttribute("server") || this.serverUrl;
       this.render();
       const rect = this.getBoundingClientRect();

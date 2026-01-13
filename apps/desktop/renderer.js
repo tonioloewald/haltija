@@ -204,14 +204,19 @@ function getActiveWebview() {
   return tab ? tab.webview : null
 }
 
-// Navigate to URL
+// Navigate to URL (with https->http fallback for any URL without explicit protocol)
 function navigate(url, tabId = activeTabId) {
   const tab = tabs.find(t => t.id === tabId)
   if (!tab) return
   
+  // Track if we added the protocol (vs user explicitly typed it)
+  let addedHttps = false
+  
   // Add protocol if missing
   if (url && !url.match(/^https?:\/\//)) {
     if (url.includes('.') || url === 'localhost' || url.startsWith('localhost:')) {
+      // Looks like a URL - try https first, will fallback to http on failure
+      addedHttps = true
       url = 'https://' + url
     } else {
       url = 'https://www.google.com/search?q=' + encodeURIComponent(url)
@@ -219,6 +224,32 @@ function navigate(url, tabId = activeTabId) {
   }
   
   tab.url = url || getDefaultUrl()
+  
+  // If we added https://, set up fallback to http:// on connection failure
+  if (addedHttps) {
+    const httpUrl = tab.url.replace(/^https:/, 'http:')
+    
+    // Listen for SSL/connection errors to fall back to http
+    const failHandler = (e) => {
+      // Common error codes: -501 (insecure), -102 (connection refused), -118 (connection timed out), -200+ (SSL errors)
+      if (e.errorCode < 0) {
+        console.log(`[Haltija] HTTPS failed (${e.errorCode}), trying HTTP...`)
+        tab.webview.removeEventListener('did-fail-load', failHandler)
+        tab.url = httpUrl
+        tab.webview.src = httpUrl
+        if (tabId === activeTabId) {
+          urlInput.value = httpUrl
+        }
+      }
+    }
+    tab.webview.addEventListener('did-fail-load', failHandler, { once: true })
+    
+    // Clean up handler on success
+    tab.webview.addEventListener('did-finish-load', () => {
+      tab.webview.removeEventListener('did-fail-load', failHandler)
+    }, { once: true })
+  }
+  
   tab.webview.src = tab.url
   
   if (tabId === activeTabId) {
@@ -359,6 +390,137 @@ function setupWebviewEvents(tab) {
   webview.addEventListener('console-message', (e) => {
     const prefix = e.level === 2 ? '[warn]' : e.level === 3 ? '[error]' : ''
     console.log(`[Tab ${tab.id}${prefix}]`, e.message)
+  })
+  
+  // Right-click context menu with Inspect Element
+  webview.addEventListener('context-menu', (e) => {
+    e.preventDefault()
+    const { x, y } = e.params
+    
+    // Create and show context menu
+    const menu = document.createElement('div')
+    menu.className = 'context-menu'
+    menu.style.cssText = `
+      position: fixed;
+      left: ${e.clientX || x}px;
+      top: ${e.clientY || y}px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 0;
+      min-width: 150px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 10000;
+    `
+    
+    const items = [
+      { label: 'Back', action: () => webview.canGoBack() && webview.goBack(), enabled: webview.canGoBack() },
+      { label: 'Forward', action: () => webview.canGoForward() && webview.goForward(), enabled: webview.canGoForward() },
+      { label: 'Reload', action: () => webview.reload() },
+      { type: 'separator' },
+      { label: 'Inspect Element', action: () => webview.inspectElement(x, y) }
+    ]
+    
+    items.forEach(item => {
+      if (item.type === 'separator') {
+        const sep = document.createElement('div')
+        sep.style.cssText = 'height: 1px; background: var(--border); margin: 4px 0;'
+        menu.appendChild(sep)
+      } else {
+        const menuItem = document.createElement('div')
+        menuItem.textContent = item.label
+        menuItem.style.cssText = `
+          padding: 6px 12px;
+          cursor: ${item.enabled === false ? 'default' : 'pointer'};
+          opacity: ${item.enabled === false ? '0.5' : '1'};
+          color: var(--text);
+        `
+        if (item.enabled !== false) {
+          menuItem.addEventListener('mouseenter', () => {
+            menuItem.style.background = 'var(--hover)'
+          })
+          menuItem.addEventListener('mouseleave', () => {
+            menuItem.style.background = 'transparent'
+          })
+          menuItem.addEventListener('click', () => {
+            document.body.removeChild(menu)
+            item.action()
+          })
+        }
+        menu.appendChild(menuItem)
+      }
+    })
+    
+    document.body.appendChild(menu)
+    
+    // Close menu on click outside
+    const closeMenu = (evt) => {
+      if (!menu.contains(evt.target)) {
+        if (document.body.contains(menu)) {
+          document.body.removeChild(menu)
+        }
+        document.removeEventListener('click', closeMenu)
+      }
+    }
+    setTimeout(() => document.addEventListener('click', closeMenu), 0)
+  })
+  
+  // Intercept keyboard shortcuts inside webview
+  // This ensures Cmd+R reloads the webview, not the outer shell
+  // Note: before-input-event provides input info via e.input property in Electron webview
+  webview.addEventListener('before-input-event', (e) => {
+    const input = e.input || e // Handle both webview event structure and potential variations
+    const { type, key, meta, control } = input
+    if (type !== 'keyDown') return
+    
+    // Cmd/Ctrl + R = refresh this webview (prevent outer shell refresh)
+    if ((meta || control) && key === 'r') {
+      e.preventDefault()
+      e.stopPropagation()
+      webview.reload()
+      return
+    }
+    
+    // Cmd/Ctrl + L = focus address bar
+    if ((meta || control) && key === 'l') {
+      e.preventDefault()
+      e.stopPropagation()
+      urlInput.focus()
+      urlInput.select()
+      return
+    }
+    
+    // Cmd/Ctrl + T = new tab
+    if ((meta || control) && key === 't') {
+      e.preventDefault()
+      e.stopPropagation()
+      createTab()
+      return
+    }
+    
+    // Cmd/Ctrl + W = close this tab
+    if ((meta || control) && key === 'w') {
+      e.preventDefault()
+      e.stopPropagation()
+      closeTab(tab.id)
+      return
+    }
+    
+    // Cmd/Ctrl + [ = back
+    if ((meta || control) && key === '[') {
+      e.preventDefault()
+      e.stopPropagation()
+      if (webview.canGoBack()) webview.goBack()
+      return
+    }
+    
+    // Cmd/Ctrl + ] = forward
+    if ((meta || control) && key === ']') {
+      e.preventDefault()
+      e.stopPropagation()
+      if (webview.canGoForward()) webview.goForward()
+      return
+    }
   })
 }
 
@@ -560,5 +722,47 @@ if (window.haltija && window.haltija.onOpenUrlInTab) {
   window.haltija.onOpenUrlInTab((url) => {
     console.log('[Haltija Desktop] Opening URL in new tab:', url)
     createTab(url)
+  })
+}
+
+// Listen for menu commands from main process
+// These handle Cmd+R, Cmd+T, etc. from the application menu
+if (window.haltija) {
+  window.haltija.onMenuNewTab?.(() => {
+    createTab()
+  })
+  
+  window.haltija.onMenuCloseTab?.(() => {
+    if (activeTabId) closeTab(activeTabId)
+  })
+  
+  window.haltija.onMenuReloadTab?.(() => {
+    const webview = getActiveWebview()
+    if (webview) webview.reload()
+  })
+  
+  window.haltija.onMenuForceReloadTab?.(() => {
+    const webview = getActiveWebview()
+    if (webview) webview.reloadIgnoringCache()
+  })
+  
+  window.haltija.onMenuDevToolsTab?.(() => {
+    const webview = getActiveWebview()
+    if (webview) webview.openDevTools()
+  })
+  
+  window.haltija.onMenuBack?.(() => {
+    const webview = getActiveWebview()
+    if (webview && webview.canGoBack()) webview.goBack()
+  })
+  
+  window.haltija.onMenuForward?.(() => {
+    const webview = getActiveWebview()
+    if (webview && webview.canGoForward()) webview.goForward()
+  })
+  
+  window.haltija.onMenuFocusUrl?.(() => {
+    urlInput.focus()
+    urlInput.select()
   })
 }
