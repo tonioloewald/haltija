@@ -85,17 +85,429 @@ registerHandler(api.click, async (body, ctx) => {
   await ctx.requestFromBrowser('eval', 'exec', {
     code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
   }, 5000, windowId)
-  await sleep(100) // Wait for scroll
+  await sleep(100)
   
   // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
   for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-    await ctx.requestFromBrowser('events', 'dispatch', {
-      selector,
-      event,
-    }, 5000, windowId)
+    await ctx.requestFromBrowser('events', 'dispatch', { selector, event }, 5000, windowId)
   }
   
   return Response.json({ success: true }, { headers: ctx.headers })
+})
+
+// Query handler
+registerHandler(api.query, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dom', 'query', {
+    selector: body.selector,
+    all: body.all,
+  }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Eval handler
+registerHandler(api.eval_, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Drag handler
+registerHandler(api.drag, async (body, ctx) => {
+  const selector = body.selector
+  const deltaX = body.deltaX || 0
+  const deltaY = body.deltaY || 0
+  const duration = body.duration || 300
+  const steps = Math.max(5, Math.floor(duration / 16))
+  const windowId = body.window || ctx.targetWindowId
+  
+  // Scroll into view
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+  }, 5000, windowId)
+  await sleep(100)
+  
+  // Get element center
+  const inspectResponse = await ctx.requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
+  if (!inspectResponse.success || !inspectResponse.data) {
+    return Response.json({ success: false, error: 'Element not found' }, { headers: ctx.headers })
+  }
+  const box = inspectResponse.data.box
+  const startX = box.x + box.width / 2
+  const startY = box.y + box.height / 2
+  
+  // mouseenter, mouseover, mousemove to start
+  for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
+    await ctx.requestFromBrowser('events', 'dispatch', {
+      selector, event, options: { clientX: startX, clientY: startY },
+    }, 5000, windowId)
+  }
+  
+  // mousedown
+  await ctx.requestFromBrowser('events', 'dispatch', {
+    selector, event: 'mousedown', options: { clientX: startX, clientY: startY },
+  }, 5000, windowId)
+  
+  // mousemove steps
+  const stepDelay = duration / steps
+  for (let i = 1; i <= steps; i++) {
+    const progress = i / steps
+    const x = startX + deltaX * progress
+    const y = startY + deltaY * progress
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
+    }, 5000, windowId)
+    await sleep(stepDelay)
+  }
+  
+  // mouseup
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
+  }, 5000, windowId)
+  
+  return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers: ctx.headers })
+})
+
+// Type handler - human-like typing
+registerHandler(api.type, async (body, ctx) => {
+  const text: string = body.text || ''
+  const humanlike: boolean = body.humanlike !== false
+  const typoRate: number = body.typoRate ?? 0.03
+  const minDelay: number = body.minDelay ?? 50
+  const maxDelay: number = body.maxDelay ?? 150
+  const windowId = body.window || ctx.targetWindowId
+  
+  // Scroll into view
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+  }, 5000, windowId)
+  await sleep(100)
+  
+  // Focus
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.querySelector(${JSON.stringify(body.selector)})?.focus()`
+  }, 5000, windowId)
+  await sleep(50)
+  
+  if (!humanlike) {
+    const response = await ctx.requestFromBrowser('events', 'dispatch', {
+      selector: body.selector, event: 'input', options: { value: text },
+    }, 5000, windowId)
+    return Response.json(response, { headers: ctx.headers })
+  }
+  
+  // Adjacent keys for typos
+  const adjacentKeys: Record<string, string[]> = {
+    'a': ['s', 'q', 'w', 'z'], 'b': ['v', 'g', 'h', 'n'], 'c': ['x', 'd', 'f', 'v'],
+    'd': ['s', 'e', 'r', 'f', 'c', 'x'], 'e': ['w', 'r', 'd', 's'], 'f': ['d', 'r', 't', 'g', 'v', 'c'],
+    'g': ['f', 't', 'y', 'h', 'b', 'v'], 'h': ['g', 'y', 'u', 'j', 'n', 'b'], 'i': ['u', 'o', 'k', 'j'],
+    'j': ['h', 'u', 'i', 'k', 'm', 'n'], 'k': ['j', 'i', 'o', 'l', 'm'], 'l': ['k', 'o', 'p', ';'],
+    'm': ['n', 'j', 'k', ','], 'n': ['b', 'h', 'j', 'm'], 'o': ['i', 'p', 'l', 'k'],
+    'p': ['o', 'l', '['], 'q': ['w', 'a'], 'r': ['e', 't', 'f', 'd'],
+    's': ['a', 'w', 'e', 'd', 'x', 'z'], 't': ['r', 'y', 'g', 'f'], 'u': ['y', 'i', 'j', 'h'],
+    'v': ['c', 'f', 'g', 'b'], 'w': ['q', 'e', 's', 'a'], 'x': ['z', 's', 'd', 'c'],
+    'y': ['t', 'u', 'h', 'g'], 'z': ['a', 's', 'x'],
+  }
+  
+  let currentValue = ''
+  let typoCount = 0
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const delay = minDelay + Math.random() * (maxDelay - minDelay)
+    
+    if (Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
+      const wrongKeys = adjacentKeys[char.toLowerCase()]
+      const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)]
+      const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
+      
+      currentValue += typoChar
+      await ctx.requestFromBrowser('eval', 'exec', {
+        code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true})); } })()`
+      }, 5000, windowId)
+      await sleep(delay)
+      await sleep(100 + Math.random() * 200)
+      
+      currentValue = currentValue.slice(0, -1)
+      await ctx.requestFromBrowser('eval', 'exec', {
+        code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'})); } })()`
+      }, 5000, windowId)
+      await sleep(delay * 0.5)
+      typoCount++
+    }
+    
+    currentValue += char
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true})); } })()`
+    }, 5000, windowId)
+    await sleep(delay)
+    
+    if (Math.random() < 0.05) await sleep(200 + Math.random() * 300)
+  }
+  
+  return Response.json({ success: true, typed: text, typos: typoCount, humanlike: true }, { headers: ctx.headers })
+})
+
+// Inspect handler
+registerHandler(api.inspect, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// InspectAll handler
+registerHandler(api.inspectAll, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dom', 'inspectAll', { 
+    selector: body.selector, limit: body.limit || 10 
+  }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Highlight handler
+registerHandler(api.highlight, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  
+  await ctx.requestFromBrowser('eval', 'exec', {
+    code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+  }, 5000, windowId)
+  await sleep(100)
+  
+  const response = await ctx.requestFromBrowser('dom', 'highlight', {
+    selector: body.selector, label: body.label, color: body.color, duration: body.duration,
+  }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Unhighlight handler
+registerHandler(api.unhighlight, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('dom', 'unhighlight', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Navigate handler
+registerHandler(api.navigate, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Refresh handler
+registerHandler(api.refresh, async (body, ctx) => {
+  const hard = body.hard ?? false
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Tree handler
+registerHandler(api.tree, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dom', 'tree', {
+    selector: body.selector || 'body',
+    depth: body.depth,
+    includeText: body.includeText,
+    compact: body.compact,
+    pierceShadow: body.pierceShadow,
+    visibleOnly: body.visibleOnly,
+  }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Screenshot handler
+registerHandler(api.screenshot, async (body, ctx) => {
+  const response = await ctx.requestFromBrowser('dom', 'screenshot', {
+    selector: body.selector,
+    format: body.format,
+    quality: body.quality,
+    scale: body.scale,
+    maxWidth: body.maxWidth,
+    maxHeight: body.maxHeight,
+  })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Tabs handlers
+registerHandler(api.tabsOpen, async (body, ctx) => {
+  const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.tabsClose, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  if (!windowId) {
+    return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers: ctx.headers })
+  }
+  const response = await ctx.requestFromBrowser('tabs', 'close', { windowId })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.tabsFocus, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  if (!windowId) {
+    return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers: ctx.headers })
+  }
+  const response = await ctx.requestFromBrowser('tabs', 'focus', { windowId })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Mutations handlers
+registerHandler(api.mutationsWatch, async (body, ctx) => {
+  const response = await ctx.requestFromBrowser('mutations', 'watch', {
+    root: body.root,
+    childList: body.childList ?? true,
+    attributes: body.attributes ?? true,
+    characterData: body.characterData ?? false,
+    subtree: body.subtree ?? true,
+    debounce: body.debounce ?? 100,
+    preset: body.preset,
+    filters: body.filters,
+    pierceShadow: body.pierceShadow,
+  })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.mutationsUnwatch, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('mutations', 'unwatch', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Events handlers
+registerHandler(api.eventsWatch, async (body, ctx) => {
+  const response = await ctx.requestFromBrowser('semantic', 'watch', {
+    preset: body.preset,
+    categories: body.categories,
+  })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.eventsUnwatch, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('semantic', 'unwatch', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Recording handlers
+registerHandler(api.recordingStart, async (body, ctx) => {
+  const response = await ctx.requestFromBrowser('recording', 'start', { name: body.name })
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.recordingStop, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('recording', 'stop', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Selection handlers
+registerHandler(api.selectStart, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('selection', 'start', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.selectCancel, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('selection', 'cancel', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.selectClear, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('selection', 'clear', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Scroll handler - smooth scroll with easing
+registerHandler(api.scroll, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const duration = body.duration ?? 500
+  const easing = body.easing || 'ease-out'
+  const block = body.block || 'center'
+  
+  const easingCode = `
+    const easings = {
+      'linear': t => t,
+      'ease-out': t => {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+      },
+      'ease-in-out': t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+    };
+    const easing = easings[${JSON.stringify(easing)}] || easings['ease-out'];
+  `
+  
+  if (body.selector) {
+    const code = `
+      (async () => {
+        const el = document.querySelector(${JSON.stringify(body.selector)});
+        if (!el) return { success: false, error: 'Element not found' };
+        const rect = el.getBoundingClientRect();
+        const blockAlign = ${JSON.stringify(block)};
+        let targetY;
+        if (blockAlign === 'start') targetY = window.scrollY + rect.top;
+        else if (blockAlign === 'end') targetY = window.scrollY + rect.bottom - window.innerHeight;
+        else if (blockAlign === 'nearest') {
+          if (rect.top < 0) targetY = window.scrollY + rect.top;
+          else if (rect.bottom > window.innerHeight) targetY = window.scrollY + rect.bottom - window.innerHeight;
+          else targetY = window.scrollY;
+        } else targetY = window.scrollY + rect.top + rect.height / 2 - window.innerHeight / 2;
+        const startY = window.scrollY, startX = window.scrollX, distY = targetY - startY;
+        ${easingCode}
+        return new Promise(resolve => {
+          const startTime = performance.now();
+          function step(now) {
+            const progress = Math.min((now - startTime) / ${duration}, 1);
+            window.scrollTo(startX, startY + distY * easing(progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+          }
+          requestAnimationFrame(step);
+        });
+      })()
+    `
+    const response = await ctx.requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+    return Response.json(response, { headers: ctx.headers })
+  } else if (body.x !== undefined || body.y !== undefined) {
+    const code = `
+      (async () => {
+        const startX = window.scrollX, startY = window.scrollY;
+        const targetX = ${body.x ?? 'startX'}, targetY = ${body.y ?? 'startY'};
+        const distX = targetX - startX, distY = targetY - startY;
+        ${easingCode}
+        return new Promise(resolve => {
+          const startTime = performance.now();
+          function step(now) {
+            const progress = Math.min((now - startTime) / ${duration}, 1);
+            window.scrollTo(startX + distX * easing(progress), startY + distY * easing(progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+          }
+          requestAnimationFrame(step);
+        });
+      })()
+    `
+    const response = await ctx.requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+    return Response.json(response, { headers: ctx.headers })
+  } else if (body.deltaX !== undefined || body.deltaY !== undefined) {
+    const code = `
+      (async () => {
+        const startX = window.scrollX, startY = window.scrollY;
+        const distX = ${body.deltaX ?? 0}, distY = ${body.deltaY ?? 0};
+        ${easingCode}
+        return new Promise(resolve => {
+          const startTime = performance.now();
+          function step(now) {
+            const progress = Math.min((now - startTime) / ${duration}, 1);
+            window.scrollTo(startX + distX * easing(progress), startY + distY * easing(progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
+          }
+          requestAnimationFrame(step);
+        });
+      })()
+    `
+    const response = await ctx.requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
+    return Response.json(response, { headers: ctx.headers })
+  } else {
+    return Response.json({ success: false, error: 'Must provide selector, x/y coordinates, or deltaX/deltaY' }, { status: 400, headers: ctx.headers })
+  }
 })
 
 /** JSON response helper */

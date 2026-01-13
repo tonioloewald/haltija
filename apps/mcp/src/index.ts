@@ -15,7 +15,26 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 
-import { ALL_ENDPOINTS, type EndpointDef } from "./endpoints.js"
+// Import generated endpoints JSON (built from api-schema.ts - single source of truth)
+import endpoints from "./endpoints.json" with { type: "json" }
+
+interface EndpointDef {
+  path: string
+  method: 'GET' | 'POST'
+  summary: string
+  description?: string
+  inputSchema?: {
+    type: "object"
+    properties?: Record<string, unknown>
+    required?: string[]
+  }
+}
+
+const ALL_ENDPOINTS = endpoints as EndpointDef[]
+
+function getInputSchema(ep: EndpointDef): EndpointDef['inputSchema'] {
+  return ep.inputSchema
+}
 
 // Configuration
 const DEFAULT_PORT = 8700
@@ -61,14 +80,19 @@ async function callHaltija(endpoint: EndpointDef, args: Record<string, unknown>)
 }
 
 // Convert JSON Schema to Zod schema (simplified)
-function jsonSchemaToZod(schema: EndpointDef['inputSchema']): z.ZodObject<z.ZodRawShape> {
-  if (!schema || !schema.properties) {
+function jsonSchemaToZod(schema: object | undefined): z.ZodObject<z.ZodRawShape> {
+  if (!schema) {
+    return z.object({})
+  }
+  
+  const s = schema as { type?: string; properties?: Record<string, unknown>; required?: string[] }
+  if (!s.properties) {
     return z.object({})
   }
   
   const shape: z.ZodRawShape = {}
   
-  for (const [key, prop] of Object.entries(schema.properties)) {
+  for (const [key, prop] of Object.entries(s.properties)) {
     const p = prop as { type?: string; description?: string; items?: { type?: string } }
     let zodType: z.ZodTypeAny
     
@@ -94,7 +118,7 @@ function jsonSchemaToZod(schema: EndpointDef['inputSchema']): z.ZodObject<z.ZodR
     }
     
     // Make optional unless in required array
-    if (!schema.required?.includes(key)) {
+    if (!s.required?.includes(key)) {
       zodType = zodType.optional()
     }
     
@@ -108,10 +132,12 @@ function jsonSchemaToZod(schema: EndpointDef['inputSchema']): z.ZodObject<z.ZodR
 for (const endpoint of ALL_ENDPOINTS) {
   const toolName = pathToToolName(endpoint.path)
   const description = endpoint.description || endpoint.summary
+  const inputSchema = getInputSchema(endpoint)
+  const schemaProps = (inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties
   
-  if (endpoint.inputSchema && Object.keys(endpoint.inputSchema.properties || {}).length > 0) {
+  if (inputSchema && schemaProps && Object.keys(schemaProps).length > 0) {
     // Tool with parameters
-    const zodSchema = jsonSchemaToZod(endpoint.inputSchema)
+    const zodSchema = jsonSchemaToZod(inputSchema)
     
     server.tool(
       toolName,

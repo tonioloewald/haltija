@@ -1,0 +1,933 @@
+[
+    {
+        "path": "/tree",
+        "method": "POST",
+        "summary": "Get DOM tree structure",
+        "description": "Returns hierarchical view of page elements with flags for interactivity, visibility, data bindings, shadow DOM, etc. Great for understanding page structure.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Root element selector"
+                },
+                "depth": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Max depth (-1 = unlimited, default 3)"
+                },
+                "includeText": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Include text content (default true)"
+                },
+                "visibleOnly": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Only visible elements (default false)"
+                },
+                "pierceShadow": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Pierce shadow DOM (default false)"
+                },
+                "compact": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Minimal output (default false)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/query",
+        "method": "POST",
+        "summary": "Query DOM elements by selector",
+        "description": "Find elements matching a CSS selector. Returns basic element info.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector"
+                },
+                "all": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Return all matches (default false = first only)"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/inspect",
+        "method": "POST",
+        "summary": "Deep inspection of an element",
+        "description": "Get detailed info: geometry, computed styles, ARIA attributes, visibility, scroll position, and more.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/inspectAll",
+        "method": "POST",
+        "summary": "Inspect multiple elements",
+        "description": "Deep inspection of all elements matching selector.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector"
+                },
+                "limit": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Max elements (default 10)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/click",
+        "method": "POST",
+        "summary": "Click an element",
+        "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of element to click"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/type",
+        "method": "POST",
+        "summary": "Type text into an element",
+        "description": "Focus element and type text. Supports human-like typing with variable delays and occasional typos that get corrected.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of input/textarea"
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Text to type"
+                },
+                "humanlike": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Human-like delays (default true)"
+                },
+                "typoRate": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Typo probability 0-1 (default 0.03)"
+                },
+                "minDelay": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Min ms between keys (default 50)"
+                },
+                "maxDelay": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Max ms between keys (default 150)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector",
+                "text"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/drag",
+        "method": "POST",
+        "summary": "Drag from an element",
+        "description": "Simulates drag: mousedown on element, mousemove by delta, mouseup. Good for sliders, resizing, reordering.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of drag handle"
+                },
+                "deltaX": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Horizontal distance in pixels"
+                },
+                "deltaY": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Vertical distance in pixels"
+                },
+                "duration": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Drag duration in ms (default 300)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/highlight",
+        "method": "POST",
+        "summary": "Visually highlight an element",
+        "description": "Draw attention to an element with colored border and optional label. Great for showing users what you found.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector"
+                },
+                "label": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Label text to show"
+                },
+                "color": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "CSS color (default #6366f1)"
+                },
+                "duration": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Auto-hide after ms (omit for manual)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "selector"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/unhighlight",
+        "method": "POST",
+        "summary": "Remove highlight",
+        "description": "Remove any active highlight overlay.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/scroll",
+        "method": "POST",
+        "summary": "Scroll to element or position",
+        "description": "Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "CSS selector to scroll into view"
+                },
+                "x": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Absolute X position in pixels"
+                },
+                "y": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Absolute Y position in pixels"
+                },
+                "deltaX": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Relative horizontal scroll in pixels"
+                },
+                "deltaY": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Relative vertical scroll in pixels"
+                },
+                "duration": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Animation duration in ms (default 500)"
+                },
+                "easing": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Easing function: ease-out (default), ease-in-out, linear"
+                },
+                "block": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Vertical alignment: center (default), start, end, nearest"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/navigate",
+        "method": "POST",
+        "summary": "Navigate to a URL",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL to navigate to"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "url"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/refresh",
+        "method": "POST",
+        "summary": "Refresh the page",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hard": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Bypass cache (default false)"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/location",
+        "method": "GET",
+        "summary": "Get current URL and title",
+        "description": "Returns the current page URL and document title."
+    },
+    {
+        "path": "/mutations/watch",
+        "method": "POST",
+        "summary": "Start watching DOM mutations",
+        "description": "Begin capturing DOM changes (element adds/removes, attribute changes). Uses presets for filtering.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "root": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Root selector to watch (default body)"
+                },
+                "childList": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Watch child additions/removals (default true)"
+                },
+                "attributes": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Watch attribute changes (default true)"
+                },
+                "characterData": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Watch text content changes (default false)"
+                },
+                "subtree": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Watch all descendants (default true)"
+                },
+                "debounce": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Debounce ms (default 100)"
+                },
+                "preset": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none"
+                },
+                "filters": {
+                    "description": "Custom filter configuration",
+                    "type": [
+                        null,
+                        "null"
+                    ]
+                },
+                "pierceShadow": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Watch inside shadow DOM (default false)"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/mutations/unwatch",
+        "method": "POST",
+        "summary": "Stop watching mutations",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/mutations/status",
+        "method": "GET",
+        "summary": "Get mutation watch status"
+    },
+    {
+        "path": "/events/watch",
+        "method": "POST",
+        "summary": "Start watching semantic events",
+        "description": "Begin capturing aggregated events (clicks, typing, navigation). Retrieve with GET /events. Events are semantic: \"user typed hello\" not 5 keydown events.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "preset": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Verbosity: minimal, interactive, detailed, debug"
+                },
+                "categories": {
+                    "type": [
+                        "array",
+                        "null"
+                    ],
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Specific categories to watch"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/events/unwatch",
+        "method": "POST",
+        "summary": "Stop watching events",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/events",
+        "method": "GET",
+        "summary": "Get captured semantic events",
+        "description": "Returns buffered events since watch started. Events are aggregated and meaningful."
+    },
+    {
+        "path": "/events/stats",
+        "method": "GET",
+        "summary": "Get event aggregation statistics",
+        "description": "Shows noise reduction metrics: raw DOM events vs semantic events emitted."
+    },
+    {
+        "path": "/console",
+        "method": "GET",
+        "summary": "Get console output",
+        "description": "Returns captured console.log/warn/error/info from the page."
+    },
+    {
+        "path": "/eval",
+        "method": "POST",
+        "summary": "Execute JavaScript",
+        "description": "Run arbitrary JavaScript in the browser context. Returns the result.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "JavaScript code to execute"
+                },
+                "window": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Target window ID"
+                }
+            },
+            "required": [
+                "code"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/screenshot",
+        "method": "POST",
+        "summary": "Capture a screenshot",
+        "description": "Capture the page or a specific element as base64 PNG.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Element to capture (omit for full page)"
+                },
+                "scale": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Scale factor (default 1)"
+                },
+                "maxWidth": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Max width in pixels"
+                },
+                "maxHeight": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Max height in pixels"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/select/start",
+        "method": "POST",
+        "summary": "Start interactive selection",
+        "description": "User drags to select a region. Call /select/result to get elements in selection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/select/cancel",
+        "method": "POST",
+        "summary": "Cancel selection mode",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/select/status",
+        "method": "GET",
+        "summary": "Check if selection is active"
+    },
+    {
+        "path": "/select/result",
+        "method": "GET",
+        "summary": "Get selection result",
+        "description": "After user completes selection, returns the region and elements within."
+    },
+    {
+        "path": "/select/clear",
+        "method": "POST",
+        "summary": "Clear selection result",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/windows",
+        "method": "GET",
+        "summary": "List connected windows",
+        "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles."
+    },
+    {
+        "path": "/tabs/open",
+        "method": "POST",
+        "summary": "Open a new tab",
+        "description": "Desktop app only. Opens a new tab.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "URL to open"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/tabs/close",
+        "method": "POST",
+        "summary": "Close a tab",
+        "description": "Desktop app only. Closes specified tab.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "window": {
+                    "type": "string",
+                    "description": "Window ID to close"
+                }
+            },
+            "required": [
+                "window"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/tabs/focus",
+        "method": "POST",
+        "summary": "Focus a tab",
+        "description": "Desktop app only. Brings tab to front.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "window": {
+                    "type": "string",
+                    "description": "Window ID to focus"
+                }
+            },
+            "required": [
+                "window"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/recording/start",
+        "method": "POST",
+        "summary": "Start recording user actions",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/recording/stop",
+        "method": "POST",
+        "summary": "Stop recording",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/recording/generate",
+        "method": "POST",
+        "summary": "Generate test from recording",
+        "description": "Converts recorded semantic events into a JSON test file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "Test name"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/recordings",
+        "method": "GET",
+        "summary": "List saved recordings"
+    },
+    {
+        "path": "/test/run",
+        "method": "POST",
+        "summary": "Run a JSON test",
+        "description": "Execute a test defined in Haltija JSON format.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "test": {
+                    "description": "Test object with steps"
+                }
+            },
+            "required": [
+                "test"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/test/validate",
+        "method": "POST",
+        "summary": "Validate test without running",
+        "description": "Check that all selectors exist and test is well-formed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "test": {
+                    "description": "Test object to validate"
+                }
+            },
+            "required": [
+                "test"
+            ],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/snapshot",
+        "method": "POST",
+        "summary": "Capture page snapshot",
+        "description": "Capture current page state including DOM tree, console, and viewport for debugging.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trigger": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "What triggered the snapshot (e.g., \"manual\", \"test-failure\")"
+                },
+                "context": {
+                    "description": "Additional context about the snapshot",
+                    "type": [
+                        null,
+                        "null"
+                    ]
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    },
+    {
+        "path": "/status",
+        "method": "GET",
+        "summary": "Server status",
+        "description": "Returns server info and connected browser count."
+    },
+    {
+        "path": "/version",
+        "method": "GET",
+        "summary": "Get server version"
+    },
+    {
+        "path": "/docs",
+        "method": "GET",
+        "summary": "Quick start guide",
+        "description": "Human-readable getting started docs for AI agents."
+    },
+    {
+        "path": "/api",
+        "method": "GET",
+        "summary": "Full API reference",
+        "description": "Complete API documentation."
+    }
+]

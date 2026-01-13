@@ -1297,17 +1297,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json(response, { headers })
   }
   
-  // DOM query shorthand
-  if (path === '/query') {
-    return schemaEndpoint(api.query, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('dom', 'query', {
-        selector: body.selector,
-        all: body.all,
-      }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
+  // /query - now handled by api-router
   
   // Console get shorthand
   if (path === '/console' && req.method === 'GET') {
@@ -1316,231 +1306,11 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json(response, { headers })
   }
   
-  // Eval shorthand
-  if (path === '/eval') {
-    return schemaEndpoint(api.eval_, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
+  // /eval, /click - now handled by api-router
   
-  // Click - now handled by api-router via api-handlers.ts
+  // /drag - now handled by api-router
   
-  // Drag shorthand - simulates a drag operation
-  if (path === '/drag') {
-    return schemaEndpoint(api.drag, req, headers, async (body) => {
-      const selector = body.selector
-      const deltaX = body.deltaX || 0
-      const deltaY = body.deltaY || 0
-      const duration = body.duration || 300 // ms
-      const steps = Math.max(5, Math.floor(duration / 16)) // ~60fps
-      const windowId = body.window || targetWindowId
-      
-      // Scroll element into view first
-      await requestFromBrowser('eval', 'exec', {
-        code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-      }, 5000, windowId)
-      await new Promise(r => setTimeout(r, 100))
-      
-      // Get element center position
-      const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
-      if (!inspectResponse.success || !inspectResponse.data) {
-        return Response.json({ success: false, error: 'Element not found' }, { headers })
-      }
-      const box = inspectResponse.data.box
-      const startX = box.x + box.width / 2
-      const startY = box.y + box.height / 2
-      
-      // mouseenter, mouseover, mousemove to start position
-      for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
-        await requestFromBrowser('events', 'dispatch', {
-          selector,
-          event,
-          options: { clientX: startX, clientY: startY },
-        }, 5000, windowId)
-      }
-      
-      // mousedown
-      await requestFromBrowser('events', 'dispatch', {
-        selector,
-        event: 'mousedown',
-        options: { clientX: startX, clientY: startY },
-      }, 5000, windowId)
-      
-      // mousemove steps (dispatched on document)
-      const stepDelay = duration / steps
-      for (let i = 1; i <= steps; i++) {
-        const progress = i / steps
-        const x = startX + deltaX * progress
-        const y = startY + deltaY * progress
-        await requestFromBrowser('eval', 'exec', {
-          code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
-        }, 5000, windowId)
-        await new Promise(r => setTimeout(r, stepDelay))
-      }
-      
-      // mouseup
-      await requestFromBrowser('eval', 'exec', {
-        code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
-      }, 5000, windowId)
-      
-      return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
-    })
-  }
-  
-  // Type shorthand - human-like typing with variable latency and occasional typos
-  if (path === '/type') {
-    return schemaEndpoint(api.type, req, headers, async (body) => {
-    const text: string = body.text || ''
-    const humanlike: boolean = body.humanlike !== false // default true
-    const typoRate: number = body.typoRate ?? 0.03 // 3% chance of typo per character
-    const minDelay: number = body.minDelay ?? 50 // ms between keystrokes
-    const maxDelay: number = body.maxDelay ?? 150 // ms between keystrokes
-    const windowId = body.window || targetWindowId
-    
-    // Scroll element into view first
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-    await new Promise(r => setTimeout(r, 100))
-    
-    // Focus the element
-    await requestFromBrowser('eval', 'exec', {
-      code: `document.querySelector(${JSON.stringify(body.selector)})?.focus()`
-    }, 5000, windowId)
-    await new Promise(r => setTimeout(r, 50))
-    
-    if (!humanlike) {
-      // Fast mode: just set the value directly
-      const response = await requestFromBrowser('events', 'dispatch', {
-        selector: body.selector,
-        event: 'input',
-        options: { value: text },
-      }, 5000, windowId)
-      return Response.json(response, { headers })
-    }
-    
-    // Human-like typing: character by character with variable timing and typos
-    // Adjacent keys for realistic typos
-    const adjacentKeys: Record<string, string[]> = {
-      'a': ['s', 'q', 'w', 'z'],
-      'b': ['v', 'g', 'h', 'n'],
-      'c': ['x', 'd', 'f', 'v'],
-      'd': ['s', 'e', 'r', 'f', 'c', 'x'],
-      'e': ['w', 'r', 'd', 's'],
-      'f': ['d', 'r', 't', 'g', 'v', 'c'],
-      'g': ['f', 't', 'y', 'h', 'b', 'v'],
-      'h': ['g', 'y', 'u', 'j', 'n', 'b'],
-      'i': ['u', 'o', 'k', 'j'],
-      'j': ['h', 'u', 'i', 'k', 'm', 'n'],
-      'k': ['j', 'i', 'o', 'l', 'm'],
-      'l': ['k', 'o', 'p', ';'],
-      'm': ['n', 'j', 'k', ','],
-      'n': ['b', 'h', 'j', 'm'],
-      'o': ['i', 'p', 'l', 'k'],
-      'p': ['o', 'l', '['],
-      'q': ['w', 'a'],
-      'r': ['e', 't', 'f', 'd'],
-      's': ['a', 'w', 'e', 'd', 'x', 'z'],
-      't': ['r', 'y', 'g', 'f'],
-      'u': ['y', 'i', 'j', 'h'],
-      'v': ['c', 'f', 'g', 'b'],
-      'w': ['q', 'e', 's', 'a'],
-      'x': ['z', 's', 'd', 'c'],
-      'y': ['t', 'u', 'h', 'g'],
-      'z': ['a', 's', 'x'],
-      '0': ['9', '-'],
-      '1': ['2', '`'],
-      '2': ['1', '3'],
-      '3': ['2', '4'],
-      '4': ['3', '5'],
-      '5': ['4', '6'],
-      '6': ['5', '7'],
-      '7': ['6', '8'],
-      '8': ['7', '9'],
-      '9': ['8', '0'],
-    }
-    
-    let currentValue = ''
-    let typoCount = 0
-    
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i]
-      const delay = minDelay + Math.random() * (maxDelay - minDelay)
-      
-      // Occasionally make a typo
-      if (Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
-        const wrongKeys = adjacentKeys[char.toLowerCase()]
-        const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)]
-        const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
-        
-        // Type the wrong character
-        currentValue += typoChar
-        await requestFromBrowser('eval', 'exec', {
-          code: `(function(){
-            const el = document.querySelector(${JSON.stringify(body.selector)});
-            if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(typoChar)}})); }
-          })()`
-        }, 5000, windowId)
-        await new Promise(r => setTimeout(r, delay))
-        
-        // Pause slightly longer before noticing the mistake
-        await new Promise(r => setTimeout(r, 100 + Math.random() * 200))
-        
-        // Backspace to fix it
-        currentValue = currentValue.slice(0, -1)
-        await requestFromBrowser('eval', 'exec', {
-          code: `(function(){
-            const el = document.querySelector(${JSON.stringify(body.selector)});
-            if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'})); }
-          })()`
-        }, 5000, windowId)
-        await new Promise(r => setTimeout(r, delay * 0.5))
-        
-        typoCount++
-      }
-      
-      // Type the correct character
-      currentValue += char
-      await requestFromBrowser('eval', 'exec', {
-        code: `(function(){
-          const el = document.querySelector(${JSON.stringify(body.selector)});
-          if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(char)}})); }
-        })()`
-      }, 5000, windowId)
-      await new Promise(r => setTimeout(r, delay))
-      
-      // Occasional longer pause (thinking/hesitation)
-      if (Math.random() < 0.05) {
-        await new Promise(r => setTimeout(r, 200 + Math.random() * 300))
-      }
-    }
-    
-    return Response.json({ 
-      success: true, 
-      typed: text, 
-      typos: typoCount,
-      humanlike: true 
-    }, { headers })
-    })
-  }
-  
-  // Start recording
-  if (path === '/recording/start') {
-    return schemaEndpoint(api.recordingStart, req, headers, async (body) => {
-      const response = await requestFromBrowser('recording', 'start', { name: body.name })
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Stop recording
-  if (path === '/recording/stop') {
-    return schemaEndpoint(api.recordingStop, req, headers, async () => {
-      const response = await requestFromBrowser('recording', 'stop', {})
-      return Response.json(response, { headers })
-    })
-  }
+  // /type, /recording/start, /recording/stop - now handled by api-router
   
   // Generate test from semantic events
   if (path === '/recording/generate') {
@@ -1596,70 +1366,12 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ success: true }, { headers })
   }
   
-  // Force page refresh
-  if (path === '/refresh') {
-    return schemaEndpoint(api.refresh, req, headers, async (body) => {
-      const hard = body.hard ?? false  // hard refresh clears cache
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Navigate to URL
-  if (path === '/navigate') {
-    return schemaEndpoint(api.navigate, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
+  // /refresh, /navigate, /tabs/* - now handled by api-router
   
   // Get current URL and title
   if (path === '/location' && req.method === 'GET') {
     const response = await requestFromBrowser('navigation', 'location', {}, 5000, targetWindowId)
     return Response.json(response, { headers })
-  }
-  
-  // Open a new tab (Electron app only)
-  if (path === '/tabs/open') {
-    return schemaEndpoint(api.tabsOpen, req, headers, async (body) => {
-      // Send to browser component which will relay to Electron
-      const response = await requestFromBrowser('tabs', 'open', { url: body.url })
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Close a tab by window ID
-  if (path === '/tabs/close') {
-    return schemaEndpoint(api.tabsClose, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      if (!windowId) {
-        return Response.json({ 
-          success: false, 
-          error: '/tabs/close: window id is required',
-          hint: 'Pass window ID in body or query string: ?window=<id>'
-        }, { status: 400, headers })
-      }
-      const response = await requestFromBrowser('tabs', 'close', { windowId })
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Focus/activate a tab by window ID
-  if (path === '/tabs/focus') {
-    return schemaEndpoint(api.tabsFocus, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      if (!windowId) {
-        return Response.json({ 
-          success: false, 
-          error: '/tabs/focus: window id is required',
-          hint: 'Pass window ID in body or query string: ?window=<id>'
-        }, { status: 400, headers })
-      }
-      const response = await requestFromBrowser('tabs', 'focus', { windowId })
-      return Response.json(response, { headers })
-    })
   }
   
   // Restart the server
@@ -1683,35 +1395,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ success: true }, { headers })
   }
   
-  // Start watching DOM mutations
-  if (path === '/mutations/watch') {
-    return schemaEndpoint(api.mutationsWatch, req, headers, async (body) => {
-      // Clear old mutation messages when starting a new watch
-      // This prevents stale data from previous watch sessions
-      clearMutationMessages()
-      
-      const response = await requestFromBrowser('mutations', 'watch', {
-        root: body.root,
-        childList: body.childList ?? true,
-        attributes: body.attributes ?? true,
-        characterData: body.characterData ?? false,
-        subtree: body.subtree ?? true,
-        debounce: body.debounce ?? 100,
-        preset: body.preset,
-        filters: body.filters,
-        pierceShadow: body.pierceShadow,
-      })
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Stop watching DOM mutations
-  if (path === '/mutations/unwatch') {
-    return schemaEndpoint(api.mutationsUnwatch, req, headers, async () => {
-      const response = await requestFromBrowser('mutations', 'unwatch', {})
-      return Response.json(response, { headers })
-    })
-  }
+  // /mutations/watch, /mutations/unwatch - now handled by api-router
   
   // Get mutation watch status
   if (path === '/mutations/status' && req.method === 'GET') {
@@ -1719,29 +1403,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json(response, { headers })
   }
   
-  // ============================================
-  // Semantic Events (Phase 6)
-  // ============================================
-  
-  // Start watching semantic events
-  if (path === '/events/watch') {
-    return schemaEndpoint(api.eventsWatch, req, headers, async (body) => {
-      // Accept preset or categories
-      const response = await requestFromBrowser('semantic', 'watch', {
-        preset: body.preset,        // 'minimal', 'interactive', 'detailed', 'debug'
-        categories: body.categories, // or explicit array of categories
-      })
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Stop watching semantic events
-  if (path === '/events/unwatch') {
-    return schemaEndpoint(api.eventsUnwatch, req, headers, async () => {
-      const response = await requestFromBrowser('semantic', 'unwatch', {})
-      return Response.json(response, { headers })
-    })
-  }
+  // /events/watch, /events/unwatch - now handled by api-router
   
   // Get semantic event buffer (hindsight)
   if (path === '/events' && req.method === 'GET') {
@@ -1762,268 +1424,11 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json(response, { headers })
   }
   
-  // Inspect element (detailed view)
-  if (path === '/inspect') {
-    return schemaEndpoint(api.inspect, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
+  // /inspect, /inspectAll, /highlight, /unhighlight - now handled by api-router
   
-  // Inspect multiple elements
-  if (path === '/inspectAll') {
-    return schemaEndpoint(api.inspectAll, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('dom', 'inspectAll', { 
-        selector: body.selector, 
-        limit: body.limit || 10 
-      }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
+  // /scroll, /tree - now handled by api-router
   
-  // Highlight element (visual pointer)
-  if (path === '/highlight') {
-    return schemaEndpoint(api.highlight, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      
-      // Scroll element into view first
-      await requestFromBrowser('eval', 'exec', {
-        code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-      }, 5000, windowId)
-      await new Promise(r => setTimeout(r, 100))
-      
-      const response = await requestFromBrowser('dom', 'highlight', {
-        selector: body.selector,
-        label: body.label,
-        color: body.color,
-        duration: body.duration,  // If set, will auto-hide after duration ms
-      }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Remove highlight
-  if (path === '/unhighlight') {
-    return schemaEndpoint(api.unhighlight, req, headers, async () => {
-      const response = await requestFromBrowser('dom', 'unhighlight', {})
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Scroll with smooth easing
-  if (path === '/scroll') {
-    return schemaEndpoint(api.scroll, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const duration = body.duration ?? 500
-      const easing = body.easing || 'ease-out'
-      const block = body.block || 'center'
-      
-      // Easing functions - slight overshoot on ease-out for natural feel
-      const easingCode = `
-        const easings = {
-          'linear': t => t,
-          'ease-out': t => {
-            // Slight overshoot then settle (feels more natural)
-            const c1 = 1.70158;
-            const c3 = c1 + 1;
-            return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-          },
-          'ease-in-out': t => t < 0.5 
-            ? 4 * t * t * t 
-            : 1 - Math.pow(-2 * t + 2, 3) / 2,
-        };
-        const easing = easings[${JSON.stringify(easing)}] || easings['ease-out'];
-      `
-      
-      if (body.selector) {
-        // Scroll to element with custom smooth animation
-        const code = `
-          (async () => {
-            const el = document.querySelector(${JSON.stringify(body.selector)});
-            if (!el) return { success: false, error: 'Element not found' };
-            
-            const rect = el.getBoundingClientRect();
-            const blockAlign = ${JSON.stringify(block)};
-            
-            let targetY;
-            if (blockAlign === 'start') {
-              targetY = window.scrollY + rect.top;
-            } else if (blockAlign === 'end') {
-              targetY = window.scrollY + rect.bottom - window.innerHeight;
-            } else if (blockAlign === 'nearest') {
-              const above = rect.top < 0;
-              const below = rect.bottom > window.innerHeight;
-              if (above) targetY = window.scrollY + rect.top;
-              else if (below) targetY = window.scrollY + rect.bottom - window.innerHeight;
-              else targetY = window.scrollY; // already visible
-            } else { // center
-              targetY = window.scrollY + rect.top + rect.height / 2 - window.innerHeight / 2;
-            }
-            
-            const startY = window.scrollY;
-            const startX = window.scrollX;
-            const distY = targetY - startY;
-            const duration = ${duration};
-            
-            ${easingCode}
-            
-            return new Promise(resolve => {
-              const startTime = performance.now();
-              
-              function step(now) {
-                const elapsed = now - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easedProgress = easing(progress);
-                
-                window.scrollTo(
-                  startX,
-                  startY + distY * easedProgress
-                );
-                
-                if (progress < 1) {
-                  requestAnimationFrame(step);
-                } else {
-                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
-                }
-              }
-              
-              requestAnimationFrame(step);
-            });
-          })()
-        `
-        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
-        return Response.json(response, { headers })
-        
-      } else if (body.x !== undefined || body.y !== undefined) {
-        // Scroll to absolute position
-        const code = `
-          (async () => {
-            const startX = window.scrollX;
-            const startY = window.scrollY;
-            const targetX = ${body.x ?? 'startX'};
-            const targetY = ${body.y ?? 'startY'};
-            const distX = targetX - startX;
-            const distY = targetY - startY;
-            const duration = ${duration};
-            
-            ${easingCode}
-            
-            return new Promise(resolve => {
-              const startTime = performance.now();
-              
-              function step(now) {
-                const elapsed = now - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easedProgress = easing(progress);
-                
-                window.scrollTo(
-                  startX + distX * easedProgress,
-                  startY + distY * easedProgress
-                );
-                
-                if (progress < 1) {
-                  requestAnimationFrame(step);
-                } else {
-                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
-                }
-              }
-              
-              requestAnimationFrame(step);
-            });
-          })()
-        `
-        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
-        return Response.json(response, { headers })
-        
-      } else if (body.deltaX !== undefined || body.deltaY !== undefined) {
-        // Scroll by relative amount
-        const code = `
-          (async () => {
-            const startX = window.scrollX;
-            const startY = window.scrollY;
-            const distX = ${body.deltaX ?? 0};
-            const distY = ${body.deltaY ?? 0};
-            const duration = ${duration};
-            
-            ${easingCode}
-            
-            return new Promise(resolve => {
-              const startTime = performance.now();
-              
-              function step(now) {
-                const elapsed = now - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easedProgress = easing(progress);
-                
-                window.scrollTo(
-                  startX + distX * easedProgress,
-                  startY + distY * easedProgress
-                );
-                
-                if (progress < 1) {
-                  requestAnimationFrame(step);
-                } else {
-                  resolve({ success: true, scrolledTo: { x: window.scrollX, y: window.scrollY } });
-                }
-              }
-              
-              requestAnimationFrame(step);
-            });
-          })()
-        `
-        const response = await requestFromBrowser('eval', 'exec', { code }, duration + 1000, windowId)
-        return Response.json(response, { headers })
-        
-      } else {
-        return Response.json({ 
-          success: false, 
-          error: 'Must provide selector, x/y coordinates, or deltaX/deltaY' 
-        }, { headers, status: 400 })
-      }
-    })
-  }
-  
-  // DOM tree inspector
-  if (path === '/tree') {
-    return schemaEndpoint(api.tree, req, headers, async (body) => {
-      const windowId = body.window || targetWindowId
-      const response = await requestFromBrowser('dom', 'tree', {
-        selector: body.selector || 'body',
-        depth: body.depth,
-        includeText: body.includeText,
-        allAttributes: body.allAttributes,
-        includeStyles: body.includeStyles,
-        includeBox: body.includeBox,
-        interestingClasses: body.interestingClasses,
-        interestingAttributes: body.interestingAttributes,
-        ignoreSelectors: body.ignoreSelectors,
-        compact: body.compact,
-        pierceShadow: body.pierceShadow,
-        visibleOnly: body.visibleOnly,
-        mode: body.mode,
-      }, 5000, windowId)
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // Screenshot - capture page as base64 image
-  // In Electron: uses native capture (best quality, works on any page)
-  // In browser: uses html2canvas if loaded, otherwise returns viewport info only
-  if (path === '/screenshot') {
-    return schemaEndpoint(api.screenshot, req, headers, async (body) => {
-      const response = await requestFromBrowser('dom', 'screenshot', {
-        selector: body.selector,    // CSS selector for element capture (omit for full page)
-        format: body.format,        // 'png' (default), 'webp' (smaller), 'jpeg' (smallest)
-        quality: body.quality,      // 0-1, default 0.85 for webp/jpeg
-        scale: body.scale,          // Scale factor (0.5 = half size)
-        maxWidth: body.maxWidth,    // Max width constraint (maintains aspect ratio)
-        maxHeight: body.maxHeight,  // Max height constraint (maintains aspect ratio)
-      })
-      return Response.json(response, { headers })
-    })
-  }
+  // /screenshot - now handled by api-router
   
   // ==========================================
   // Test Runner Endpoints
@@ -2801,25 +2206,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return Response.json({ deleted }, { headers })
   }
   
-  // ==========================================
-  // Selection Tool Endpoints
-  // ==========================================
-  
-  // POST /select/start - Start selection mode (user drags to select area)
-  if (path === '/select/start') {
-    return schemaEndpoint(api.selectStart, req, headers, async () => {
-      const response = await requestFromBrowser('selection', 'start', {})
-      return Response.json(response, { headers })
-    })
-  }
-  
-  // POST /select/cancel - Cancel selection mode
-  if (path === '/select/cancel') {
-    return schemaEndpoint(api.selectCancel, req, headers, async () => {
-      const response = await requestFromBrowser('selection', 'cancel', {})
-      return Response.json(response, { headers })
-    })
-  }
+  // /select/start, /select/cancel, /select/clear - now handled by api-router
   
   // GET /select/status - Check if selection is active or has result
   if (path === '/select/status' && req.method === 'GET') {
@@ -2831,14 +2218,6 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   if (path === '/select/result' && req.method === 'GET') {
     const response = await requestFromBrowser('selection', 'result', {})
     return Response.json(response, { headers })
-  }
-  
-  // POST /select/clear - Clear the stored selection
-  if (path === '/select/clear') {
-    return schemaEndpoint(api.selectClear, req, headers, async () => {
-      const response = await requestFromBrowser('selection', 'clear', {})
-      return Response.json(response, { headers })
-    })
   }
   
   // ==========================================

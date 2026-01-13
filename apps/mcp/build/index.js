@@ -13,7 +13,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { ALL_ENDPOINTS } from "./endpoints.js";
+// Import generated endpoints JSON (built from api-schema.ts - single source of truth)
+import endpoints from "./endpoints.json" with { type: "json" };
+const ALL_ENDPOINTS = endpoints;
+function getInputSchema(ep) {
+    return ep.inputSchema;
+}
 // Configuration
 const DEFAULT_PORT = 8700;
 const portArg = process.argv.indexOf('--port');
@@ -50,11 +55,15 @@ async function callHaltija(endpoint, args) {
 }
 // Convert JSON Schema to Zod schema (simplified)
 function jsonSchemaToZod(schema) {
-    if (!schema || !schema.properties) {
+    if (!schema) {
+        return z.object({});
+    }
+    const s = schema;
+    if (!s.properties) {
         return z.object({});
     }
     const shape = {};
-    for (const [key, prop] of Object.entries(schema.properties)) {
+    for (const [key, prop] of Object.entries(s.properties)) {
         const p = prop;
         let zodType;
         switch (p.type) {
@@ -77,7 +86,7 @@ function jsonSchemaToZod(schema) {
             zodType = zodType.describe(p.description);
         }
         // Make optional unless in required array
-        if (!schema.required?.includes(key)) {
+        if (!s.required?.includes(key)) {
             zodType = zodType.optional();
         }
         shape[key] = zodType;
@@ -88,9 +97,11 @@ function jsonSchemaToZod(schema) {
 for (const endpoint of ALL_ENDPOINTS) {
     const toolName = pathToToolName(endpoint.path);
     const description = endpoint.description || endpoint.summary;
-    if (endpoint.inputSchema && Object.keys(endpoint.inputSchema.properties || {}).length > 0) {
+    const inputSchema = getInputSchema(endpoint);
+    const schemaProps = inputSchema?.properties;
+    if (inputSchema && schemaProps && Object.keys(schemaProps).length > 0) {
         // Tool with parameters
-        const zodSchema = jsonSchemaToZod(endpoint.inputSchema);
+        const zodSchema = jsonSchemaToZod(inputSchema);
         server.tool(toolName, description, zodSchema.shape, async (args) => {
             try {
                 const result = await callHaltija(endpoint, args);
