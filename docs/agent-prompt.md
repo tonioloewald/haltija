@@ -38,6 +38,7 @@ POST /type                 Type into a field
 POST /eval                 Run arbitrary JavaScript (escape hatch)
 GET  /events               Recent semantic events (clicks, typing, errors)
 POST /screenshot           Capture page image (format/scale options)
+GET  /select/result        Get elements the user has selected (see below)
 
 ## Understanding the page
 
@@ -116,6 +117,22 @@ Events include:
 - input:typed - user finished typing  
 - network:error - fetch request failed (4xx, 5xx, or network error)
 - navigation:navigate - page changed
+
+## User selection
+
+The user can select elements in the browser using the widget's selection tool.
+**Check this first** when the user asks you to look at something they've picked:
+
+```bash
+curl http://localhost:8700/select/result
+```
+
+Returns the elements the user has selected (highlighted in the browser).
+If empty, the user hasn't selected anything yet.
+
+Other selection endpoints:
+- GET /select/status - Check if selection mode is active
+- POST /select/clear - Clear the current selection
 
 ## Working with multiple tabs
 

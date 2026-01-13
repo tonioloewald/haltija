@@ -45,6 +45,7 @@ I have Haltija running at http://localhost:8700. You can see and control my brow
 - POST /eval - run JavaScript (escape hatch)
 - POST /screenshot - capture page image (see options below)
 - GET /events - recent events including network errors
+- GET /select/result - get elements user has selected in browser
 
 **Screenshot options:**
 - format: "png" (default), "webp", "jpeg"
