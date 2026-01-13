@@ -1278,11 +1278,12 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     
     const selector = body.selector
     const options = body.options || {}
+    const windowId = body.window || targetWindowId
     
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
       code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    })
+    }, 5000, windowId)
     await new Promise(r => setTimeout(r, 100)) // Wait for scroll
     
     // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
@@ -1291,7 +1292,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         selector,
         event,
         options,
-      })
+      }, 5000, windowId)
     }
     
     return Response.json({ success: true }, { headers })
@@ -1318,15 +1319,16 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     const deltaY = body.deltaY || 0
     const duration = body.duration || 300 // ms
     const steps = Math.max(5, Math.floor(duration / 16)) // ~60fps
+    const windowId = body.window || targetWindowId
     
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
       code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    })
+    }, 5000, windowId)
     await new Promise(r => setTimeout(r, 100))
     
     // Get element center position
-    const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector })
+    const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
     if (!inspectResponse.success || !inspectResponse.data) {
       return Response.json({ success: false, error: 'Element not found' }, { headers })
     }
@@ -1340,7 +1342,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         selector,
         event,
         options: { clientX: startX, clientY: startY },
-      })
+      }, 5000, windowId)
     }
     
     // mousedown
@@ -1348,7 +1350,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       selector,
       event: 'mousedown',
       options: { clientX: startX, clientY: startY },
-    })
+    }, 5000, windowId)
     
     // mousemove steps (dispatched on document)
     const stepDelay = duration / steps
@@ -1358,14 +1360,14 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       const y = startY + deltaY * progress
       await requestFromBrowser('eval', 'exec', {
         code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
-      })
+      }, 5000, windowId)
       await new Promise(r => setTimeout(r, stepDelay))
     }
     
     // mouseup
     await requestFromBrowser('eval', 'exec', {
       code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
-    })
+    }, 5000, windowId)
     
     return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers })
   }
@@ -1392,17 +1394,18 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     const typoRate: number = body.typoRate ?? 0.03 // 3% chance of typo per character
     const minDelay: number = body.minDelay ?? 50 // ms between keystrokes
     const maxDelay: number = body.maxDelay ?? 150 // ms between keystrokes
+    const windowId = body.window || targetWindowId
     
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
       code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    })
+    }, 5000, windowId)
     await new Promise(r => setTimeout(r, 100))
     
     // Focus the element
     await requestFromBrowser('eval', 'exec', {
       code: `document.querySelector(${JSON.stringify(body.selector)})?.focus()`
-    })
+    }, 5000, windowId)
     await new Promise(r => setTimeout(r, 50))
     
     if (!humanlike) {
@@ -1411,7 +1414,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         selector: body.selector,
         event: 'input',
         options: { value: text },
-      })
+      }, 5000, windowId)
       return Response.json(response, { headers })
     }
     
@@ -1476,7 +1479,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
             const el = document.querySelector(${JSON.stringify(body.selector)});
             if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(typoChar)}})); }
           })()`
-        })
+        }, 5000, windowId)
         await new Promise(r => setTimeout(r, delay))
         
         // Pause slightly longer before noticing the mistake
@@ -1489,7 +1492,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
             const el = document.querySelector(${JSON.stringify(body.selector)});
             if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'})); }
           })()`
-        })
+        }, 5000, windowId)
         await new Promise(r => setTimeout(r, delay * 0.5))
         
         typoCount++
@@ -1502,7 +1505,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
           const el = document.querySelector(${JSON.stringify(body.selector)});
           if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, data: ${JSON.stringify(char)}})); }
         })()`
-      })
+      }, 5000, windowId)
       await new Promise(r => setTimeout(r, delay))
       
       // Occasional longer pause (thinking/hesitation)
@@ -1590,7 +1593,8 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   if (path === '/refresh' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
     const hard = body.hard ?? false  // hard refresh clears cache
-    const response = await requestFromBrowser('navigation', 'refresh', { hard })
+    const windowId = body.window || targetWindowId
+    const response = await requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1606,13 +1610,14 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     ], '/navigate')
     if (!validation.valid) return validationError(validation, headers)
     
-    const response = await requestFromBrowser('navigation', 'goto', { url: body.url })
+    const windowId = body.window || targetWindowId
+    const response = await requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
   // Get current URL and title
   if (path === '/location' && req.method === 'GET') {
-    const response = await requestFromBrowser('navigation', 'location', {})
+    const response = await requestFromBrowser('navigation', 'location', {}, 5000, targetWindowId)
     return Response.json(response, { headers })
   }
   
@@ -1778,7 +1783,8 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     ], '/inspect')
     if (!validation.valid) return validationError(validation, headers)
     
-    const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector })
+    const windowId = body.window || targetWindowId
+    const response = await requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1795,10 +1801,11 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     ], '/inspectAll')
     if (!validation.valid) return validationError(validation, headers)
     
+    const windowId = body.window || targetWindowId
     const response = await requestFromBrowser('dom', 'inspectAll', { 
       selector: body.selector, 
       limit: body.limit || 10 
-    })
+    }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1817,10 +1824,12 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     ], '/highlight')
     if (!validation.valid) return validationError(validation, headers)
     
+    const windowId = body.window || targetWindowId
+    
     // Scroll element into view first
     await requestFromBrowser('eval', 'exec', {
       code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-    })
+    }, 5000, windowId)
     await new Promise(r => setTimeout(r, 100))
     
     const response = await requestFromBrowser('dom', 'highlight', {
@@ -1828,7 +1837,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       label: body.label,
       color: body.color,
       duration: body.duration,  // If set, will auto-hide after duration ms
-    })
+    }, 5000, windowId)
     return Response.json(response, { headers })
   }
   
@@ -1854,6 +1863,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     ], '/tree')
     if (!validation.valid) return validationError(validation, headers)
     
+    const windowId = body.window || targetWindowId
     const response = await requestFromBrowser('dom', 'tree', {
       selector: body.selector || 'body',
       depth: body.depth,
@@ -1868,7 +1878,7 @@ Security: Widget always shows when agent sends commands (no silent snooping)
       pierceShadow: body.pierceShadow,
       visibleOnly: body.visibleOnly,
       mode: body.mode,
-    })
+    }, 5000, windowId)
     return Response.json(response, { headers })
   }
   

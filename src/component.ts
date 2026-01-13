@@ -1461,6 +1461,9 @@ export class DevChannel extends HTMLElement {
   }
   
   connectedCallback() {
+    // Reset killed flag in case we're being re-added after a disconnection
+    // (e.g., framework re-renders that temporarily remove/re-add the element)
+    this.killed = false
     this.serverUrl = this.getAttribute('server') || this.serverUrl
     this.render()
     // Set initial position using left (calculate from right: 16px after render so we know width)
