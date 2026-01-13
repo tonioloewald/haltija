@@ -967,7 +967,7 @@ All interaction endpoints automatically scroll the element into view first.
 | /type | POST | {selector, text, ...} | Type into an input (human-like by default) |
 | /drag | POST | {selector, deltaX, deltaY, duration?} | Drag an element |
 | /eval | POST | {code} | Execute JavaScript |
-| /screenshot | POST | {selector?, format?, quality?} | Capture page or element |
+| /screenshot | POST | {selector?, format?, scale?, ...} | Capture page or element |
 
 /click fires: mouseenter -> mouseover -> mousemove -> mousedown -> mouseup -> click
 
