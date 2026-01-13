@@ -977,17 +977,26 @@ All interaction endpoints automatically scroll the element into view first.
 | selector | (none) | CSS selector for element capture (omit for full page) |
 | format | png | Image format: png, webp (smaller), jpeg (smallest) |
 | quality | 0.85 | Quality for webp/jpeg (0-1) |
+| scale | 1 | Scale factor (0.5 = half size, reduces file size) |
+| maxWidth | (none) | Max width in pixels (maintains aspect ratio) |
+| maxHeight | (none) | Max height in pixels (maintains aspect ratio) |
 
 Screenshot sources (automatic fallback):
 1. **Electron native** - Best quality, works on any site (CSP doesn't matter)
 2. **html2canvas** - Works in browser if script is loaded on page
 3. **Viewport info only** - Falls back if no capture method available
 
-Example:
+Examples:
 curl -X POST ${baseUrl}/screenshot -H "Content-Type: application/json" \\
   -d '{"format": "webp", "quality": 0.8}'
 
-# Returns: { success: true, image: "data:image/webp;base64,...", source: "electron" }
+# Half-size screenshot for faster transfer:
+curl -X POST ${baseUrl}/screenshot -d '{"scale": 0.5, "format": "webp"}'
+
+# Fit within 800x600:
+curl -X POST ${baseUrl}/screenshot -d '{"maxWidth": 800, "maxHeight": 600}'
+
+# Returns: { success: true, image: "data:image/webp;base64,...", source: "electron", width: 640, height: 480 }
 
 ### /type Options
 | Option | Default | Description |
@@ -1866,17 +1875,18 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   // Screenshot - capture page as base64 image
   // In Electron: uses native capture (best quality, works on any page)
   // In browser: uses html2canvas if loaded, otherwise returns viewport info only
-  // Options: selector (element to capture), format (png/webp/jpeg), quality (0-1)
   if (path === '/screenshot' && req.method === 'GET') {
     return wrongMethod('/screenshot', 'POST', headers)
   }
   if (path === '/screenshot' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
     const response = await requestFromBrowser('dom', 'screenshot', {
-      selector: body.selector,
-      format: body.format,     // 'png' (default), 'webp' (smaller), 'jpeg' (smallest)
-      quality: body.quality,   // 0-1, default 0.85 for webp/jpeg
-      scale: body.scale,       // for html2canvas
+      selector: body.selector,    // CSS selector for element capture (omit for full page)
+      format: body.format,        // 'png' (default), 'webp' (smaller), 'jpeg' (smallest)
+      quality: body.quality,      // 0-1, default 0.85 for webp/jpeg
+      scale: body.scale,          // Scale factor (0.5 = half size)
+      maxWidth: body.maxWidth,    // Max width constraint (maintains aspect ratio)
+      maxHeight: body.maxHeight,  // Max height constraint (maintains aspect ratio)
     })
     return Response.json(response, { headers })
   }

@@ -43,7 +43,14 @@ I have Haltija running at http://localhost:8700. You can see and control my brow
 - POST /click - click an element
 - POST /type - type into a field
 - POST /eval - run JavaScript (escape hatch)
+- POST /screenshot - capture page image (see options below)
 - GET /events - recent events including network errors
+
+**Screenshot options:**
+- format: "png" (default), "webp", "jpeg"
+- quality: 0.0-1.0 (for webp/jpeg, default 0.8)
+- scale: 0.5 = half size (saves bandwidth)
+- maxWidth/maxHeight: constrain dimensions (great for vision models)
 
 **Tree options:**
 - mode:"actionable" - returns buttons, links, inputs, headings (recommended)

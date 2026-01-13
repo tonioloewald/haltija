@@ -324,9 +324,9 @@ describe('Desktop App Smoke Tests', () => {
     const elemData = await elemRes.json()
     expect(elemData.success).toBe(true)
     expect(elemData.data.image).toMatch(/^data:image\/png;base64,/)
-    // Element screenshot should be smaller than full page
-    expect(elemData.data.width).toBeLessThan(1000)
-    expect(elemData.data.height).toBeLessThan(200)
+    // Element screenshot should be smaller than full page (accounting for 2x Retina)
+    expect(elemData.data.width).toBeLessThan(3000)
+    expect(elemData.data.height).toBeLessThan(400)
   })
 })
 

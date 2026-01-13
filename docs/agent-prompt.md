@@ -37,7 +37,7 @@ POST /click                Click an element
 POST /type                 Type into a field  
 POST /eval                 Run arbitrary JavaScript (escape hatch)
 GET  /events               Recent semantic events (clicks, typing, errors)
-POST /screenshot           Capture page (returns viewport info)
+POST /screenshot           Capture page image (format/scale options)
 
 ## Understanding the page
 
@@ -87,6 +87,21 @@ curl -X POST http://localhost:8700/navigate \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com"}'
 ```
+
+### Screenshot
+```bash
+curl -X POST http://localhost:8700/screenshot \
+  -H "Content-Type: application/json" \
+  -d '{"format":"webp", "quality":0.8, "maxWidth":1280}'
+```
+
+Options:
+- format: "png" (default), "webp", "jpeg"
+- quality: 0.0-1.0 (for webp/jpeg)
+- scale: 0.5 = half size
+- maxWidth/maxHeight: constrain dimensions
+
+Returns: `{image: "data:image/...", width, height, source}`
 
 ## Watching for changes
 

@@ -5043,23 +5043,52 @@ export class DevChannel extends HTMLElement {
         // Format options: png (default), webp (smaller), jpeg (smallest, lossy)
         const format = payload?.format || 'png'
         const quality = payload?.quality ?? (format === 'png' ? 1 : 0.85)
+        const scale = payload?.scale || 1 // Scale factor (0.5 = half size)
+        const maxWidth = payload?.maxWidth // Optional max width constraint
+        const maxHeight = payload?.maxHeight // Optional max height constraint
         const mimeType = format === 'webp' ? 'image/webp' 
                        : format === 'jpeg' ? 'image/jpeg' 
                        : 'image/png'
         
-        // Helper to convert data URL to different format via canvas
-        const convertFormat = async (dataUrl: string): Promise<string> => {
-          if (format === 'png') return dataUrl // Already PNG from Electron
-          
+        // Helper to convert/scale data URL via canvas
+        const convertFormat = async (dataUrl: string): Promise<{ image: string; width: number; height: number }> => {
           return new Promise((resolve) => {
             const img = new Image()
             img.onload = () => {
+              let targetWidth = img.width * scale
+              let targetHeight = img.height * scale
+              
+              // Apply maxWidth/maxHeight constraints (maintain aspect ratio)
+              if (maxWidth && targetWidth > maxWidth) {
+                const ratio = maxWidth / targetWidth
+                targetWidth = maxWidth
+                targetHeight *= ratio
+              }
+              if (maxHeight && targetHeight > maxHeight) {
+                const ratio = maxHeight / targetHeight
+                targetHeight = maxHeight
+                targetWidth *= ratio
+              }
+              
+              targetWidth = Math.round(targetWidth)
+              targetHeight = Math.round(targetHeight)
+              
+              // Skip canvas if no transformation needed
+              if (format === 'png' && targetWidth === img.width && targetHeight === img.height) {
+                resolve({ image: dataUrl, width: img.width, height: img.height })
+                return
+              }
+              
               const canvas = document.createElement('canvas')
-              canvas.width = img.width
-              canvas.height = img.height
+              canvas.width = targetWidth
+              canvas.height = targetHeight
               const ctx = canvas.getContext('2d')!
-              ctx.drawImage(img, 0, 0)
-              resolve(canvas.toDataURL(mimeType, quality))
+              ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
+              resolve({ 
+                image: canvas.toDataURL(mimeType, quality),
+                width: targetWidth,
+                height: targetHeight
+              })
             }
             img.src = dataUrl
           })
@@ -5076,13 +5105,13 @@ export class DevChannel extends HTMLElement {
           }
           
           if (result?.success && result.data) {
-            const image = await convertFormat(result.data)
+            const converted = await convertFormat(result.data)
             this.respond(msg.id, true, {
-              image,
+              image: converted.image,
               viewport,
               format,
-              width: result.size?.width || result.bounds?.width,
-              height: result.size?.height || result.bounds?.height,
+              width: converted.width,
+              height: converted.height,
               source: 'electron',
             })
             return

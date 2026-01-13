@@ -4113,19 +4113,42 @@
           };
           const format = payload2?.format || "png";
           const quality = payload2?.quality ?? (format === "png" ? 1 : 0.85);
+          const scale = payload2?.scale || 1;
+          const maxWidth = payload2?.maxWidth;
+          const maxHeight = payload2?.maxHeight;
           const mimeType = format === "webp" ? "image/webp" : format === "jpeg" ? "image/jpeg" : "image/png";
           const convertFormat = async (dataUrl) => {
-            if (format === "png")
-              return dataUrl;
             return new Promise((resolve) => {
               const img = new Image;
               img.onload = () => {
+                let targetWidth = img.width * scale;
+                let targetHeight = img.height * scale;
+                if (maxWidth && targetWidth > maxWidth) {
+                  const ratio = maxWidth / targetWidth;
+                  targetWidth = maxWidth;
+                  targetHeight *= ratio;
+                }
+                if (maxHeight && targetHeight > maxHeight) {
+                  const ratio = maxHeight / targetHeight;
+                  targetHeight = maxHeight;
+                  targetWidth *= ratio;
+                }
+                targetWidth = Math.round(targetWidth);
+                targetHeight = Math.round(targetHeight);
+                if (format === "png" && targetWidth === img.width && targetHeight === img.height) {
+                  resolve({ image: dataUrl, width: img.width, height: img.height });
+                  return;
+                }
                 const canvas = document.createElement("canvas");
-                canvas.width = img.width;
-                canvas.height = img.height;
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
                 const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL(mimeType, quality));
+                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                resolve({
+                  image: canvas.toDataURL(mimeType, quality),
+                  width: targetWidth,
+                  height: targetHeight
+                });
               };
               img.src = dataUrl;
             });
@@ -4139,13 +4162,13 @@
               result2 = await haltija.capturePage();
             }
             if (result2?.success && result2.data) {
-              const image = await convertFormat(result2.data);
+              const converted = await convertFormat(result2.data);
               this.respond(msg2.id, true, {
-                image,
+                image: converted.image,
                 viewport,
                 format,
-                width: result2.size?.width || result2.bounds?.width,
-                height: result2.size?.height || result2.bounds?.height,
+                width: converted.width,
+                height: converted.height,
                 source: "electron"
               });
               return;
