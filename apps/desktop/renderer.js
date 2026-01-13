@@ -100,7 +100,11 @@ function createTab(url, activate = true) {
   const webview = document.createElement('webview')
   webview.id = tabId
   webview.src = 'about:blank'
-  webview.setAttribute('webpreferences', 'contextIsolation=no, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes')
+  // Use preload path from main preload script (exposes window.haltija.capturePage to web content)
+  if (window.haltija?.webviewPreloadPath) {
+    webview.setAttribute('preload', 'file://' + window.haltija.webviewPreloadPath)
+  }
+  webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes')
   webview.setAttribute('allowpopups', '')
   
   webviewContainer.appendChild(webview)

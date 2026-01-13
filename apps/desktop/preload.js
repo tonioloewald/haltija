@@ -2,9 +2,17 @@
  * Preload script - bridge between renderer and main process
  */
 
+console.log('[Haltija] Renderer preload loading...')
+
 const { contextBridge, ipcRenderer } = require('electron')
 
+// Expose the webview preload path for the renderer to use
+// __dirname is available in preload scripts
+const webviewPreloadPath = __dirname + '/webview-preload.js'
+
 contextBridge.exposeInMainWorld('haltija', {
+  // Path to webview preload script
+  webviewPreloadPath: webviewPreloadPath,
   // Navigation
   navigate: (url) => ipcRenderer.send('navigate', url),
   goBack: () => ipcRenderer.send('go-back'),
@@ -28,3 +36,5 @@ contextBridge.exposeInMainWorld('haltija', {
     ipcRenderer.on('open-url-in-tab', (event, url) => callback(url))
   },
 })
+
+console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))

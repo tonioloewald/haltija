@@ -32,6 +32,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false, // Allow __dirname in preload
       webviewTag: true, // Enable <webview> tag
     },
     titleBarStyle: 'hiddenInset', // Minimal chrome on macOS

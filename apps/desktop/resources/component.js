@@ -4111,6 +4111,46 @@
             url: location.href,
             title: document.title
           };
+          const format = payload2?.format || "png";
+          const quality = payload2?.quality ?? (format === "png" ? 1 : 0.85);
+          const mimeType = format === "webp" ? "image/webp" : format === "jpeg" ? "image/jpeg" : "image/png";
+          const convertFormat = async (dataUrl) => {
+            if (format === "png")
+              return dataUrl;
+            return new Promise((resolve) => {
+              const img = new Image;
+              img.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0);
+                resolve(canvas.toDataURL(mimeType, quality));
+              };
+              img.src = dataUrl;
+            });
+          };
+          const haltija = window.haltija;
+          if (haltija?.capturePage) {
+            let result2;
+            if (payload2?.selector) {
+              result2 = await haltija.captureElement(payload2.selector);
+            } else {
+              result2 = await haltija.capturePage();
+            }
+            if (result2?.success && result2.data) {
+              const image = await convertFormat(result2.data);
+              this.respond(msg2.id, true, {
+                image,
+                viewport,
+                format,
+                width: result2.size?.width || result2.bounds?.width,
+                height: result2.size?.height || result2.bounds?.height,
+                source: "electron"
+              });
+              return;
+            }
+          }
           const html2canvas = window.html2canvas;
           if (html2canvas) {
             const target = payload2?.selector ? document.querySelector(payload2.selector) : document.body;
@@ -4124,19 +4164,21 @@
               logging: false,
               scale: payload2?.scale || 1
             });
-            const dataUrl = canvas.toDataURL("image/png");
+            const dataUrl = canvas.toDataURL(mimeType, quality);
             this.respond(msg2.id, true, {
               image: dataUrl,
               viewport,
-              format: "png",
+              format,
               width: canvas.width,
-              height: canvas.height
+              height: canvas.height,
+              source: "html2canvas"
             });
           } else {
             this.respond(msg2.id, true, {
               viewport,
               image: null,
-              note: "html2canvas not loaded. For actual capture, use Electron or load html2canvas."
+              note: "No capture method available. Use Electron app or load html2canvas.",
+              hint: 'In Electron: captures work automatically. In browser: add <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>'
             });
           }
         } catch (err) {
