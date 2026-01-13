@@ -464,59 +464,28 @@ npx haltija --docs-dir ./my-docs
 
 **Headers:** `X-Doc-Source: custom|builtin` indicates doc origin.
 
-## Planned
-
-### Phase 10: Haltija - Native App Shell (Electron/Tauri)
-
-**Product name**: Haltija (Finnish: guardian spirit that protects places/homes)
+### Phase 10: Native App Shell (Electron) ✅
 
 **The "God Mode" Browser** - CSP bypass for universal compatibility.
 
-#### Core Features
+#### Completed
+- Electron app with minimal chrome (address bar, back/forward, tabs)
 - Strip `Content-Security-Policy`, `X-Frame-Options` headers
-- Auto-inject haltija widget on page load
-- Minimal chrome (address bar, back/forward, agent status)
-- Works on any site, no bookmarklet needed
+- Auto-inject widget on page load
+- Multi-tab support with proper window targeting (`?window=id`)
+- Screen capture for agents (`/api/screenshot`)
+- Keyboard shortcuts (Cmd+R reloads tab not shell, Cmd+T, Cmd+W, etc.)
+- HTTPS→HTTP fallback for URL bar
+- Circular icon with transparency
+- DMG builds, Linux CI builds
 
-#### Screen Capture for Agents
-- Full page screenshots on demand
-- Element-specific captures
-- **Visual accessibility testing**: Actual rendered colors including:
-  - Background blur/translucency
-  - Glows and shadows
-  - Overlapping elements
-  - Computed contrast ratios from pixels, not CSS
-- Video recording of sessions
+#### Remaining (Distribution)
+- Code signing / notarization (complicated by EU regulations)
+- Auto-update server
 
-#### Distribution Options
-1. **DIY (open source)** - Build script, user code-signs
-2. **Pre-built (paid)** - Signed, notarized, auto-updates
+## Planned
 
-#### Distribution Reality
-**Skip the Mac App Store.** Apple will reject apps that strip CSP headers or 
-aggressively manipulate web contexts. Don't fight their review team.
-
-Instead:
-- **Notarized DMG/Zip** - Direct download from website
-- **electron-builder** with S3 auto-update server
-- Code signing for Gatekeeper approval
-- One-click install, just not through Apple's store
-
-### Phase 11: Apple Intelligence Integration
-
-**Private, on-device AI for basic automation.**
-
-- Default AI backend (free, no API keys needed)
-- On-device processing (privacy-first)
-- Good enough for basic QA: find elements, fill forms, verify state
-- Optional upgrade path to Claude/OpenAI for advanced tasks
-
-#### Positioning
-- "Works with your Mac's built-in AI"
-- Enterprise-friendly: DOM never leaves the device
-- Differentiator vs. cloud-only tools
-
-### Phase 12: MCP Bridge (Claude Desktop Integration)
+### Phase 11: MCP Bridge (Claude Desktop Integration)
 
 **Buzzword compliance for Claude Desktop users.**
 
@@ -526,7 +495,7 @@ Instead:
 - Live event stream via MCP Resource
 - No new capabilities, just integration
 
-### Phase 13: UX Crimes Database
+### Phase 12: UX Crimes Database
 
 **Curated anti-patterns to make the agent a seasoned UX auditor.**
 
@@ -695,6 +664,13 @@ If a blind user can follow the semantic event stream and understand the page, we
   - Compare our semantic stream to screen reader output
   - Flag elements with poor accessibility (missing labels, bad ARIA)
   - Partner with blind testers for real-world validation
+
+### Apple Intelligence Integration (Speculative)
+- Default AI backend using on-device Apple Intelligence (free, no API keys)
+- Privacy-first: DOM never leaves the device
+- Good enough for basic QA: find elements, fill forms, verify state
+- "Works with your Mac's built-in AI" positioning
+- Depends on Apple exposing useful APIs
 
 ### Other Ideas
 - Sourcemaps for transpiled code debugging
