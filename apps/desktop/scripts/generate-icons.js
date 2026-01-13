@@ -14,7 +14,7 @@ const { execSync } = require('child_process')
 
 const APP_DIR = dirname(__dirname)
 const ROOT_DIR = join(APP_DIR, '../..')
-const SVG_PATH = join(ROOT_DIR, 'haltija-icon.svg')
+const SVG_PATH = join(ROOT_DIR, 'haltija-circle.svg')
 const ICONS_DIR = join(APP_DIR, 'icons')
 
 const SIZES = [1024, 512, 256, 128, 64, 32, 16]
@@ -25,19 +25,18 @@ async function generateIcons() {
   // Read SVG content
   const svgContent = readFileSync(SVG_PATH, 'utf8')
   
-  // Create hidden window for rendering (use deviceScaleFactor: 1 to avoid retina scaling)
+  // Create hidden window for rendering with transparent background
   const win = new BrowserWindow({
     width: 1024,
     height: 1024,
     show: false,
+    transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       offscreen: true,
       zoomFactor: 1.0,
     }
   })
-  
-  // Force 1x scale factor
-  win.webContents.setZoomFactor(1.0)
   
   console.log('Generating icons from SVG...')
   
@@ -80,9 +79,12 @@ async function generateIcons() {
       })
     `)
     
-    // Capture the canvas area
+    // Capture the canvas area (may be scaled by device pixel ratio)
     const image = await win.webContents.capturePage({ x: 0, y: 0, width: size, height: size })
-    const pngBuffer = image.toPNG()
+    
+    // Resize to exact target size in case of retina scaling
+    const resized = image.resize({ width: size, height: size, quality: 'best' })
+    const pngBuffer = resized.toPNG()
     
     writeFileSync(join(ICONS_DIR, `icon_${size}x${size}.png`), pngBuffer)
     console.log(`  ${size}x${size}`)
