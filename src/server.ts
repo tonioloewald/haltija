@@ -20,6 +20,8 @@ import { VERSION } from './version'
 import { generateTestPage } from './test-page'
 import { ICON_SVG } from './embedded-assets'
 import * as api from './api-schema'
+import { createRouter, type ContextFactory } from './api-router'
+import type { HandlerContext } from './api-handlers'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -487,6 +489,31 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
     console.error(`${LOG_PREFIX} Invalid message:`, err)
   }
 }
+
+// ============================================
+// Schema-driven API Router
+// ============================================
+
+// Create context factory for the router
+const createHandlerContext = (req: Request, url: URL): HandlerContext => {
+  const targetWindowId = url.searchParams.get('window') || undefined
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Content-Type': 'application/json',
+  }
+  return {
+    requestFromBrowser,
+    targetWindowId,
+    headers,
+    url,
+  }
+}
+
+// Create the router instance
+const apiRouter = createRouter(createHandlerContext)
 
 // REST API handlers
 async function handleRest(req: Request): Promise<Response> {
@@ -1162,6 +1189,15 @@ Security: Widget always shows when agent sends commands (no silent snooping)
     return new Response(api, { 
       headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
     })
+  }
+
+  // ============================================
+  // Schema-driven router (Phase 1: fall through if no handler)
+  // ============================================
+  // Try the new router first - it will return null if no handler registered
+  const routerResponse = await apiRouter(req)
+  if (routerResponse) {
+    return routerResponse
   }
 
   // Status endpoint

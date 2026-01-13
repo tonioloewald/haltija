@@ -16,13 +16,29 @@ import { s, type Infer } from 'tosijs-schema'
 // Endpoint Definition Type
 // ============================================
 
+/** Example of valid input for an endpoint */
+export interface EndpointExample<T = any> {
+  name: string              // Short identifier for the example
+  input: T                  // Valid input object
+  description?: string      // What this example demonstrates
+}
+
+/** Example of invalid input (for test generation) */
+export interface InvalidExample {
+  name?: string             // Optional identifier
+  input: any                // Invalid input object
+  error: string             // Expected error substring
+}
+
 export interface EndpointDef<TInput = any> {
   path: string
   method: 'GET' | 'POST'
   summary: string           // One-line description
   description?: string      // Detailed description for docs
   input?: { schema: any, validate: (data: any, opts?: any) => boolean }
-  // Future: output schema, examples, etc.
+  examples?: EndpointExample<TInput>[]      // Valid input examples
+  invalidExamples?: InvalidExample[]        // Invalid inputs for testing
+  category?: string         // Grouping for docs (interaction, dom, events, etc.)
 }
 
 // Helper to create endpoint with proper typing
@@ -93,10 +109,19 @@ export const click = endpoint({
   method: 'POST',
   summary: 'Click an element',
   description: 'Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.',
+  category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of element to click'),
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'basic', input: { selector: '#submit' }, description: 'Click a button by ID' },
+    { name: 'with-class', input: { selector: '.btn-primary' }, description: 'Click by class' },
+  ],
+  invalidExamples: [
+    { input: {}, error: 'selector' },
+    { input: { selector: 123 }, error: 'string' },
+  ],
 })
 
 export const type = endpoint({
@@ -104,6 +129,7 @@ export const type = endpoint({
   method: 'POST',
   summary: 'Type text into an element',
   description: 'Focus element and type text. Supports human-like typing with variable delays and occasional typos that get corrected.',
+  category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of input/textarea'),
     text: s.string.describe('Text to type'),
@@ -113,6 +139,14 @@ export const type = endpoint({
     maxDelay: s.number.describe('Max ms between keys (default 150)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'basic', input: { selector: '#email', text: 'user@example.com' } },
+    { name: 'fast', input: { selector: 'input', text: 'hello', humanlike: false } },
+  ],
+  invalidExamples: [
+    { input: { selector: '#input' }, error: 'text' },
+    { input: { text: 'hello' }, error: 'selector' },
+  ],
 })
 
 export const drag = endpoint({
@@ -134,6 +168,7 @@ export const highlight = endpoint({
   method: 'POST',
   summary: 'Visually highlight an element',
   description: 'Draw attention to an element with colored border and optional label. Great for showing users what you found.',
+  category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector'),
     label: s.string.describe('Label text to show').optional,
@@ -141,6 +176,14 @@ export const highlight = endpoint({
     duration: s.number.describe('Auto-hide after ms (omit for manual)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'basic', input: { selector: '#login-btn', label: 'Click here' } },
+    { name: 'error', input: { selector: '.error', label: 'Problem', color: '#ef4444' } },
+    { name: 'timed', input: { selector: 'button', duration: 3000 } },
+  ],
+  invalidExamples: [
+    { input: {}, error: 'selector' },
+  ],
 })
 
 export const unhighlight = endpoint({
@@ -156,6 +199,7 @@ export const scroll = endpoint({
   method: 'POST',
   summary: 'Scroll to element or position',
   description: 'Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.',
+  category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector to scroll into view').optional,
     x: s.number.describe('Absolute X position in pixels').optional,
@@ -167,6 +211,14 @@ export const scroll = endpoint({
     block: s.string.describe('Vertical alignment: center (default), start, end, nearest').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'to-element', input: { selector: '#pricing' } },
+    { name: 'to-top', input: { y: 0 } },
+    { name: 'down', input: { deltaY: 500 } },
+  ],
+  invalidExamples: [
+    { input: {}, error: 'selector' },
+  ],
 })
 
 // ============================================
