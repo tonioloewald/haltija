@@ -264,6 +264,70 @@ describe('Desktop App Smoke Tests', () => {
     expect(data.success).toBe(true)
     expect(data.data.textContent).toContain('Moby')
   })
+
+  it('can take screenshots with Electron native capture', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Full page screenshot as PNG (default)
+    const pngRes = await fetch(`${BASE_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(pngRes.ok).toBe(true)
+    const pngData = await pngRes.json()
+    expect(pngData.success).toBe(true)
+    expect(pngData.data.image).toMatch(/^data:image\/png;base64,/)
+    expect(pngData.data.source).toBe('electron')
+    expect(pngData.data.width).toBeGreaterThan(0)
+    expect(pngData.data.height).toBeGreaterThan(0)
+  })
+
+  it('can take screenshots in webp format', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // WebP format with quality
+    const webpRes = await fetch(`${BASE_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format: 'webp', quality: 0.8 }),
+    })
+
+    expect(webpRes.ok).toBe(true)
+    const webpData = await webpRes.json()
+    expect(webpData.success).toBe(true)
+    expect(webpData.data.image).toMatch(/^data:image\/webp;base64,/)
+    expect(webpData.data.format).toBe('webp')
+  })
+
+  it('can take element-specific screenshots', async () => {
+    if (!electronProcess) {
+      console.log('Electron not running, skipping')
+      return
+    }
+
+    // Capture just the h1 element
+    const elemRes = await fetch(`${BASE_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h1' }),
+    })
+
+    expect(elemRes.ok).toBe(true)
+    const elemData = await elemRes.json()
+    expect(elemData.success).toBe(true)
+    expect(elemData.data.image).toMatch(/^data:image\/png;base64,/)
+    // Element screenshot should be smaller than full page
+    expect(elemData.data.width).toBeLessThan(1000)
+    expect(elemData.data.height).toBeLessThan(200)
+  })
 })
 
 describe('Desktop App Resource Tests', () => {
