@@ -2,6 +2,11 @@
   "name": "haltija-desktop",
   "version": "0.1.0",
   "description": "Haltija Desktop - God Mode Browser for AI Agents",
+  "homepage": "https://github.com/tonioloewald/haltija",
+  "author": {
+    "name": "Tonio Loewald",
+    "email": "tonio@loewald.com"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -15,7 +20,6 @@
     "build:win": "npm run compile:server:win && electron-builder --win",
     "build:linux": "npm run compile:server:linux && electron-builder --linux"
   },
-  "author": "Tonio Loewald",
   "license": "Apache-2.0",
   "devDependencies": {
     "electron": "^28.0.0",
@@ -54,7 +58,9 @@
     },
     "linux": {
       "icon": "icons/icon.png",
-      "target": ["AppImage", "deb"]
+      "target": ["AppImage", "deb"],
+      "maintainer": "Tonio Loewald <tonio@loewald.com>",
+      "category": "Development"
     },
     "files": [
       "main.js",
