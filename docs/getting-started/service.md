@@ -43,10 +43,17 @@ I have Haltija running at http://localhost:8700. You can see and control my brow
 - POST /click - click an element
 - POST /type - type into a field
 - POST /scroll - smooth scroll to element or position
+- POST /highlight - show the user an element (with optional label)
 - POST /eval - run JavaScript (escape hatch)
 - POST /screenshot - capture page image (see options below)
 - GET /events - recent events including network errors
 - GET /select/result - get elements user has selected in browser
+
+**Showing things to the user:**
+When explaining something or pointing out an issue, use /highlight to visually show the user what you're referring to:
+- curl -X POST http://localhost:8700/highlight -d '{"selector":"#login-btn","label":"Click here"}'
+- curl -X POST http://localhost:8700/highlight -d '{"selector":".error","label":"This is the problem","color":"#ef4444"}'
+The highlight stays until you call /unhighlight or set a duration in ms.
 
 **Screenshot options:**
 - format: "png" (default), "webp", "jpeg"

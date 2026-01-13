@@ -34,7 +34,9 @@ GET  /windows              List connected browser tabs
 GET  /location?window=ID   Current URL of a tab
 POST /tree                 See page structure (use mode:"actionable" for summary)
 POST /click                Click an element
-POST /type                 Type into a field  
+POST /type                 Type into a field
+POST /scroll               Smooth scroll to element or position
+POST /highlight            Show user an element (label it in the browser!)
 POST /eval                 Run arbitrary JavaScript (escape hatch)
 GET  /events               Recent semantic events (clicks, typing, errors)
 POST /screenshot           Capture page image (format/scale options)
@@ -103,6 +105,43 @@ Options:
 - maxWidth/maxHeight: constrain dimensions
 
 Returns: `{image: "data:image/...", width, height, source}`
+
+## Showing things to the user
+
+**Important:** When you find something or want to explain what you're looking at, 
+SHOW the user by highlighting it in their browser. Don't just describe it - point to it!
+
+### Highlight an element
+```bash
+curl -X POST http://localhost:8700/highlight \
+  -H "Content-Type: application/json" \
+  -d '{"selector":"#login-btn", "label":"Click this to log in"}'
+```
+
+Options:
+- selector: CSS selector of element to highlight
+- label: Text shown next to the element (optional but recommended)
+- color: CSS color for highlight border (default: #6366f1)
+- duration: Auto-hide after N milliseconds (omit for permanent until /unhighlight)
+
+### When to highlight
+- When you find what the user asked about: "Here's the search box"
+- When explaining a problem: "This button is disabled because..."
+- When showing what you're about to click: "I'll click this Submit button"
+- When pointing out issues: "This error message appeared"
+
+### Remove highlight
+```bash
+curl -X POST http://localhost:8700/unhighlight
+```
+
+### Scroll to element
+Smoothly scroll an element into view (with natural easing):
+```bash
+curl -X POST http://localhost:8700/scroll \
+  -H "Content-Type: application/json" \
+  -d '{"selector":"#pricing-section"}'
+```
 
 ## Watching for changes
 
