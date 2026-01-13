@@ -5028,7 +5028,7 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, false, null, err.message)
       }
     } else if (action === 'screenshot') {
-      // Capture screenshot using html2canvas if available, or return viewport info
+      // Capture screenshot - try Electron native, then html2canvas, then viewport info only
       try {
         const viewport = {
           width: window.innerWidth,
@@ -5038,6 +5038,55 @@ export class DevChannel extends HTMLElement {
           devicePixelRatio: window.devicePixelRatio,
           url: location.href,
           title: document.title,
+        }
+        
+        // Format options: png (default), webp (smaller), jpeg (smallest, lossy)
+        const format = payload?.format || 'png'
+        const quality = payload?.quality ?? (format === 'png' ? 1 : 0.85)
+        const mimeType = format === 'webp' ? 'image/webp' 
+                       : format === 'jpeg' ? 'image/jpeg' 
+                       : 'image/png'
+        
+        // Helper to convert data URL to different format via canvas
+        const convertFormat = async (dataUrl: string): Promise<string> => {
+          if (format === 'png') return dataUrl // Already PNG from Electron
+          
+          return new Promise((resolve) => {
+            const img = new Image()
+            img.onload = () => {
+              const canvas = document.createElement('canvas')
+              canvas.width = img.width
+              canvas.height = img.height
+              const ctx = canvas.getContext('2d')!
+              ctx.drawImage(img, 0, 0)
+              resolve(canvas.toDataURL(mimeType, quality))
+            }
+            img.src = dataUrl
+          })
+        }
+        
+        // Try Electron native capture first (best quality, works on any page)
+        const haltija = (window as any).haltija
+        if (haltija?.capturePage) {
+          let result
+          if (payload?.selector) {
+            result = await haltija.captureElement(payload.selector)
+          } else {
+            result = await haltija.capturePage()
+          }
+          
+          if (result?.success && result.data) {
+            const image = await convertFormat(result.data)
+            this.respond(msg.id, true, {
+              image,
+              viewport,
+              format,
+              width: result.size?.width || result.bounds?.width,
+              height: result.size?.height || result.bounds?.height,
+              source: 'electron',
+            })
+            return
+          }
         }
         
         // Try html2canvas if available
@@ -5057,21 +5106,22 @@ export class DevChannel extends HTMLElement {
             logging: false,
             scale: payload?.scale || 1,
           })
-          const dataUrl = canvas.toDataURL('image/png')
+          const dataUrl = canvas.toDataURL(mimeType, quality)
           this.respond(msg.id, true, { 
             image: dataUrl, 
             viewport,
-            format: 'png',
+            format,
             width: canvas.width,
             height: canvas.height,
+            source: 'html2canvas',
           })
         } else {
-          // No html2canvas - return viewport info only
-          // Electron can handle actual capture via main process
+          // No capture method available - return viewport info only
           this.respond(msg.id, true, { 
             viewport, 
             image: null,
-            note: 'html2canvas not loaded. For actual capture, use Electron or load html2canvas.',
+            note: 'No capture method available. Use Electron app or load html2canvas.',
+            hint: 'In Electron: captures work automatically. In browser: add <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>',
           })
         }
       } catch (err: any) {

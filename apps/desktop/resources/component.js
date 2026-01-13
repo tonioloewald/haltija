@@ -4677,30 +4677,32 @@
         this.originalConsole[level] = console[level];
         console[level] = (...args) => {
           this.originalConsole[level].apply(console, args);
-          const entry = {
-            level,
-            args: args.map((arg) => {
-              try {
-                return JSON.parse(JSON.stringify(arg));
-              } catch {
-                return String(arg);
-              }
-            }),
-            timestamp: Date.now()
-          };
-          if (level === "error") {
-            entry.stack = new Error().stack;
-          }
-          this.consoleBuffer.push(entry);
-          if (this.consoleBuffer.length > 1000) {
-            this.consoleBuffer = this.consoleBuffer.slice(-500);
-          }
-          if (level === "error") {
-            if (this.state === "connected") {
-              this.send("console", level, entry);
+          try {
+            const entry = {
+              level,
+              args: args.map((arg) => {
+                try {
+                  return JSON.parse(JSON.stringify(arg));
+                } catch {
+                  return String(arg);
+                }
+              }),
+              timestamp: Date.now()
+            };
+            if (level === "error") {
+              entry.stack = new Error().stack;
             }
-            this.updateUI();
-          }
+            this.consoleBuffer.push(entry);
+            if (this.consoleBuffer.length > 1000) {
+              this.consoleBuffer = this.consoleBuffer.slice(-500);
+            }
+            if (level === "error") {
+              if (this.state === "connected") {
+                this.send("console", level, entry);
+              }
+              this.updateUI();
+            }
+          } catch {}
         };
       }
     }
@@ -4721,30 +4723,25 @@
     currentTagName = TAG_NAME;
   }
   registerDevChannel();
+  var WIDGET_ID = "haltija-widget";
   function inject(serverUrl2 = "wss://localhost:8700/ws/browser") {
-    const existingId = window.__haltija_widget_id__;
-    if (existingId) {
-      const existing = document.getElementById(existingId);
-      if (existing) {
-        console.log(`${LOG_PREFIX} Already injected`);
-        const existingVersion = existing.getAttribute("data-version") || "0.0.0";
-        if (existingVersion !== VERSION2) {
-          console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION2}), replacing`);
-          existing.remove();
-          window.__haltija_widget_id__ = null;
-        } else {
-          return existing;
-        }
+    const existing = document.getElementById(WIDGET_ID);
+    if (existing) {
+      console.log(`${LOG_PREFIX} Already injected`);
+      const existingVersion = existing.getAttribute("data-version") || "0.0.0";
+      if (existingVersion !== VERSION2) {
+        console.log(`${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION2}), replacing`);
+        existing.remove();
+      } else {
+        return existing;
       }
     }
-    const widgetId = "haltija-" + Math.random().toString(36).slice(2);
-    window.__haltija_widget_id__ = widgetId;
     const el = DevChannel.elementCreator()();
-    el.id = widgetId;
+    el.id = WIDGET_ID;
     el.setAttribute("server", serverUrl2);
     el.setAttribute("data-version", VERSION2);
     document.body.appendChild(el);
-    console.log(`${LOG_PREFIX} Injected (${widgetId})`);
+    console.log(`${LOG_PREFIX} Injected`);
     return el;
   }
   function autoInject() {
