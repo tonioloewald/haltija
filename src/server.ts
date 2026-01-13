@@ -434,8 +434,25 @@ async function requestFromBrowser(
       const focusedWin = windows.get(focusedWindowId)!
       focusedWin.ws.send(JSON.stringify(msg))
     } else {
-      // Fallback: send to all browsers when no window is focused
-      sendToBrowsers(msg)
+      // Fallback: pick ONE active window (most recently seen) instead of broadcasting
+      // This prevents cross-traffic when multiple tabs are active
+      const activeWindows = Array.from(windows.values())
+        .filter(w => w.active)
+        .sort((a, b) => b.lastSeen - a.lastSeen)
+      
+      if (activeWindows.length > 0) {
+        activeWindows[0].ws.send(JSON.stringify(msg))
+      } else if (windows.size > 0) {
+        // No active windows, pick most recently seen
+        const mostRecent = Array.from(windows.values())
+          .sort((a, b) => b.lastSeen - a.lastSeen)[0]
+        mostRecent.ws.send(JSON.stringify(msg))
+      } else {
+        // No windows at all
+        clearTimeout(timeout)
+        pendingResponses.delete(id)
+        resolve({ id, success: false, error: 'No windows connected', timestamp: Date.now() })
+      }
     }
   })
 }
