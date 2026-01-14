@@ -512,7 +512,46 @@ Claude Desktop ←→ MCP Server ←→ Haltija REST API ←→ Browser
 
 ## Planned
 
-### Phase 12: UX Crimes Database
+### Phase 12: Framework-Aware Interactions
+
+**Make click/type just work on React, Vue, and other framework antipatterns.**
+
+The goal: Haltija should handle framework quirks automatically. The agent shouldn't need to know it's dealing with React.
+
+#### Problems to Solve
+
+| Pattern | Problem | Solution |
+|---------|---------|----------|
+| Clickable divs | `onClick` but no button role, no keyboard | Detect handler, dispatch properly |
+| Controlled inputs | React state ignores DOM events | Dispatch React synthetic events |
+| Contenteditable | Rich text, not real input | Use `execCommand` or input events |
+| Custom selects | Divs pretending to be dropdowns | Detect pattern, click to open, click option |
+| Form libraries | Formik/RHF bypass native events | Trigger framework-specific updates |
+| Virtual lists | Elements created on scroll | Scroll into existence first |
+
+#### Detection Strategies
+- Check for `onClick`/`onKeyDown` as element properties (React)
+- Look for `__reactFiber$` or `__vue__` expando properties
+- Detect `contenteditable="true"`
+- Identify ARIA roles that indicate custom widgets (`role="listbox"`, `role="combobox"`)
+- Check for common component library patterns (MUI, Ant, Chakra)
+
+#### Implementation
+- `/click` auto-detects React elements and dispatches synthetic events
+- `/type` handles contenteditable and controlled inputs
+- `/tree` flags elements with framework bindings
+- New endpoint or flag: `/inspect` returns `frameworkHints`
+
+#### Success Criteria
+Standard selectors work on:
+- MUI (Material-UI) components
+- Ant Design components
+- Chakra UI components
+- Headless UI components
+- React Hook Form / Formik forms
+- Slate/TipTap/ProseMirror editors
+
+### Phase 13: UX Crimes Database
 
 **Curated anti-patterns to make the agent a seasoned UX auditor.**
 

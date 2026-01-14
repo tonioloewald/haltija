@@ -234,7 +234,16 @@ curl -X POST localhost:8700/eval -d '{
 }'
 ```
 
-The `/tree` endpoint does support `pierceShadow: true` for inspection, but click/type require eval for shadow DOM targets.
+The `/tree` endpoint supports `pierceShadow: true` for inspection, but click/type require eval for shadow DOM targets.
+
+**React and Framework Antipatterns** (work in progress):
+- Clickable divs with `onClick` but no button semantics
+- Controlled inputs where React state doesn't sync with DOM events  
+- Contenteditable rich text editors masquerading as inputs
+- Custom select/dropdown widgets built from divs
+- Form libraries that bypass native change events
+
+Currently these may require `/eval` workarounds. We're working on automatic detection and handling so Haltija just does the right thing.
 
 ---
 
