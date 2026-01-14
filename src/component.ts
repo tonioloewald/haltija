@@ -879,7 +879,7 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     interestingAttributes = DEFAULT_INTERESTING_ATTRS,
     ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
     compact = false,
-    pierceShadow = false,
+    pierceShadow = true,
     visibleOnly = false,
   } = options
 
@@ -1049,9 +1049,14 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
   if (pierceShadow && el.shadowRoot && currentDepth < maxDepth) {
     const shadowChildren: DomTreeNode[] = []
     
+    // Tags to skip in shadow DOM (noise, not content)
+    const shadowSkipTags = new Set(['STYLE', 'SLOT', 'LINK', 'SCRIPT', 'TEMPLATE'])
+    
     for (const child of el.shadowRoot.children) {
-      // Skip our own widget and style elements in shadow DOM
-      if (child.tagName === 'STYLE' || child.tagName === 'SLOT') continue
+      // Skip non-content elements in shadow DOM
+      if (shadowSkipTags.has(child.tagName)) continue
+      // Skip our own Haltija widget
+      if (child.tagName.toLowerCase().startsWith('haltija')) continue
       if (shadowChildren.length >= 50) break
       
       const childNode = buildDomTree(child, options, currentDepth + 1)

@@ -40,7 +40,7 @@
             "boolean",
             "null"
           ],
-          "description": "Pierce shadow DOM (default false)"
+          "description": "Pierce shadow DOM (default true)"
         },
         "compact": {
           "type": [

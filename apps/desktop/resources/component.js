@@ -763,7 +763,7 @@
       interestingAttributes = DEFAULT_INTERESTING_ATTRS,
       ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
       compact = false,
-      pierceShadow = false,
+      pierceShadow = true,
       visibleOnly = false
     } = options;
     for (const selector of ignoreSelectors) {
@@ -880,8 +880,11 @@
     const maxDepth = depth < 0 ? Infinity : depth;
     if (pierceShadow && el.shadowRoot && currentDepth < maxDepth) {
       const shadowChildren = [];
+      const shadowSkipTags = new Set(["STYLE", "SLOT", "LINK", "SCRIPT", "TEMPLATE"]);
       for (const child of el.shadowRoot.children) {
-        if (child.tagName === "STYLE" || child.tagName === "SLOT")
+        if (shadowSkipTags.has(child.tagName))
+          continue;
+        if (child.tagName.toLowerCase().startsWith("haltija"))
           continue;
         if (shadowChildren.length >= 50)
           break;

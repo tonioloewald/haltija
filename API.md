@@ -27,7 +27,7 @@ Flags help identify interactive elements (buttons, inputs) and hidden content.
 | `depth` | number,null | Max depth (-1 = unlimited, default 3) |
 | `includeText` | boolean,null | Include text content (default true) |
 | `visibleOnly` | boolean,null | Only visible elements (default false) |
-| `pierceShadow` | boolean,null | Pierce shadow DOM (default false) |
+| `pierceShadow` | boolean,null | Pierce shadow DOM (default true) |
 | `compact` | boolean,null | Minimal output (default false) |
 | `window` | string,null | Target window ID |
 

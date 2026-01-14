@@ -226,15 +226,13 @@ No special libraries. Just HTTP.
 
 ## Known Limitations
 
-**Shadow DOM**: Standard selectors can't pierce shadow DOM boundaries. Use `/eval` to access shadow DOM content:
+**Shadow DOM**: The `/tree` endpoint pierces shadow DOM by default. For click/type on shadow DOM elements, use `/eval`:
 
 ```bash
 curl -X POST localhost:8700/eval -d '{
-  "code": "document.querySelector(\"my-component\").shadowRoot.querySelector(\".inner\")"
+  "code": "document.querySelector(\"my-component\").shadowRoot.querySelector(\".btn\").click()"
 }'
 ```
-
-The `/tree` endpoint supports `pierceShadow: true` for inspection, but click/type require eval for shadow DOM targets.
 
 **React and Framework Antipatterns** (work in progress):
 - Clickable divs with `onClick` but no button semantics
