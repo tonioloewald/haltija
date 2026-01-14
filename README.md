@@ -73,6 +73,22 @@ Full API: `curl localhost:8700/docs`
 
 ---
 
+## Why Haltija?
+
+Works on your **actual browser session** - not a separate headless instance.
+
+| | Haltija | Playwright MCP |
+|---|---------|----------------|
+| **Browser** | Your real browser | Separate instance |
+| **State** | Already logged in, cookies, extensions | Clean slate, script everything |
+| **Localhost** | Just works | Port forwarding |
+| **Visibility** | Watch it happen | Background process |
+| **Setup** | `curl` | Install Playwright |
+
+Same automation capabilities, but you're debugging your actual environment - the one with the bug, the weird extension, the specific login state. No reproduction steps needed.
+
+---
+
 ## How to Use It
 
 ### 1. Start the server
@@ -205,6 +221,20 @@ No special libraries. Just HTTP.
 - User can pause or kill connection anytime
 - Localhost only by default
 - HTTPS mode with auto-generated certs
+
+---
+
+## Known Limitations
+
+**Shadow DOM**: Standard selectors can't pierce shadow DOM boundaries. Use `/eval` to access shadow DOM content:
+
+```bash
+curl -X POST localhost:8700/eval -d '{
+  "code": "document.querySelector(\"my-component\").shadowRoot.querySelector(\".inner\")"
+}'
+```
+
+The `/tree` endpoint does support `pierceShadow: true` for inspection, but click/type require eval for shadow DOM targets.
 
 ---
 
