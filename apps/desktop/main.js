@@ -8,8 +8,10 @@
  * 4. Runs its own embedded Haltija server (or connects to existing)
  */
 
-const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu } = require('electron')
+const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu, dialog } = require('electron')
 const path = require('path')
+const fs = require('fs')
+const os = require('os')
 const { spawn } = require('child_process')
 const http = require('http')
 
@@ -23,6 +25,193 @@ const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
 let mainWindow = null
 let embeddedServer = null
+
+// ============================================
+// MCP Setup for Claude Desktop
+// ============================================
+
+/** Get Claude Desktop config path based on platform */
+function getClaudeDesktopConfigPath() {
+  const home = os.homedir()
+  switch (process.platform) {
+    case 'darwin':
+      return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+    case 'win32':
+      return path.join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json')
+    case 'linux':
+      return path.join(home, '.config', 'claude', 'claude_desktop_config.json')
+    default:
+      return path.join(home, '.config', 'claude', 'claude_desktop_config.json')
+  }
+}
+
+/** Find the Haltija MCP server entry point */
+function findMcpServerPath() {
+  const candidates = [
+    // Packaged app
+    process.resourcesPath ? path.join(process.resourcesPath, 'mcp', 'index.js') : null,
+    // Development - relative to this file
+    path.join(__dirname, '..', 'mcp', 'build', 'index.js'),
+    // From repo root
+    path.join(__dirname, '..', '..', 'apps', 'mcp', 'build', 'index.js'),
+  ].filter(Boolean)
+  
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+/** Check if Haltija is already configured in Claude Desktop */
+function isHaltijaConfigured() {
+  const configPath = getClaudeDesktopConfigPath()
+  if (!fs.existsSync(configPath)) return false
+  
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    return !!config.mcpServers?.haltija
+  } catch {
+    return false
+  }
+}
+
+/** Check if Claude Desktop is installed */
+function isClaudeDesktopInstalled() {
+  const configPath = getClaudeDesktopConfigPath()
+  return fs.existsSync(path.dirname(configPath))
+}
+
+/** Setup Haltija in Claude Desktop config */
+function setupMcpConfig() {
+  const mcpPath = findMcpServerPath()
+  if (!mcpPath) {
+    return { success: false, error: 'MCP server not found' }
+  }
+  
+  const configPath = getClaudeDesktopConfigPath()
+  const configDir = path.dirname(configPath)
+  
+  // Create config directory if needed
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
+  }
+  
+  // Read or create config
+  let config = { mcpServers: {} }
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      if (!config.mcpServers) config.mcpServers = {}
+    } catch {
+      // Backup invalid config
+      const backupPath = configPath + '.backup'
+      fs.writeFileSync(backupPath, fs.readFileSync(configPath))
+      config = { mcpServers: {} }
+    }
+  }
+  
+  // Add Haltija
+  config.mcpServers.haltija = {
+    command: 'node',
+    args: [mcpPath]
+  }
+  
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    return { success: true, configPath }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+}
+
+/** Show MCP setup prompt on first run */
+async function checkAndPromptMcpSetup() {
+  // Skip if Claude Desktop isn't installed
+  if (!isClaudeDesktopInstalled()) {
+    console.log('[Haltija Desktop] Claude Desktop not detected, skipping MCP setup prompt')
+    return
+  }
+  
+  // Skip if already configured
+  if (isHaltijaConfigured()) {
+    console.log('[Haltija Desktop] Haltija MCP already configured in Claude Desktop')
+    return
+  }
+  
+  // Skip if MCP server not found
+  const mcpPath = findMcpServerPath()
+  if (!mcpPath) {
+    console.log('[Haltija Desktop] MCP server not found, skipping setup prompt')
+    return
+  }
+  
+  // Show dialog
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ['Configure', 'Skip', 'Don\'t Ask Again'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Claude Desktop Integration',
+    message: 'Configure Haltija for Claude Desktop?',
+    detail: 'This will give Claude native browser control tools (click, type, query DOM, etc.).\n\nYou\'ll need to restart Claude Desktop after configuration.'
+  })
+  
+  if (result.response === 0) {
+    // Configure
+    const setupResult = setupMcpConfig()
+    if (setupResult.success) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        buttons: ['OK'],
+        title: 'Configuration Complete',
+        message: 'Haltija configured successfully!',
+        detail: 'Restart Claude Desktop to activate the integration.\n\nMake sure Haltija is running when you use Claude.'
+      })
+    } else {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        buttons: ['OK'],
+        title: 'Configuration Failed',
+        message: 'Could not configure Haltija',
+        detail: setupResult.error
+      })
+    }
+  } else if (result.response === 2) {
+    // Don't ask again - store preference
+    const store = require('electron-store')
+    try {
+      const Store = store.default || store
+      const appStore = new Store()
+      appStore.set('skipMcpSetup', true)
+    } catch {
+      // electron-store not available, use a simple file
+      const prefPath = path.join(app.getPath('userData'), 'preferences.json')
+      let prefs = {}
+      try { prefs = JSON.parse(fs.readFileSync(prefPath, 'utf8')) } catch {}
+      prefs.skipMcpSetup = true
+      fs.writeFileSync(prefPath, JSON.stringify(prefs, null, 2))
+    }
+  }
+}
+
+/** Check if user has opted out of MCP setup prompt */
+function hasSkippedMcpSetup() {
+  try {
+    const store = require('electron-store')
+    const Store = store.default || store
+    const appStore = new Store()
+    return appStore.get('skipMcpSetup', false)
+  } catch {
+    // Fallback to simple file
+    const prefPath = path.join(app.getPath('userData'), 'preferences.json')
+    try {
+      const prefs = JSON.parse(fs.readFileSync(prefPath, 'utf8'))
+      return prefs.skipMcpSetup === true
+    } catch {
+      return false
+    }
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -452,9 +641,6 @@ function checkServerRunning() {
  * Start embedded Haltija server
  */
 async function startEmbeddedServer() {
-  const fs = require('fs')
-  const os = require('os')
-  
   // Determine architecture
   const arch = os.arch() === 'arm64' ? 'arm64' : 'x64'
   const platform = os.platform()
@@ -593,6 +779,12 @@ app.whenReady().then(async () => {
   setupWidgetInjection()
   setupScreenCapture()
   createWindow()
+  
+  // Check for Claude Desktop MCP setup (after window is ready)
+  if (!hasSkippedMcpSetup()) {
+    // Small delay to let window fully render
+    setTimeout(() => checkAndPromptMcpSetup(), 1500)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

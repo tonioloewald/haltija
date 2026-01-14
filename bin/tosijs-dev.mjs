@@ -10,10 +10,13 @@
  *   npx tosijs-dev --https      # Start HTTPS server (auto-generates certs)
  *   npx tosijs-dev --both       # Start both HTTP and HTTPS
  *   npx tosijs-dev --headless   # Start with headless Chromium (for CI)
+ *   npx tosijs-dev --setup-mcp  # Configure Claude Desktop integration
  *   npx tosijs-dev --help       # Show help
  */
 
 import { spawn } from 'child_process'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { homedir, platform } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 
@@ -22,12 +25,19 @@ const serverPath = join(__dirname, '../dist/server.js')
 
 const args = process.argv.slice(2)
 
+// Colors for terminal output
+const green = (s) => `\x1b[32m${s}\x1b[0m`
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`
+const red = (s) => `\x1b[31m${s}\x1b[0m`
+const bold = (s) => `\x1b[1m${s}\x1b[0m`
+const dim = (s) => `\x1b[2m${s}\x1b[0m`
+
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-tosijs-dev - Browser control for AI agents
+${bold('haltija')} - Browser control for AI agents
 
 Usage:
-  tosijs-dev [options]
+  haltija [options]
 
 Options:
   --http          HTTP only on port 8700 (default)
@@ -39,6 +49,9 @@ Options:
   --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
+  --setup-mcp     Configure Claude Desktop MCP integration
+  --setup-mcp-check  Check MCP configuration status
+  --setup-mcp-remove Remove Haltija from Claude Desktop config
   --help, -h      Show this help
 
 Environment Variables:
@@ -49,16 +62,218 @@ Environment Variables:
   DEV_CHANNEL_DOCS_DIR       Directory with custom docs (default: built-in only)
 
 Examples:
-  npx tosijs-dev                          # HTTP on 8700
-  npx tosijs-dev --https                  # HTTPS on 8701
-  npx tosijs-dev --both                   # HTTP on 8700 + HTTPS on 8701
-  npx tosijs-dev --headless               # Start with headless browser for CI
-  npx tosijs-dev --headless --headless-url http://localhost:3000  # Open URL
+  haltija                          # HTTP on 8700
+  haltija --https                  # HTTPS on 8701
+  haltija --both                   # HTTP on 8700 + HTTPS on 8701
+  haltija --headless               # Start with headless browser for CI
+  haltija --setup-mcp              # Configure Claude Desktop integration
 
-Note: For best performance, use Bun: bunx tosijs-dev
+Note: For best performance, use Bun: bunx haltija
 
 Once running, curl the /docs endpoint for full API documentation.
 `)
+  process.exit(0)
+}
+
+// ============================================
+// MCP Setup Functions
+// ============================================
+
+/** Get Claude Desktop config path based on platform */
+function getClaudeDesktopConfigPath() {
+  const home = homedir()
+  switch (platform()) {
+    case 'darwin':
+      return join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+    case 'win32':
+      return join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json')
+    case 'linux':
+      return join(home, '.config', 'claude', 'claude_desktop_config.json')
+    default:
+      return join(home, '.config', 'claude', 'claude_desktop_config.json')
+  }
+}
+
+/** Find the Haltija MCP server entry point */
+function findMcpServerPath() {
+  const candidates = [
+    join(__dirname, '../apps/mcp/build/index.js'),
+    join(__dirname, 'mcp/build/index.js'),
+    join(process.cwd(), 'node_modules/haltija/apps/mcp/build/index.js'),
+  ]
+  
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+/** Check MCP configuration status */
+function checkMcpConfig() {
+  console.log(bold('\nHaltija MCP Configuration Status\n'))
+  
+  const configPath = getClaudeDesktopConfigPath()
+  const mcpPath = findMcpServerPath()
+  
+  // Check Claude Desktop
+  if (existsSync(dirname(configPath))) {
+    console.log(green('✓') + ' Claude Desktop detected')
+    console.log(dim(`  Config: ${configPath}`))
+    
+    if (existsSync(configPath)) {
+      try {
+        const config = JSON.parse(readFileSync(configPath, 'utf8'))
+        if (config.mcpServers?.haltija) {
+          console.log(green('✓') + ' Haltija is configured in Claude Desktop')
+          console.log(dim(`  Command: ${config.mcpServers.haltija.command} ${config.mcpServers.haltija.args?.join(' ') || ''}`))
+        } else {
+          console.log(yellow('○') + ' Haltija is not configured')
+          console.log(dim(`  Run: haltija --setup-mcp`))
+        }
+      } catch {
+        console.log(yellow('○') + ' Config exists but could not be parsed')
+      }
+    } else {
+      console.log(yellow('○') + ' Config file does not exist yet')
+      console.log(dim(`  Run: haltija --setup-mcp`))
+    }
+  } else {
+    console.log(yellow('○') + ' Claude Desktop not detected')
+    console.log(dim(`  Install from: https://claude.ai/download`))
+  }
+  
+  // Check MCP server
+  if (mcpPath) {
+    console.log(green('✓') + ' MCP server found')
+    console.log(dim(`  Path: ${mcpPath}`))
+  } else {
+    console.log(red('✗') + ' MCP server not found')
+    console.log(dim(`  Run from haltija directory or rebuild`))
+  }
+  
+  // Check if server is running
+  fetch('http://localhost:8700/status', { signal: AbortSignal.timeout(1000) })
+    .then(r => {
+      if (r.ok) console.log(green('✓') + ' Haltija server is running on port 8700')
+      else console.log(yellow('○') + ' Haltija server not running')
+    })
+    .catch(() => {
+      console.log(yellow('○') + ' Haltija server not running')
+      console.log(dim(`  Start with: haltija`))
+    })
+    .finally(() => {
+      console.log('')
+    })
+}
+
+/** Setup Claude Desktop MCP integration */
+function setupMcp() {
+  const mcpPath = findMcpServerPath()
+  if (!mcpPath) {
+    console.log(red('Error:') + ' Could not find Haltija MCP server.')
+    console.log('Make sure you run this from the haltija directory or have it installed.')
+    process.exit(1)
+  }
+  
+  const configPath = getClaudeDesktopConfigPath()
+  const configDir = dirname(configPath)
+  
+  // Create config directory if needed
+  if (!existsSync(configDir)) {
+    console.log(dim(`Creating config directory: ${configDir}`))
+    mkdirSync(configDir, { recursive: true })
+  }
+  
+  // Read or create config
+  let config = { mcpServers: {} }
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf8'))
+      if (!config.mcpServers) config.mcpServers = {}
+    } catch {
+      // Backup invalid config
+      const backupPath = configPath + '.backup'
+      console.log(yellow('Warning:') + ` Existing config invalid, backing up to ${backupPath}`)
+      writeFileSync(backupPath, readFileSync(configPath))
+      config = { mcpServers: {} }
+    }
+  }
+  
+  // Check if already configured
+  if (config.mcpServers.haltija) {
+    console.log(green('✓') + ' Haltija is already configured in Claude Desktop')
+    console.log(dim(`  Config: ${configPath}`))
+    console.log('')
+    console.log('To reconfigure, first run: ' + bold('haltija --setup-mcp-remove'))
+    process.exit(0)
+  }
+  
+  // Add Haltija
+  config.mcpServers.haltija = {
+    command: 'node',
+    args: [mcpPath]
+  }
+  
+  try {
+    writeFileSync(configPath, JSON.stringify(config, null, 2))
+    console.log(green('✓') + ' Haltija configured successfully!')
+    console.log(dim(`  Config: ${configPath}`))
+    console.log('')
+    console.log(bold('Next steps:'))
+    console.log('  1. ' + yellow('Restart Claude Desktop') + ' to load the MCP server')
+    console.log('  2. Start Haltija server: ' + dim('haltija'))
+    console.log('  3. Connect browser and chat with Claude!')
+    console.log('')
+  } catch (err) {
+    console.log(red('Error:') + ` Failed to write config: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+/** Remove Haltija from Claude Desktop config */
+function removeMcp() {
+  const configPath = getClaudeDesktopConfigPath()
+  
+  if (!existsSync(configPath)) {
+    console.log('Claude Desktop config does not exist.')
+    process.exit(0)
+  }
+  
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf8'))
+    if (!config.mcpServers?.haltija) {
+      console.log('Haltija is not configured in Claude Desktop.')
+      process.exit(0)
+    }
+    
+    delete config.mcpServers.haltija
+    writeFileSync(configPath, JSON.stringify(config, null, 2))
+    
+    console.log(green('✓') + ' Removed Haltija from Claude Desktop config')
+    console.log(dim(`  Config: ${configPath}`))
+    console.log('')
+    console.log(yellow('Restart Claude Desktop') + ' to apply changes.')
+    console.log('')
+  } catch (err) {
+    console.log(red('Error:') + ` Failed to update config: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+// Handle MCP setup commands
+if (args.includes('--setup-mcp')) {
+  setupMcp()
+  process.exit(0)
+}
+
+if (args.includes('--setup-mcp-check')) {
+  checkMcpConfig()
+  // Don't exit immediately - let the async fetch complete
+  setTimeout(() => process.exit(0), 2000)
+}
+
+if (args.includes('--setup-mcp-remove')) {
+  removeMcp()
   process.exit(0)
 }
 

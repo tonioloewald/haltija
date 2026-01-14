@@ -27,6 +27,43 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
+import { homedir, platform } from 'os'
+
+// ============================================
+// MCP Configuration Detection (for /status endpoint)
+// ============================================
+
+/** Get Claude Desktop config path based on platform */
+function getClaudeDesktopConfigPath(): string {
+  const home = homedir()
+  switch (platform()) {
+    case 'darwin':
+      return join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+    case 'win32':
+      return join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json')
+    default:
+      return join(home, '.config', 'claude', 'claude_desktop_config.json')
+  }
+}
+
+/** Check if Haltija MCP is configured in Claude Desktop */
+function getMcpStatus(): { configured: boolean; configPath: string; setupCommand: string } {
+  const configPath = getClaudeDesktopConfigPath()
+  let configured = false
+  
+  if (existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf8'))
+      configured = !!config?.mcpServers?.haltija
+    } catch {}
+  }
+  
+  return {
+    configured,
+    configPath,
+    setupCommand: 'bunx haltija --setup-mcp'
+  }
+}
 
 // Product naming - single source of truth
 const PRODUCT_NAME = 'Haltija'
@@ -1224,12 +1261,23 @@ Security: Widget always shows when agent sends commands (no silent snooping)
 
   // Status endpoint
   if (path === '/status') {
+    const mcpStatus = getMcpStatus()
     return Response.json({
       browsers: browsers.size,
       agents: agents.size,
       bufferedMessages: messageBuffer.length,
       serverVersion: SERVER_VERSION,
       serverSessionId: SERVER_SESSION_ID,
+      mcp: {
+        claudeDesktop: {
+          configured: mcpStatus.configured,
+          configPath: mcpStatus.configPath,
+        },
+        setupCommand: mcpStatus.setupCommand,
+        hint: mcpStatus.configured 
+          ? 'MCP tools available in Claude Desktop' 
+          : 'Run setupCommand to enable native browser tools in Claude Desktop'
+      }
     }, { headers })
   }
   

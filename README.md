@@ -231,4 +231,4 @@ curl localhost:8700/docs      # Quick start guide
 curl localhost:8700/api       # Full API reference with examples
 ```
 
-The API is self-documenting - GET any POST endpoint to see its schema and examples.
+Or see [API.md](./API.md) for the complete reference (auto-generated from schema).
