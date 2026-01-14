@@ -483,17 +483,34 @@ npx haltija --docs-dir ./my-docs
 - Code signing / notarization (complicated by EU regulations)
 - Auto-update server
 
+### Phase 11: MCP Bridge (Claude Desktop Integration) ✅
+
+**Native browser tools for Claude Desktop.**
+
+#### Completed
+- MCP server in `apps/mcp/` translates JSON-RPC to REST API
+- Tool definitions auto-generated from `api-schema.ts` (single source of truth)
+- All endpoints exposed as MCP tools (tree, query, click, type, etc.)
+- Auto-setup via CLI: `haltija --setup-mcp`
+- Auto-setup via Electron: First-run prompt configures Claude Desktop
+- `/status` endpoint includes MCP configuration info for agents
+- Comprehensive API documentation with examples in schema
+
+#### How It Works
+```
+Claude Desktop ←→ MCP Server ←→ Haltija REST API ←→ Browser
+     (JSON-RPC)      (apps/mcp)      (localhost:8700)
+```
+
+#### Setup Options
+1. **CLI**: `bunx haltija --setup-mcp` (recommended)
+2. **Electron**: Prompted on first launch of Haltija Desktop
+3. **Manual**: Add to `claude_desktop_config.json`
+
+#### Future Enhancement (Parking Lot)
+- Live event stream via MCP Resource (nice-to-have)
+
 ## Planned
-
-### Phase 11: MCP Bridge (Claude Desktop Integration)
-
-**Buzzword compliance for Claude Desktop users.**
-
-- Thin wrapper: translates MCP JSON-RPC to REST API
-- `browser_act` → `POST /click`, `POST /type`
-- `browser_sense` → `GET /tree`, `GET /location`
-- Live event stream via MCP Resource
-- No new capabilities, just integration
 
 ### Phase 12: UX Crimes Database
 
