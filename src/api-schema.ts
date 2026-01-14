@@ -49,12 +49,26 @@ function endpoint<T>(def: EndpointDef<T>): EndpointDef<T> {
 // ============================================
 // DOM Endpoints
 // ============================================
+// 
+// Choosing the right DOM tool:
+// - /tree: Get page structure overview. Start here to understand layout.
+// - /query: Quick check if element exists, get basic info (tag, id, class, text).
+// - /inspect: Deep dive on ONE element (styles, ARIA, geometry, state).
+// - /inspectAll: Deep dive on MULTIPLE elements (e.g., all buttons on page).
+//
+// Typical workflow: tree (overview) → query (find target) → inspect (verify) → click/type
 
 export const tree = endpoint({
   path: '/tree',
   method: 'POST',
   summary: 'Get DOM tree structure',
-  description: 'Returns hierarchical view of page elements with flags for interactivity, visibility, data bindings, shadow DOM, etc. Great for understanding page structure.',
+  description: `Returns hierarchical view of page elements. Best for understanding page structure before interacting.
+
+Response structure:
+  { tag, id?, classes?, attrs?, text?, children?, flags?: { interactive, hidden, hasAria, ... } }
+
+Flags help identify interactive elements (buttons, inputs) and hidden content.`,
+  category: 'dom',
   input: s.object({
     selector: s.string.describe('Root element selector').optional,
     depth: s.number.describe('Max depth (-1 = unlimited, default 3)').optional,
@@ -64,63 +78,119 @@ export const tree = endpoint({
     compact: s.boolean.describe('Minimal output (default false)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'overview', input: { depth: 2 }, description: 'Quick page overview' },
+    { name: 'form-only', input: { selector: 'form', depth: -1 }, description: 'Full form structure' },
+    { name: 'visible-buttons', input: { selector: 'body', visibleOnly: true, depth: 4 }, description: 'Find visible interactive elements' },
+  ],
 })
 
 export const query = endpoint({
   path: '/query',
   method: 'POST',
   summary: 'Query DOM elements by selector',
-  description: 'Find elements matching a CSS selector. Returns basic element info.',
+  description: `Quick element lookup. Returns basic info: tagName, id, className, textContent, attributes.
+
+Use this to check if an element exists before clicking/typing. For detailed info, use /inspect instead.
+
+Response: { tagName, id, className, textContent, attributes: {...} }`,
+  category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
     all: s.boolean.describe('Return all matches (default false = first only)').optional,
   }),
+  examples: [
+    { name: 'by-id', input: { selector: '#submit-btn' }, description: 'Find element by ID' },
+    { name: 'by-text', input: { selector: 'button:contains("Save")' }, description: 'Find button by text' },
+    { name: 'all-inputs', input: { selector: 'input[type="text"]', all: true }, description: 'Find all text inputs' },
+  ],
+  invalidExamples: [
+    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'wrong-type', input: { selector: 123 }, error: 'selector must be string' },
+  ],
 })
 
 export const inspect = endpoint({
   path: '/inspect',
   method: 'POST',
   summary: 'Deep inspection of an element',
-  description: 'Get detailed info: geometry, computed styles, ARIA attributes, visibility, scroll position, and more.',
+  description: `Get everything about ONE element: geometry, computed styles, ARIA attributes, scroll position, visibility state.
+
+Response includes:
+  - box: { x, y, width, height, visible }
+  - text: { innerText, value, placeholder }
+  - properties: { disabled, checked, hidden, role, ariaLabel, ... }
+  - styles: { display, visibility, opacity, ... }
+  - hierarchy: { parent, children count, depth }
+
+Use before clicking to verify element is visible and enabled.`,
+  category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'check-button', input: { selector: '#submit' }, description: 'Verify button is clickable' },
+    { name: 'check-input', input: { selector: 'input[name="email"]' }, description: 'Get input state and value' },
+  ],
+  invalidExamples: [
+    { name: 'missing-selector', input: {}, error: 'selector is required' },
+  ],
 })
 
 export const inspectAll = endpoint({
   path: '/inspectAll',
   method: 'POST',
   summary: 'Inspect multiple elements',
-  description: 'Deep inspection of all elements matching selector.',
+  description: `Deep inspection of ALL elements matching selector (up to limit).
+
+Same detailed info as /inspect, but for multiple elements. Great for:
+  - Finding all buttons/links on a page
+  - Checking which form fields are required
+  - Listing all interactive elements
+
+Response: array of inspection objects`,
+  category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
     limit: s.number.describe('Max elements (default 10)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'all-buttons', input: { selector: 'button, [role="button"]', limit: 20 }, description: 'Find all clickable buttons' },
+    { name: 'form-fields', input: { selector: 'input, select, textarea' }, description: 'List all form inputs' },
+    { name: 'nav-links', input: { selector: 'nav a', limit: 15 }, description: 'Get navigation links' },
+  ],
 })
 
 // ============================================
 // Interaction Endpoints
 // ============================================
+//
+// These simulate real user interactions. Elements are auto-scrolled into view.
+// Use /inspect first to verify element is visible and enabled.
 
 export const click = endpoint({
   path: '/click',
   method: 'POST',
   summary: 'Click an element',
-  description: 'Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.',
+  description: `Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
+
+Automatically fails if element is not found or is disabled. Check response.success to verify.`,
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of element to click'),
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'basic', input: { selector: '#submit' }, description: 'Click a button by ID' },
-    { name: 'with-class', input: { selector: '.btn-primary' }, description: 'Click by class' },
+    { name: 'by-id', input: { selector: '#submit' }, description: 'Click button by ID' },
+    { name: 'by-class', input: { selector: '.btn-primary' }, description: 'Click by class' },
+    { name: 'by-text', input: { selector: 'button:contains("Save")' }, description: 'Click by button text' },
+    { name: 'by-role', input: { selector: '[role="button"][aria-label="Close"]' }, description: 'Click by ARIA' },
   ],
   invalidExamples: [
-    { input: {}, error: 'selector' },
-    { input: { selector: 123 }, error: 'string' },
+    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'wrong-type', input: { selector: 123 }, error: 'selector must be string' },
   ],
 })
 
@@ -128,7 +198,10 @@ export const type = endpoint({
   path: '/type',
   method: 'POST',
   summary: 'Type text into an element',
-  description: 'Focus element and type text. Supports human-like typing with variable delays and occasional typos that get corrected.',
+  description: `Focus element and type text character by character. 
+
+Human-like mode (default) adds realistic delays and occasional typos that get corrected.
+Use humanlike: false for instant typing in tests.`,
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of input/textarea'),
@@ -140,12 +213,14 @@ export const type = endpoint({
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'basic', input: { selector: '#email', text: 'user@example.com' } },
-    { name: 'fast', input: { selector: 'input', text: 'hello', humanlike: false } },
+    { name: 'email', input: { selector: '#email', text: 'user@example.com' }, description: 'Type email address' },
+    { name: 'password', input: { selector: 'input[type="password"]', text: 'secret123' }, description: 'Type password' },
+    { name: 'fast-test', input: { selector: 'input', text: 'hello', humanlike: false }, description: 'Instant typing for tests' },
+    { name: 'by-label', input: { selector: 'input[aria-label="Search"]', text: 'query' }, description: 'Find by ARIA label' },
   ],
   invalidExamples: [
-    { input: { selector: '#input' }, error: 'text' },
-    { input: { text: 'hello' }, error: 'selector' },
+    { name: 'missing-text', input: { selector: '#input' }, error: 'text is required' },
+    { name: 'missing-selector', input: { text: 'hello' }, error: 'selector is required' },
   ],
 })
 
@@ -153,7 +228,10 @@ export const drag = endpoint({
   path: '/drag',
   method: 'POST',
   summary: 'Drag from an element',
-  description: 'Simulates drag: mousedown on element, mousemove by delta, mouseup. Good for sliders, resizing, reordering.',
+  description: `Simulates drag gesture: mousedown on element, mousemove by delta, mouseup.
+
+Good for: sliders, resize handles, drag-and-drop reordering, range inputs.`,
+  category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of drag handle'),
     deltaX: s.number.describe('Horizontal distance in pixels').optional,
@@ -161,13 +239,23 @@ export const drag = endpoint({
     duration: s.number.describe('Drag duration in ms (default 300)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'slider-right', input: { selector: '.slider-handle', deltaX: 100 }, description: 'Move slider right' },
+    { name: 'resize', input: { selector: '.resize-handle', deltaX: 50, deltaY: 50 }, description: 'Resize element' },
+    { name: 'reorder', input: { selector: '.drag-item', deltaY: 80 }, description: 'Drag item down in list' },
+  ],
+  invalidExamples: [
+    { name: 'missing-selector', input: { deltaX: 100 }, error: 'selector is required' },
+  ],
 })
 
 export const highlight = endpoint({
   path: '/highlight',
   method: 'POST',
   summary: 'Visually highlight an element',
-  description: 'Draw attention to an element with colored border and optional label. Great for showing users what you found.',
+  description: `Draw attention to an element with colored border and optional label.
+
+Great for showing users what you found or pointing out issues. Use /unhighlight to remove.`,
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector'),
@@ -177,12 +265,12 @@ export const highlight = endpoint({
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'basic', input: { selector: '#login-btn', label: 'Click here' } },
-    { name: 'error', input: { selector: '.error', label: 'Problem', color: '#ef4444' } },
-    { name: 'timed', input: { selector: 'button', duration: 3000 } },
+    { name: 'point-out', input: { selector: '#login-btn', label: 'Click here' }, description: 'Show user where to click' },
+    { name: 'error-red', input: { selector: '.error', label: 'Problem', color: '#ef4444' }, description: 'Highlight error in red' },
+    { name: 'temporary', input: { selector: 'button', duration: 3000 }, description: 'Auto-hide after 3s' },
   ],
   invalidExamples: [
-    { input: {}, error: 'selector' },
+    { name: 'missing-selector', input: {}, error: 'selector is required' },
   ],
 })
 
@@ -190,7 +278,8 @@ export const unhighlight = endpoint({
   path: '/unhighlight',
   method: 'POST',
   summary: 'Remove highlight',
-  description: 'Remove any active highlight overlay.',
+  description: 'Remove any active highlight overlay created by /highlight.',
+  category: 'interaction',
   input: s.object({}),
 })
 
@@ -198,7 +287,13 @@ export const scroll = endpoint({
   path: '/scroll',
   method: 'POST',
   summary: 'Scroll to element or position',
-  description: 'Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.',
+  description: `Smooth scroll with natural easing. Multiple modes:
+
+- selector: Scroll element into view (most common)
+- x/y: Scroll to absolute position
+- deltaX/deltaY: Scroll relative to current position
+
+At least one of selector, x, y, deltaX, or deltaY must be provided.`,
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector to scroll into view').optional,
@@ -212,12 +307,11 @@ export const scroll = endpoint({
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'to-element', input: { selector: '#pricing' } },
-    { name: 'to-top', input: { y: 0 } },
-    { name: 'down', input: { deltaY: 500 } },
-  ],
-  invalidExamples: [
-    { input: {}, error: 'selector' },
+    { name: 'to-element', input: { selector: '#pricing' }, description: 'Scroll pricing section into view' },
+    { name: 'to-top', input: { y: 0 }, description: 'Scroll to top of page' },
+    { name: 'to-bottom', input: { selector: 'footer' }, description: 'Scroll to footer' },
+    { name: 'down-500', input: { deltaY: 500 }, description: 'Scroll down 500px' },
+    { name: 'slow-scroll', input: { selector: '#section', duration: 1000, easing: 'ease-in-out' }, description: 'Slow animated scroll' },
   ],
 })
 
@@ -229,38 +323,75 @@ export const navigate = endpoint({
   path: '/navigate',
   method: 'POST',
   summary: 'Navigate to a URL',
+  description: `Navigate the browser to a new URL. Waits for page load to complete.
+
+Use /location after to verify navigation succeeded.`,
+  category: 'navigation',
   input: s.object({
     url: s.string.describe('URL to navigate to'),
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'full-url', input: { url: 'https://example.com/login' }, description: 'Navigate to full URL' },
+    { name: 'relative', input: { url: '/dashboard' }, description: 'Navigate to relative path' },
+  ],
+  invalidExamples: [
+    { name: 'missing-url', input: {}, error: 'url is required' },
+  ],
 })
 
 export const refresh = endpoint({
   path: '/refresh',
   method: 'POST',
   summary: 'Refresh the page',
+  description: 'Reload the current page. Use hard: true to bypass cache.',
+  category: 'navigation',
   input: s.object({
     hard: s.boolean.describe('Bypass cache (default false)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'soft', input: {}, description: 'Normal refresh' },
+    { name: 'hard', input: { hard: true }, description: 'Bypass cache' },
+  ],
 })
 
 export const location = endpoint({
   path: '/location',
   method: 'GET',
   summary: 'Get current URL and title',
-  description: 'Returns the current page URL and document title.',
+  description: `Returns current page info.
+
+Response: { url, title, pathname, search, hash }
+
+Use after /navigate to verify you're on the expected page.`,
+  category: 'navigation',
 })
 
 // ============================================
 // Mutation Watching
 // ============================================
+//
+// Mutations vs Events:
+// - /mutations/watch: Low-level DOM changes (elements added/removed, attributes changed)
+// - /events/watch: High-level semantic events (user typed, clicked, scrolled)
+//
+// Use mutations for: detecting dynamic content loading, watching for error messages
+// Use events for: tracking user behavior, recording interactions
 
 export const mutationsWatch = endpoint({
   path: '/mutations/watch',
   method: 'POST',
   summary: 'Start watching DOM mutations',
-  description: 'Begin capturing DOM changes (element adds/removes, attribute changes). Uses presets for filtering.',
+  description: `Begin capturing DOM changes: elements added/removed, attributes changed, text modified.
+
+Presets filter out framework noise:
+- smart (default): Auto-detects React, Tailwind, etc.
+- minimal: Only element add/remove
+- none: Everything (noisy)
+
+Get captured mutations via /mutations/status.`,
+  category: 'mutations',
   input: s.object({
     root: s.string.describe('Root selector to watch (default body)').optional,
     childList: s.boolean.describe('Watch child additions/removals (default true)').optional,
@@ -272,12 +403,19 @@ export const mutationsWatch = endpoint({
     filters: s.any.describe('Custom filter configuration').optional,
     pierceShadow: s.boolean.describe('Watch inside shadow DOM (default false)').optional,
   }),
+  examples: [
+    { name: 'default', input: {}, description: 'Watch all DOM changes with smart filtering' },
+    { name: 'form-only', input: { root: 'form', preset: 'minimal' }, description: 'Watch form for new elements' },
+    { name: 'react-app', input: { preset: 'react' }, description: 'Filter React internals' },
+  ],
 })
 
 export const mutationsUnwatch = endpoint({
   path: '/mutations/unwatch',
   method: 'POST',
   summary: 'Stop watching mutations',
+  description: 'Stop capturing DOM mutations. Call this when done to free resources.',
+  category: 'mutations',
   input: s.object({}),
 })
 
@@ -285,6 +423,10 @@ export const mutationsStatus = endpoint({
   path: '/mutations/status',
   method: 'GET',
   summary: 'Get mutation watch status',
+  description: `Check if mutation watching is active and get captured mutations.
+
+Response: { watching: boolean, mutations: [...], summary: { added, removed, changed } }`,
+  category: 'mutations',
 })
 
 // ============================================
@@ -295,17 +437,35 @@ export const eventsWatch = endpoint({
   path: '/events/watch',
   method: 'POST',
   summary: 'Start watching semantic events',
-  description: 'Begin capturing aggregated events (clicks, typing, navigation). Retrieve with GET /events. Events are semantic: "user typed hello" not 5 keydown events.',
+  description: `Begin capturing high-level user actions. Events are aggregated and meaningful:
+- "user typed 'hello@example.com'" not 18 keydown events
+- "user clicked Submit" not mousedown/mouseup/click
+
+Presets control verbosity:
+- minimal: clicks, submits, navigation only
+- interactive: + hovers on buttons, form changes (recommended)
+- detailed: + all element interactions
+- debug: everything
+
+Categories: interaction, navigation, input, hover, scroll, mutation, focus, console`,
+  category: 'events',
   input: s.object({
     preset: s.string.describe('Verbosity: minimal, interactive, detailed, debug').optional,
     categories: s.array(s.string).describe('Specific categories to watch').optional,
   }),
+  examples: [
+    { name: 'default', input: { preset: 'interactive' }, description: 'Recommended for most use cases' },
+    { name: 'minimal', input: { preset: 'minimal' }, description: 'Only clicks and navigation' },
+    { name: 'custom', input: { categories: ['interaction', 'input', 'console'] }, description: 'Specific categories' },
+  ],
 })
 
 export const eventsUnwatch = endpoint({
   path: '/events/unwatch',
   method: 'POST',
   summary: 'Stop watching events',
+  description: 'Stop capturing semantic events. Events buffer is cleared.',
+  category: 'events',
   input: s.object({}),
 })
 
@@ -313,14 +473,24 @@ export const events = endpoint({
   path: '/events',
   method: 'GET',
   summary: 'Get captured semantic events',
-  description: 'Returns buffered events since watch started. Events are aggregated and meaningful.',
+  description: `Returns buffered events since watch started.
+
+Response: { events: [{ type, timestamp, category, target?, payload }], since, count }
+
+Event types: interaction:click, input:typed, navigation:navigate, hover:dwell, scroll:stop, etc.`,
+  category: 'events',
 })
 
 export const eventsStats = endpoint({
   path: '/events/stats',
   method: 'GET',
   summary: 'Get event aggregation statistics',
-  description: 'Shows noise reduction metrics: raw DOM events vs semantic events emitted.',
+  description: `Shows noise reduction metrics.
+
+Response: { rawEvents, semanticEvents, reductionPercent, byCategory: {...} }
+
+Typically see 90%+ reduction (e.g., 2000 raw events → 80 semantic events).`,
+  category: 'events',
 })
 
 // ============================================
@@ -331,18 +501,37 @@ export const console_ = endpoint({
   path: '/console',
   method: 'GET',
   summary: 'Get console output',
-  description: 'Returns captured console.log/warn/error/info from the page.',
+  description: `Returns captured console.log/warn/error/info from the page.
+
+Response: { entries: [{ level, message, timestamp, stack? }] }
+
+Great for debugging - check for errors after actions fail.`,
+  category: 'debug',
 })
 
 export const eval_ = endpoint({
   path: '/eval',
   method: 'POST',
   summary: 'Execute JavaScript',
-  description: 'Run arbitrary JavaScript in the browser context. Returns the result.',
+  description: `Run arbitrary JavaScript in the browser context. Returns the result.
+
+The code runs in the page's context with access to window, document, etc.
+Return values are JSON-serialized. Promises are awaited.`,
+  category: 'debug',
   input: s.object({
     code: s.string.describe('JavaScript code to execute'),
     window: s.string.describe('Target window ID').optional,
   }),
+  examples: [
+    { name: 'get-title', input: { code: 'document.title' }, description: 'Get page title' },
+    { name: 'count-items', input: { code: 'document.querySelectorAll(".item").length' }, description: 'Count elements' },
+    { name: 'get-value', input: { code: 'document.querySelector("#email").value' }, description: 'Get input value' },
+    { name: 'check-state', input: { code: 'window.localStorage.getItem("token") !== null' }, description: 'Check auth state' },
+    { name: 'scroll-position', input: { code: '({ x: window.scrollX, y: window.scrollY })' }, description: 'Get scroll position' },
+  ],
+  invalidExamples: [
+    { name: 'missing-code', input: {}, error: 'code is required' },
+  ],
 })
 
 // ============================================
@@ -353,24 +542,43 @@ export const screenshot = endpoint({
   path: '/screenshot',
   method: 'POST',
   summary: 'Capture a screenshot',
-  description: 'Capture the page or a specific element as base64 PNG.',
+  description: `Capture the page or a specific element as base64 PNG/WebP/JPEG.
+
+Response: { success, image: "data:image/png;base64,...", width, height, source }
+
+Source indicates capture method: "electron" (best), "html2canvas", or "viewport-only".`,
+  category: 'debug',
   input: s.object({
     selector: s.string.describe('Element to capture (omit for full page)').optional,
     scale: s.number.describe('Scale factor (default 1)').optional,
     maxWidth: s.number.describe('Max width in pixels').optional,
     maxHeight: s.number.describe('Max height in pixels').optional,
   }),
+  examples: [
+    { name: 'full-page', input: {}, description: 'Capture entire page' },
+    { name: 'element', input: { selector: '#chart' }, description: 'Capture specific element' },
+    { name: 'thumbnail', input: { scale: 0.5, maxWidth: 400 }, description: 'Small thumbnail' },
+  ],
 })
 
 // ============================================
 // Selection Tool
 // ============================================
+//
+// Interactive selection lets users point at elements instead of writing selectors.
+// Workflow: selectStart → (user draws region) → selectResult → use elements
 
 export const selectStart = endpoint({
   path: '/select/start',
   method: 'POST',
   summary: 'Start interactive selection',
-  description: 'User drags to select a region. Call /select/result to get elements in selection.',
+  description: `Let user drag to select a region on the page.
+
+After calling this, the user can draw a rectangle on the page.
+Call /select/result to get the elements within the selection.
+
+Response: { success: true, message: "Selection mode active" }`,
+  category: 'selection',
   input: s.object({}),
 })
 
@@ -378,6 +586,8 @@ export const selectCancel = endpoint({
   path: '/select/cancel',
   method: 'POST',
   summary: 'Cancel selection mode',
+  description: 'Exit selection mode without capturing. Use if user changed their mind.',
+  category: 'selection',
   input: s.object({}),
 })
 
@@ -385,71 +595,124 @@ export const selectStatus = endpoint({
   path: '/select/status',
   method: 'GET',
   summary: 'Check if selection is active',
+  description: `Check whether selection mode is currently active.
+
+Response: { active: boolean, hasResult: boolean }`,
+  category: 'selection',
 })
 
 export const selectResult = endpoint({
   path: '/select/result',
   method: 'GET',
   summary: 'Get selection result',
-  description: 'After user completes selection, returns the region and elements within.',
+  description: `After user completes selection, returns the region and elements within.
+
+Response: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }
+
+Use the selectors from this response in subsequent /click or /type calls.`,
+  category: 'selection',
 })
 
 export const selectClear = endpoint({
   path: '/select/clear',
   method: 'POST',
   summary: 'Clear selection result',
+  description: 'Clear any stored selection result. Use before starting a new selection.',
+  category: 'selection',
   input: s.object({}),
 })
 
 // ============================================
 // Windows / Tabs
 // ============================================
+//
+// Multi-window support. Use /windows to list connected browsers/tabs.
+// Desktop app: can open/close/focus tabs directly.
+// Browser widget: each tab with widget injected appears as a window.
 
 export const windows = endpoint({
   path: '/windows',
   method: 'GET',
   summary: 'List connected windows',
-  description: 'Returns all connected browser windows/tabs with IDs, URLs, and titles.',
+  description: `Returns all connected browser windows/tabs with IDs, URLs, and titles.
+
+Response: { windows: [{ id, url, title, focused }] }
+
+Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.`,
+  category: 'windows',
 })
 
 export const tabsOpen = endpoint({
   path: '/tabs/open',
   method: 'POST',
   summary: 'Open a new tab',
-  description: 'Desktop app only. Opens a new tab.',
+  description: `Desktop app only. Opens a new tab with optional URL.
+
+If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.`,
+  category: 'windows',
   input: s.object({
     url: s.string.describe('URL to open').optional,
   }),
+  examples: [
+    { name: 'blank', input: {}, description: 'Open blank tab' },
+    { name: 'with-url', input: { url: 'https://example.com' }, description: 'Open tab with URL' },
+  ],
 })
 
 export const tabsClose = endpoint({
   path: '/tabs/close',
   method: 'POST',
   summary: 'Close a tab',
-  description: 'Desktop app only. Closes specified tab.',
+  description: `Desktop app only. Closes the specified tab by window ID.
+
+Get window IDs from /windows endpoint.`,
+  category: 'windows',
   input: s.object({
     window: s.string.describe('Window ID to close'),
   }),
+  examples: [
+    { name: 'close', input: { window: 'window-abc123' }, description: 'Close specific tab' },
+  ],
+  invalidExamples: [
+    { name: 'missing-window', input: {}, error: 'window is required' },
+  ],
 })
 
 export const tabsFocus = endpoint({
   path: '/tabs/focus',
   method: 'POST',
   summary: 'Focus a tab',
-  description: 'Desktop app only. Brings tab to front.',
+  description: `Desktop app only. Brings the specified tab to front.
+
+Useful when working with multiple tabs to ensure the right one is visible.`,
+  category: 'windows',
   input: s.object({
     window: s.string.describe('Window ID to focus'),
   }),
+  examples: [
+    { name: 'focus', input: { window: 'window-abc123' }, description: 'Bring tab to front' },
+  ],
 })
 
 // ============================================
 // Recording & Testing
 // ============================================
+//
+// Recording workflow:
+// 1. recordingStart - begin capturing user actions
+// 2. User interacts with page (clicks, types, navigates)
+// 3. recordingStop - stop capturing
+// 4. recordingGenerate - convert to runnable test
 
 export const recordingStart = endpoint({
   path: '/recording/start',
   method: 'POST',
   summary: 'Start recording user actions',
+  description: `Begin capturing user interactions as semantic events.
+
+The recording captures clicks, typing, navigation, and more.
+Use /recording/stop to finish, then /recording/generate to create a test.`,
+  category: 'recording',
   input: s.object({}),
 })
 
@@ -457,6 +720,12 @@ export const recordingStop = endpoint({
   path: '/recording/stop',
   method: 'POST',
   summary: 'Stop recording',
+  description: `Stop capturing user actions.
+
+Response: { events: [...], duration: ms, eventCount: n }
+
+After stopping, use /recording/generate to convert events to a test.`,
+  category: 'recording',
   input: s.object({}),
 })
 
@@ -464,23 +733,57 @@ export const recordingGenerate = endpoint({
   path: '/recording/generate',
   method: 'POST',
   summary: 'Generate test from recording',
-  description: 'Converts recorded semantic events into a JSON test file.',
+  description: `Converts recorded semantic events into a JSON test file.
+
+The generated test can be run with /test/run or saved for later use.
+
+Response: { test: { version, name, url, steps: [...] } }`,
+  category: 'recording',
   input: s.object({
     name: s.string.describe('Test name').optional,
   }),
+  examples: [
+    { name: 'named', input: { name: 'Login flow test' }, description: 'Generate with custom name' },
+    { name: 'default', input: {}, description: 'Generate with auto-generated name' },
+  ],
 })
 
 export const recordings = endpoint({
   path: '/recordings',
   method: 'GET',
   summary: 'List saved recordings',
+  description: `List all saved recordings on the server.
+
+Response: { recordings: [{ name, created, eventCount, duration }] }`,
+  category: 'recording',
 })
 
 export const testRun = endpoint({
   path: '/test/run',
   method: 'POST',
   summary: 'Run a JSON test',
-  description: 'Execute a test defined in Haltija JSON format.',
+  description: `Execute a test defined in Haltija JSON format.
+
+Test structure:
+{
+  "version": 1,
+  "name": "Login flow",
+  "url": "http://localhost:3000/login",
+  "steps": [
+    { "action": "type", "selector": "#email", "text": "user@example.com" },
+    { "action": "type", "selector": "#password", "text": "secret123" },
+    { "action": "click", "selector": "button[type=submit]" },
+    { "action": "assert", "assertion": { "type": "url", "pattern": "/dashboard" } }
+  ]
+}
+
+Step actions: navigate, click, type, key, wait, assert, eval, verify
+
+Output formats:
+- json: Structured result with step-by-step details
+- github: Annotations for GitHub Actions + markdown summary
+- human: Colored terminal output`,
+  category: 'testing',
   input: s.object({
     test: s.any.describe('Test object with steps'),
     format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
@@ -488,13 +791,43 @@ export const testRun = endpoint({
     timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
     stopOnFailure: s.boolean.describe('Stop on first failure (default true)').optional,
   }),
+  examples: [
+    {
+      name: 'simple-test',
+      input: {
+        test: {
+          version: 1,
+          name: 'Click button',
+          url: 'http://localhost:3000',
+          steps: [
+            { action: 'click', selector: '#submit' },
+            { action: 'assert', assertion: { type: 'exists', selector: '.success' } }
+          ]
+        }
+      },
+      description: 'Simple click and verify'
+    },
+    {
+      name: 'github-output',
+      input: {
+        test: { version: 1, name: 'Test', url: 'http://localhost:3000', steps: [] },
+        format: 'github'
+      },
+      description: 'Get GitHub Actions format'
+    },
+  ],
 })
 
 export const testSuite = endpoint({
   path: '/test/suite',
   method: 'POST',
   summary: 'Run multiple tests',
-  description: 'Execute a suite of tests, optionally stopping on first failure.',
+  description: `Execute a suite of tests, optionally stopping on first failure.
+
+Input: { tests: [test1, test2, ...], format?, stopOnFailure? }
+
+Response includes per-test results and overall summary.`,
+  category: 'testing',
   input: s.object({
     tests: s.array(s.any).describe('Array of test objects'),
     format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
@@ -503,62 +836,121 @@ export const testSuite = endpoint({
     timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
     stopOnFailure: s.boolean.describe('Stop on first failure (default false for suites)').optional,
   }),
+  examples: [
+    {
+      name: 'two-tests',
+      input: {
+        tests: [
+          { version: 1, name: 'Login', url: 'http://localhost:3000/login', steps: [] },
+          { version: 1, name: 'Dashboard', url: 'http://localhost:3000/dashboard', steps: [] }
+        ],
+        stopOnFailure: false
+      },
+      description: 'Run two tests, continue on failure'
+    },
+  ],
 })
 
 export const testValidate = endpoint({
   path: '/test/validate',
   method: 'POST',
   summary: 'Validate test without running',
-  description: 'Check that all selectors exist and test is well-formed.',
+  description: `Check that a test is well-formed and all selectors exist on the current page.
+
+Use this to pre-check tests before running. Returns validation errors without executing steps.
+
+Response: { valid: boolean, errors?: [{ step?, message }] }`,
+  category: 'testing',
   input: s.object({
     test: s.any.describe('Test object to validate'),
   }),
+  examples: [
+    {
+      name: 'validate',
+      input: {
+        test: { version: 1, name: 'Test', url: 'http://localhost:3000', steps: [{ action: 'click', selector: '#btn' }] }
+      },
+      description: 'Validate test before running'
+    },
+  ],
 })
 
 // ============================================
 // Snapshots
 // ============================================
+//
+// Snapshots capture full page state for debugging. Useful after test failures
+// or when you need to understand what went wrong.
 
 export const snapshot = endpoint({
   path: '/snapshot',
   method: 'POST',
   summary: 'Capture page snapshot',
-  description: 'Capture current page state including DOM tree, console, and viewport for debugging.',
+  description: `Capture current page state for debugging.
+
+Includes: DOM tree, console logs, viewport size, scroll position, URL, timestamp.
+
+Response: { snapshot: { url, title, viewport, dom, console, timestamp } }
+
+Great for debugging test failures - call this when something goes wrong.`,
+  category: 'debug',
   input: s.object({
     trigger: s.string.describe('What triggered the snapshot (e.g., "manual", "test-failure")').optional,
     context: s.any.describe('Additional context about the snapshot').optional,
   }),
+  examples: [
+    { name: 'manual', input: { trigger: 'manual' }, description: 'Manual debug snapshot' },
+    { name: 'test-fail', input: { trigger: 'test-failure', context: { step: 3, error: 'Element not found' } }, description: 'Capture after test failure' },
+  ],
 })
 
 // ============================================
 // Status & Meta
 // ============================================
+//
+// Use /status to check server health and browser connections.
+// Use /docs for quick start, /api for full reference.
 
 export const status = endpoint({
   path: '/status',
   method: 'GET',
   summary: 'Server status',
-  description: 'Returns server info and connected browser count.',
+  description: `Returns server info and connected browser count.
+
+Response: { version, uptime, browsers: n, focused?: windowId }
+
+Use to verify server is running and browsers are connected before testing.`,
+  category: 'meta',
 })
 
 export const version = endpoint({
   path: '/version',
   method: 'GET',
   summary: 'Get server version',
+  description: `Returns the Haltija server version.
+
+Response: { version: "1.0.0" }`,
+  category: 'meta',
 })
 
 export const docs = endpoint({
   path: '/docs',
   method: 'GET',
   summary: 'Quick start guide',
-  description: 'Human-readable getting started docs for AI agents.',
+  description: `Human-readable getting started docs for AI agents.
+
+Returns markdown-formatted quick start guide with common workflows.`,
+  category: 'meta',
 })
 
 export const api = endpoint({
   path: '/api',
   method: 'GET',
   summary: 'Full API reference',
-  description: 'Complete API documentation.',
+  description: `Complete API documentation with all endpoints.
+
+Returns structured JSON with all endpoints, their parameters, and examples.`,
+  category: 'meta',
 })
 
 // ============================================
