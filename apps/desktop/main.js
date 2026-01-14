@@ -549,21 +549,12 @@ function setupScreenCapture() {
     if (!mainWindow) return null
     
     try {
-      // Get all webContents and find the webview
-      const allContents = require('electron').webContents.getAllWebContents()
-      const webview = allContents.find(wc => wc.getType() === 'webview')
+      // Use the sender's webContents - this is the webview that made the request
+      const sender = event.sender
+      console.log('[Haltija Desktop] capture-page from:', sender.id, sender.getType())
       
-      if (webview) {
-        const image = await webview.capturePage()
-        return {
-          success: true,
-          data: image.toDataURL(),
-          size: { width: image.getSize().width, height: image.getSize().height }
-        }
-      }
-      
-      // Fallback to main window
-      const image = await mainWindow.webContents.capturePage()
+      // Capture the sender (which should be the webview that called this)
+      const image = await sender.capturePage()
       return {
         success: true,
         data: image.toDataURL(),
@@ -580,15 +571,12 @@ function setupScreenCapture() {
     if (!mainWindow) return { success: false, error: 'No window' }
     
     try {
-      const allContents = require('electron').webContents.getAllWebContents()
-      const webview = allContents.find(wc => wc.getType() === 'webview')
-      
-      if (!webview) {
-        return { success: false, error: 'No webview found' }
-      }
+      // Use event.sender to get the correct webview (fixes multi-tab issue)
+      const sender = event.sender
+      console.log('[Haltija Desktop] capture-element from:', sender.id, sender.getType(), 'selector:', selector)
       
       // Get element bounds
-      const bounds = await webview.executeJavaScript(`
+      const bounds = await sender.executeJavaScript(`
         (function() {
           const el = document.querySelector(${JSON.stringify(selector)});
           if (!el) return null;
@@ -607,7 +595,7 @@ function setupScreenCapture() {
       }
       
       // Capture with specific rect
-      const image = await webview.capturePage(bounds)
+      const image = await sender.capturePage(bounds)
       return {
         success: true,
         data: image.toDataURL(),
