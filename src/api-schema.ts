@@ -483,6 +483,25 @@ export const testRun = endpoint({
   description: 'Execute a test defined in Haltija JSON format.',
   input: s.object({
     test: s.any.describe('Test object with steps'),
+    format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
+    stepDelay: s.number.describe('Milliseconds between steps (default 100)').optional,
+    timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
+    stopOnFailure: s.boolean.describe('Stop on first failure (default true)').optional,
+  }),
+})
+
+export const testSuite = endpoint({
+  path: '/test/suite',
+  method: 'POST',
+  summary: 'Run multiple tests',
+  description: 'Execute a suite of tests, optionally stopping on first failure.',
+  input: s.object({
+    tests: s.array(s.any).describe('Array of test objects'),
+    format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
+    testDelay: s.number.describe('Milliseconds between tests (default 500)').optional,
+    stepDelay: s.number.describe('Milliseconds between steps (default 100)').optional,
+    timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
+    stopOnFailure: s.boolean.describe('Stop on first failure (default false for suites)').optional,
   }),
 })
 
@@ -603,6 +622,7 @@ export const endpoints = {
   recordingGenerate,
   recordings,
   testRun,
+  testSuite,
   testValidate,
   
   // Snapshots
