@@ -3,7 +3,7 @@
     "path": "/tree",
     "method": "POST",
     "summary": "Get DOM tree structure",
-    "description": "Returns hierarchical view of page elements with flags for interactivity, visibility, data bindings, shadow DOM, etc. Great for understanding page structure.",
+    "description": "Returns hierarchical view of page elements. Best for understanding page structure before interacting.\n\nResponse structure:\n  { tag, id?, classes?, attrs?, text?, children?, flags?: { interactive, hidden, hasAria, ... } }\n\nFlags help identify interactive elements (buttons, inputs) and hidden content.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -65,7 +65,7 @@
     "path": "/query",
     "method": "POST",
     "summary": "Query DOM elements by selector",
-    "description": "Find elements matching a CSS selector. Returns basic element info.",
+    "description": "Quick element lookup. Returns basic info: tagName, id, className, textContent, attributes.\n\nUse this to check if an element exists before clicking/typing. For detailed info, use /inspect instead.\n\nResponse: { tagName, id, className, textContent, attributes: {...} }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -91,7 +91,7 @@
     "path": "/inspect",
     "method": "POST",
     "summary": "Deep inspection of an element",
-    "description": "Get detailed info: geometry, computed styles, ARIA attributes, visibility, scroll position, and more.",
+    "description": "Get everything about ONE element: geometry, computed styles, ARIA attributes, scroll position, visibility state.\n\nResponse includes:\n  - box: { x, y, width, height, visible }\n  - text: { innerText, value, placeholder }\n  - properties: { disabled, checked, hidden, role, ariaLabel, ... }\n  - styles: { display, visibility, opacity, ... }\n  - hierarchy: { parent, children count, depth }\n\nUse before clicking to verify element is visible and enabled.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -117,7 +117,7 @@
     "path": "/inspectAll",
     "method": "POST",
     "summary": "Inspect multiple elements",
-    "description": "Deep inspection of all elements matching selector.",
+    "description": "Deep inspection of ALL elements matching selector (up to limit).\n\nSame detailed info as /inspect, but for multiple elements. Great for:\n  - Finding all buttons/links on a page\n  - Checking which form fields are required\n  - Listing all interactive elements\n\nResponse: array of inspection objects",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -150,7 +150,7 @@
     "path": "/click",
     "method": "POST",
     "summary": "Click an element",
-    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.",
+    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -176,7 +176,7 @@
     "path": "/type",
     "method": "POST",
     "summary": "Type text into an element",
-    "description": "Focus element and type text. Supports human-like typing with variable delays and occasional typos that get corrected.",
+    "description": "Focus element and type text character by character. \n\nHuman-like mode (default) adds realistic delays and occasional typos that get corrected.\nUse humanlike: false for instant typing in tests.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -235,7 +235,7 @@
     "path": "/drag",
     "method": "POST",
     "summary": "Drag from an element",
-    "description": "Simulates drag: mousedown on element, mousemove by delta, mouseup. Good for sliders, resizing, reordering.",
+    "description": "Simulates drag gesture: mousedown on element, mousemove by delta, mouseup.\n\nGood for: sliders, resize handles, drag-and-drop reordering, range inputs.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -282,7 +282,7 @@
     "path": "/highlight",
     "method": "POST",
     "summary": "Visually highlight an element",
-    "description": "Draw attention to an element with colored border and optional label. Great for showing users what you found.",
+    "description": "Draw attention to an element with colored border and optional label.\n\nGreat for showing users what you found or pointing out issues. Use /unhighlight to remove.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -329,7 +329,7 @@
     "path": "/unhighlight",
     "method": "POST",
     "summary": "Remove highlight",
-    "description": "Remove any active highlight overlay.",
+    "description": "Remove any active highlight overlay created by /highlight.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -341,7 +341,7 @@
     "path": "/scroll",
     "method": "POST",
     "summary": "Scroll to element or position",
-    "description": "Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.",
+    "description": "Smooth scroll with natural easing. Multiple modes:\n\n- selector: Scroll element into view (most common)\n- x/y: Scroll to absolute position\n- deltaX/deltaY: Scroll relative to current position\n\nAt least one of selector, x, y, deltaX, or deltaY must be provided.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -417,6 +417,7 @@
     "path": "/navigate",
     "method": "POST",
     "summary": "Navigate to a URL",
+    "description": "Navigate the browser to a new URL. Waits for page load to complete.\n\nUse /location after to verify navigation succeeded.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -442,6 +443,7 @@
     "path": "/refresh",
     "method": "POST",
     "summary": "Refresh the page",
+    "description": "Reload the current page. Use hard: true to bypass cache.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -468,13 +470,13 @@
     "path": "/location",
     "method": "GET",
     "summary": "Get current URL and title",
-    "description": "Returns the current page URL and document title."
+    "description": "Returns current page info.\n\nResponse: { url, title, pathname, search, hash }\n\nUse after /navigate to verify you're on the expected page."
   },
   {
     "path": "/mutations/watch",
     "method": "POST",
     "summary": "Start watching DOM mutations",
-    "description": "Begin capturing DOM changes (element adds/removes, attribute changes). Uses presets for filtering.",
+    "description": "Begin capturing DOM changes: elements added/removed, attributes changed, text modified.\n\nPresets filter out framework noise:\n- smart (default): Auto-detects React, Tailwind, etc.\n- minimal: Only element add/remove\n- none: Everything (noisy)\n\nGet captured mutations via /mutations/status.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -550,6 +552,7 @@
     "path": "/mutations/unwatch",
     "method": "POST",
     "summary": "Stop watching mutations",
+    "description": "Stop capturing DOM mutations. Call this when done to free resources.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -560,13 +563,14 @@
   {
     "path": "/mutations/status",
     "method": "GET",
-    "summary": "Get mutation watch status"
+    "summary": "Get mutation watch status",
+    "description": "Check if mutation watching is active and get captured mutations.\n\nResponse: { watching: boolean, mutations: [...], summary: { added, removed, changed } }"
   },
   {
     "path": "/events/watch",
     "method": "POST",
     "summary": "Start watching semantic events",
-    "description": "Begin capturing aggregated events (clicks, typing, navigation). Retrieve with GET /events. Events are semantic: \"user typed hello\" not 5 keydown events.",
+    "description": "Begin capturing high-level user actions. Events are aggregated and meaningful:\n- \"user typed 'hello@example.com'\" not 18 keydown events\n- \"user clicked Submit\" not mousedown/mouseup/click\n\nPresets control verbosity:\n- minimal: clicks, submits, navigation only\n- interactive: + hovers on buttons, form changes (recommended)\n- detailed: + all element interactions\n- debug: everything\n\nCategories: interaction, navigation, input, hover, scroll, mutation, focus, console",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -596,6 +600,7 @@
     "path": "/events/unwatch",
     "method": "POST",
     "summary": "Stop watching events",
+    "description": "Stop capturing semantic events. Events buffer is cleared.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -607,25 +612,25 @@
     "path": "/events",
     "method": "GET",
     "summary": "Get captured semantic events",
-    "description": "Returns buffered events since watch started. Events are aggregated and meaningful."
+    "description": "Returns buffered events since watch started.\n\nResponse: { events: [{ type, timestamp, category, target?, payload }], since, count }\n\nEvent types: interaction:click, input:typed, navigation:navigate, hover:dwell, scroll:stop, etc."
   },
   {
     "path": "/events/stats",
     "method": "GET",
     "summary": "Get event aggregation statistics",
-    "description": "Shows noise reduction metrics: raw DOM events vs semantic events emitted."
+    "description": "Shows noise reduction metrics.\n\nResponse: { rawEvents, semanticEvents, reductionPercent, byCategory: {...} }\n\nTypically see 90%+ reduction (e.g., 2000 raw events → 80 semantic events)."
   },
   {
     "path": "/console",
     "method": "GET",
     "summary": "Get console output",
-    "description": "Returns captured console.log/warn/error/info from the page."
+    "description": "Returns captured console.log/warn/error/info from the page.\n\nResponse: { entries: [{ level, message, timestamp, stack? }] }\n\nGreat for debugging - check for errors after actions fail."
   },
   {
     "path": "/eval",
     "method": "POST",
     "summary": "Execute JavaScript",
-    "description": "Run arbitrary JavaScript in the browser context. Returns the result.",
+    "description": "Run arbitrary JavaScript in the browser context. Returns the result.\n\nThe code runs in the page's context with access to window, document, etc.\nReturn values are JSON-serialized. Promises are awaited.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -651,7 +656,7 @@
     "path": "/screenshot",
     "method": "POST",
     "summary": "Capture a screenshot",
-    "description": "Capture the page or a specific element as base64 PNG.",
+    "description": "Capture the page or a specific element as base64 PNG/WebP/JPEG.\n\nResponse: { success, image: \"data:image/png;base64,...\", width, height, source }\n\nSource indicates capture method: \"electron\" (best), \"html2canvas\", or \"viewport-only\".",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -692,7 +697,7 @@
     "path": "/select/start",
     "method": "POST",
     "summary": "Start interactive selection",
-    "description": "User drags to select a region. Call /select/result to get elements in selection.",
+    "description": "Let user drag to select a region on the page.\n\nAfter calling this, the user can draw a rectangle on the page.\nCall /select/result to get the elements within the selection.\n\nResponse: { success: true, message: \"Selection mode active\" }",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -704,6 +709,7 @@
     "path": "/select/cancel",
     "method": "POST",
     "summary": "Cancel selection mode",
+    "description": "Exit selection mode without capturing. Use if user changed their mind.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -714,18 +720,20 @@
   {
     "path": "/select/status",
     "method": "GET",
-    "summary": "Check if selection is active"
+    "summary": "Check if selection is active",
+    "description": "Check whether selection mode is currently active.\n\nResponse: { active: boolean, hasResult: boolean }"
   },
   {
     "path": "/select/result",
     "method": "GET",
     "summary": "Get selection result",
-    "description": "After user completes selection, returns the region and elements within."
+    "description": "After user completes selection, returns the region and elements within.\n\nResponse: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }\n\nUse the selectors from this response in subsequent /click or /type calls."
   },
   {
     "path": "/select/clear",
     "method": "POST",
     "summary": "Clear selection result",
+    "description": "Clear any stored selection result. Use before starting a new selection.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -737,13 +745,13 @@
     "path": "/windows",
     "method": "GET",
     "summary": "List connected windows",
-    "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles."
+    "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles.\n\nResponse: { windows: [{ id, url, title, focused }] }\n\nUse window IDs in other endpoints (e.g., /click, /tree) to target specific tabs."
   },
   {
     "path": "/tabs/open",
     "method": "POST",
     "summary": "Open a new tab",
-    "description": "Desktop app only. Opens a new tab.",
+    "description": "Desktop app only. Opens a new tab with optional URL.\n\nIf url is omitted, opens a blank tab. The new tab gets the widget auto-injected.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -763,7 +771,7 @@
     "path": "/tabs/close",
     "method": "POST",
     "summary": "Close a tab",
-    "description": "Desktop app only. Closes specified tab.",
+    "description": "Desktop app only. Closes the specified tab by window ID.\n\nGet window IDs from /windows endpoint.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -782,7 +790,7 @@
     "path": "/tabs/focus",
     "method": "POST",
     "summary": "Focus a tab",
-    "description": "Desktop app only. Brings tab to front.",
+    "description": "Desktop app only. Brings the specified tab to front.\n\nUseful when working with multiple tabs to ensure the right one is visible.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -801,6 +809,7 @@
     "path": "/recording/start",
     "method": "POST",
     "summary": "Start recording user actions",
+    "description": "Begin capturing user interactions as semantic events.\n\nThe recording captures clicks, typing, navigation, and more.\nUse /recording/stop to finish, then /recording/generate to create a test.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -812,6 +821,7 @@
     "path": "/recording/stop",
     "method": "POST",
     "summary": "Stop recording",
+    "description": "Stop capturing user actions.\n\nResponse: { events: [...], duration: ms, eventCount: n }\n\nAfter stopping, use /recording/generate to convert events to a test.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -823,7 +833,7 @@
     "path": "/recording/generate",
     "method": "POST",
     "summary": "Generate test from recording",
-    "description": "Converts recorded semantic events into a JSON test file.",
+    "description": "Converts recorded semantic events into a JSON test file.\n\nThe generated test can be run with /test/run or saved for later use.\n\nResponse: { test: { version, name, url, steps: [...] } }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -842,13 +852,14 @@
   {
     "path": "/recordings",
     "method": "GET",
-    "summary": "List saved recordings"
+    "summary": "List saved recordings",
+    "description": "List all saved recordings on the server.\n\nResponse: { recordings: [{ name, created, eventCount, duration }] }"
   },
   {
     "path": "/test/run",
     "method": "POST",
     "summary": "Run a JSON test",
-    "description": "Execute a test defined in Haltija JSON format.",
+    "description": "Execute a test defined in Haltija JSON format.\n\nTest structure:\n{\n  \"version\": 1,\n  \"name\": \"Login flow\",\n  \"url\": \"http://localhost:3000/login\",\n  \"steps\": [\n    { \"action\": \"type\", \"selector\": \"#email\", \"text\": \"user@example.com\" },\n    { \"action\": \"type\", \"selector\": \"#password\", \"text\": \"secret123\" },\n    { \"action\": \"click\", \"selector\": \"button[type=submit]\" },\n    { \"action\": \"assert\", \"assertion\": { \"type\": \"url\", \"pattern\": \"/dashboard\" } }\n  ]\n}\n\nStep actions: navigate, click, type, key, wait, assert, eval, verify\n\nOutput formats:\n- json: Structured result with step-by-step details\n- github: Annotations for GitHub Actions + markdown summary\n- human: Colored terminal output",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -899,7 +910,7 @@
     "path": "/test/suite",
     "method": "POST",
     "summary": "Run multiple tests",
-    "description": "Execute a suite of tests, optionally stopping on first failure.",
+    "description": "Execute a suite of tests, optionally stopping on first failure.\n\nInput: { tests: [test1, test2, ...], format?, stopOnFailure? }\n\nResponse includes per-test results and overall summary.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -959,7 +970,7 @@
     "path": "/test/validate",
     "method": "POST",
     "summary": "Validate test without running",
-    "description": "Check that all selectors exist and test is well-formed.",
+    "description": "Check that a test is well-formed and all selectors exist on the current page.\n\nUse this to pre-check tests before running. Returns validation errors without executing steps.\n\nResponse: { valid: boolean, errors?: [{ step?, message }] }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -977,7 +988,7 @@
     "path": "/snapshot",
     "method": "POST",
     "summary": "Capture page snapshot",
-    "description": "Capture current page state including DOM tree, console, and viewport for debugging.",
+    "description": "Capture current page state for debugging.\n\nIncludes: DOM tree, console logs, viewport size, scroll position, URL, timestamp.\n\nResponse: { snapshot: { url, title, viewport, dom, console, timestamp } }\n\nGreat for debugging test failures - call this when something goes wrong.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1004,23 +1015,24 @@
     "path": "/status",
     "method": "GET",
     "summary": "Server status",
-    "description": "Returns server info and connected browser count."
+    "description": "Returns server info and connected browser count.\n\nResponse: { version, uptime, browsers: n, focused?: windowId }\n\nUse to verify server is running and browsers are connected before testing."
   },
   {
     "path": "/version",
     "method": "GET",
-    "summary": "Get server version"
+    "summary": "Get server version",
+    "description": "Returns the Haltija server version.\n\nResponse: { version: \"1.0.0\" }"
   },
   {
     "path": "/docs",
     "method": "GET",
     "summary": "Quick start guide",
-    "description": "Human-readable getting started docs for AI agents."
+    "description": "Human-readable getting started docs for AI agents.\n\nReturns markdown-formatted quick start guide with common workflows."
   },
   {
     "path": "/api",
     "method": "GET",
     "summary": "Full API reference",
-    "description": "Complete API documentation."
+    "description": "Complete API documentation with all endpoints.\n\nReturns structured JSON with all endpoints, their parameters, and examples."
   }
 ]

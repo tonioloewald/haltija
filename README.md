@@ -227,7 +227,8 @@ Apache 2.0 with patent grant.
 ## Full Documentation
 
 ```bash
-curl localhost:8700/docs
+curl localhost:8700/docs      # Quick start guide
+curl localhost:8700/api       # Full API reference with examples
 ```
 
-Or see [API.md](./API.md) for the complete reference.
+The API is self-documenting - GET any POST endpoint to see its schema and examples.
