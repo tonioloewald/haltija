@@ -854,10 +854,103 @@
       "properties": {
         "test": {
           "description": "Test object with steps"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "json",
+            "github",
+            "human"
+          ],
+          "description": "Output format: json (structured), github (annotations + summary), human (readable)"
+        },
+        "stepDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between steps (default 100)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds timeout per step (default 5000)"
+        },
+        "stopOnFailure": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Stop on first failure (default true)"
         }
       },
       "required": [
         "test"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/test/suite",
+    "method": "POST",
+    "summary": "Run multiple tests",
+    "description": "Execute a suite of tests, optionally stopping on first failure.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tests": {
+          "type": "array",
+          "items": {},
+          "description": "Array of test objects"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "json",
+            "github",
+            "human"
+          ],
+          "description": "Output format: json (structured), github (annotations + summary), human (readable)"
+        },
+        "testDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between tests (default 500)"
+        },
+        "stepDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between steps (default 100)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds timeout per step (default 5000)"
+        },
+        "stopOnFailure": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Stop on first failure (default false for suites)"
+        }
+      },
+      "required": [
+        "tests"
       ],
       "additionalProperties": false
     }

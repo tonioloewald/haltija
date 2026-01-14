@@ -561,6 +561,8 @@ interface BaseStep {
   purpose?: string
   /** Delay in ms before executing this step (default: 0) */
   delay?: number
+  /** Reference to the plan that generated this step (e.g., "checkout-flow/plan.md#guest-checkout") */
+  planRef?: string
 }
 
 export interface NavigateStep extends BaseStep {

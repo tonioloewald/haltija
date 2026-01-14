@@ -20,6 +20,7 @@ import { VERSION } from './version'
 import { generateTestPage } from './test-page'
 import { ICON_SVG } from './embedded-assets'
 import * as api from './api-schema'
+import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
@@ -1600,6 +1601,8 @@ Security: Widget always shows when agent sends commands (no silent snooping)
   if (path === '/test/run' && req.method === 'POST') {
     const body = await req.json()
     const test = body.test as DevChannelTest
+    const format = (body.format || 'json') as OutputFormat
+    const testFile = body.testFile as string | undefined  // Optional path for GitHub annotations
     const options = {
       stepDelay: body.stepDelay ?? 100,  // ms between steps
       timeout: body.timeout ?? 5000,      // ms timeout per step
@@ -1646,23 +1649,43 @@ Security: Widget always shows when agent sends commands (no silent snooping)
               code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
             })
             await new Promise(r => setTimeout(r, 100))
-            
+
             // Check element exists and is clickable
             const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
             if (!inspectResponse.success || !inspectResponse.data) {
               stepPassed = false
-              error = `Element not found: ${step.selector}`
+
+              // Gather page context - what's actually there?
+              const pageButtonsResponse = await requestFromBrowser('eval', 'exec', {
+                code: `Array.from(document.querySelectorAll('button, [role="button"], a.btn, input[type="submit"]'))
+                  .slice(0, 10)
+                  .map(el => el.innerText?.trim() || el.value || el.getAttribute('aria-label') || '')
+                  .filter(Boolean)`
+              })
+              const buttonsOnPage = pageButtonsResponse.data || []
+
+              error = step.description || `Click ${step.selector}`
+              context = {
+                reason: 'Element not found',
+                selector: step.selector,
+                buttonsOnPage,
+                suggestion: inferSuggestion(step, { buttonsOnPage })
+              }
               break
             }
-            
+
             const elData = inspectResponse.data
             if (elData.properties?.disabled) {
               stepPassed = false
-              error = 'Element is disabled'
-              context = { disabled: true }
+              error = step.description || 'Click element'
+              context = {
+                reason: 'Element is disabled',
+                selector: step.selector,
+                suggestion: 'The button may be disabled until certain conditions are met (e.g., form validation)'
+              }
               break
             }
-            
+
             // Click
             for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
               await requestFromBrowser('events', 'dispatch', { selector: step.selector, event })
@@ -1676,12 +1699,33 @@ Security: Widget always shows when agent sends commands (no silent snooping)
               code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
             })
             await new Promise(r => setTimeout(r, 100))
-            
+
             // Check element exists
-            const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
-            if (!inspectResponse.success || !inspectResponse.data) {
+            const typeInspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
+            if (!typeInspectResponse.success || !typeInspectResponse.data) {
               stepPassed = false
-              error = `Element not found: ${step.selector}`
+
+              // Gather page context - what inputs are there?
+              const pageInputsResponse = await requestFromBrowser('eval', 'exec', {
+                code: `Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
+                  .slice(0, 10)
+                  .map(el => {
+                    const label = el.id && document.querySelector('label[for="' + el.id + '"]')?.innerText?.trim()
+                    return label || el.placeholder || el.name || el.type || el.tagName.toLowerCase()
+                  })
+                  .filter(Boolean)`
+              })
+              const inputsOnPage = pageInputsResponse.data || []
+
+              error = step.description || `Type in ${step.selector}`
+              context = {
+                reason: 'Input element not found',
+                selector: step.selector,
+                inputsOnPage,
+                suggestion: inputsOnPage.length === 0
+                  ? 'No input elements found - page may not have loaded or form is conditionally rendered'
+                  : 'Input may have been renamed or removed'
+              }
               break
             }
             
@@ -2035,8 +2079,9 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         error: stepResults.find(s => !s.passed)?.error,
       })
     }
-    
-    return Response.json({
+
+    // Build result object
+    const result: TestRunResult = {
       test: test.name,
       passed,
       duration: Date.now() - startTime,
@@ -2048,41 +2093,57 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         passed: stepResults.filter(s => s.passed).length,
         failed: stepResults.filter(s => !s.passed).length,
       },
-    }, { headers })
+    }
+
+    // Return in requested format
+    if (format === 'github') {
+      return new Response(formatTestGitHub(result, test, testFile), {
+        headers: { ...headers, 'Content-Type': 'text/plain' }
+      })
+    } else if (format === 'human') {
+      return new Response(formatTestHuman(result, test), {
+        headers: { ...headers, 'Content-Type': 'text/plain' }
+      })
+    } else {
+      return Response.json(result, { headers })
+    }
   }
   
   // Run a test suite (multiple tests)
   if (path === '/test/suite' && req.method === 'POST') {
     const body = await req.json()
     const tests = body.tests as DevChannelTest[]
+    const format = (body.format || 'json') as OutputFormat
+    const testFiles = body.testFiles as string[] | undefined  // Optional paths for GitHub annotations
     const options = {
       testDelay: body.testDelay ?? 500,  // ms between tests
       stepDelay: body.stepDelay ?? 100,
       timeout: body.timeout ?? 5000,
       stopOnFailure: body.stopOnFailure ?? false,  // continue to next test by default
     }
-    
+
     const suiteStart = Date.now()
-    const results: any[] = []
-    
+    const results: TestRunResult[] = []
+
     for (const test of tests) {
-      // Run the test by making internal request
+      // Run the test by making internal request (always get JSON, we format at suite level)
       const testResult = await handleRest(new Request(`http://localhost/test/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test, ...options }),
+        body: JSON.stringify({ test, format: 'json', ...options }),
       }))
-      
-      const result = await testResult.json()
+
+      const result = await testResult.json() as TestRunResult
       results.push(result)
-      
+
       if (!result.passed && options.stopOnFailure) break
-      
+
       // Delay between tests
       await new Promise(r => setTimeout(r, options.testDelay))
     }
-    
-    return Response.json({
+
+    // Build suite result
+    const suiteResult: SuiteRunResult = {
       duration: Date.now() - suiteStart,
       results,
       summary: {
@@ -2091,7 +2152,20 @@ Security: Widget always shows when agent sends commands (no silent snooping)
         passed: results.filter(r => r.passed).length,
         failed: results.filter(r => !r.passed).length,
       },
-    }, { headers })
+    }
+
+    // Return in requested format
+    if (format === 'github') {
+      return new Response(formatSuiteGitHub(suiteResult, tests, testFiles), {
+        headers: { ...headers, 'Content-Type': 'text/plain' }
+      })
+    } else if (format === 'human') {
+      return new Response(formatSuiteHuman(suiteResult, tests), {
+        headers: { ...headers, 'Content-Type': 'text/plain' }
+      })
+    } else {
+      return Response.json(suiteResult, { headers })
+    }
   }
   
   // ============================================
