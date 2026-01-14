@@ -314,7 +314,7 @@ registerHandler(api.tree, async (body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
-// Screenshot handler
+// Screenshot handler - longer timeout since screenshots can be slow
 registerHandler(api.screenshot, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('dom', 'screenshot', {
     selector: body.selector,
@@ -323,7 +323,7 @@ registerHandler(api.screenshot, async (body, ctx) => {
     scale: body.scale,
     maxWidth: body.maxWidth,
     maxHeight: body.maxHeight,
-  })
+  }, 15000) // 15s timeout for screenshots (default is 5s)
   return Response.json(response, { headers: ctx.headers })
 })
 
