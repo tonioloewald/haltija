@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('haltija', {
   // Menu commands from main process
   onMenuNewTab: (callback) => ipcRenderer.on('menu-new-tab', callback),
   onMenuCloseTab: (callback) => ipcRenderer.on('menu-close-tab', callback),
+  onMenuCloseOtherTabs: (callback) => ipcRenderer.on('menu-close-other-tabs', callback),
   onMenuReloadTab: (callback) => ipcRenderer.on('menu-reload-tab', callback),
   onMenuForceReloadTab: (callback) => ipcRenderer.on('menu-force-reload-tab', callback),
   onMenuDevToolsTab: (callback) => ipcRenderer.on('menu-devtools-tab', callback),

@@ -86,6 +86,11 @@ function setupMenu() {
           accelerator: 'CmdOrCtrl+W',
           click: () => mainWindow?.webContents.send('menu-close-tab')
         },
+        {
+          label: 'Close Other Tabs',
+          accelerator: 'CmdOrCtrl+Alt+W',
+          click: () => mainWindow?.webContents.send('menu-close-other-tabs')
+        },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]

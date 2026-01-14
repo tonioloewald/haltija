@@ -736,6 +736,14 @@ if (window.haltija) {
     if (activeTabId) closeTab(activeTabId)
   })
   
+  window.haltija.onMenuCloseOtherTabs?.(() => {
+    if (activeTabId && tabs.length > 1) {
+      // Get IDs of tabs to close (all except active)
+      const tabsToClose = tabs.filter(t => t.id !== activeTabId).map(t => t.id)
+      tabsToClose.forEach(tabId => closeTab(tabId))
+    }
+  })
+  
   window.haltija.onMenuReloadTab?.(() => {
     const webview = getActiveWebview()
     if (webview) webview.reload()
