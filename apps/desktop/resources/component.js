@@ -245,6 +245,8 @@
         ariaDisabled: el.getAttribute("aria-disabled") === "true",
         ariaSelected: el.getAttribute("aria-selected") === "true",
         ariaCurrent: el.getAttribute("aria-current") || undefined,
+        isContentEditable: htmlEl.isContentEditable,
+        contentEditable: htmlEl.contentEditable,
         isCustomElement: el.tagName.includes("-"),
         shadowRoot: !!el.shadowRoot
       },
@@ -3840,6 +3842,9 @@
         case "semantic":
           this.handleSemanticMessage(msg2);
           break;
+        case "interaction":
+          this.handleInteractionMessage(msg2);
+          break;
       }
       this.render();
     }
@@ -4247,6 +4252,331 @@
       } catch (err) {
         this.respond(msg.id, false, null, err.message);
       }
+    }
+    handleInteractionMessage(msg2) {
+      const { action: action2, payload: payload2 } = msg2;
+      if (action2 === "type") {
+        this.performRealisticType(payload2, msg2.id);
+      } else if (action2 === "click") {
+        this.performRealisticClick(payload2, msg2.id);
+      } else {
+        this.respond(msg2.id, false, null, `Unknown interaction action: ${action2}`);
+      }
+    }
+    async performRealisticType(payload2, responseId) {
+      const {
+        selector,
+        text,
+        focusMode = "mouse",
+        clear = false,
+        blur = true,
+        humanlike = true,
+        typoRate = 0.03,
+        minDelay = 50,
+        maxDelay = 150
+      } = payload2;
+      const el = document.querySelector(selector);
+      if (!el) {
+        this.respond(responseId, false, null, `Element not found: ${selector}`);
+        return;
+      }
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        await this.sleep(100);
+        const tagName = el.tagName.toLowerCase();
+        const isInput = tagName === "input";
+        const isTextarea = tagName === "textarea";
+        const isContentEditable = el.isContentEditable;
+        const isNativeInput = isInput || isTextarea;
+        const rect = el.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        await this.focusElement(el, focusMode, centerX, centerY);
+        if (clear) {
+          await this.clearElement(el, isNativeInput, isContentEditable);
+        }
+        const adjacentKeys = this.getAdjacentKeys();
+        let typoCount = 0;
+        for (let i = 0;i < text.length; i++) {
+          const char = text[i];
+          const delay = humanlike ? minDelay + Math.random() * (maxDelay - minDelay) : 0;
+          if (humanlike && Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
+            const wrongKeys = adjacentKeys[char.toLowerCase()];
+            const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)];
+            const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar;
+            await this.typeCharacter(el, typoChar, isNativeInput, isContentEditable);
+            await this.sleep(delay);
+            await this.sleep(100 + Math.random() * 200);
+            await this.deleteCharacter(el, isNativeInput, isContentEditable);
+            await this.sleep(delay * 0.5);
+            typoCount++;
+          }
+          await this.typeCharacter(el, char, isNativeInput, isContentEditable);
+          if (humanlike && delay > 0) {
+            await this.sleep(delay);
+            if (Math.random() < 0.05) {
+              await this.sleep(200 + Math.random() * 300);
+            }
+          }
+        }
+        if (blur) {
+          if (isNativeInput) {
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+          el.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
+          el.blur();
+        }
+        this.respond(responseId, true, {
+          typed: text,
+          typos: typoCount,
+          elementType: isContentEditable ? "contenteditable" : tagName,
+          focusMode
+        });
+      } catch (err) {
+        this.respond(responseId, false, null, err.message);
+      }
+    }
+    async focusElement(el, mode, x, y) {
+      if (mode === "direct") {
+        el.focus();
+        el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+        el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+        return;
+      }
+      if (mode === "keyboard") {
+        if (document.activeElement && document.activeElement !== document.body) {
+          const prev = document.activeElement;
+          prev.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", bubbles: true }));
+          prev.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+          prev.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
+        }
+        el.focus();
+        el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+        el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", code: "Tab", bubbles: true }));
+        return;
+      }
+      const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+      el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
+      el.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
+      el.dispatchEvent(new MouseEvent("mousemove", mouseOpts));
+      await this.sleep(10);
+      el.dispatchEvent(new MouseEvent("mousedown", { ...mouseOpts, button: 0 }));
+      el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+      el.focus();
+      await this.sleep(10);
+      el.dispatchEvent(new MouseEvent("mouseup", { ...mouseOpts, button: 0 }));
+      el.dispatchEvent(new MouseEvent("click", { ...mouseOpts, button: 0 }));
+    }
+    async clearElement(el, isNativeInput, isContentEditable) {
+      if (isNativeInput) {
+        const input = el;
+        input.select();
+        await this.sleep(10);
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "deleteContentBackward"
+        }));
+        this.setNativeValue(input, "");
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          inputType: "deleteContentBackward"
+        }));
+        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+      } else if (isContentEditable) {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        await this.sleep(10);
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "deleteContentBackward"
+        }));
+        document.execCommand("delete", false);
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          inputType: "deleteContentBackward"
+        }));
+        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+      }
+    }
+    async typeCharacter(el, char, isNativeInput, isContentEditable) {
+      const code2 = this.getKeyCode(char);
+      const isShift = char !== char.toLowerCase() && char === char.toUpperCase();
+      el.dispatchEvent(new KeyboardEvent("keydown", {
+        key: char,
+        code: code2,
+        bubbles: true,
+        shiftKey: isShift
+      }));
+      const beforeInputEvent = new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: char
+      });
+      const allowed = el.dispatchEvent(beforeInputEvent);
+      if (allowed) {
+        if (isNativeInput) {
+          const input = el;
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? input.value.length;
+          const newValue = input.value.slice(0, start) + char + input.value.slice(end);
+          this.setNativeValue(input, newValue);
+          input.selectionStart = input.selectionEnd = start + 1;
+        } else if (isContentEditable) {
+          document.execCommand("insertText", false, char);
+        } else {}
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText",
+          data: char
+        }));
+      }
+      el.dispatchEvent(new KeyboardEvent("keyup", {
+        key: char,
+        code: code2,
+        bubbles: true,
+        shiftKey: isShift
+      }));
+    }
+    async deleteCharacter(el, isNativeInput, isContentEditable) {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+      const beforeInputEvent = new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteContentBackward"
+      });
+      const allowed = el.dispatchEvent(beforeInputEvent);
+      if (allowed) {
+        if (isNativeInput) {
+          const input = el;
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? input.value.length;
+          if (start === end && start > 0) {
+            const newValue = input.value.slice(0, start - 1) + input.value.slice(end);
+            this.setNativeValue(input, newValue);
+            input.selectionStart = input.selectionEnd = start - 1;
+          } else if (start !== end) {
+            const newValue = input.value.slice(0, start) + input.value.slice(end);
+            this.setNativeValue(input, newValue);
+            input.selectionStart = input.selectionEnd = start;
+          }
+        } else if (isContentEditable) {
+          document.execCommand("delete", false);
+        }
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          inputType: "deleteContentBackward"
+        }));
+      }
+      el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+    }
+    setNativeValue(el, value) {
+      const prototype = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(el, value);
+      } else {
+        el.value = value;
+      }
+    }
+    getKeyCode(char) {
+      const upper = char.toUpperCase();
+      if (upper >= "A" && upper <= "Z")
+        return `Key${upper}`;
+      if (char >= "0" && char <= "9")
+        return `Digit${char}`;
+      const specialKeys = {
+        " ": "Space",
+        ".": "Period",
+        ",": "Comma",
+        "/": "Slash",
+        ";": "Semicolon",
+        "'": "Quote",
+        "[": "BracketLeft",
+        "]": "BracketRight",
+        "\\": "Backslash",
+        "-": "Minus",
+        "=": "Equal",
+        "`": "Backquote",
+        Enter: "Enter",
+        Tab: "Tab",
+        Backspace: "Backspace"
+      };
+      return specialKeys[char] || `Key${upper}`;
+    }
+    getAdjacentKeys() {
+      return {
+        a: ["s", "q", "w", "z"],
+        b: ["v", "g", "h", "n"],
+        c: ["x", "d", "f", "v"],
+        d: ["s", "e", "r", "f", "c", "x"],
+        e: ["w", "r", "d", "s"],
+        f: ["d", "r", "t", "g", "v", "c"],
+        g: ["f", "t", "y", "h", "b", "v"],
+        h: ["g", "y", "u", "j", "n", "b"],
+        i: ["u", "o", "k", "j"],
+        j: ["h", "u", "i", "k", "m", "n"],
+        k: ["j", "i", "o", "l", "m"],
+        l: ["k", "o", "p"],
+        m: ["n", "j", "k"],
+        n: ["b", "h", "j", "m"],
+        o: ["i", "p", "l", "k"],
+        p: ["o", "l"],
+        q: ["w", "a"],
+        r: ["e", "t", "f", "d"],
+        s: ["a", "w", "e", "d", "x", "z"],
+        t: ["r", "y", "g", "f"],
+        u: ["y", "i", "j", "h"],
+        v: ["c", "f", "g", "b"],
+        w: ["q", "e", "s", "a"],
+        x: ["z", "s", "d", "c"],
+        y: ["t", "u", "h", "g"],
+        z: ["a", "s", "x"]
+      };
+    }
+    async performRealisticClick(payload2, responseId) {
+      const el = document.querySelector(payload2.selector);
+      if (!el) {
+        this.respond(responseId, false, null, `Element not found: ${payload2.selector}`);
+        return;
+      }
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        await this.sleep(100);
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+        el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
+        el.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
+        el.dispatchEvent(new MouseEvent("mousemove", mouseOpts));
+        await this.sleep(10);
+        el.dispatchEvent(new MouseEvent("mousedown", mouseOpts));
+        if (el.tabIndex >= 0 || ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(el.tagName)) {
+          el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+          el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+          el.focus();
+        }
+        await this.sleep(10);
+        el.dispatchEvent(new MouseEvent("mouseup", mouseOpts));
+        el.dispatchEvent(new MouseEvent("click", mouseOpts));
+        this.respond(responseId, true, { clicked: payload2.selector });
+      } catch (err) {
+        this.respond(responseId, false, null, err.message);
+      }
+    }
+    sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
     }
     handleRecordingMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;

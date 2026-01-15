@@ -198,15 +198,30 @@ export const type = endpoint({
   path: '/type',
   method: 'POST',
   summary: 'Type text into an element',
-  description: `Focus element and type text character by character. 
+  description: `Focus element and type text character by character with realistic event lifecycle.
 
-Human-like mode (default) adds realistic delays and occasional typos that get corrected.
-Use humanlike: false for instant typing in tests.`,
+Simulates real user behavior:
+1. Focus via mouse click (default) or keyboard Tab
+2. Full keystroke events: keydown → beforeinput → input → keyup
+3. Fires change event on completion
+
+Handles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).
+
+Options:
+- humanlike: Add realistic delays and occasional typos (default true)
+- focusMode: How to focus the element before typing
+  - "mouse" (default): Full mouse lifecycle (mouseenter → click → focus)
+  - "keyboard": Tab key navigation (for accessibility testing)
+  - "direct": Just .focus() (fast, for simple tests)
+- clear: Clear existing content before typing (default false)`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector of input/textarea'),
+    selector: s.string.describe('CSS selector of input/textarea/contenteditable'),
     text: s.string.describe('Text to type'),
-    humanlike: s.boolean.describe('Human-like delays (default true)').optional,
+    humanlike: s.boolean.describe('Human-like delays and typos (default true)').optional,
+    focusMode: s.enum(['mouse', 'keyboard', 'direct'] as const).describe('How to focus: mouse (default), keyboard, or direct').optional,
+    clear: s.boolean.describe('Clear existing content before typing (default false)').optional,
+    blur: s.boolean.describe('Blur element after typing to trigger change event (default true)').optional,
     typoRate: s.number.describe('Typo probability 0-1 (default 0.03)').optional,
     minDelay: s.number.describe('Min ms between keys (default 50)').optional,
     maxDelay: s.number.describe('Max ms between keys (default 150)').optional,
@@ -215,8 +230,10 @@ Use humanlike: false for instant typing in tests.`,
   examples: [
     { name: 'email', input: { selector: '#email', text: 'user@example.com' }, description: 'Type email address' },
     { name: 'password', input: { selector: 'input[type="password"]', text: 'secret123' }, description: 'Type password' },
-    { name: 'fast-test', input: { selector: 'input', text: 'hello', humanlike: false }, description: 'Instant typing for tests' },
-    { name: 'by-label', input: { selector: 'input[aria-label="Search"]', text: 'query' }, description: 'Find by ARIA label' },
+    { name: 'fast-test', input: { selector: 'input', text: 'hello', humanlike: false, focusMode: 'direct' }, description: 'Fast typing for tests' },
+    { name: 'keyboard-focus', input: { selector: '#search', text: 'query', focusMode: 'keyboard' }, description: 'Focus via Tab key' },
+    { name: 'clear-first', input: { selector: '#name', text: 'New Name', clear: true }, description: 'Clear field then type' },
+    { name: 'contenteditable', input: { selector: '[contenteditable]', text: 'Hello world' }, description: 'Type into contenteditable' },
   ],
   invalidExamples: [
     { name: 'missing-text', input: { selector: '#input' }, error: 'text is required' },

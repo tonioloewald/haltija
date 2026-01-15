@@ -314,6 +314,8 @@ function inspectElement(el: Element): ElementInspection {
       ariaDisabled: el.getAttribute('aria-disabled') === 'true',
       ariaSelected: el.getAttribute('aria-selected') === 'true',
       ariaCurrent: el.getAttribute('aria-current') || undefined,
+      isContentEditable: htmlEl.isContentEditable,
+      contentEditable: htmlEl.contentEditable, // 'true', 'false', or 'inherit'
       isCustomElement: el.tagName.includes('-'),
       shadowRoot: !!el.shadowRoot,
     },
@@ -4710,6 +4712,9 @@ export class DevChannel extends HTMLElement {
       case 'semantic':
         this.handleSemanticMessage(msg)
         break
+      case 'interaction':
+        this.handleInteractionMessage(msg)
+        break
     }
     
     this.render()
@@ -5206,6 +5211,455 @@ export class DevChannel extends HTMLElement {
     } catch (err: any) {
       this.respond(msg.id, false, null, err.message)
     }
+  }
+  
+  // ==========================================
+  // Interaction Handler (realistic typing/clicking)
+  // ==========================================
+  
+  private handleInteractionMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    
+    if (action === 'type') {
+      this.performRealisticType(payload, msg.id)
+    } else if (action === 'click') {
+      this.performRealisticClick(payload, msg.id)
+    } else {
+      this.respond(msg.id, false, null, `Unknown interaction action: ${action}`)
+    }
+  }
+  
+  /**
+   * Performs realistic typing with full event lifecycle.
+   * Handles native inputs, textareas, contenteditable, and React controlled inputs.
+   */
+  private async performRealisticType(
+    payload: {
+      selector: string
+      text: string
+      focusMode?: 'mouse' | 'keyboard' | 'direct'
+      clear?: boolean
+      blur?: boolean
+      humanlike?: boolean
+      typoRate?: number
+      minDelay?: number
+      maxDelay?: number
+    },
+    responseId: string
+  ) {
+    const {
+      selector,
+      text,
+      focusMode = 'mouse',
+      clear = false,
+      blur = true,
+      humanlike = true,
+      typoRate = 0.03,
+      minDelay = 50,
+      maxDelay = 150,
+    } = payload
+    
+    const el = document.querySelector(selector) as HTMLElement
+    if (!el) {
+      this.respond(responseId, false, null, `Element not found: ${selector}`)
+      return
+    }
+    
+    try {
+      // Scroll element into view
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      await this.sleep(100)
+      
+      // Detect element type
+      const tagName = el.tagName.toLowerCase()
+      const isInput = tagName === 'input'
+      const isTextarea = tagName === 'textarea'
+      const isContentEditable = (el as HTMLElement).isContentEditable
+      const isNativeInput = isInput || isTextarea
+      
+      // Get element center for mouse events
+      const rect = el.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      
+      // Step 1: Focus the element
+      await this.focusElement(el, focusMode, centerX, centerY)
+      
+      // Step 2: Clear existing content if requested
+      if (clear) {
+        await this.clearElement(el, isNativeInput, isContentEditable)
+      }
+      
+      // Step 3: Type each character
+      const adjacentKeys = this.getAdjacentKeys()
+      let typoCount = 0
+      
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i]
+        const delay = humanlike ? minDelay + Math.random() * (maxDelay - minDelay) : 0
+        
+        // Occasional typo with correction
+        if (humanlike && Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
+          const wrongKeys = adjacentKeys[char.toLowerCase()]
+          const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)]
+          const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
+          
+          // Type wrong character
+          await this.typeCharacter(el, typoChar, isNativeInput, isContentEditable)
+          await this.sleep(delay)
+          
+          // Pause to "notice" the typo
+          await this.sleep(100 + Math.random() * 200)
+          
+          // Delete the typo
+          await this.deleteCharacter(el, isNativeInput, isContentEditable)
+          await this.sleep(delay * 0.5)
+          typoCount++
+        }
+        
+        // Type the correct character
+        await this.typeCharacter(el, char, isNativeInput, isContentEditable)
+        
+        if (humanlike && delay > 0) {
+          await this.sleep(delay)
+          // Occasional longer pause (thinking)
+          if (Math.random() < 0.05) {
+            await this.sleep(200 + Math.random() * 300)
+          }
+        }
+      }
+      
+      // Step 4: Blur to trigger change event
+      if (blur) {
+        // Fire change event before blur (for inputs that changed)
+        if (isNativeInput) {
+          el.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+        el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+        el.dispatchEvent(new FocusEvent('blur', { bubbles: false }))
+        el.blur()
+      }
+      
+      this.respond(responseId, true, { 
+        typed: text, 
+        typos: typoCount, 
+        elementType: isContentEditable ? 'contenteditable' : tagName,
+        focusMode,
+      })
+    } catch (err: any) {
+      this.respond(responseId, false, null, err.message)
+    }
+  }
+  
+  /**
+   * Focus an element using the specified mode
+   */
+  private async focusElement(
+    el: HTMLElement, 
+    mode: 'mouse' | 'keyboard' | 'direct',
+    x: number,
+    y: number
+  ) {
+    if (mode === 'direct') {
+      el.focus()
+      el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      el.dispatchEvent(new FocusEvent('focus', { bubbles: false }))
+      return
+    }
+    
+    if (mode === 'keyboard') {
+      // Simulate Tab key navigation
+      // First, blur any currently focused element
+      if (document.activeElement && document.activeElement !== document.body) {
+        const prev = document.activeElement as HTMLElement
+        prev.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true }))
+        prev.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+        prev.dispatchEvent(new FocusEvent('blur', { bubbles: false }))
+      }
+      // Focus the target
+      el.focus()
+      el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      el.dispatchEvent(new FocusEvent('focus', { bubbles: false }))
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', bubbles: true }))
+      return
+    }
+    
+    // mode === 'mouse' - full mouse event lifecycle
+    const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y }
+    
+    el.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }))
+    el.dispatchEvent(new MouseEvent('mouseover', mouseOpts))
+    el.dispatchEvent(new MouseEvent('mousemove', mouseOpts))
+    await this.sleep(10)
+    
+    el.dispatchEvent(new MouseEvent('mousedown', { ...mouseOpts, button: 0 }))
+    el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    el.dispatchEvent(new FocusEvent('focus', { bubbles: false }))
+    el.focus()
+    await this.sleep(10)
+    
+    el.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, button: 0 }))
+    el.dispatchEvent(new MouseEvent('click', { ...mouseOpts, button: 0 }))
+  }
+  
+  /**
+   * Clear the content of an element
+   */
+  private async clearElement(el: HTMLElement, isNativeInput: boolean, isContentEditable: boolean) {
+    if (isNativeInput) {
+      const input = el as HTMLInputElement | HTMLTextAreaElement
+      // Select all and delete
+      input.select()
+      await this.sleep(10)
+      
+      // Fire key events for the delete
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+      el.dispatchEvent(new InputEvent('beforeinput', { 
+        bubbles: true, 
+        cancelable: true, 
+        inputType: 'deleteContentBackward' 
+      }))
+      
+      // Use native setter for React compatibility
+      this.setNativeValue(input, '')
+      
+      el.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        inputType: 'deleteContentBackward' 
+      }))
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+    } else if (isContentEditable) {
+      // Select all content
+      const selection = window.getSelection()
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      await this.sleep(10)
+      
+      // Delete selection
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+      el.dispatchEvent(new InputEvent('beforeinput', { 
+        bubbles: true, 
+        cancelable: true, 
+        inputType: 'deleteContentBackward' 
+      }))
+      document.execCommand('delete', false)
+      el.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        inputType: 'deleteContentBackward' 
+      }))
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+    }
+  }
+  
+  /**
+   * Type a single character with full event lifecycle
+   */
+  private async typeCharacter(el: HTMLElement, char: string, isNativeInput: boolean, isContentEditable: boolean) {
+    const code = this.getKeyCode(char)
+    const isShift = char !== char.toLowerCase() && char === char.toUpperCase()
+    
+    // keydown
+    el.dispatchEvent(new KeyboardEvent('keydown', { 
+      key: char, 
+      code, 
+      bubbles: true,
+      shiftKey: isShift,
+    }))
+    
+    // beforeinput (cancelable)
+    const beforeInputEvent = new InputEvent('beforeinput', { 
+      bubbles: true, 
+      cancelable: true, 
+      inputType: 'insertText',
+      data: char,
+    })
+    const allowed = el.dispatchEvent(beforeInputEvent)
+    
+    if (allowed) {
+      if (isNativeInput) {
+        const input = el as HTMLInputElement | HTMLTextAreaElement
+        const start = input.selectionStart ?? input.value.length
+        const end = input.selectionEnd ?? input.value.length
+        const newValue = input.value.slice(0, start) + char + input.value.slice(end)
+        
+        // Use native setter for React compatibility
+        this.setNativeValue(input, newValue)
+        
+        // Update cursor position
+        input.selectionStart = input.selectionEnd = start + 1
+      } else if (isContentEditable) {
+        // Insert text at cursor position
+        document.execCommand('insertText', false, char)
+      } else {
+        // For other elements, just fire the events (they might handle it themselves)
+      }
+      
+      // input event
+      el.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        inputType: 'insertText',
+        data: char,
+      }))
+    }
+    
+    // keyup
+    el.dispatchEvent(new KeyboardEvent('keyup', { 
+      key: char, 
+      code, 
+      bubbles: true,
+      shiftKey: isShift,
+    }))
+  }
+  
+  /**
+   * Delete a single character (backspace)
+   */
+  private async deleteCharacter(el: HTMLElement, isNativeInput: boolean, isContentEditable: boolean) {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+    
+    const beforeInputEvent = new InputEvent('beforeinput', { 
+      bubbles: true, 
+      cancelable: true, 
+      inputType: 'deleteContentBackward',
+    })
+    const allowed = el.dispatchEvent(beforeInputEvent)
+    
+    if (allowed) {
+      if (isNativeInput) {
+        const input = el as HTMLInputElement | HTMLTextAreaElement
+        const start = input.selectionStart ?? input.value.length
+        const end = input.selectionEnd ?? input.value.length
+        
+        if (start === end && start > 0) {
+          const newValue = input.value.slice(0, start - 1) + input.value.slice(end)
+          this.setNativeValue(input, newValue)
+          input.selectionStart = input.selectionEnd = start - 1
+        } else if (start !== end) {
+          const newValue = input.value.slice(0, start) + input.value.slice(end)
+          this.setNativeValue(input, newValue)
+          input.selectionStart = input.selectionEnd = start
+        }
+      } else if (isContentEditable) {
+        document.execCommand('delete', false)
+      }
+      
+      el.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        inputType: 'deleteContentBackward',
+      }))
+    }
+    
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+  }
+  
+  /**
+   * Set value using native setter for React compatibility.
+   * React overrides the value setter, so we need to use the native one.
+   */
+  private setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+    const prototype = el.tagName === 'TEXTAREA' 
+      ? HTMLTextAreaElement.prototype 
+      : HTMLInputElement.prototype
+    const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    
+    if (nativeSetter) {
+      nativeSetter.call(el, value)
+    } else {
+      // Fallback
+      el.value = value
+    }
+  }
+  
+  /**
+   * Get key code for a character
+   */
+  private getKeyCode(char: string): string {
+    const upper = char.toUpperCase()
+    if (upper >= 'A' && upper <= 'Z') return `Key${upper}`
+    if (char >= '0' && char <= '9') return `Digit${char}`
+    
+    const specialKeys: Record<string, string> = {
+      ' ': 'Space', '.': 'Period', ',': 'Comma', '/': 'Slash',
+      ';': 'Semicolon', "'": 'Quote', '[': 'BracketLeft', ']': 'BracketRight',
+      '\\': 'Backslash', '-': 'Minus', '=': 'Equal', '`': 'Backquote',
+      'Enter': 'Enter', 'Tab': 'Tab', 'Backspace': 'Backspace',
+    }
+    return specialKeys[char] || `Key${upper}`
+  }
+  
+  /**
+   * Adjacent keys map for realistic typos
+   */
+  private getAdjacentKeys(): Record<string, string[]> {
+    return {
+      'a': ['s', 'q', 'w', 'z'], 'b': ['v', 'g', 'h', 'n'], 'c': ['x', 'd', 'f', 'v'],
+      'd': ['s', 'e', 'r', 'f', 'c', 'x'], 'e': ['w', 'r', 'd', 's'], 'f': ['d', 'r', 't', 'g', 'v', 'c'],
+      'g': ['f', 't', 'y', 'h', 'b', 'v'], 'h': ['g', 'y', 'u', 'j', 'n', 'b'], 'i': ['u', 'o', 'k', 'j'],
+      'j': ['h', 'u', 'i', 'k', 'm', 'n'], 'k': ['j', 'i', 'o', 'l', 'm'], 'l': ['k', 'o', 'p'],
+      'm': ['n', 'j', 'k'], 'n': ['b', 'h', 'j', 'm'], 'o': ['i', 'p', 'l', 'k'],
+      'p': ['o', 'l'], 'q': ['w', 'a'], 'r': ['e', 't', 'f', 'd'],
+      's': ['a', 'w', 'e', 'd', 'x', 'z'], 't': ['r', 'y', 'g', 'f'], 'u': ['y', 'i', 'j', 'h'],
+      'v': ['c', 'f', 'g', 'b'], 'w': ['q', 'e', 's', 'a'], 'x': ['z', 's', 'd', 'c'],
+      'y': ['t', 'u', 'h', 'g'], 'z': ['a', 's', 'x'],
+    }
+  }
+  
+  /**
+   * Performs realistic click with full event lifecycle.
+   */
+  private async performRealisticClick(
+    payload: { selector: string },
+    responseId: string
+  ) {
+    const el = document.querySelector(payload.selector) as HTMLElement
+    if (!el) {
+      this.respond(responseId, false, null, `Element not found: ${payload.selector}`)
+      return
+    }
+    
+    try {
+      // Scroll into view
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      await this.sleep(100)
+      
+      // Get element center
+      const rect = el.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }
+      
+      // Full mouse lifecycle
+      el.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }))
+      el.dispatchEvent(new MouseEvent('mouseover', mouseOpts))
+      el.dispatchEvent(new MouseEvent('mousemove', mouseOpts))
+      await this.sleep(10)
+      
+      el.dispatchEvent(new MouseEvent('mousedown', mouseOpts))
+      
+      // Focus if focusable
+      if (el.tabIndex >= 0 || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName)) {
+        el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+        el.dispatchEvent(new FocusEvent('focus', { bubbles: false }))
+        el.focus()
+      }
+      
+      await this.sleep(10)
+      el.dispatchEvent(new MouseEvent('mouseup', mouseOpts))
+      el.dispatchEvent(new MouseEvent('click', mouseOpts))
+      
+      this.respond(responseId, true, { clicked: payload.selector })
+    } catch (err: any) {
+      this.respond(responseId, false, null, err.message)
+    }
+  }
+  
+  /**
+   * Promise-based sleep helper
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
   }
   
   private handleRecordingMessage(msg: DevMessage) {

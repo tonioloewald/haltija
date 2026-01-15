@@ -176,13 +176,13 @@
     "path": "/type",
     "method": "POST",
     "summary": "Type text into an element",
-    "description": "Focus element and type text character by character. \n\nHuman-like mode (default) adds realistic delays and occasional typos that get corrected.\nUse humanlike: false for instant typing in tests.",
+    "description": "Focus element and type text character by character with realistic event lifecycle.\n\nSimulates real user behavior:\n1. Focus via mouse click (default) or keyboard Tab\n2. Full keystroke events: keydown → beforeinput → input → keyup\n3. Fires change event on completion\n\nHandles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).\n\nOptions:\n- humanlike: Add realistic delays and occasional typos (default true)\n- focusMode: How to focus the element before typing\n  - \"mouse\" (default): Full mouse lifecycle (mouseenter → click → focus)\n  - \"keyboard\": Tab key navigation (for accessibility testing)\n  - \"direct\": Just .focus() (fast, for simple tests)\n- clear: Clear existing content before typing (default false)",
     "inputSchema": {
       "type": "object",
       "properties": {
         "selector": {
           "type": "string",
-          "description": "CSS selector of input/textarea"
+          "description": "CSS selector of input/textarea/contenteditable"
         },
         "text": {
           "type": "string",
@@ -193,7 +193,33 @@
             "boolean",
             "null"
           ],
-          "description": "Human-like delays (default true)"
+          "description": "Human-like delays and typos (default true)"
+        },
+        "focusMode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "mouse",
+            "keyboard",
+            "direct"
+          ],
+          "description": "How to focus: mouse (default), keyboard, or direct"
+        },
+        "clear": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Clear existing content before typing (default false)"
+        },
+        "blur": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Blur element after typing to trigger change event (default true)"
         },
         "typoRate": {
           "type": [

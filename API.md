@@ -197,18 +197,33 @@ Automatically fails if element is not found or is disabled. Check response.succe
 
 **Type text into an element**
 
-Focus element and type text character by character. 
+Focus element and type text character by character with realistic event lifecycle.
 
-Human-like mode (default) adds realistic delays and occasional typos that get corrected.
-Use humanlike: false for instant typing in tests.
+Simulates real user behavior:
+1. Focus via mouse click (default) or keyboard Tab
+2. Full keystroke events: keydown → beforeinput → input → keyup
+3. Fires change event on completion
+
+Handles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).
+
+Options:
+- humanlike: Add realistic delays and occasional typos (default true)
+- focusMode: How to focus the element before typing
+  - "mouse" (default): Full mouse lifecycle (mouseenter → click → focus)
+  - "keyboard": Tab key navigation (for accessibility testing)
+  - "direct": Just .focus() (fast, for simple tests)
+- clear: Clear existing content before typing (default false)
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `selector` | string | CSS selector of input/textarea *(required)* |
+| `selector` | string | CSS selector of input/textarea/contenteditable *(required)* |
 | `text` | string | Text to type *(required)* |
-| `humanlike` | boolean,null | Human-like delays (default true) |
+| `humanlike` | boolean,null | Human-like delays and typos (default true) |
+| `focusMode` | string,null | How to focus: mouse (default), keyboard, or direct |
+| `clear` | boolean,null | Clear existing content before typing (default false) |
+| `blur` | boolean,null | Blur element after typing to trigger change event (default true) |
 | `typoRate` | number,null | Typo probability 0-1 (default 0.03) |
 | `minDelay` | number,null | Min ms between keys (default 50) |
 | `maxDelay` | number,null | Max ms between keys (default 150) |
@@ -224,13 +239,21 @@ Use humanlike: false for instant typing in tests.
   ```json
   {"selector":"input[type=\"password\"]","text":"secret123"}
   ```
-- **fast-test**: Instant typing for tests
+- **fast-test**: Fast typing for tests
   ```json
-  {"selector":"input","text":"hello","humanlike":false}
+  {"selector":"input","text":"hello","humanlike":false,"focusMode":"direct"}
   ```
-- **by-label**: Find by ARIA label
+- **keyboard-focus**: Focus via Tab key
   ```json
-  {"selector":"input[aria-label=\"Search\"]","text":"query"}
+  {"selector":"#search","text":"query","focusMode":"keyboard"}
+  ```
+- **clear-first**: Clear field then type
+  ```json
+  {"selector":"#name","text":"New Name","clear":true}
+  ```
+- **contenteditable**: Type into contenteditable
+  ```json
+  {"selector":"[contenteditable]","text":"Hello world"}
   ```
 
 ---

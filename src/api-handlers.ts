@@ -215,84 +215,29 @@ registerHandler(api.drag, async (body, ctx) => {
   return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers: ctx.headers })
 })
 
-// Type handler - human-like typing
+// Type handler - realistic typing with full event lifecycle
 registerHandler(api.type, async (body, ctx) => {
-  const text: string = body.text || ''
-  const humanlike: boolean = body.humanlike !== false
-  const typoRate: number = body.typoRate ?? 0.03
-  const minDelay: number = body.minDelay ?? 50
-  const maxDelay: number = body.maxDelay ?? 150
   const windowId = body.window || ctx.targetWindowId
   
-  // Scroll into view
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-  }, 5000, windowId)
-  await sleep(100)
+  // Calculate timeout based on text length and typing speed
+  // Worst case: humanlike with typos, max delay 150ms per char + typo overhead
+  const baseTimeout = 5000
+  const perCharTimeout = (body.maxDelay ?? 150) * 2 // Account for typos and delays
+  const timeout = baseTimeout + (body.text?.length || 0) * perCharTimeout
   
-  // Focus
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.querySelector(${JSON.stringify(body.selector)})?.focus()`
-  }, 5000, windowId)
-  await sleep(50)
+  const response = await ctx.requestFromBrowser('interaction', 'type', {
+    selector: body.selector,
+    text: body.text,
+    focusMode: body.focusMode,
+    clear: body.clear,
+    blur: body.blur,
+    humanlike: body.humanlike,
+    typoRate: body.typoRate,
+    minDelay: body.minDelay,
+    maxDelay: body.maxDelay,
+  }, timeout, windowId)
   
-  if (!humanlike) {
-    const response = await ctx.requestFromBrowser('events', 'dispatch', {
-      selector: body.selector, event: 'input', options: { value: text },
-    }, 5000, windowId)
-    return Response.json(response, { headers: ctx.headers })
-  }
-  
-  // Adjacent keys for typos
-  const adjacentKeys: Record<string, string[]> = {
-    'a': ['s', 'q', 'w', 'z'], 'b': ['v', 'g', 'h', 'n'], 'c': ['x', 'd', 'f', 'v'],
-    'd': ['s', 'e', 'r', 'f', 'c', 'x'], 'e': ['w', 'r', 'd', 's'], 'f': ['d', 'r', 't', 'g', 'v', 'c'],
-    'g': ['f', 't', 'y', 'h', 'b', 'v'], 'h': ['g', 'y', 'u', 'j', 'n', 'b'], 'i': ['u', 'o', 'k', 'j'],
-    'j': ['h', 'u', 'i', 'k', 'm', 'n'], 'k': ['j', 'i', 'o', 'l', 'm'], 'l': ['k', 'o', 'p', ';'],
-    'm': ['n', 'j', 'k', ','], 'n': ['b', 'h', 'j', 'm'], 'o': ['i', 'p', 'l', 'k'],
-    'p': ['o', 'l', '['], 'q': ['w', 'a'], 'r': ['e', 't', 'f', 'd'],
-    's': ['a', 'w', 'e', 'd', 'x', 'z'], 't': ['r', 'y', 'g', 'f'], 'u': ['y', 'i', 'j', 'h'],
-    'v': ['c', 'f', 'g', 'b'], 'w': ['q', 'e', 's', 'a'], 'x': ['z', 's', 'd', 'c'],
-    'y': ['t', 'u', 'h', 'g'], 'z': ['a', 's', 'x'],
-  }
-  
-  let currentValue = ''
-  let typoCount = 0
-  
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    const delay = minDelay + Math.random() * (maxDelay - minDelay)
-    
-    if (Math.random() < typoRate && adjacentKeys[char.toLowerCase()]) {
-      const wrongKeys = adjacentKeys[char.toLowerCase()]
-      const wrongChar = wrongKeys[Math.floor(Math.random() * wrongKeys.length)]
-      const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
-      
-      currentValue += typoChar
-      await ctx.requestFromBrowser('eval', 'exec', {
-        code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true})); } })()`
-      }, 5000, windowId)
-      await sleep(delay)
-      await sleep(100 + Math.random() * 200)
-      
-      currentValue = currentValue.slice(0, -1)
-      await ctx.requestFromBrowser('eval', 'exec', {
-        code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'})); } })()`
-      }, 5000, windowId)
-      await sleep(delay * 0.5)
-      typoCount++
-    }
-    
-    currentValue += char
-    await ctx.requestFromBrowser('eval', 'exec', {
-      code: `(function(){ const el = document.querySelector(${JSON.stringify(body.selector)}); if (el) { el.value = ${JSON.stringify(currentValue)}; el.dispatchEvent(new InputEvent('input', {bubbles: true})); } })()`
-    }, 5000, windowId)
-    await sleep(delay)
-    
-    if (Math.random() < 0.05) await sleep(200 + Math.random() * 300)
-  }
-  
-  return Response.json({ success: true, typed: text, typos: typoCount, humanlike: true }, { headers: ctx.headers })
+  return Response.json(response, { headers: ctx.headers })
 })
 
 // Inspect handler
