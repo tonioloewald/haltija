@@ -551,6 +551,7 @@
     "href",
     "src",
     "alt",
+    "part",
     "data-event",
     "data-bind",
     "data-list",

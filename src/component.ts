@@ -610,7 +610,7 @@ function matchesOnlyFilter(el: Element, rules: MutationFilterRules): boolean {
 const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'DETAILS', 'SUMMARY'])
 const DEFAULT_INTERESTING_CLASSES = ['-xin-event', '-xin-data', '-xin-']
 const DEFAULT_INTERESTING_ATTRS = [
-  'aria-', 'role', 'title', 'href', 'src', 'alt',
+  'aria-', 'role', 'title', 'href', 'src', 'alt', 'part',
   'data-event', 'data-bind', 'data-list', 'data-component', 'data-testid',
   'disabled', 'hidden', 'open', 'checked', 'selected', 'required', 'readonly',
   'type', 'name', 'value', 'placeholder',
