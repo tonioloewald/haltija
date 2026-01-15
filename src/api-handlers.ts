@@ -82,16 +82,22 @@ registerHandler(api.click, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   let selector = body.selector
   
-  // If text is provided, find the element first
+  // If text is provided, find the element first (only visible elements)
   if (!selector && body.text) {
     const tag = body.tag || '*'
     const findCode = `(function() {
       const elements = document.querySelectorAll(${JSON.stringify(tag)});
       const searchText = ${JSON.stringify(body.text)};
       for (const el of elements) {
+        // Skip hidden elements
+        if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+        if (getComputedStyle(el).visibility === 'hidden') continue;
+        if (el.closest('[hidden], [aria-hidden="true"]')) continue;
+        
         if (el.textContent && el.textContent.includes(searchText)) {
           // Generate a unique selector for this element
           if (el.id) return '#' + el.id;
+          if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
           if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
           if (el.className && typeof el.className === 'string') {
             const classes = el.className.split(' ').filter(c => c && !c.startsWith('-')).slice(0, 2);
@@ -124,18 +130,10 @@ registerHandler(api.click, async (body, ctx) => {
     return Response.json({ success: false, error: 'selector or text is required' }, { status: 400, headers: ctx.headers })
   }
   
-  // Scroll element into view first
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-  }, 5000, windowId)
-  await sleep(100)
+  // Use interaction channel for realistic click with cursor overlay
+  const response = await ctx.requestFromBrowser('interaction', 'click', { selector }, 5000, windowId)
   
-  // Full lifecycle: mouseenter → mouseover → mousemove → mousedown → mouseup → click
-  for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-    await ctx.requestFromBrowser('events', 'dispatch', { selector, event }, 5000, windowId)
-  }
-  
-  return Response.json({ success: true, selector }, { headers: ctx.headers })
+  return Response.json({ ...response, selector }, { headers: ctx.headers })
 })
 
 // Query handler
