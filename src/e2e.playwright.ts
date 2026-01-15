@@ -1635,3 +1635,228 @@ test.describe('haltija-dev user recordings', () => {
     await fetch(`${SERVER_URL}/recording/${latestRecording.id}`, { method: 'DELETE' })
   })
 })
+
+test.describe('haltija-dev new endpoints', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+  })
+  
+  test('/wait for time delay', async () => {
+    const start = Date.now()
+    const res = await fetch(`${SERVER_URL}/wait`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ms: 200 })
+    })
+    const elapsed = Date.now() - start
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.waited).toBe(200)
+    expect(elapsed).toBeGreaterThanOrEqual(190)
+  })
+  
+  test('/wait for element to appear', async ({ page }) => {
+    // Element doesn't exist yet
+    const waitPromise = fetch(`${SERVER_URL}/wait`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forElement: '#delayed-element', timeout: 3000 })
+    })
+    
+    // Add element after a delay
+    setTimeout(async () => {
+      await page.evaluate(() => {
+        const div = document.createElement('div')
+        div.id = 'delayed-element'
+        document.body.appendChild(div)
+      })
+    }, 500)
+    
+    const res = await waitPromise
+    const data = await res.json()
+    
+    expect(data.success).toBe(true)
+    expect(data.found).toBe(true)
+    expect(data.waited).toBeGreaterThanOrEqual(400)
+    expect(data.waited).toBeLessThan(2000)
+  })
+  
+  test('/wait for element to disappear', async ({ page }) => {
+    // Add element first
+    await page.evaluate(() => {
+      const div = document.createElement('div')
+      div.id = 'disappearing-element'
+      document.body.appendChild(div)
+    })
+    
+    // Start waiting for it to disappear
+    const waitPromise = fetch(`${SERVER_URL}/wait`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forElement: '#disappearing-element', hidden: true, timeout: 3000 })
+    })
+    
+    // Remove element after delay
+    setTimeout(async () => {
+      await page.evaluate(() => {
+        document.querySelector('#disappearing-element')?.remove()
+      })
+    }, 500)
+    
+    const res = await waitPromise
+    const data = await res.json()
+    
+    expect(data.success).toBe(true)
+    expect(data.waited).toBeGreaterThanOrEqual(400)
+  })
+  
+  test('/find by text content', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'find-test'
+      container.innerHTML = `
+        <button id="btn-save">Save Changes</button>
+        <button id="btn-cancel">Cancel</button>
+        <a href="#" id="link-learn">Learn More</a>
+      `
+      document.body.appendChild(container)
+    })
+    
+    // Find button by text
+    const res = await fetch(`${SERVER_URL}/find`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Save', tag: 'button' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.found).toBe(true)
+    expect(data.element.tag).toBe('button')
+    expect(data.element.text).toContain('Save')
+  })
+  
+  test('/find all matches', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'find-all-test'
+      container.innerHTML = `
+        <button>Delete Item 1</button>
+        <button>Delete Item 2</button>
+        <button>Delete Item 3</button>
+        <button>Save</button>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/find`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Delete', tag: 'button', all: true })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.found).toBe(true)
+    expect(data.count).toBe(3)
+    expect(data.elements.length).toBe(3)
+  })
+  
+  test('/click by text', async ({ page }) => {
+    await page.evaluate(() => {
+      const btn = document.createElement('button')
+      btn.id = 'text-click-btn'
+      btn.textContent = 'Click Me Please'
+      btn.onclick = () => { (window as any).textClickWorked = true }
+      document.body.appendChild(btn)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Click Me', tag: 'button' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    await page.waitForTimeout(100)
+    const clicked = await page.evaluate(() => (window as any).textClickWorked)
+    expect(clicked).toBe(true)
+  })
+  
+  test('tree shows input values', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'value-test'
+      container.innerHTML = `
+        <input type="text" id="text-val" value="">
+        <input type="checkbox" id="check-val">
+        <select id="select-val">
+          <option value="a">Option A</option>
+          <option value="b" selected>Option B</option>
+        </select>
+      `
+      document.body.appendChild(container)
+      // Set values programmatically (like React would)
+      const textInput = document.querySelector('#text-val') as HTMLInputElement
+      textInput.value = 'Hello World'
+      const checkInput = document.querySelector('#check-val') as HTMLInputElement
+      checkInput.checked = true
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#value-test', depth: 2 })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    const textInput = data.data.children.find((c: any) => c.id === 'text-val')
+    expect(textInput.value).toBe('Hello World')
+    
+    const checkInput = data.data.children.find((c: any) => c.id === 'check-val')
+    expect(checkInput.checked).toBe(true)
+    
+    const selectInput = data.data.children.find((c: any) => c.id === 'select-val')
+    expect(selectInput.value).toBe('b')
+  })
+  
+  test('tree with ancestors shows parent path', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'ancestor-outer'
+      container.className = 'outer-class'
+      container.innerHTML = `
+        <div id="ancestor-middle" class="middle-class">
+          <div id="ancestor-inner" class="inner-class">
+            <button id="deep-button">Deep Button</button>
+          </div>
+        </div>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#deep-button', ancestors: true })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.tag).toBe('button')
+    expect(data.data.ancestors).toBeDefined()
+    expect(data.data.ancestors.length).toBeGreaterThanOrEqual(3)
+    
+    // Check ancestors include our known elements
+    const ancestorIds = data.data.ancestors.map((a: any) => a.id).filter(Boolean)
+    expect(ancestorIds).toContain('ancestor-outer')
+    expect(ancestorIds).toContain('ancestor-middle')
+    expect(ancestorIds).toContain('ancestor-inner')
+  })
+})

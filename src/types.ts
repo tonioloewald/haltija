@@ -842,6 +842,8 @@ export interface DomTreeRequest {
   visibleOnly?: boolean
   /** Return actionable summary instead of full tree (buttons, links, inputs, headings) */
   mode?: 'tree' | 'actionable'
+  /** Include ancestor path from document root (default: false) */
+  ancestors?: boolean
 }
 
 /**
@@ -892,6 +894,16 @@ export interface DomTreeNode {
   truncated?: boolean
   /** Child count if children were truncated */
   childCount?: number
+  /** Current value for inputs/textareas/selects (live value, not attribute) */
+  value?: string
+  /** Checked state for checkboxes/radios */
+  checked?: boolean
+  /** Selected index for select elements */
+  selectedIndex?: number
+  /** Editable content for contenteditable elements */
+  editableContent?: string
+  /** Ancestor path from root (when ancestors:true) */
+  ancestors?: Array<{ tag: string; id?: string; classes?: string[] }>
 }
 
 /**

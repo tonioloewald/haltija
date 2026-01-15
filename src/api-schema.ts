@@ -65,9 +65,12 @@ export const tree = endpoint({
   description: `Returns hierarchical view of page elements. Best for understanding page structure before interacting.
 
 Response structure:
-  { tag, id?, classes?, attrs?, text?, children?, flags?: { interactive, hidden, hasAria, ... } }
+  { tag, id?, classes?, attrs?, text?, value?, checked?, children?, flags?: { interactive, hidden, hasAria, ... } }
 
-Flags help identify interactive elements (buttons, inputs) and hidden content.`,
+Flags help identify interactive elements (buttons, inputs) and hidden content.
+Form inputs include live value/checked state (not just HTML attribute).
+
+Use ancestors:true to see parent elements when inspecting deep elements.`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('Root element selector').optional,
@@ -76,12 +79,14 @@ Flags help identify interactive elements (buttons, inputs) and hidden content.`,
     visibleOnly: s.boolean.describe('Only visible elements (default false)').optional,
     pierceShadow: s.boolean.describe('Pierce shadow DOM (default true)').optional,
     compact: s.boolean.describe('Minimal output (default false)').optional,
+    ancestors: s.boolean.describe('Include ancestor path from root (default false)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
     { name: 'overview', input: { depth: 2 }, description: 'Quick page overview' },
     { name: 'form-only', input: { selector: 'form', depth: -1 }, description: 'Full form structure' },
     { name: 'visible-buttons', input: { selector: 'body', visibleOnly: true, depth: 4 }, description: 'Find visible interactive elements' },
+    { name: 'with-context', input: { selector: '#deep-element', ancestors: true }, description: 'See element with parent context' },
   ],
 })
 
@@ -176,20 +181,28 @@ export const click = endpoint({
   summary: 'Click an element',
   description: `Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
+Two ways to target elements:
+- selector: CSS selector (traditional)
+- text + tag: Find by text content (more reliable for dynamic UIs)
+
 Automatically fails if element is not found or is disabled. Check response.success to verify.`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector of element to click'),
+    selector: s.string.describe('CSS selector of element to click').optional,
+    text: s.string.describe('Text content to find (alternative to selector)').optional,
+    tag: s.string.describe('Tag name when using text (default: any clickable element)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
     { name: 'by-id', input: { selector: '#submit' }, description: 'Click button by ID' },
     { name: 'by-class', input: { selector: '.btn-primary' }, description: 'Click by class' },
-    { name: 'by-text', input: { selector: 'button:contains("Save")' }, description: 'Click by button text' },
+    { name: 'by-text', input: { text: 'Save' }, description: 'Click element containing "Save"' },
+    { name: 'button-by-text', input: { text: 'Submit', tag: 'button' }, description: 'Click button by text' },
+    { name: 'link-by-text', input: { text: 'Learn more', tag: 'a' }, description: 'Click link by text' },
     { name: 'by-role', input: { selector: '[role="button"][aria-label="Close"]' }, description: 'Click by ARIA' },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'missing-both', input: {}, error: 'selector or text is required' },
     { name: 'wrong-type', input: { selector: 123 }, error: 'selector must be string' },
   ],
 })
@@ -335,6 +348,67 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.`,
 // ============================================
 // Navigation Endpoints
 // ============================================
+
+export const wait = endpoint({
+  path: '/wait',
+  method: 'POST',
+  summary: 'Wait for time, element, or condition',
+  description: `Flexible wait for async UI scenarios. Multiple modes:
+
+- ms: Wait for a fixed time (simple delay)
+- forElement: Poll until element appears (or disappears with hidden:true)
+- Both: Wait for element, then add extra ms delay
+
+All modes support timeout (default 5000ms). Returns immediately if condition already met.
+
+Response: { success: true, waited: ms, found?: boolean }`,
+  category: 'interaction',
+  input: s.object({
+    ms: s.number.describe('Milliseconds to wait').optional,
+    forElement: s.string.describe('CSS selector to wait for').optional,
+    hidden: s.boolean.describe('Wait for element to disappear (default false)').optional,
+    timeout: s.number.describe('Max wait time in ms (default 5000)').optional,
+    pollInterval: s.number.describe('Polling interval in ms (default 100)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'delay', input: { ms: 500 }, description: 'Simple 500ms delay' },
+    { name: 'for-element', input: { forElement: '.modal' }, description: 'Wait for modal to appear' },
+    { name: 'for-hidden', input: { forElement: '.loading', hidden: true }, description: 'Wait for loading to disappear' },
+    { name: 'with-timeout', input: { forElement: 'button[data-ready]', timeout: 10000 }, description: 'Wait up to 10s' },
+    { name: 'element-plus-delay', input: { forElement: '.dropdown', ms: 100 }, description: 'Wait for dropdown, then 100ms for animation' },
+  ],
+})
+
+export const find = endpoint({
+  path: '/find',
+  method: 'POST',
+  summary: 'Find elements by text content',
+  description: `Search for elements containing specific text. Saves writing querySelector + filter patterns.
+
+Returns first match by default, or all matches with all:true.
+
+Response: { found: true, selector: "...", element: {...} } or { found: true, elements: [...] }`,
+  category: 'dom',
+  input: s.object({
+    text: s.string.describe('Text to search for (substring match)'),
+    tag: s.string.describe('Limit to specific tag (button, a, div, etc)').optional,
+    exact: s.boolean.describe('Require exact text match (default false = substring)').optional,
+    all: s.boolean.describe('Return all matches (default false = first only)').optional,
+    visible: s.boolean.describe('Only visible elements (default true)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'button-by-text', input: { text: 'Submit', tag: 'button' }, description: 'Find Submit button' },
+    { name: 'link-by-text', input: { text: 'Learn more', tag: 'a' }, description: 'Find link by text' },
+    { name: 'exact-match', input: { text: 'OK', tag: 'button', exact: true }, description: 'Find button with exact "OK" text' },
+    { name: 'all-matches', input: { text: 'Delete', tag: 'button', all: true }, description: 'Find all Delete buttons' },
+    { name: 'any-element', input: { text: 'Error:' }, description: 'Find any element containing "Error:"' },
+  ],
+  invalidExamples: [
+    { name: 'missing-text', input: { tag: 'button' }, error: 'text is required' },
+  ],
+})
 
 export const navigate = endpoint({
   path: '/navigate',
@@ -1022,6 +1096,7 @@ export const endpoints = {
   query,
   inspect,
   inspectAll,
+  find,
   
   // Interaction
   click,
@@ -1030,6 +1105,7 @@ export const endpoints = {
   highlight,
   unhighlight,
   scroll,
+  wait,
   
   // Navigation
   navigate,
@@ -1132,10 +1208,12 @@ export function validateInput(ep: EndpointDef, body: any): { valid: boolean, err
 export type TreeInput = Infer<typeof tree.input>
 export type QueryInput = Infer<typeof query.input>
 export type InspectInput = Infer<typeof inspect.input>
+export type FindInput = Infer<typeof find.input>
 export type ClickInput = Infer<typeof click.input>
 export type TypeInput = Infer<typeof type.input>
 export type DragInput = Infer<typeof drag.input>
 export type HighlightInput = Infer<typeof highlight.input>
+export type WaitInput = Infer<typeof wait.input>
 export type NavigateInput = Infer<typeof navigate.input>
 export type EvalInput = Infer<typeof eval_.input>
 export type CallInput = Infer<typeof call.input>

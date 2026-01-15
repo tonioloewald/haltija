@@ -880,6 +880,23 @@
         node.text = directText;
       }
     }
+    if (htmlEl instanceof HTMLInputElement) {
+      const inputType = htmlEl.type.toLowerCase();
+      if (inputType === "checkbox" || inputType === "radio") {
+        node.checked = htmlEl.checked;
+      } else if (inputType !== "password" && inputType !== "hidden") {
+        if (htmlEl.value)
+          node.value = htmlEl.value.slice(0, 200);
+      }
+    } else if (htmlEl instanceof HTMLTextAreaElement) {
+      if (htmlEl.value)
+        node.value = htmlEl.value.slice(0, 500);
+    } else if (htmlEl instanceof HTMLSelectElement) {
+      node.value = htmlEl.value;
+      node.selectedIndex = htmlEl.selectedIndex;
+    } else if (htmlEl.isContentEditable && htmlEl.textContent) {
+      node.editableContent = htmlEl.textContent.slice(0, 500);
+    }
     const maxDepth = depth < 0 ? Infinity : depth;
     if (pierceShadow && el.shadowRoot && currentDepth < maxDepth) {
       const shadowChildren = [];
@@ -4109,6 +4126,25 @@
             this.respond(msg2.id, true, summary);
           } else {
             const tree = buildDomTree(el, request);
+            if (request.ancestors && tree) {
+              const ancestors = [];
+              let parent = el.parentElement;
+              while (parent && parent !== document.body.parentElement) {
+                const ancestorNode = {
+                  tag: parent.tagName.toLowerCase()
+                };
+                if (parent.id)
+                  ancestorNode.id = parent.id;
+                const classes = parent.className?.toString().split(/\s+/).filter(Boolean);
+                if (classes?.length)
+                  ancestorNode.classes = classes.slice(0, 3);
+                ancestors.unshift(ancestorNode);
+                parent = parent.parentElement;
+              }
+              if (ancestors.length > 0) {
+                tree.ancestors = ancestors;
+              }
+            }
             this.respond(msg2.id, true, tree);
           }
         } catch (err) {

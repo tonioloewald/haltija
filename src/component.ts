@@ -1044,6 +1044,25 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
       node.text = directText
     }
   }
+  
+  // Current value for form inputs (live value, not attribute)
+  if (htmlEl instanceof HTMLInputElement) {
+    const inputType = htmlEl.type.toLowerCase()
+    if (inputType === 'checkbox' || inputType === 'radio') {
+      node.checked = htmlEl.checked
+    } else if (inputType !== 'password' && inputType !== 'hidden') {
+      // Don't expose password values
+      if (htmlEl.value) node.value = htmlEl.value.slice(0, 200)
+    }
+  } else if (htmlEl instanceof HTMLTextAreaElement) {
+    if (htmlEl.value) node.value = htmlEl.value.slice(0, 500)
+  } else if (htmlEl instanceof HTMLSelectElement) {
+    node.value = htmlEl.value
+    node.selectedIndex = htmlEl.selectedIndex
+  } else if (htmlEl.isContentEditable && htmlEl.textContent) {
+    // Contenteditable - show editable content
+    node.editableContent = htmlEl.textContent.slice(0, 500)
+  }
 
   // Children (if not at max depth)
   const maxDepth = depth < 0 ? Infinity : depth
@@ -5041,6 +5060,26 @@ export class DevChannel extends HTMLElement {
           this.respond(msg.id, true, summary)
         } else {
           const tree = buildDomTree(el, request)
+          
+          // Add ancestor context if requested
+          if (request.ancestors && tree) {
+            const ancestors: Array<{ tag: string; id?: string; classes?: string[] }> = []
+            let parent = el.parentElement
+            while (parent && parent !== document.body.parentElement) {
+              const ancestorNode: { tag: string; id?: string; classes?: string[] } = {
+                tag: parent.tagName.toLowerCase()
+              }
+              if (parent.id) ancestorNode.id = parent.id
+              const classes = parent.className?.toString().split(/\s+/).filter(Boolean)
+              if (classes?.length) ancestorNode.classes = classes.slice(0, 3)
+              ancestors.unshift(ancestorNode) // Add to front (root first)
+              parent = parent.parentElement
+            }
+            if (ancestors.length > 0) {
+              tree.ancestors = ancestors
+            }
+          }
+          
           this.respond(msg.id, true, tree)
         }
       } catch (err: any) {

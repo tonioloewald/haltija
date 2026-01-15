@@ -547,9 +547,9 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.description).toContain('mouseenter')
     expect(data.input).toBeDefined()
     expect(data.input.type).toBe('object')
+    // selector is optional now (can use text instead)
     expect(data.input.properties.selector).toBeDefined()
-    expect(data.input.properties.selector.type).toBe('string')
-    expect(data.input.required).toContain('selector')
+    expect(data.input.properties.text).toBeDefined()
     expect(data.usage).toContain('curl -X POST')
   })
   

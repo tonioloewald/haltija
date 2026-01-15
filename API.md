@@ -15,9 +15,12 @@ The API is self-documenting: `GET` any `POST` endpoint to see its schema.
 Returns hierarchical view of page elements. Best for understanding page structure before interacting.
 
 Response structure:
-  { tag, id?, classes?, attrs?, text?, children?, flags?: { interactive, hidden, hasAria, ... } }
+  { tag, id?, classes?, attrs?, text?, value?, checked?, children?, flags?: { interactive, hidden, hasAria, ... } }
 
 Flags help identify interactive elements (buttons, inputs) and hidden content.
+Form inputs include live value/checked state (not just HTML attribute).
+
+Use ancestors:true to see parent elements when inspecting deep elements.
 
 **Parameters:**
 
@@ -29,6 +32,7 @@ Flags help identify interactive elements (buttons, inputs) and hidden content.
 | `visibleOnly` | boolean,null | Only visible elements (default false) |
 | `pierceShadow` | boolean,null | Pierce shadow DOM (default true) |
 | `compact` | boolean,null | Minimal output (default false) |
+| `ancestors` | boolean,null | Include ancestor path from root (default false) |
 | `window` | string,null | Target window ID |
 
 **Examples:**
@@ -44,6 +48,10 @@ Flags help identify interactive elements (buttons, inputs) and hidden content.
 - **visible-buttons**: Find visible interactive elements
   ```json
   {"selector":"body","visibleOnly":true,"depth":4}
+  ```
+- **with-context**: See element with parent context
+  ```json
+  {"selector":"#deep-element","ancestors":true}
   ```
 
 ---
@@ -155,6 +163,52 @@ Response: array of inspection objects
 
 ---
 
+### `POST /find`
+
+**Find elements by text content**
+
+Search for elements containing specific text. Saves writing querySelector + filter patterns.
+
+Returns first match by default, or all matches with all:true.
+
+Response: { found: true, selector: "...", element: {...} } or { found: true, elements: [...] }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `text` | string | Text to search for (substring match) *(required)* |
+| `tag` | string,null | Limit to specific tag (button, a, div, etc) |
+| `exact` | boolean,null | Require exact text match (default false = substring) |
+| `all` | boolean,null | Return all matches (default false = first only) |
+| `visible` | boolean,null | Only visible elements (default true) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **button-by-text**: Find Submit button
+  ```json
+  {"text":"Submit","tag":"button"}
+  ```
+- **link-by-text**: Find link by text
+  ```json
+  {"text":"Learn more","tag":"a"}
+  ```
+- **exact-match**: Find button with exact "OK" text
+  ```json
+  {"text":"OK","tag":"button","exact":true}
+  ```
+- **all-matches**: Find all Delete buttons
+  ```json
+  {"text":"Delete","tag":"button","all":true}
+  ```
+- **any-element**: Find any element containing "Error:"
+  ```json
+  {"text":"Error:"}
+  ```
+
+---
+
 ## Interaction
 
 ### `POST /click`
@@ -163,13 +217,19 @@ Response: array of inspection objects
 
 Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
+Two ways to target elements:
+- selector: CSS selector (traditional)
+- text + tag: Find by text content (more reliable for dynamic UIs)
+
 Automatically fails if element is not found or is disabled. Check response.success to verify.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `selector` | string | CSS selector of element to click *(required)* |
+| `selector` | string,null | CSS selector of element to click |
+| `text` | string,null | Text content to find (alternative to selector) |
+| `tag` | string,null | Tag name when using text (default: any clickable element) |
 | `window` | string,null | Target window ID |
 
 **Examples:**
@@ -182,9 +242,17 @@ Automatically fails if element is not found or is disabled. Check response.succe
   ```json
   {"selector":".btn-primary"}
   ```
-- **by-text**: Click by button text
+- **by-text**: Click element containing "Save"
   ```json
-  {"selector":"button:contains(\"Save\")"}
+  {"text":"Save"}
+  ```
+- **button-by-text**: Click button by text
+  ```json
+  {"text":"Submit","tag":"button"}
+  ```
+- **link-by-text**: Click link by text
+  ```json
+  {"text":"Learn more","tag":"a"}
   ```
 - **by-role**: Click by ARIA
   ```json
@@ -383,6 +451,56 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.
 - **slow-scroll**: Slow animated scroll
   ```json
   {"selector":"#section","duration":1000,"easing":"ease-in-out"}
+  ```
+
+---
+
+### `POST /wait`
+
+**Wait for time, element, or condition**
+
+Flexible wait for async UI scenarios. Multiple modes:
+
+- ms: Wait for a fixed time (simple delay)
+- forElement: Poll until element appears (or disappears with hidden:true)
+- Both: Wait for element, then add extra ms delay
+
+All modes support timeout (default 5000ms). Returns immediately if condition already met.
+
+Response: { success: true, waited: ms, found?: boolean }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `ms` | number,null | Milliseconds to wait |
+| `forElement` | string,null | CSS selector to wait for |
+| `hidden` | boolean,null | Wait for element to disappear (default false) |
+| `timeout` | number,null | Max wait time in ms (default 5000) |
+| `pollInterval` | number,null | Polling interval in ms (default 100) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **delay**: Simple 500ms delay
+  ```json
+  {"ms":500}
+  ```
+- **for-element**: Wait for modal to appear
+  ```json
+  {"forElement":".modal"}
+  ```
+- **for-hidden**: Wait for loading to disappear
+  ```json
+  {"forElement":".loading","hidden":true}
+  ```
+- **with-timeout**: Wait up to 10s
+  ```json
+  {"forElement":"button[data-ready]","timeout":10000}
+  ```
+- **element-plus-delay**: Wait for dropdown, then 100ms for animation
+  ```json
+  {"forElement":".dropdown","ms":100}
   ```
 
 ---

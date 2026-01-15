@@ -3,7 +3,7 @@
     "path": "/tree",
     "method": "POST",
     "summary": "Get DOM tree structure",
-    "description": "Returns hierarchical view of page elements. Best for understanding page structure before interacting.\n\nResponse structure:\n  { tag, id?, classes?, attrs?, text?, children?, flags?: { interactive, hidden, hasAria, ... } }\n\nFlags help identify interactive elements (buttons, inputs) and hidden content.",
+    "description": "Returns hierarchical view of page elements. Best for understanding page structure before interacting.\n\nResponse structure:\n  { tag, id?, classes?, attrs?, text?, value?, checked?, children?, flags?: { interactive, hidden, hasAria, ... } }\n\nFlags help identify interactive elements (buttons, inputs) and hidden content.\nForm inputs include live value/checked state (not just HTML attribute).\n\nUse ancestors:true to see parent elements when inspecting deep elements.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -48,6 +48,13 @@
             "null"
           ],
           "description": "Minimal output (default false)"
+        },
+        "ancestors": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include ancestor path from root (default false)"
         },
         "window": {
           "type": [
@@ -147,16 +154,44 @@
     }
   },
   {
-    "path": "/click",
+    "path": "/find",
     "method": "POST",
-    "summary": "Click an element",
-    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
+    "summary": "Find elements by text content",
+    "description": "Search for elements containing specific text. Saves writing querySelector + filter patterns.\n\nReturns first match by default, or all matches with all:true.\n\nResponse: { found: true, selector: \"...\", element: {...} } or { found: true, elements: [...] }",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "selector": {
+        "text": {
           "type": "string",
-          "description": "CSS selector of element to click"
+          "description": "Text to search for (substring match)"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Limit to specific tag (button, a, div, etc)"
+        },
+        "exact": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Require exact text match (default false = substring)"
+        },
+        "all": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return all matches (default false = first only)"
+        },
+        "visible": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only visible elements (default true)"
         },
         "window": {
           "type": [
@@ -167,8 +202,49 @@
         }
       },
       "required": [
-        "selector"
+        "text"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/click",
+    "method": "POST",
+    "summary": "Click an element",
+    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nTwo ways to target elements:\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector of element to click"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Text content to find (alternative to selector)"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Tag name when using text (default: any clickable element)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -426,6 +502,61 @@
             "null"
           ],
           "description": "Vertical alignment: center (default), start, end, nearest"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/wait",
+    "method": "POST",
+    "summary": "Wait for time, element, or condition",
+    "description": "Flexible wait for async UI scenarios. Multiple modes:\n\n- ms: Wait for a fixed time (simple delay)\n- forElement: Poll until element appears (or disappears with hidden:true)\n- Both: Wait for element, then add extra ms delay\n\nAll modes support timeout (default 5000ms). Returns immediately if condition already met.\n\nResponse: { success: true, waited: ms, found?: boolean }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds to wait"
+        },
+        "forElement": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector to wait for"
+        },
+        "hidden": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for element to disappear (default false)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max wait time in ms (default 5000)"
+        },
+        "pollInterval": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Polling interval in ms (default 100)"
         },
         "window": {
           "type": [

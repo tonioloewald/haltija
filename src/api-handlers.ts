@@ -77,9 +77,52 @@ export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 import * as api from './api-schema'
 
 // Click handler - fires full mouse event lifecycle
+// Supports both selector and text-based targeting
 registerHandler(api.click, async (body, ctx) => {
-  const selector = body.selector
   const windowId = body.window || ctx.targetWindowId
+  let selector = body.selector
+  
+  // If text is provided, find the element first
+  if (!selector && body.text) {
+    const tag = body.tag || '*'
+    const findCode = `(function() {
+      const elements = document.querySelectorAll(${JSON.stringify(tag)});
+      const searchText = ${JSON.stringify(body.text)};
+      for (const el of elements) {
+        if (el.textContent && el.textContent.includes(searchText)) {
+          // Generate a unique selector for this element
+          if (el.id) return '#' + el.id;
+          if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+          if (el.className && typeof el.className === 'string') {
+            const classes = el.className.split(' ').filter(c => c && !c.startsWith('-')).slice(0, 2);
+            if (classes.length) return el.tagName.toLowerCase() + '.' + classes.join('.');
+          }
+          // Fallback: use nth-child
+          const parent = el.parentElement;
+          if (parent) {
+            const siblings = Array.from(parent.children);
+            const index = siblings.indexOf(el);
+            return ':scope > ' + el.tagName.toLowerCase() + ':nth-child(' + (index + 1) + ')';
+          }
+          return el.tagName.toLowerCase();
+        }
+      }
+      return null;
+    })()`
+    
+    const findResponse = await ctx.requestFromBrowser('eval', 'exec', { code: findCode }, 5000, windowId)
+    if (!findResponse.success || !findResponse.data) {
+      return Response.json({ 
+        success: false, 
+        error: `Element with text "${body.text}"${body.tag ? ` and tag "${body.tag}"` : ''} not found` 
+      }, { headers: ctx.headers })
+    }
+    selector = findResponse.data
+  }
+  
+  if (!selector) {
+    return Response.json({ success: false, error: 'selector or text is required' }, { status: 400, headers: ctx.headers })
+  }
   
   // Scroll element into view first
   await ctx.requestFromBrowser('eval', 'exec', {
@@ -92,7 +135,7 @@ registerHandler(api.click, async (body, ctx) => {
     await ctx.requestFromBrowser('events', 'dispatch', { selector, event }, 5000, windowId)
   }
   
-  return Response.json({ success: true }, { headers: ctx.headers })
+  return Response.json({ success: true, selector }, { headers: ctx.headers })
 })
 
 // Query handler
@@ -302,6 +345,7 @@ registerHandler(api.tree, async (body, ctx) => {
     compact: body.compact,
     pierceShadow: body.pierceShadow,
     visibleOnly: body.visibleOnly,
+    ancestors: body.ancestors,
   }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
@@ -402,6 +446,125 @@ registerHandler(api.selectCancel, async (_body, ctx) => {
 
 registerHandler(api.selectClear, async (_body, ctx) => {
   const response = await ctx.requestFromBrowser('selection', 'clear', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Wait handler - flexible wait for time, element, or both
+registerHandler(api.wait, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const timeout = body.timeout ?? 5000
+  const pollInterval = body.pollInterval ?? 100
+  const ms = body.ms ?? 0
+  const hidden = body.hidden ?? false
+  const startTime = Date.now()
+  
+  // If waiting for element
+  if (body.forElement) {
+    const selector = body.forElement
+    const checkCode = hidden
+      ? `!document.querySelector(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)}).offsetParent === null`
+      : `!!document.querySelector(${JSON.stringify(selector)}) && document.querySelector(${JSON.stringify(selector)}).offsetParent !== null`
+    
+    while (Date.now() - startTime < timeout) {
+      const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
+      if (checkResponse.success && checkResponse.data === true) {
+        // Element condition met, add extra delay if specified
+        if (ms > 0) await sleep(ms)
+        return Response.json({ 
+          success: true, 
+          waited: Date.now() - startTime + ms, 
+          found: !hidden 
+        }, { headers: ctx.headers })
+      }
+      await sleep(pollInterval)
+    }
+    
+    // Timeout reached
+    return Response.json({ 
+      success: false, 
+      error: hidden 
+        ? `Timeout: element "${selector}" still visible after ${timeout}ms`
+        : `Timeout: element "${selector}" not found after ${timeout}ms`,
+      waited: Date.now() - startTime
+    }, { headers: ctx.headers })
+  }
+  
+  // Simple time wait
+  if (ms > 0) {
+    await sleep(ms)
+    return Response.json({ success: true, waited: ms }, { headers: ctx.headers })
+  }
+  
+  return Response.json({ success: true, waited: 0 }, { headers: ctx.headers })
+})
+
+// Find handler - find elements by text content
+registerHandler(api.find, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const tag = body.tag || '*'
+  const exact = body.exact ?? false
+  const all = body.all ?? false
+  const visible = body.visible ?? true
+  
+  const findCode = `(function() {
+    const elements = document.querySelectorAll(${JSON.stringify(tag)});
+    const searchText = ${JSON.stringify(body.text)};
+    const exact = ${exact};
+    const visibleOnly = ${visible};
+    const results = [];
+    
+    for (const el of elements) {
+      // Check visibility if required
+      if (visibleOnly && (el.offsetParent === null || getComputedStyle(el).visibility === 'hidden')) {
+        continue;
+      }
+      
+      const text = el.textContent?.trim() || '';
+      const matches = exact ? text === searchText : text.includes(searchText);
+      
+      if (matches) {
+        // Generate selector
+        let selector;
+        if (el.id) selector = '#' + el.id;
+        else if (el.getAttribute('data-testid')) selector = '[data-testid="' + el.getAttribute('data-testid') + '"]';
+        else if (el.name) selector = el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+        else if (el.className && typeof el.className === 'string') {
+          const classes = el.className.split(' ').filter(c => c && !c.startsWith('-')).slice(0, 2);
+          if (classes.length) selector = el.tagName.toLowerCase() + '.' + classes.join('.');
+        }
+        if (!selector) {
+          const parent = el.parentElement;
+          if (parent) {
+            const siblings = Array.from(parent.children).filter(s => s.tagName === el.tagName);
+            const index = siblings.indexOf(el);
+            selector = el.tagName.toLowerCase() + ':nth-of-type(' + (index + 1) + ')';
+          } else {
+            selector = el.tagName.toLowerCase();
+          }
+        }
+        
+        const result = {
+          selector,
+          tag: el.tagName.toLowerCase(),
+          text: text.substring(0, 100),
+          id: el.id || undefined,
+          classes: el.className && typeof el.className === 'string' ? el.className.split(' ').filter(Boolean).slice(0, 5) : undefined,
+        };
+        
+        if (!${all}) return { found: true, element: result, selector };
+        results.push(result);
+      }
+    }
+    
+    if (${all}) return { found: results.length > 0, elements: results, count: results.length };
+    return { found: false };
+  })()`
+  
+  const response = await ctx.requestFromBrowser('eval', 'exec', { code: findCode }, 5000, windowId)
+  
+  if (response.success && response.data) {
+    return Response.json({ success: true, ...response.data }, { headers: ctx.headers })
+  }
   return Response.json(response, { headers: ctx.headers })
 })
 
