@@ -832,6 +832,37 @@ test.describe('haltija-dev DOM tree inspector', () => {
     expect(input.flags.interactive).toBe(true)
   })
   
+  test('tree includes part attribute for shadow DOM styling', async ({ page }) => {
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'part-test'
+      container.innerHTML = `
+        <button part="action-button primary">Click me</button>
+        <input part="form-input" type="text">
+        <span part="label status-label">Status</span>
+      `
+      document.body.appendChild(container)
+    })
+    
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#part-test' })
+    })
+    
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    
+    const button = data.data.children.find((c: any) => c.tag === 'button')
+    expect(button.attrs.part).toBe('action-button primary')
+    
+    const input = data.data.children.find((c: any) => c.tag === 'input')
+    expect(input.attrs.part).toBe('form-input')
+    
+    const span = data.data.children.find((c: any) => c.tag === 'span')
+    expect(span.attrs.part).toBe('label status-label')
+  })
+  
   test('tree with custom element detection', async ({ page }) => {
     await page.evaluate(() => {
       // Define a simple custom element
