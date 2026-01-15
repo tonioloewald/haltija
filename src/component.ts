@@ -5396,7 +5396,7 @@ export class DevChannel extends HTMLElement {
       }
       
       // Keep cursor visible briefly, then fade
-      this.hideCursorAfter(1000)
+      this.hideCursorAfter(2000)
       
       this.respond(responseId, true, { 
         typed: text, 
@@ -5716,7 +5716,7 @@ export class DevChannel extends HTMLElement {
       el.dispatchEvent(new MouseEvent('click', mouseOpts))
       
       // Keep cursor visible briefly, then fade
-      this.hideCursorAfter(1000)
+      this.hideCursorAfter(2000)
       
       this.respond(responseId, true, { clicked: payload.selector })
     } catch (err: any) {
@@ -5771,10 +5771,10 @@ export class DevChannel extends HTMLElement {
         position: fixed;
         z-index: 1073741824;
         pointer-events: none;
-        font-size: 32px;
+        font-size: 64px;
         line-height: 1;
-        transform: translate(-50%, -50%);
-        transition: left 0.3s ease-out, top 0.3s ease-out, opacity 0.3s ease-out, filter 0.15s ease-out;
+        transform: translate(-20%, -20%);
+        transition: left 0.3s ease-out, top 0.3s ease-out, opacity 0.5s ease-out, filter 0.15s ease-out;
         opacity: 0;
         filter: drop-shadow(0 0 0px transparent);
         user-select: none;
