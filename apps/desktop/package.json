@@ -1,6 +1,6 @@
 {
   "name": "haltija-desktop",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "description": "Haltija Desktop - God Mode Browser for AI Agents",
   "homepage": "https://github.com/tonioloewald/haltija",
   "author": {
@@ -11,7 +11,8 @@
   "scripts": {
     "start": "electron .",
     "icons": "electron scripts/generate-icons.js",
-    "prebuild": "npm run icons && npm run compile:server",
+    "sync-version": "node -e \"const root = require('../../package.json'); const pkg = require('./package.json'); pkg.version = root.version; require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\\n')\"",
+    "prebuild": "npm run sync-version && npm run icons && npm run compile:server",
     "compile:server": "cd ../.. && bun run build && bun build --compile --target=bun-darwin-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64 && bun build --compile --target=bun-darwin-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && cp dist/component.js apps/desktop/resources/component.js && cp haltija-icon.svg apps/desktop/resources/icon.svg",
     "compile:server:win": "cd ../.. && bun build --compile --target=bun-windows-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64.exe",
     "compile:server:linux": "cd ../.. && bun build --compile --target=bun-linux-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-linux-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64",
@@ -44,21 +45,33 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
     "win": {
       "icon": "icons/icon.png",
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
       "icon": "icons/icon.png",
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "maintainer": "Tonio Loewald <tonio@loewald.com>",
       "category": "Development"
     },
