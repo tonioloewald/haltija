@@ -1173,6 +1173,47 @@ export const endpoints = {
 export const ALL_ENDPOINTS = Object.values(endpoints)
 
 // ============================================
+// Schema Fingerprint (Canary)
+// ============================================
+// This fingerprint must be updated when the schema changes.
+// Run `bun test src/api-schema.test.ts` to get the new fingerprint.
+// This ensures schema changes are intentional and documented.
+
+export const SCHEMA_FINGERPRINT = {
+  updated: '2026-01-15T19:28:47.048Z',
+  checksum: 'b235dc22',
+}
+
+/**
+ * Compute a fingerprint of the schema for change detection.
+ * Sorts endpoints alphabetically and hashes their essential properties.
+ */
+export function computeSchemaFingerprint(): string {
+  // Build a simple representation of each endpoint
+  const parts: string[] = []
+  
+  const names = Object.keys(endpoints).sort()
+  for (const name of names) {
+    const ep = endpoints[name as keyof typeof endpoints]
+    // Get input property names if available
+    const inputProps = ep.input && typeof ep.input === 'object' && 'properties' in ep.input
+      ? Object.keys((ep.input as any).properties || {}).sort().join(',')
+      : ''
+    parts.push(`${name}:${ep.path}:${ep.method}:${inputProps}`)
+  }
+  
+  const str = parts.join('|')
+  
+  // Simple hash function (djb2)
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i)
+    hash = hash >>> 0 // Convert to unsigned 32-bit
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+// ============================================
 // Helpers
 // ============================================
 

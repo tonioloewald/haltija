@@ -20,6 +20,7 @@ import { VERSION } from './version'
 import { generateTestPage } from './test-page'
 import { ICON_SVG } from './embedded-assets'
 import * as api from './api-schema'
+import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
@@ -994,8 +995,12 @@ For complete API reference with all options and response formats:
   // Full API reference endpoint
   if (path === '/api' && req.method === 'GET') {
     const baseUrl = USE_HTTP ? `http://localhost:${PORT}` : `https://localhost:${HTTPS_PORT}`
+    const fingerprint = computeSchemaFingerprint()
+    const fingerprintValid = fingerprint === SCHEMA_FINGERPRINT.checksum
     
     const api = `# ${PRODUCT_NAME} API Reference
+
+Schema: ${SCHEMA_FINGERPRINT.checksum} (${SCHEMA_FINGERPRINT.updated})${fingerprintValid ? '' : ' [MISMATCH: computed=' + fingerprint + ']'}
 
 Complete API documentation. For quick start, see: curl ${baseUrl}/docs
 
