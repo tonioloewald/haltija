@@ -167,7 +167,7 @@
       }
     };
   }
-  function inspectElement(el) {
+  function inspectElement(el, options = {}) {
     const htmlEl = el;
     const rect = el.getBoundingClientRect();
     const computed = getComputedStyle(el);
@@ -271,8 +271,90 @@
         backgroundColor: computed.backgroundColor,
         fontSize: computed.fontSize,
         fontWeight: computed.fontWeight
-      }
+      },
+      allStyles: options.fullStyles ? getAllComputedStyles(computed) : undefined,
+      matchedRules: options.matchedRules ? getMatchedCSSRules(el) : undefined
     };
+  }
+  function getAllComputedStyles(computed) {
+    const styles = {};
+    for (let i = 0;i < computed.length; i++) {
+      const prop = computed[i];
+      styles[prop] = computed.getPropertyValue(prop);
+    }
+    return styles;
+  }
+  function getMatchedCSSRules(el) {
+    const matched = [];
+    const htmlEl = el;
+    if (htmlEl.style && htmlEl.style.length > 0) {
+      const props = {};
+      for (let i = 0;i < htmlEl.style.length; i++) {
+        const prop = htmlEl.style[i];
+        props[prop] = htmlEl.style.getPropertyValue(prop);
+      }
+      matched.push({
+        selector: "[inline]",
+        source: "inline",
+        specificity: [1, 0, 0],
+        properties: props
+      });
+    }
+    for (const sheet of document.styleSheets) {
+      try {
+        if (!sheet.cssRules)
+          continue;
+        const source = sheet.href || sheet.ownerNode?.tagName?.toLowerCase() === "style" ? "<style>" : "unknown";
+        for (const rule of sheet.cssRules) {
+          if (rule instanceof CSSStyleRule) {
+            try {
+              if (el.matches(rule.selectorText)) {
+                const props = {};
+                for (let i = 0;i < rule.style.length; i++) {
+                  const prop = rule.style[i];
+                  props[prop] = rule.style.getPropertyValue(prop);
+                }
+                matched.push({
+                  selector: rule.selectorText,
+                  source: sheet.href || source,
+                  specificity: calculateSpecificity(rule.selectorText),
+                  properties: props
+                });
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    matched.sort((a, b) => {
+      for (let i = 0;i < 3; i++) {
+        if (a.specificity[i] !== b.specificity[i]) {
+          return a.specificity[i] - b.specificity[i];
+        }
+      }
+      return 0;
+    });
+    return matched;
+  }
+  function calculateSpecificity(selector) {
+    let ids = 0;
+    let classes = 0;
+    let elements = 0;
+    const withoutNot = selector.replace(/:not\(([^)]+)\)/g, (_, inner) => {
+      const innerSpec = calculateSpecificity(inner);
+      ids += innerSpec[0];
+      classes += innerSpec[1];
+      elements += innerSpec[2];
+      return "";
+    });
+    ids += (withoutNot.match(/#[a-zA-Z_-][\w-]*/g) || []).length;
+    classes += (withoutNot.match(/\.[a-zA-Z_-][\w-]*/g) || []).length;
+    classes += (withoutNot.match(/\[[^\]]+\]/g) || []).length;
+    classes += (withoutNot.match(/:[a-zA-Z_-][\w-]*/g) || []).length;
+    const elementsOnly = withoutNot.replace(/#[a-zA-Z_-][\w-]*/g, "").replace(/\.[a-zA-Z_-][\w-]*/g, "").replace(/\[[^\]]+\]/g, "").replace(/:[a-zA-Z_-][\w-]*/g, "");
+    elements += (elementsOnly.match(/[a-zA-Z_-][\w-]*/g) || []).length;
+    elements += (withoutNot.match(/::[a-zA-Z_-][\w-]*/g) || []).length;
+    return [ids, classes, elements];
   }
   var FILTER_PRESETS = {
     none: {},
@@ -4088,14 +4170,16 @@
             this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
             return;
           }
-          this.respond(msg2.id, true, inspectElement(el));
+          const opts = { fullStyles: payload2.fullStyles, matchedRules: payload2.matchedRules };
+          this.respond(msg2.id, true, inspectElement(el, opts));
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
       } else if (action2 === "inspectAll") {
         try {
           const elements = document.querySelectorAll(payload2.selector);
-          const results = Array.from(elements).slice(0, payload2.limit || 10).map((el) => inspectElement(el));
+          const opts = { fullStyles: payload2.fullStyles, matchedRules: payload2.matchedRules };
+          const results = Array.from(elements).slice(0, payload2.limit || 10).map((el) => inspectElement(el, opts));
           this.respond(msg2.id, true, results);
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);

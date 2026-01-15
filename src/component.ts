@@ -216,8 +216,14 @@ function extractElement(el: Element): DomElement {
   }
 }
 
+// Options for element inspection
+interface InspectOptions {
+  fullStyles?: boolean
+  matchedRules?: boolean
+}
+
 // Detailed element inspection
-function inspectElement(el: Element): ElementInspection {
+function inspectElement(el: Element, options: InspectOptions = {}): ElementInspection {
   const htmlEl = el as HTMLElement
   const rect = el.getBoundingClientRect()
   const computed = getComputedStyle(el)
@@ -343,7 +349,137 @@ function inspectElement(el: Element): ElementInspection {
       fontSize: computed.fontSize,
       fontWeight: computed.fontWeight,
     },
+    
+    // Include all computed styles if requested
+    allStyles: options.fullStyles ? getAllComputedStyles(computed) : undefined,
+    
+    // Include matched CSS rules if requested
+    matchedRules: options.matchedRules ? getMatchedCSSRules(el) : undefined,
   }
+}
+
+// Extract all computed styles as a plain object
+function getAllComputedStyles(computed: CSSStyleDeclaration): Record<string, string> {
+  const styles: Record<string, string> = {}
+  for (let i = 0; i < computed.length; i++) {
+    const prop = computed[i]
+    styles[prop] = computed.getPropertyValue(prop)
+  }
+  return styles
+}
+
+// Matched CSS rule info
+interface MatchedRule {
+  selector: string
+  source: string  // stylesheet href or 'inline' or '<style>'
+  specificity: [number, number, number]  // [id, class, element]
+  properties: Record<string, string>
+}
+
+// Get all CSS rules that match an element
+function getMatchedCSSRules(el: Element): MatchedRule[] {
+  const matched: MatchedRule[] = []
+  
+  // Check inline styles first (highest specificity)
+  const htmlEl = el as HTMLElement
+  if (htmlEl.style && htmlEl.style.length > 0) {
+    const props: Record<string, string> = {}
+    for (let i = 0; i < htmlEl.style.length; i++) {
+      const prop = htmlEl.style[i]
+      props[prop] = htmlEl.style.getPropertyValue(prop)
+    }
+    matched.push({
+      selector: '[inline]',
+      source: 'inline',
+      specificity: [1, 0, 0],  // Inline styles have highest specificity
+      properties: props,
+    })
+  }
+  
+  // Iterate all stylesheets
+  for (const sheet of document.styleSheets) {
+    try {
+      // Skip if we can't access rules (cross-origin)
+      if (!sheet.cssRules) continue
+      
+      const source = sheet.href || (sheet.ownerNode as HTMLElement)?.tagName?.toLowerCase() === 'style' 
+        ? '<style>' 
+        : 'unknown'
+      
+      for (const rule of sheet.cssRules) {
+        if (rule instanceof CSSStyleRule) {
+          // Check if this rule matches our element
+          try {
+            if (el.matches(rule.selectorText)) {
+              const props: Record<string, string> = {}
+              for (let i = 0; i < rule.style.length; i++) {
+                const prop = rule.style[i]
+                props[prop] = rule.style.getPropertyValue(prop)
+              }
+              matched.push({
+                selector: rule.selectorText,
+                source: sheet.href || source,
+                specificity: calculateSpecificity(rule.selectorText),
+                properties: props,
+              })
+            }
+          } catch {
+            // Invalid selector or matching error - skip
+          }
+        }
+      }
+    } catch {
+      // Cross-origin stylesheet - can't access rules
+    }
+  }
+  
+  // Sort by specificity (lower first, so higher specificity wins later)
+  matched.sort((a, b) => {
+    for (let i = 0; i < 3; i++) {
+      if (a.specificity[i] !== b.specificity[i]) {
+        return a.specificity[i] - b.specificity[i]
+      }
+    }
+    return 0
+  })
+  
+  return matched
+}
+
+// Calculate CSS specificity for a selector
+function calculateSpecificity(selector: string): [number, number, number] {
+  let ids = 0
+  let classes = 0
+  let elements = 0
+  
+  // Remove :not() content but count what's inside
+  const withoutNot = selector.replace(/:not\(([^)]+)\)/g, (_, inner) => {
+    const innerSpec = calculateSpecificity(inner)
+    ids += innerSpec[0]
+    classes += innerSpec[1]
+    elements += innerSpec[2]
+    return ''
+  })
+  
+  // Count IDs (#foo)
+  ids += (withoutNot.match(/#[a-zA-Z_-][\w-]*/g) || []).length
+  
+  // Count classes, attributes, and pseudo-classes (.foo, [attr], :hover)
+  classes += (withoutNot.match(/\.[a-zA-Z_-][\w-]*/g) || []).length
+  classes += (withoutNot.match(/\[[^\]]+\]/g) || []).length
+  classes += (withoutNot.match(/:[a-zA-Z_-][\w-]*/g) || []).length
+  
+  // Count elements and pseudo-elements (div, ::before)
+  // Remove IDs, classes, attributes first
+  const elementsOnly = withoutNot
+    .replace(/#[a-zA-Z_-][\w-]*/g, '')
+    .replace(/\.[a-zA-Z_-][\w-]*/g, '')
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/:[a-zA-Z_-][\w-]*/g, '')
+  elements += (elementsOnly.match(/[a-zA-Z_-][\w-]*/g) || []).length
+  elements += (withoutNot.match(/::[a-zA-Z_-][\w-]*/g) || []).length
+  
+  return [ids, classes, elements]
 }
 
 // ==========================================
@@ -5024,14 +5160,16 @@ export class DevChannel extends HTMLElement {
           this.respond(msg.id, false, null, `Element not found: ${payload.selector}`)
           return
         }
-        this.respond(msg.id, true, inspectElement(el))
+        const opts = { fullStyles: payload.fullStyles, matchedRules: payload.matchedRules }
+        this.respond(msg.id, true, inspectElement(el, opts))
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }
     } else if (action === 'inspectAll') {
       try {
         const elements = document.querySelectorAll(payload.selector)
-        const results = Array.from(elements).slice(0, payload.limit || 10).map(el => inspectElement(el))
+        const opts = { fullStyles: payload.fullStyles, matchedRules: payload.matchedRules }
+        const results = Array.from(elements).slice(0, payload.limit || 10).map(el => inspectElement(el, opts))
         this.respond(msg.id, true, results)
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)

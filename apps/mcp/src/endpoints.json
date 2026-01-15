@@ -98,13 +98,27 @@
     "path": "/inspect",
     "method": "POST",
     "summary": "Deep inspection of an element",
-    "description": "Get everything about ONE element: geometry, computed styles, ARIA attributes, scroll position, visibility state.\n\nResponse includes:\n  - box: { x, y, width, height, visible }\n  - text: { innerText, value, placeholder }\n  - properties: { disabled, checked, hidden, role, ariaLabel, ... }\n  - styles: { display, visibility, opacity, ... }\n  - hierarchy: { parent, children count, depth }\n\nUse before clicking to verify element is visible and enabled.",
+    "description": "Get everything about ONE element: geometry, computed styles, ARIA attributes, scroll position, visibility state.\n\nResponse includes:\n  - box: { x, y, width, height, visible }\n  - text: { innerText, value, placeholder }\n  - properties: { disabled, checked, hidden, role, ariaLabel, ... }\n  - styles: { display, visibility, opacity, ... } (curated subset)\n  - allStyles: { ...all computed styles } (only if fullStyles=true)\n  - matchedRules: [ { selector, source, specificity, properties } ] (only if matchedRules=true)\n  - hierarchy: { parent, children count, depth }\n\nUse before clicking to verify element is visible and enabled.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "selector": {
           "type": "string",
           "description": "CSS selector"
+        },
+        "fullStyles": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include all computed styles (default: false)"
+        },
+        "matchedRules": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include matched CSS rules with specificity (default: false)"
         },
         "window": {
           "type": [
@@ -138,6 +152,20 @@
             "null"
           ],
           "description": "Max elements (default 10)"
+        },
+        "fullStyles": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include all computed styles (default: false)"
+        },
+        "matchedRules": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include matched CSS rules with specificity (default: false)"
         },
         "window": {
           "type": [

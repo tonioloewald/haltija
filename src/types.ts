@@ -165,6 +165,18 @@ export interface ElementInspection {
     fontSize: string
     fontWeight: string
   }
+  
+  // All computed styles (only present if fullStyles=true)
+  allStyles?: Record<string, string>
+  
+  // Matched CSS rules (only present if matchedRules=true)
+  // Sorted by specificity (lowest first), so later rules override earlier
+  matchedRules?: Array<{
+    selector: string
+    source: string  // stylesheet href, 'inline', or '<style>'
+    specificity: [number, number, number]  // [id, class, element]
+    properties: Record<string, string>
+  }>
 }
 
 // ============================================

@@ -100,7 +100,9 @@ Response includes:
   - box: { x, y, width, height, visible }
   - text: { innerText, value, placeholder }
   - properties: { disabled, checked, hidden, role, ariaLabel, ... }
-  - styles: { display, visibility, opacity, ... }
+  - styles: { display, visibility, opacity, ... } (curated subset)
+  - allStyles: { ...all computed styles } (only if fullStyles=true)
+  - matchedRules: [ { selector, source, specificity, properties } ] (only if matchedRules=true)
   - hierarchy: { parent, children count, depth }
 
 Use before clicking to verify element is visible and enabled.
@@ -110,6 +112,8 @@ Use before clicking to verify element is visible and enabled.
 | Name | Type | Description |
 |------|------|-------------|
 | `selector` | string | CSS selector *(required)* |
+| `fullStyles` | boolean,null | Include all computed styles (default: false) |
+| `matchedRules` | boolean,null | Include matched CSS rules with specificity (default: false) |
 | `window` | string,null | Target window ID |
 
 **Examples:**
@@ -144,6 +148,8 @@ Response: array of inspection objects
 |------|------|-------------|
 | `selector` | string | CSS selector *(required)* |
 | `limit` | number,null | Max elements (default 10) |
+| `fullStyles` | boolean,null | Include all computed styles (default: false) |
+| `matchedRules` | boolean,null | Include matched CSS rules with specificity (default: false) |
 | `window` | string,null | Target window ID |
 
 **Examples:**

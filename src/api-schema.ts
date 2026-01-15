@@ -125,13 +125,17 @@ Response includes:
   - box: { x, y, width, height, visible }
   - text: { innerText, value, placeholder }
   - properties: { disabled, checked, hidden, role, ariaLabel, ... }
-  - styles: { display, visibility, opacity, ... }
+  - styles: { display, visibility, opacity, ... } (curated subset)
+  - allStyles: { ...all computed styles } (only if fullStyles=true)
+  - matchedRules: [ { selector, source, specificity, properties } ] (only if matchedRules=true)
   - hierarchy: { parent, children count, depth }
 
 Use before clicking to verify element is visible and enabled.`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
+    fullStyles: s.boolean.describe('Include all computed styles (default: false)').optional,
+    matchedRules: s.boolean.describe('Include matched CSS rules with specificity (default: false)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -159,6 +163,8 @@ Response: array of inspection objects`,
   input: s.object({
     selector: s.string.describe('CSS selector'),
     limit: s.number.describe('Max elements (default 10)').optional,
+    fullStyles: s.boolean.describe('Include all computed styles (default: false)').optional,
+    matchedRules: s.boolean.describe('Include matched CSS rules with specificity (default: false)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [

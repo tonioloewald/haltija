@@ -284,7 +284,11 @@ registerHandler(api.type, async (body, ctx) => {
 // Inspect handler
 registerHandler(api.inspect, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
-  const response = await ctx.requestFromBrowser('dom', 'inspect', { selector: body.selector }, 5000, windowId)
+  const response = await ctx.requestFromBrowser('dom', 'inspect', { 
+    selector: body.selector,
+    fullStyles: body.fullStyles,
+    matchedRules: body.matchedRules,
+  }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
 
@@ -292,7 +296,10 @@ registerHandler(api.inspect, async (body, ctx) => {
 registerHandler(api.inspectAll, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('dom', 'inspectAll', { 
-    selector: body.selector, limit: body.limit || 10 
+    selector: body.selector, 
+    limit: body.limit || 10,
+    fullStyles: body.fullStyles,
+    matchedRules: body.matchedRules,
   }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
