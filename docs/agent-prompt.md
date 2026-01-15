@@ -33,8 +33,10 @@ GET  /status               Health check
 GET  /windows              List connected browser tabs
 GET  /location?window=ID   Current URL of a tab
 POST /tree                 See page structure (use mode:"actionable" for summary)
-POST /click                Click an element
+POST /find                 Find elements by text content
+POST /click                Click an element (by selector or text)
 POST /type                 Type into a field
+POST /wait                 Wait for time or element to appear/disappear
 POST /scroll               Smooth scroll to element or position
 POST /highlight            Show user an element (label it in the browser!)
 POST /call                 Call method or get property on element (cleaner than eval)
@@ -85,11 +87,26 @@ curl -X POST http://localhost:8700/eval \
 
 ## Taking action
 
-### Click
+### Find element by text (useful when you don't know the selector)
 ```bash
+curl -X POST http://localhost:8700/find \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Submit", "tag":"button"}'
+```
+
+Returns: `{found: true, selector: "...", element: {tag, text, id, ...}}`
+
+### Click (by selector or text)
+```bash
+# By selector
 curl -X POST http://localhost:8700/click \
   -H "Content-Type: application/json" \
   -d '{"selector":"#submit-btn"}'
+
+# By text (more reliable for dynamic UIs)
+curl -X POST http://localhost:8700/click \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Submit", "tag":"button"}'
 ```
 
 ### Type
@@ -158,6 +175,24 @@ curl -X POST http://localhost:8700/scroll \
   -d '{"selector":"#pricing-section"}'
 ```
 
+### Wait for async UI
+```bash
+# Wait for time
+curl -X POST http://localhost:8700/wait \
+  -H "Content-Type: application/json" \
+  -d '{"ms":500}'
+
+# Wait for element to appear
+curl -X POST http://localhost:8700/wait \
+  -H "Content-Type: application/json" \
+  -d '{"forElement":".modal", "timeout":5000}'
+
+# Wait for loading spinner to disappear
+curl -X POST http://localhost:8700/wait \
+  -H "Content-Type: application/json" \
+  -d '{"forElement":".loading", "hidden":true}'
+```
+
 ## Watching for changes
 
 ### Semantic events
@@ -216,5 +251,9 @@ All endpoints return:
 
 - The `mode:"actionable"` option for /tree is the fastest way to understand what's on a page
 - `visibleOnly:true` filters out hidden elements (display:none, collapsed details, off-screen)
+- /tree now shows live input values (value, checked) not just HTML attributes
+- Use `ancestors:true` with /tree to see parent element context for deep elements
+- /find and /click with text are more reliable than CSS selectors for dynamic UIs
+- Use /wait to handle async UI updates after clicks (modals, spinners, etc.)
 - The /events endpoint includes network errors - check it when something isn't working
 - Use /eval for custom queries when the built-in endpoints aren't enough
