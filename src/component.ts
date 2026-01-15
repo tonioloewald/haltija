@@ -5766,9 +5766,10 @@ export class DevChannel extends HTMLElement {
     if (!this.cursorOverlay) {
       this.cursorOverlay = document.createElement('div')
       this.cursorOverlay.id = 'haltija-cursor'
+      this.cursorOverlay.dataset.haltija = 'overlay' // Mark for z-index scanners to skip
       this.cursorOverlay.style.cssText = `
         position: fixed;
-        z-index: 2147483647;
+        z-index: 1073741824;
         pointer-events: none;
         font-size: 32px;
         line-height: 1;
@@ -5779,8 +5780,9 @@ export class DevChannel extends HTMLElement {
         user-select: none;
       `
       this.cursorOverlay.textContent = '👆'
-      document.body.appendChild(this.cursorOverlay)
     }
+    // Always re-append to ensure we're last in DOM order
+    document.body.appendChild(this.cursorOverlay)
     return this.cursorOverlay
   }
   
@@ -5791,12 +5793,13 @@ export class DevChannel extends HTMLElement {
     if (!this.subtitleOverlay) {
       this.subtitleOverlay = document.createElement('div')
       this.subtitleOverlay.id = 'haltija-subtitle'
+      this.subtitleOverlay.dataset.haltija = 'overlay' // Mark for z-index scanners to skip
       this.subtitleOverlay.style.cssText = `
         position: fixed;
         bottom: 80px;
         left: 50%;
         transform: translateX(-50%);
-        z-index: 2147483647;
+        z-index: 1073741824;
         pointer-events: none;
         background: rgba(0, 0, 0, 0.8);
         color: white;
@@ -5812,8 +5815,9 @@ export class DevChannel extends HTMLElement {
         user-select: none;
         backdrop-filter: blur(4px);
       `
-      document.body.appendChild(this.subtitleOverlay)
     }
+    // Always re-append to ensure we're last in DOM order
+    document.body.appendChild(this.subtitleOverlay)
     return this.subtitleOverlay
   }
   

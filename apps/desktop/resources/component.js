@@ -4660,9 +4660,10 @@
       if (!this.cursorOverlay) {
         this.cursorOverlay = document.createElement("div");
         this.cursorOverlay.id = "haltija-cursor";
+        this.cursorOverlay.dataset.haltija = "overlay";
         this.cursorOverlay.style.cssText = `
         position: fixed;
-        z-index: 2147483647;
+        z-index: 1073741824;
         pointer-events: none;
         font-size: 32px;
         line-height: 1;
@@ -4673,20 +4674,21 @@
         user-select: none;
       `;
         this.cursorOverlay.textContent = "\uD83D\uDC46";
-        document.body.appendChild(this.cursorOverlay);
       }
+      document.body.appendChild(this.cursorOverlay);
       return this.cursorOverlay;
     }
     ensureSubtitleOverlay() {
       if (!this.subtitleOverlay) {
         this.subtitleOverlay = document.createElement("div");
         this.subtitleOverlay.id = "haltija-subtitle";
+        this.subtitleOverlay.dataset.haltija = "overlay";
         this.subtitleOverlay.style.cssText = `
         position: fixed;
         bottom: 80px;
         left: 50%;
         transform: translateX(-50%);
-        z-index: 2147483647;
+        z-index: 1073741824;
         pointer-events: none;
         background: rgba(0, 0, 0, 0.8);
         color: white;
@@ -4702,8 +4704,8 @@
         user-select: none;
         backdrop-filter: blur(4px);
       `;
-        document.body.appendChild(this.subtitleOverlay);
       }
+      document.body.appendChild(this.subtitleOverlay);
       return this.subtitleOverlay;
     }
     showCursor(x, y, emoji = "\uD83D\uDC46", glow = false) {
