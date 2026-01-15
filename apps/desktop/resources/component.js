@@ -602,8 +602,18 @@
     if (computed.visibility === "hidden") {
       return { visible: false, reason: "visibility" };
     }
-    if (parseFloat(computed.opacity) === 0) {
+    const opacity = parseFloat(computed.opacity);
+    if (opacity === 0) {
       return { visible: false, reason: "opacity" };
+    }
+    if (opacity < 0.05) {
+      return { visible: false, reason: "near-transparent" };
+    }
+    if (computed.pointerEvents === "none") {
+      return { visible: false, reason: "pointer-events-none" };
+    }
+    if (computed.clip === "rect(0px, 0px, 0px, 0px)" || computed.clipPath === "inset(100%)" || computed.clipPath === "polygon(0 0, 0 0, 0 0, 0 0)") {
+      return { visible: false, reason: "clipped" };
     }
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) {
@@ -680,15 +690,14 @@
       summary.summary.totalInteractive++;
       if (vis.visible) {
         summary.summary.visibleInteractive++;
+        summary.buttons.push({
+          text: text.slice(0, 100),
+          selector: getSelector(btn),
+          disabled: htmlBtn.disabled || undefined
+        });
       } else {
         summary.summary.hiddenCount++;
       }
-      summary.buttons.push({
-        text: text.slice(0, 100),
-        selector: getSelector(btn),
-        disabled: htmlBtn.disabled || undefined,
-        hidden: vis.visible ? undefined : true
-      });
     }
     const links = root.querySelectorAll("a[href]");
     for (const link of links) {
@@ -698,17 +707,16 @@
       summary.summary.totalInteractive++;
       if (vis.visible) {
         summary.summary.visibleInteractive++;
+        if (!text && !htmlLink.getAttribute("aria-label"))
+          continue;
+        summary.links.push({
+          text: text.slice(0, 100),
+          href: htmlLink.href,
+          selector: getSelector(link)
+        });
       } else {
         summary.summary.hiddenCount++;
       }
-      if (!text && !htmlLink.getAttribute("aria-label"))
-        continue;
-      summary.links.push({
-        text: text.slice(0, 100),
-        href: htmlLink.href,
-        selector: getSelector(link),
-        hidden: vis.visible ? undefined : true
-      });
     }
     const inputs = root.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea');
     for (const input of inputs) {
@@ -717,20 +725,19 @@
       summary.summary.totalInteractive++;
       if (vis.visible) {
         summary.summary.visibleInteractive++;
+        summary.inputs.push({
+          type: htmlInput.type || "text",
+          name: htmlInput.name || undefined,
+          label: getInputLabel(input),
+          placeholder: htmlInput.placeholder || undefined,
+          value: htmlInput.type === "password" ? undefined : htmlInput.value || undefined,
+          selector: getSelector(input),
+          disabled: htmlInput.disabled || undefined,
+          required: htmlInput.required || undefined
+        });
       } else {
         summary.summary.hiddenCount++;
       }
-      summary.inputs.push({
-        type: htmlInput.type || "text",
-        name: htmlInput.name || undefined,
-        label: getInputLabel(input),
-        placeholder: htmlInput.placeholder || undefined,
-        value: htmlInput.type === "password" ? undefined : htmlInput.value || undefined,
-        selector: getSelector(input),
-        disabled: htmlInput.disabled || undefined,
-        required: htmlInput.required || undefined,
-        hidden: vis.visible ? undefined : true
-      });
     }
     const selects = root.querySelectorAll("select");
     for (const select of selects) {
@@ -739,19 +746,18 @@
       summary.summary.totalInteractive++;
       if (vis.visible) {
         summary.summary.visibleInteractive++;
+        const options = Array.from(htmlSelect.options).map((opt) => opt.text.trim()).slice(0, 20);
+        summary.selects.push({
+          name: htmlSelect.name || undefined,
+          label: getInputLabel(select),
+          options,
+          selected: htmlSelect.options[htmlSelect.selectedIndex]?.text.trim(),
+          selector: getSelector(select),
+          disabled: htmlSelect.disabled || undefined
+        });
       } else {
         summary.summary.hiddenCount++;
       }
-      const options = Array.from(htmlSelect.options).map((opt) => opt.text.trim()).slice(0, 20);
-      summary.selects.push({
-        name: htmlSelect.name || undefined,
-        label: getInputLabel(select),
-        options,
-        selected: htmlSelect.options[htmlSelect.selectedIndex]?.text.trim(),
-        selector: getSelector(select),
-        disabled: htmlSelect.disabled || undefined,
-        hidden: vis.visible ? undefined : true
-      });
     }
     return summary;
   }
@@ -4594,10 +4600,39 @@
         z: ["a", "s", "x"]
       };
     }
+    getHiddenReason(el) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        return "zero-size bounding rect (element not rendered or in hidden container)";
+      }
+      const style = getComputedStyle(el);
+      if (style.display === "none") {
+        return "display: none";
+      }
+      if (style.visibility === "hidden") {
+        return "visibility: hidden";
+      }
+      if (style.opacity === "0") {
+        return "opacity: 0";
+      }
+      const hiddenAncestor = el.closest('[hidden], [aria-hidden="true"]');
+      if (hiddenAncestor) {
+        return `ancestor has hidden attribute: ${hiddenAncestor.tagName.toLowerCase()}${hiddenAncestor.id ? "#" + hiddenAncestor.id : ""}`;
+      }
+      if (el.offsetParent === null && style.position !== "fixed" && el.tagName !== "BODY") {
+        return "offsetParent is null (likely hidden ancestor)";
+      }
+      return null;
+    }
     async performRealisticClick(payload2, responseId) {
       const el = document.querySelector(payload2.selector);
       if (!el) {
         this.respond(responseId, false, null, `Element not found: ${payload2.selector}`);
+        return;
+      }
+      const hiddenReason = this.getHiddenReason(el);
+      if (hiddenReason) {
+        this.respond(responseId, false, null, `Element "${payload2.selector}" is not visible: ${hiddenReason}`);
         return;
       }
       try {
