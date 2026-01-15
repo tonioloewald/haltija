@@ -534,6 +534,48 @@ Return values are JSON-serialized. Promises are awaited.`,
   ],
 })
 
+export const call = endpoint({
+  path: '/call',
+  method: 'POST',
+  summary: 'Call a method or get a property on an element',
+  description: `Call a method or access a property on an element by selector. Convenience wrapper around /eval.
+
+This avoids writing querySelector boilerplate. Two modes:
+- With args (even empty []): Calls element.method(...args) 
+- Without args: Returns element.property value
+
+Return value is JSON-serialized. Promises are awaited.
+
+Response: { success: true, data: <return value> }`,
+  category: 'interaction',
+  input: s.object({
+    selector: s.string.describe('CSS selector of the element'),
+    method: s.string.describe('Method name to call or property name to get'),
+    args: s.array(s.any).describe('Arguments to pass (omit to get property value)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    // Property access (no args)
+    { name: 'get-value', input: { selector: '#email', method: 'value' }, description: 'Get input value' },
+    { name: 'get-checked', input: { selector: '#agree', method: 'checked' }, description: 'Get checkbox state' },
+    { name: 'get-inner-html', input: { selector: '#content', method: 'innerHTML' }, description: 'Get element HTML' },
+    { name: 'get-dataset', input: { selector: '#item', method: 'dataset' }, description: 'Get data attributes' },
+    { name: 'get-open', input: { selector: 'dialog', method: 'open' }, description: 'Check if dialog is open' },
+    // Method calls (with args, even empty)
+    { name: 'show-popover', input: { selector: '#my-popover', method: 'showPopover', args: [] }, description: 'Show a popover element' },
+    { name: 'hide-popover', input: { selector: '#my-popover', method: 'hidePopover', args: [] }, description: 'Hide a popover element' },
+    { name: 'play-video', input: { selector: 'video', method: 'play', args: [] }, description: 'Play a video element' },
+    { name: 'focus', input: { selector: '#email', method: 'focus', args: [] }, description: 'Focus an input element' },
+    { name: 'scroll-into-view', input: { selector: '#section', method: 'scrollIntoView', args: [{ behavior: 'smooth' }] }, description: 'Scroll with options' },
+    { name: 'set-attribute', input: { selector: '#btn', method: 'setAttribute', args: ['disabled', 'true'] }, description: 'Set an attribute' },
+    { name: 'get-bounding-rect', input: { selector: '#box', method: 'getBoundingClientRect', args: [] }, description: 'Get element geometry' },
+  ],
+  invalidExamples: [
+    { name: 'missing-selector', input: { method: 'click' }, error: 'selector is required' },
+    { name: 'missing-method', input: { selector: '#btn' }, error: 'method is required' },
+  ],
+})
+
 // ============================================
 // Screenshots
 // ============================================
@@ -991,6 +1033,7 @@ export const endpoints = {
   // Console & Eval
   console: console_,
   eval: eval_,
+  call,
   
   // Screenshots
   screenshot,
@@ -1078,4 +1121,5 @@ export type DragInput = Infer<typeof drag.input>
 export type HighlightInput = Infer<typeof highlight.input>
 export type NavigateInput = Infer<typeof navigate.input>
 export type EvalInput = Infer<typeof eval_.input>
+export type CallInput = Infer<typeof call.input>
 export type ScreenshotInput = Infer<typeof screenshot.input>

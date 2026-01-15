@@ -37,6 +37,7 @@ POST /click                Click an element
 POST /type                 Type into a field
 POST /scroll               Smooth scroll to element or position
 POST /highlight            Show user an element (label it in the browser!)
+POST /call                 Call method or get property on element (cleaner than eval)
 POST /eval                 Run arbitrary JavaScript (escape hatch)
 GET  /events               Recent semantic events (clicks, typing, errors)
 POST /screenshot           Capture page image (format/scale options)
@@ -60,8 +61,22 @@ curl -X POST http://localhost:8700/tree \
   -d '{"selector":"body", "depth":3, "visibleOnly":true}'
 ```
 
-### Option 3: Custom JavaScript
-When you need something specific:
+### Option 3: Call method or property on element
+When you need to call a method (like showPopover) or get a property (like value):
+```bash
+# Get input value
+curl -X POST http://localhost:8700/call \
+  -H "Content-Type: application/json" \
+  -d '{"selector":"#email", "method":"value"}'
+
+# Call a method
+curl -X POST http://localhost:8700/call \
+  -H "Content-Type: application/json" \
+  -d '{"selector":"#my-popover", "method":"showPopover", "args":[]}'
+```
+
+### Option 4: Custom JavaScript
+When you need something more complex:
 ```bash
 curl -X POST http://localhost:8700/eval \
   -H "Content-Type: application/json" \

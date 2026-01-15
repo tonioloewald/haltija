@@ -653,6 +653,45 @@
     }
   },
   {
+    "path": "/call",
+    "method": "POST",
+    "summary": "Call a method or get a property on an element",
+    "description": "Call a method or access a property on an element by selector. Convenience wrapper around /eval.\n\nThis avoids writing querySelector boilerplate. Two modes:\n- With args (even empty []): Calls element.method(...args) \n- Without args: Returns element.property value\n\nReturn value is JSON-serialized. Promises are awaited.\n\nResponse: { success: true, data: <return value> }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector of the element"
+        },
+        "method": {
+          "type": "string",
+          "description": "Method name to call or property name to get"
+        },
+        "args": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {},
+          "description": "Arguments to pass (omit to get property value)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "selector",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/screenshot",
     "method": "POST",
     "summary": "Capture a screenshot",

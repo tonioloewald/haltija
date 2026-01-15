@@ -364,6 +364,82 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.
 
 ---
 
+### `POST /call`
+
+**Call a method or get a property on an element**
+
+Call a method or access a property on an element by selector. Convenience wrapper around /eval.
+
+This avoids writing querySelector boilerplate. Two modes:
+- With args (even empty []): Calls element.method(...args) 
+- Without args: Returns element.property value
+
+Return value is JSON-serialized. Promises are awaited.
+
+Response: { success: true, data: <return value> }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `selector` | string | CSS selector of the element *(required)* |
+| `method` | string | Method name to call or property name to get *(required)* |
+| `args` | array,null | Arguments to pass (omit to get property value) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **get-value**: Get input value
+  ```json
+  {"selector":"#email","method":"value"}
+  ```
+- **get-checked**: Get checkbox state
+  ```json
+  {"selector":"#agree","method":"checked"}
+  ```
+- **get-inner-html**: Get element HTML
+  ```json
+  {"selector":"#content","method":"innerHTML"}
+  ```
+- **get-dataset**: Get data attributes
+  ```json
+  {"selector":"#item","method":"dataset"}
+  ```
+- **get-open**: Check if dialog is open
+  ```json
+  {"selector":"dialog","method":"open"}
+  ```
+- **show-popover**: Show a popover element
+  ```json
+  {"selector":"#my-popover","method":"showPopover","args":[]}
+  ```
+- **hide-popover**: Hide a popover element
+  ```json
+  {"selector":"#my-popover","method":"hidePopover","args":[]}
+  ```
+- **play-video**: Play a video element
+  ```json
+  {"selector":"video","method":"play","args":[]}
+  ```
+- **focus**: Focus an input element
+  ```json
+  {"selector":"#email","method":"focus","args":[]}
+  ```
+- **scroll-into-view**: Scroll with options
+  ```json
+  {"selector":"#section","method":"scrollIntoView","args":[{"behavior":"smooth"}]}
+  ```
+- **set-attribute**: Set an attribute
+  ```json
+  {"selector":"#btn","method":"setAttribute","args":["disabled","true"]}
+  ```
+- **get-bounding-rect**: Get element geometry
+  ```json
+  {"selector":"#box","method":"getBoundingClientRect","args":[]}
+  ```
+
+---
+
 ## Navigation
 
 ### `POST /navigate`

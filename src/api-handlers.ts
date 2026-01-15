@@ -112,6 +112,53 @@ registerHandler(api.eval_, async (body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
+// Call handler - call method or get property on element
+registerHandler(api.call, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const selector = JSON.stringify(body.selector)
+  const method = body.method
+  const args = body.args
+  
+  let code: string
+  if (args !== undefined) {
+    // Method call mode: element.method(...args)
+    const argsJson = JSON.stringify(args)
+    code = `(function() {
+      const el = document.querySelector(${selector});
+      if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
+      if (typeof el[${JSON.stringify(method)}] !== 'function') {
+        return { success: false, error: 'Method not found: ${method}' };
+      }
+      try {
+        const result = el[${JSON.stringify(method)}](...${argsJson});
+        return result instanceof Promise ? result.then(r => ({ success: true, data: r })) : { success: true, data: result };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    })()`
+  } else {
+    // Property access mode: element.property
+    code = `(function() {
+      const el = document.querySelector(${selector});
+      if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
+      try {
+        const value = el[${JSON.stringify(method)}];
+        return { success: true, data: value };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    })()`
+  }
+  
+  const response = await ctx.requestFromBrowser('eval', 'exec', { code }, 5000, windowId)
+  
+  // The eval returns { success, data } where data is our inner result
+  if (response.success && response.data) {
+    return Response.json(response.data, { headers: ctx.headers })
+  }
+  return Response.json(response, { headers: ctx.headers })
+})
+
 // Drag handler
 registerHandler(api.drag, async (body, ctx) => {
   const selector = body.selector

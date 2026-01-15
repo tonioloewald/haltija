@@ -676,4 +676,63 @@ describe('schema-driven self-documenting endpoints', () => {
     // Should not be a validation error (400)
     expect(res.status).not.toBe(400)
   })
+  
+  it('GET on /call returns schema documentation', async () => {
+    const res = await fetch(`${BASE_URL}/call`)
+    expect(res.ok).toBe(true)
+    
+    const data = await res.json()
+    expect(data.endpoint).toBe('/call')
+    expect(data.method).toBe('POST')
+    expect(data.summary).toBe('Call a method or get a property on an element')
+    expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.method).toBeDefined()
+    expect(data.input.properties.args).toBeDefined()
+    expect(data.input.required).toContain('selector')
+    expect(data.input.required).toContain('method')
+  })
+  
+  it('/call rejects missing selector', async () => {
+    const res = await fetch(`${BASE_URL}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'focus' })
+    })
+    expect(res.status).toBe(400)
+    
+    const data = await res.json()
+    expect(data.error).toContain('selector')
+  })
+  
+  it('/call rejects missing method', async () => {
+    const res = await fetch(`${BASE_URL}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#btn' })
+    })
+    expect(res.status).toBe(400)
+    
+    const data = await res.json()
+    expect(data.error).toContain('method')
+  })
+  
+  it('/call accepts valid input (property access mode)', async () => {
+    // No browser connected so will timeout, but should not be 400
+    const res = await fetch(`${BASE_URL}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#email', method: 'value' })
+    })
+    expect(res.status).not.toBe(400)
+  })
+  
+  it('/call accepts valid input (method call mode)', async () => {
+    // No browser connected so will timeout, but should not be 400
+    const res = await fetch(`${BASE_URL}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#popover', method: 'showPopover', args: [] })
+    })
+    expect(res.status).not.toBe(400)
+  })
 })
