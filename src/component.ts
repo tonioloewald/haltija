@@ -1258,6 +1258,12 @@ export class DevChannel extends HTMLElement {
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
   
+  // Visual cursor overlay (for showing agent actions)
+  private cursorOverlay: HTMLDivElement | null = null
+  private subtitleOverlay: HTMLDivElement | null = null
+  private cursorHideTimeout: ReturnType<typeof setTimeout> | null = null
+  private subtitleHideTimeout: ReturnType<typeof setTimeout> | null = null
+  
   // Log viewer state
   private logPanelOpen = false
   private logAutoScroll = true
@@ -5282,6 +5288,13 @@ export class DevChannel extends HTMLElement {
       const centerX = rect.left + rect.width / 2
       const centerY = rect.top + rect.height / 2
       
+      // Show visual cursor and subtitle
+      const elementLabel = this.getElementLabel(el)
+      const displayText = text.length > 20 ? text.slice(0, 20) + '...' : text
+      this.showCursor(centerX, centerY, '⌨️')
+      this.showSubtitle(`Typing "${displayText}" in ${elementLabel}`, 3000)
+      await this.sleep(100) // Let cursor animate into position
+      
       // Step 1: Focus the element
       await this.focusElement(el, focusMode, centerX, centerY)
       
@@ -5305,6 +5318,7 @@ export class DevChannel extends HTMLElement {
           const typoChar = char === char.toUpperCase() ? wrongChar.toUpperCase() : wrongChar
           
           // Type wrong character
+          this.pulseCursor()
           await this.typeCharacter(el, typoChar, isNativeInput, isContentEditable)
           await this.sleep(delay)
           
@@ -5312,12 +5326,14 @@ export class DevChannel extends HTMLElement {
           await this.sleep(100 + Math.random() * 200)
           
           // Delete the typo
+          this.pulseCursor()
           await this.deleteCharacter(el, isNativeInput, isContentEditable)
           await this.sleep(delay * 0.5)
           typoCount++
         }
         
         // Type the correct character
+        this.pulseCursor()
         await this.typeCharacter(el, char, isNativeInput, isContentEditable)
         
         if (humanlike && delay > 0) {
@@ -5339,6 +5355,9 @@ export class DevChannel extends HTMLElement {
         el.dispatchEvent(new FocusEvent('blur', { bubbles: false }))
         el.blur()
       }
+      
+      // Keep cursor visible briefly, then fade
+      this.hideCursorAfter(1000)
       
       this.respond(responseId, true, { 
         typed: text, 
@@ -5630,12 +5649,20 @@ export class DevChannel extends HTMLElement {
       const y = rect.top + rect.height / 2
       const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }
       
+      // Show visual cursor moving to element
+      const elementLabel = this.getElementLabel(el)
+      this.showCursor(x, y, '👆')
+      this.showSubtitle(`Clicking ${elementLabel}`)
+      await this.sleep(100) // Let cursor animate into position
+      
       // Full mouse lifecycle
       el.dispatchEvent(new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }))
       el.dispatchEvent(new MouseEvent('mouseover', mouseOpts))
       el.dispatchEvent(new MouseEvent('mousemove', mouseOpts))
       await this.sleep(10)
       
+      // Pulse on mousedown
+      this.pulseCursor()
       el.dispatchEvent(new MouseEvent('mousedown', mouseOpts))
       
       // Focus if focusable
@@ -5649,6 +5676,9 @@ export class DevChannel extends HTMLElement {
       el.dispatchEvent(new MouseEvent('mouseup', mouseOpts))
       el.dispatchEvent(new MouseEvent('click', mouseOpts))
       
+      // Keep cursor visible briefly, then fade
+      this.hideCursorAfter(1000)
+      
       this.respond(responseId, true, { clicked: payload.selector })
     } catch (err: any) {
       this.respond(responseId, false, null, err.message)
@@ -5656,10 +5686,197 @@ export class DevChannel extends HTMLElement {
   }
   
   /**
+   * Get a human-readable label for an element (for subtitles)
+   */
+  private getElementLabel(el: HTMLElement): string {
+    // Try various sources for a good label
+    const text = el.textContent?.trim().slice(0, 30)
+    const ariaLabel = el.getAttribute('aria-label')
+    const title = el.getAttribute('title')
+    const placeholder = (el as HTMLInputElement).placeholder
+    const name = (el as HTMLInputElement).name
+    const id = el.id
+    const tagName = el.tagName.toLowerCase()
+    
+    // Prefer meaningful labels
+    if (ariaLabel) return `"${ariaLabel}"`
+    if (title) return `"${title}"`
+    if (text && text.length > 0 && text.length < 30) return `"${text}"`
+    if (placeholder) return `${tagName} "${placeholder}"`
+    if (name) return `${tagName} [${name}]`
+    if (id) return `#${id}`
+    
+    return tagName
+  }
+  
+  /**
    * Promise-based sleep helper
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
+  }
+  
+  // ==========================================
+  // Visual Cursor & Subtitle Overlays
+  // ==========================================
+  
+  /**
+   * Ensure cursor overlay exists in the document
+   */
+  private ensureCursorOverlay(): HTMLDivElement {
+    if (!this.cursorOverlay) {
+      this.cursorOverlay = document.createElement('div')
+      this.cursorOverlay.id = 'haltija-cursor'
+      this.cursorOverlay.style.cssText = `
+        position: fixed;
+        z-index: 2147483647;
+        pointer-events: none;
+        font-size: 32px;
+        line-height: 1;
+        transform: translate(-50%, -50%);
+        transition: left 0.3s ease-out, top 0.3s ease-out, opacity 0.3s ease-out, filter 0.15s ease-out;
+        opacity: 0;
+        filter: drop-shadow(0 0 0px transparent);
+        user-select: none;
+      `
+      this.cursorOverlay.textContent = '👆'
+      document.body.appendChild(this.cursorOverlay)
+    }
+    return this.cursorOverlay
+  }
+  
+  /**
+   * Ensure subtitle overlay exists in the document
+   */
+  private ensureSubtitleOverlay(): HTMLDivElement {
+    if (!this.subtitleOverlay) {
+      this.subtitleOverlay = document.createElement('div')
+      this.subtitleOverlay.id = 'haltija-subtitle'
+      this.subtitleOverlay.style.cssText = `
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        pointer-events: none;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 16px;
+        font-weight: 500;
+        max-width: 80%;
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.3s ease-out;
+        user-select: none;
+        backdrop-filter: blur(4px);
+      `
+      document.body.appendChild(this.subtitleOverlay)
+    }
+    return this.subtitleOverlay
+  }
+  
+  /**
+   * Show cursor at position with optional emoji and glow
+   */
+  private showCursor(x: number, y: number, emoji: string = '👆', glow: boolean = false) {
+    const cursor = this.ensureCursorOverlay()
+    cursor.textContent = emoji
+    cursor.style.left = `${x}px`
+    cursor.style.top = `${y}px`
+    cursor.style.opacity = '1'
+    
+    if (glow) {
+      cursor.style.filter = emoji === '⌨️' 
+        ? 'drop-shadow(0 0 12px rgba(99, 102, 241, 0.9))'
+        : 'drop-shadow(0 0 12px rgba(239, 68, 68, 0.9))'
+    } else {
+      cursor.style.filter = 'drop-shadow(0 0 0px transparent)'
+    }
+    
+    // Clear any pending hide
+    if (this.cursorHideTimeout) {
+      clearTimeout(this.cursorHideTimeout)
+      this.cursorHideTimeout = null
+    }
+  }
+  
+  /**
+   * Pulse the cursor glow (for clicks/keystrokes)
+   */
+  private pulseCursor() {
+    const cursor = this.cursorOverlay
+    if (!cursor) return
+    
+    const emoji = cursor.textContent
+    const glowColor = emoji === '⌨️' 
+      ? 'rgba(99, 102, 241, 0.9)'  // Indigo for typing
+      : 'rgba(239, 68, 68, 0.9)'   // Red for clicking
+    
+    cursor.style.filter = `drop-shadow(0 0 16px ${glowColor})`
+    setTimeout(() => {
+      if (cursor) cursor.style.filter = 'drop-shadow(0 0 4px rgba(99, 102, 241, 0.5))'
+    }, 150)
+  }
+  
+  /**
+   * Hide cursor after delay
+   */
+  private hideCursorAfter(ms: number) {
+    if (this.cursorHideTimeout) {
+      clearTimeout(this.cursorHideTimeout)
+    }
+    this.cursorHideTimeout = setTimeout(() => {
+      if (this.cursorOverlay) {
+        this.cursorOverlay.style.opacity = '0'
+      }
+      this.cursorHideTimeout = null
+    }, ms)
+  }
+  
+  /**
+   * Show subtitle text
+   */
+  private showSubtitle(text: string, durationMs: number = 2000) {
+    const subtitle = this.ensureSubtitleOverlay()
+    subtitle.textContent = text
+    subtitle.style.opacity = '1'
+    
+    // Clear any pending hide
+    if (this.subtitleHideTimeout) {
+      clearTimeout(this.subtitleHideTimeout)
+    }
+    
+    this.subtitleHideTimeout = setTimeout(() => {
+      if (this.subtitleOverlay) {
+        this.subtitleOverlay.style.opacity = '0'
+      }
+      this.subtitleHideTimeout = null
+    }, durationMs)
+  }
+  
+  /**
+   * Clean up overlays when component is disconnected
+   */
+  private cleanupOverlays() {
+    if (this.cursorOverlay) {
+      this.cursorOverlay.remove()
+      this.cursorOverlay = null
+    }
+    if (this.subtitleOverlay) {
+      this.subtitleOverlay.remove()
+      this.subtitleOverlay = null
+    }
+    if (this.cursorHideTimeout) {
+      clearTimeout(this.cursorHideTimeout)
+      this.cursorHideTimeout = null
+    }
+    if (this.subtitleHideTimeout) {
+      clearTimeout(this.subtitleHideTimeout)
+      this.subtitleHideTimeout = null
+    }
   }
   
   private handleRecordingMessage(msg: DevMessage) {
