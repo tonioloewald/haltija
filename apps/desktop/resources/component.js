@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "0.1.8";
+  var VERSION = "0.1.9";
 
   // src/component.ts
   var VERSION2 = VERSION;

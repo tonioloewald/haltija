@@ -50,9 +50,10 @@ All endpoints work with GET (sensible defaults). Use POST to pass options.
 /inspect             Deep inspection of one element: POST {"selector":"#btn"}
 /query               Quick element lookup: POST {"selector":"input"}
 
-### Do things (POST with parameters)
-/click               Click element: POST {"selector":"#btn"} or {"text":"Submit"}
-/type                Type text: POST {"selector":"input", "text":"hello"}
+### Do things (GET or POST)
+/click               Click element: /click?selector=%23btn or POST {"text":"Submit"}
+/type                Type text: /type?selector=input&text=hello
+/key                 Keyboard input: /key?key=Escape or /key?key=s&ctrlKey=true
 /scroll              Scroll to element: POST {"selector":"#section"}
 /highlight           **Show user what you mean**: POST {"selector":"#btn", "label":"Click here"}
 /navigate            Go to URL: POST {"url":"https://..."}
@@ -105,6 +106,15 @@ curl -X POST http://localhost:8700/click -d '{"text":"Submit", "tag":"button"}'
 ### Type
 ```bash
 curl -X POST http://localhost:8700/type -d '{"selector":"input[name=email]", "text":"user@example.com"}'
+```
+
+### Keyboard shortcuts
+```bash
+curl "http://localhost:8700/key?key=Escape"              # Close modal
+curl "http://localhost:8700/key?key=Enter"               # Submit form
+curl "http://localhost:8700/key?key=s&ctrlKey=true"      # Ctrl+S save
+curl "http://localhost:8700/key?key=Tab"                 # Tab to next field
+curl "http://localhost:8700/key?key=ArrowDown&repeat=3"  # Navigate list
 ```
 
 ### Navigate

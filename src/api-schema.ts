@@ -1289,8 +1289,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-16T13:26:10.284Z',
-  checksum: '88b342c3',
+  updated: '2026-01-16T14:06:31.802Z',
+  checksum: '891f63b4',
 }
 
 /**

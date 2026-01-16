@@ -952,18 +952,14 @@ export const API_MD = `# Haltija API Reference
 # Is it working?
 curl localhost:8700/status
 
-# What's on the page? (GET works with defaults)
-curl localhost:8700/tree
+# What tabs are connected?
+curl localhost:8700/windows
 
-# Click something (GET or POST)
-curl "localhost:8700/click?selector=%23submit"
+# What's on the page?
+curl -X POST localhost:8700/tree -d '{"mode":"actionable"}'
 
-# Type into an input
-curl "localhost:8700/type?selector=input&text=hello"
-
-# Send keyboard shortcut
-curl "localhost:8700/key?key=Escape"
-curl "localhost:8700/key?key=s&ctrlKey=true"
+# Click something
+curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
 \`\`\`
 
 ---
@@ -1454,13 +1450,11 @@ Options:
 
 ---
 
-### \`GET|POST /key\`
+### \`POST /key\`
 
 **Send keyboard input**
 
 Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
-
-GET works: \`GET /key?key=Escape\` or \`GET /key?key=s&ctrlKey=true\`
 
 Target element defaults to document.activeElement. Use selector to focus a specific element first.
 
