@@ -7,18 +7,24 @@ Copy this prompt to give an AI agent browser control via Haltija.
 ## The Prompt
 
 ```
-# Haltija - Browser Eyes & Hands
+# Haltija - Browser Understanding
 
 ## What is this?
-A server at http://localhost:8700 that connects you to browser tabs.
-You can see what's on the page, click things, type text, and watch for changes.
+You can see this page as a semantic structure - what's clickable, what's hidden and why, what inputs exist. Not screenshots, not HTML dumps. The page as an agent should see it.
 
-## Why do you care?
-Without this, you're blind - you can't see what the user sees.
-With Haltija you can:
-- See what's visible on the page (not just DOM structure)
+A server at http://localhost:8700 connects you to browser tabs.
+
+## What you can see
+- **Semantic tree**: elements with flags like `interactive`, `hidden`, `hiddenReason`
+- **Why things are hidden**: "display:none" vs "off-screen" vs "zero-size"
+- **Form state**: current input values, which fields are required/disabled
+- **What's actionable**: buttons, links, inputs - not noise
+
+## What you can do
 - Click buttons, fill forms, navigate
-- Know when things change (events, network errors)
+- Watch for changes (console errors, DOM mutations)
+- Take screenshots (webp, scaled down for efficiency)
+- Highlight elements to show the user what you mean
 
 ## Quick start
 
@@ -29,21 +35,29 @@ With Haltija you can:
 
 ## Key endpoints
 
-GET  /status               Health check
+### See the page
+GET  /status               Is it working? How many tabs connected?
 GET  /windows              List connected browser tabs
-GET  /location?window=ID   Current URL of a tab
-POST /tree                 See page structure (use mode:"actionable" for summary)
+GET  /location             Current URL and title
+POST /tree                 **Semantic page structure** (flags: interactive, hidden, hiddenReason)
 POST /find                 Find elements by text content
-POST /click                Click an element (by selector or text)
+POST /inspect              Deep inspection of one element (styles, ARIA, geometry)
+
+### Debug
+GET  /console              **Recent console logs/errors** - check this when things break
+POST /screenshot           **Capture page image** (use scale:0.5, format:"webp" for efficiency)
+GET  /events               Recent semantic events (clicks, typing, network errors)
+
+### Do things
+POST /click                Click element (by selector or text)
 POST /type                 Type into a field
-POST /wait                 Wait for time or element to appear/disappear
-POST /scroll               Smooth scroll to element or position
-POST /highlight            Show user an element (label it in the browser!)
-POST /call                 Call method or get property on element (cleaner than eval)
-POST /eval                 Run arbitrary JavaScript (escape hatch)
-GET  /events               Recent semantic events (clicks, typing, errors)
-POST /screenshot           Capture page image (format/scale options)
-GET  /select/result        Get elements the user has selected (see below)
+POST /scroll               Smooth scroll to element
+POST /highlight            **Show user what you mean** - label elements in their browser!
+POST /wait                 Wait for element to appear/disappear
+
+### Escape hatches
+POST /eval                 Run arbitrary JavaScript
+POST /call                 Call method or get property on element
 
 ## Understanding the page
 
