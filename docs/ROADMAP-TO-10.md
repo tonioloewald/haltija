@@ -63,10 +63,14 @@ Make it impossible for an individual developer to use anything else.
 ### 2.1 Node.js Support
 **Problem**: Bun-only limits adoption. Many teams aren't on Bun yet.
 
-**Solution**:
-- Ensure server runs on Node.js (may already work, needs testing)
-- `npx haltija` as primary install path
-- Bun remains recommended for performance
+**Status**: Server uses `Bun.serve()` - Node.js would require abstracting HTTP layer. Low priority since:
+- Desktop app bundles the server (no runtime dependency)
+- REST/MCP API means any client works regardless of server runtime
+- Bun installs easily: `bunx haltija`
+
+**Solution** (if needed):
+- Abstract HTTP server to support both Bun and Node
+- `npx haltija` as alternative install path
 
 ### 2.2 Browser Extension
 **Problem**: Bookmarklet requires manual click per page. CSP blocks injection on some sites.
@@ -133,20 +137,25 @@ const tree = await h.tree({ depth: 2 })
 
 ---
 
-## Phase 3: Platform Expansion (Low-medium effort, medium impact)
+## Phase 3: Platform Expansion ✅ (Mostly done)
 
-Build script already works on macOS and Linux. Just needs documentation and pre-built binaries.
+Build scripts work for all platforms. v0.1.9 includes:
+- ✅ macOS: DMG (arm64, x64)
+- ✅ Windows: NSIS installer + portable exe
+- ✅ Linux: AppImage + deb (arm64)
 
 ### 3.1 Document Local Build Process
 **Problem**: Users don't know they can build locally.
 
 **Solution**:
-- Document `npm run build` in apps/desktop
+- Document `npm run build:mac/win/linux` in apps/desktop
 - Explain Playwright-like "build where you are" model
 - Add to Quick Start for non-macOS users
 
-### 3.2 Windows Testing
+### 3.2 Windows Testing ✅ (Build works)
 **Problem**: Windows build untested.
+
+**Status**: Build scripts work, produces installer + portable exe. Needs real Windows testing.
 
 **Solution**:
 - Test build script on Windows
