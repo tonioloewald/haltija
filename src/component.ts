@@ -1276,27 +1276,31 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     }
   }
 
-  // Iframe content (if pierceFrames is enabled and element is an iframe)
-  if (pierceFrames && tagName === 'iframe' && currentDepth < maxDepth) {
+  // Iframe info - always show src so agents know what iframes exist
+  if (tagName === 'iframe') {
     const iframe = el as HTMLIFrameElement
-    node.frameSrc = iframe.src || iframe.getAttribute('srcdoc') ? '(srcdoc)' : undefined
+    // Always expose the iframe source URL
+    node.frameSrc = iframe.src || (iframe.getAttribute('srcdoc') ? '(srcdoc)' : undefined)
     
-    try {
-      // This will throw for cross-origin iframes (security restriction)
-      const iframeDoc = iframe.contentDocument
-      if (iframeDoc && iframeDoc.body) {
-        const frameBody = buildDomTree(iframeDoc.body, options, currentDepth + 1)
-        if (frameBody) {
-          node.frameContent = frameBody
-          // Mark that we successfully pierced this frame
-          if (!node.flags) node.flags = {}
-          node.flags.framePierced = true
+    // Only try to pierce frame content if enabled and within depth
+    if (pierceFrames && currentDepth < maxDepth) {
+      try {
+        // This will throw for cross-origin iframes (security restriction)
+        const iframeDoc = iframe.contentDocument
+        if (iframeDoc && iframeDoc.body) {
+          const frameBody = buildDomTree(iframeDoc.body, options, currentDepth + 1)
+          if (frameBody) {
+            node.frameContent = frameBody
+            // Mark that we successfully pierced this frame
+            if (!node.flags) node.flags = {}
+            node.flags.framePierced = true
+          }
         }
+      } catch (e) {
+        // Cross-origin iframe - can't access content
+        if (!node.flags) node.flags = {}
+        node.flags.crossOrigin = true
       }
-    } catch (e) {
-      // Cross-origin iframe - can't access content
-      if (!node.flags) node.flags = {}
-      node.flags.crossOrigin = true
     }
   }
 

@@ -1024,7 +1024,6 @@ For complete API reference with all options and response formats:
     return Response.json({
       ok: windows.size > 0,
       windows: windowList,
-      focused: focusedWindowId,
       serverVersion: SERVER_VERSION,
       // Legacy fields for backwards compatibility
       browsers: browsers.size,

@@ -1033,6 +1033,7 @@ Use ancestors:true to see parent elements when inspecting deep elements.
 | \`includeText\` | boolean,null | Include text content (default true) |
 | \`visibleOnly\` | boolean,null | Only visible elements (default false) |
 | \`pierceShadow\` | boolean,null | Pierce shadow DOM (default true) |
+| \`pierceFrames\` | boolean,null | Pierce same-origin iframes (default true) |
 | \`compact\` | boolean,null | Minimal output (default false) |
 | \`ancestors\` | boolean,null | Include ancestor path from root (default false) |
 | \`window\` | string,null | Target window ID |

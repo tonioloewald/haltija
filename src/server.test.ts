@@ -53,11 +53,14 @@ describe('tosijs-dev server', () => {
       expect(res.ok).toBe(true)
       
       const data = await res.json()
+      expect(data).toHaveProperty('ok')
+      expect(data).toHaveProperty('windows')
+      expect(data).toHaveProperty('serverVersion')
       expect(data).toHaveProperty('browsers')
       expect(data).toHaveProperty('agents')
-      expect(data).toHaveProperty('bufferedMessages')
       expect(typeof data.browsers).toBe('number')
       expect(typeof data.agents).toBe('number')
+      expect(Array.isArray(data.windows)).toBe(true)
     })
   })
   
@@ -571,19 +574,17 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.input.required).toContain('text')
   })
   
-  it('GET on /tree returns schema documentation', async () => {
+  it('GET on /tree uses defaults and returns tree (or error if no browser)', async () => {
+    // GET on /tree now uses defaults and returns tree data, not schema docs
     const res = await fetch(`${BASE_URL}/tree`)
     expect(res.ok).toBe(true)
     
     const data = await res.json()
-    expect(data.endpoint).toBe('/tree')
-    expect(data.method).toBe('POST')
-    expect(data.input.properties.selector).toBeDefined()
-    expect(data.input.properties.depth).toBeDefined()
-    expect(data.input.properties.includeText).toBeDefined()
-    expect(data.input.properties.visibleOnly).toBeDefined()
-    expect(data.input.properties.pierceShadow).toBeDefined()
-    expect(data.input.properties.compact).toBeDefined()
+    // Without a browser connected, we get an error response
+    // but the endpoint should still work and return JSON
+    expect(data).toHaveProperty('success')
+    // If success is false, it means no browser (expected in unit tests)
+    // If success is true, it would have tree data
   })
   
   it('GET on /query returns schema documentation', async () => {
