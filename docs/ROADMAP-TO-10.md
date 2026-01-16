@@ -111,7 +111,7 @@ const tree = await h.tree({ depth: 2 })
 
 **Low priority**: CLI test runner (`bunx haltija run test.json`) - works via API already, CLI feels like regression to Playwright model
 
-**Key differentiator**: We connect to a *live browser* you're already using - no cold start, existing auth/cookies/state preserved. Test the actual thing you're looking at, not a sterile simulation.
+**Key differentiator**: We connect to a *live browser* you're already using - no cold start, existing auth/cookies/state preserved. Test the actual thing you're looking at, not a sterile simulation. Need isolation? Open a new tab - instant fresh context without browser spinup.
 
 ### 2.6 "Flight Recorder" UI
 **Problem**: "Click with Diff" produces powerful data, but it's just JSON.
