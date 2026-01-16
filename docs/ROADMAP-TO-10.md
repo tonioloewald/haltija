@@ -100,14 +100,14 @@ const tree = await h.tree({ depth: 2 })
 - Async/await native
 - Publish to npm
 
-### 2.5 "Watch and Learn" Mode
+### 2.5 "Watch and Learn" Mode ✅ (Mostly done)
 **Problem**: Copy/pasting prompts is low friction, but *zero* friction is better.
 
-**Solution**:
-- User clicks through a workflow manually
-- Haltija emits the exact prompt/schema instructions to replicate it
-- "I just did the task. Here is the prompt to make Claude do it forever."
-- Converts manual exploration into reproducible automation
+**Status**: Recording infrastructure exists (`/recording/start`, `/recording/stop`, `/recording/generate`). Generates test JSON from user actions.
+
+**Remaining**:
+- Add prompt generation option (convert recording to Claude prompt, not just test JSON)
+- Or: document that Claude can read the test JSON and replicate the workflow
 
 ### 2.6 "Flight Recorder" UI
 **Problem**: "Click with Diff" produces powerful data, but it's just JSON.
