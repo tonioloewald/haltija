@@ -6,6 +6,19 @@
 2. **[Getting Started: App](getting-started/app.md)** - Add one script tag to your app
 3. **[Getting Started: Playground](getting-started/playground.md)** - Interactive testing environment
 
+## Recipes
+
+**[Recipes](recipes.md)** - Common workflows with copy-paste examples:
+- Testing login flows
+- Exploring unfamiliar UIs
+- Recording bug reproductions
+- Generating tests from manual exploration
+- Debugging customer issues
+- Accessibility auditing
+- Multi-tab testing (OAuth, admin/user)
+- Waiting for dynamic content
+- User selection ("point at the problem")
+
 ## Reference
 
 - **[API Reference](../API.md)** - Complete endpoint documentation (auto-generated from schema)
@@ -40,6 +53,7 @@ docs/
     service.md               # Start the server
     app.md                   # Add to your app
     playground.md            # Interactive testing
+  recipes.md                 # Common workflows with examples
   EXECUTIVE-SUMMARY.md       # For stakeholders
   ROADMAP-TO-10.md           # Product roadmap
   agent-prompt.md            # AI agent system prompt
