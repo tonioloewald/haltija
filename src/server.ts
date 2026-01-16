@@ -1033,8 +1033,8 @@ All endpoints support CORS and return JSON (except /docs and /api which return t
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
 | /query | POST | {selector, all?} | Query DOM elements (basic info) |
-| /inspect | POST | {selector} | Deep inspect single element |
-| /inspectAll | POST | {selector, limit?} | Deep inspect multiple elements |
+| /inspect | POST | {selector, fullStyles?, matchedRules?} | Deep inspect single element |
+| /inspectAll | POST | {selector, limit?, fullStyles?, matchedRules?} | Deep inspect multiple elements |
 | /tree | POST | {selector, depth?, ...} | Build filterable DOM tree |
 
 ### /query Response
@@ -1049,6 +1049,12 @@ All endpoints support CORS and return JSON (except /docs and /api which return t
   }
 }
 
+### /inspect Options
+| Option | Description |
+|--------|-------------|
+| fullStyles | Include all computed CSS properties (300+) |
+| matchedRules | Include CSS rules that apply with selector, source, specificity |
+
 ### /inspect Response (detailed)
 {
   "selector": "body > form > button#submit",
@@ -1061,7 +1067,9 @@ All endpoints support CORS and return JSON (except /docs and /api which return t
   "dataset": { "testId": "submit-btn" },
   "properties": { "disabled": false, "hidden": false, "isCustomElement": false },
   "hierarchy": { "parent": "form#login", "children": 1, "depth": 4 },
-  "styles": { "display": "inline-block", "visibility": "visible" }
+  "styles": { "display": "inline-block", "visibility": "visible" },
+  "allStyles": { ... },      // only if fullStyles: true
+  "matchedRules": [ ... ]    // only if matchedRules: true
 }
 
 ### /tree Options
