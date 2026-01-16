@@ -1009,24 +1009,28 @@ For complete API reference with all options and response formats:
     return routerResponse
   }
 
-  // Status endpoint
+  // Status endpoint - includes window summary to avoid follow-up /windows call
   if (path === '/status') {
     const mcpStatus = getMcpStatus()
+    
+    // Include compact window list
+    const windowList = Array.from(windows.values()).map(w => ({
+      id: w.id,
+      title: w.title?.slice(0, 50) || '(untitled)',
+      url: w.url,
+      focused: w.id === focusedWindowId,
+    }))
+    
     return Response.json({
+      ok: windows.size > 0,
+      windows: windowList,
+      focused: focusedWindowId,
+      serverVersion: SERVER_VERSION,
+      // Legacy fields for backwards compatibility
       browsers: browsers.size,
       agents: agents.size,
-      bufferedMessages: messageBuffer.length,
-      serverVersion: SERVER_VERSION,
-      serverSessionId: SERVER_SESSION_ID,
       mcp: {
-        claudeDesktop: {
-          configured: mcpStatus.configured,
-          configPath: mcpStatus.configPath,
-        },
-        setupCommand: mcpStatus.setupCommand,
-        hint: mcpStatus.configured 
-          ? 'MCP tools available in Claude Desktop' 
-          : 'Run setupCommand to enable native browser tools in Claude Desktop'
+        configured: mcpStatus.configured,
       }
     }, { headers })
   }
