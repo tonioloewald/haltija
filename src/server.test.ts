@@ -107,9 +107,9 @@ describe('tosijs-dev server', () => {
       
       const api = await res.text()
       expect(api).toContain('API Reference')
-      expect(api).toContain('/inspect Response')
-      expect(api).toContain('/tree Options')
-      expect(api).toContain('Mutation Batch')
+      expect(api).toContain('POST /inspect')
+      expect(api).toContain('POST /tree')
+      expect(api).toContain('Quick Start')
     })
   })
   

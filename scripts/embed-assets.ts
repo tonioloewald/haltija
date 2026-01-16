@@ -33,6 +33,9 @@ const assets = {
   
   // UX Crimes doc
   'docs/UX-CRIMES.md': 'UX_CRIMES_MD',
+  
+  // API reference (auto-generated from schema)
+  'API.md': 'API_MD',
 }
 
 function escapeForTemplate(content: string): string {
