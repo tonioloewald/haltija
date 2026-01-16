@@ -771,6 +771,117 @@ registerHandler(api.find, async (body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
+// Form data handler - extract all form values as structured JSON
+registerHandler(api.formData, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const includeDisabled = body.includeDisabled ?? false
+  const includeHidden = body.includeHidden ?? false
+  const selector = body.selector || 'form'
+  
+  const formCode = `(function() {
+    const form = document.querySelector(${JSON.stringify(selector)});
+    if (!form) return { success: false, error: 'Form not found: ${selector.replace(/'/g, "\\'")}' };
+    
+    const fields = {};
+    const fieldDetails = [];
+    const includeDisabled = ${includeDisabled};
+    const includeHidden = ${includeHidden};
+    
+    // Get all form elements
+    const elements = form.querySelectorAll('input, select, textarea, [contenteditable]');
+    
+    for (const el of elements) {
+      // Skip disabled unless requested
+      if (el.disabled && !includeDisabled) continue;
+      
+      // Skip hidden inputs unless requested
+      if (el.type === 'hidden' && !includeHidden) continue;
+      
+      // Get field name/id
+      const name = el.name || el.id || null;
+      if (!name) continue;
+      
+      let value;
+      let type = el.type || el.tagName.toLowerCase();
+      
+      // Handle different input types
+      if (el.tagName === 'SELECT') {
+        if (el.multiple) {
+          value = Array.from(el.selectedOptions).map(o => o.value);
+          type = 'select-multiple';
+        } else {
+          value = el.value;
+          type = 'select';
+        }
+      } else if (el.type === 'checkbox') {
+        value = el.checked;
+      } else if (el.type === 'radio') {
+        // Only include checked radios
+        if (!el.checked) continue;
+        value = el.value;
+      } else if (el.type === 'file') {
+        value = el.files?.length ? Array.from(el.files).map(f => f.name) : null;
+      } else if (el.isContentEditable) {
+        value = el.textContent;
+        type = 'contenteditable';
+      } else {
+        value = el.value;
+      }
+      
+      fields[name] = value;
+      
+      // Collect field details
+      fieldDetails.push({
+        name,
+        type,
+        value,
+        required: el.required || false,
+        disabled: el.disabled || false,
+        selector: el.id ? '#' + el.id : (el.name ? '[name="' + el.name + '"]' : null),
+      });
+    }
+    
+    // Also check for custom form elements with value property
+    const customElements = form.querySelectorAll('[data-value], [value]');
+    for (const el of customElements) {
+      if (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') continue;
+      const name = el.getAttribute('name') || el.id;
+      if (!name || fields[name] !== undefined) continue;
+      
+      const value = el.dataset?.value ?? el.getAttribute('value') ?? el.value;
+      if (value !== undefined) {
+        fields[name] = value;
+        fieldDetails.push({
+          name,
+          type: 'custom',
+          value,
+          selector: el.id ? '#' + el.id : null,
+        });
+      }
+    }
+    
+    return {
+      success: true,
+      fields,
+      fieldDetails,
+      form: {
+        id: form.id || null,
+        action: form.action || null,
+        method: form.method || 'get',
+        name: form.name || null,
+      },
+      fieldCount: fieldDetails.length,
+    };
+  })()`
+  
+  const response = await ctx.requestFromBrowser('eval', 'exec', { code: formCode }, 5000, windowId)
+  
+  if (response.success && response.data) {
+    return Response.json(response.data, { headers: ctx.headers })
+  }
+  return Response.json(response, { headers: ctx.headers })
+})
+
 // Scroll handler - smooth scroll with easing
 registerHandler(api.scroll, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId

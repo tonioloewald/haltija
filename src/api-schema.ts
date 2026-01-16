@@ -426,6 +426,36 @@ Response: { success: true, waited: ms, found?: boolean }`,
   ],
 })
 
+export const formData = endpoint({
+  path: '/form',
+  method: 'POST',
+  summary: 'Extract all form values as structured JSON',
+  description: `Get all form field values without needing to know the component's API.
+
+Introspects forms and returns structured data:
+- Input values (text, email, password, etc.)
+- Checkbox/radio states
+- Select values (single and multiple)
+- Textarea content
+- Custom form elements with value property
+
+Response: { fields: { name: value, ... }, form: { action, method, id } }
+
+Works with standard forms and most framework components (React, Vue, etc).`,
+  category: 'dom',
+  input: s.object({
+    selector: s.string.describe('Form selector (default: first form on page)').optional,
+    includeDisabled: s.boolean.describe('Include disabled fields (default false)').optional,
+    includeHidden: s.boolean.describe('Include hidden fields (default false)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'first-form', input: {}, description: 'Get data from first form' },
+    { name: 'by-id', input: { selector: '#login-form' }, description: 'Get specific form data' },
+    { name: 'with-hidden', input: { selector: 'form', includeHidden: true }, description: 'Include hidden fields like CSRF tokens' },
+  ],
+})
+
 export const find = endpoint({
   path: '/find',
   method: 'POST',
@@ -1143,6 +1173,7 @@ export const endpoints = {
   inspect,
   inspectAll,
   find,
+  formData,
   
   // Interaction
   click,
@@ -1220,8 +1251,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-16T13:24:57.511Z',
-  checksum: 'b235dc22',
+  updated: '2026-01-16T13:26:10.284Z',
+  checksum: '88b342c3',
 }
 
 /**

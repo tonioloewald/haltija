@@ -335,6 +335,49 @@ Response: { found: true, selector: "...", element: {...} } or { found: true, ele
 
 ---
 
+### `POST /form`
+
+**Extract all form values as structured JSON**
+
+Get all form field values without needing to know the component's API.
+
+Introspects forms and returns structured data:
+- Input values (text, email, password, etc.)
+- Checkbox/radio states
+- Select values (single and multiple)
+- Textarea content
+- Custom form elements with value property
+
+Response: { fields: { name: value, ... }, form: { action, method, id } }
+
+Works with standard forms and most framework components (React, Vue, etc).
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `selector` | string,null | Form selector (default: first form on page) |
+| `includeDisabled` | boolean,null | Include disabled fields (default false) |
+| `includeHidden` | boolean,null | Include hidden fields (default false) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **first-form**: Get data from first form
+  ```json
+  {}
+  ```
+- **by-id**: Get specific form data
+  ```json
+  {"selector":"#login-form"}
+  ```
+- **with-hidden**: Include hidden fields like CSRF tokens
+  ```json
+  {"selector":"form","includeHidden":true}
+  ```
+
+---
+
 ## Do Things
 
 ### `POST /click`

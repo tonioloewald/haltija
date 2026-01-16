@@ -236,6 +236,47 @@
     }
   },
   {
+    "path": "/form",
+    "method": "POST",
+    "summary": "Extract all form values as structured JSON",
+    "description": "Get all form field values without needing to know the component's API.\n\nIntrospects forms and returns structured data:\n- Input values (text, email, password, etc.)\n- Checkbox/radio states\n- Select values (single and multiple)\n- Textarea content\n- Custom form elements with value property\n\nResponse: { fields: { name: value, ... }, form: { action, method, id } }\n\nWorks with standard forms and most framework components (React, Vue, etc).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Form selector (default: first form on page)"
+        },
+        "includeDisabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include disabled fields (default false)"
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include hidden fields (default false)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/click",
     "method": "POST",
     "summary": "Click an element",
