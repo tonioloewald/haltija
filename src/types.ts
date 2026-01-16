@@ -899,6 +899,20 @@ export interface DomTreeNode {
     collapsed?: boolean
     /** Reason why element is not visible (if hidden, offScreen, or collapsed) */
     hiddenReason?: 'display' | 'visibility' | 'hidden-attr' | 'aria-hidden' | 'opacity' | 'zero-size' | 'off-screen' | 'collapsed-details'
+    /** Form field is required */
+    required?: boolean
+    /** Form field is disabled */
+    disabled?: boolean
+    /** Form field is read-only */
+    readOnly?: boolean
+    /** Form field has invalid value */
+    invalid?: boolean
+    /** Browser validation message (when invalid) */
+    validationMessage?: string
+    /** Element would need scroll to be fully visible */
+    wouldScroll?: boolean
+    /** Element currently has focus */
+    focused?: boolean
   }
   /** Position info (if requested) */
   box?: { x: number; y: number; w: number; h: number; visible: boolean }

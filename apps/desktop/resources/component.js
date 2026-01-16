@@ -944,6 +944,33 @@
     if (Array.from(el.attributes).some((a) => a.name.startsWith("aria-") || a.name === "role")) {
       flags.hasAria = true;
     }
+    if (htmlEl instanceof HTMLInputElement || htmlEl instanceof HTMLTextAreaElement || htmlEl instanceof HTMLSelectElement) {
+      if (htmlEl.required) {
+        flags.required = true;
+      }
+      if (htmlEl.disabled) {
+        flags.disabled = true;
+      }
+      if (htmlEl.readOnly) {
+        flags.readOnly = true;
+      }
+      if (!htmlEl.validity.valid) {
+        flags.invalid = true;
+        if (htmlEl.validationMessage) {
+          flags.validationMessage = htmlEl.validationMessage;
+        }
+      }
+    }
+    if (visibility.visible) {
+      const rect = el.getBoundingClientRect();
+      const inViewport = rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth;
+      if (!inViewport && (rect.width > 0 && rect.height > 0)) {
+        flags.wouldScroll = true;
+      }
+    }
+    if (document.activeElement === el) {
+      flags.focused = true;
+    }
     if (Object.keys(flags).length > 0) {
       node.flags = flags;
     }

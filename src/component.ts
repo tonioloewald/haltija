@@ -1153,6 +1153,43 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     flags.hasAria = true
   }
   
+  // Form validation state (for inputs)
+  if (htmlEl instanceof HTMLInputElement || htmlEl instanceof HTMLTextAreaElement || htmlEl instanceof HTMLSelectElement) {
+    if (htmlEl.required) {
+      flags.required = true
+    }
+    if (htmlEl.disabled) {
+      flags.disabled = true
+    }
+    if (htmlEl.readOnly) {
+      flags.readOnly = true
+    }
+    // Validation state
+    if (!htmlEl.validity.valid) {
+      flags.invalid = true
+      if (htmlEl.validationMessage) {
+        flags.validationMessage = htmlEl.validationMessage
+      }
+    }
+  }
+  
+  // Would need scroll to be in view
+  if (visibility.visible) {
+    const rect = el.getBoundingClientRect()
+    const inViewport = rect.top >= 0 && 
+                       rect.bottom <= window.innerHeight && 
+                       rect.left >= 0 && 
+                       rect.right <= window.innerWidth
+    if (!inViewport && (rect.width > 0 && rect.height > 0)) {
+      flags.wouldScroll = true
+    }
+  }
+  
+  // Focusable state
+  if (document.activeElement === el) {
+    flags.focused = true
+  }
+  
   if (Object.keys(flags).length > 0) {
     node.flags = flags
   }
