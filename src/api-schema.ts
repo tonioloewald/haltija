@@ -21,6 +21,8 @@ export interface EndpointExample<T = any> {
   name: string              // Short identifier for the example
   input: T                  // Valid input object
   description?: string      // What this example demonstrates
+  response?: any            // Example response (for documentation)
+  curl?: string             // Example curl command (for documentation)
 }
 
 /** Example of invalid input (for test generation) */
@@ -105,8 +107,21 @@ Response: { tagName, id, className, textContent, attributes: {...} }`,
     all: s.boolean.describe('Return all matches (default false = first only)').optional,
   }),
   examples: [
-    { name: 'by-id', input: { selector: '#submit-btn' }, description: 'Find element by ID' },
-    { name: 'by-text', input: { selector: 'button:contains("Save")' }, description: 'Find button by text' },
+    { 
+      name: 'by-id', 
+      input: { selector: '#submit-btn' }, 
+      description: 'Find element by ID',
+      response: {
+        success: true,
+        data: {
+          tagName: 'button',
+          id: 'submit-btn',
+          className: 'btn primary',
+          textContent: 'Submit',
+          attributes: { id: 'submit-btn', class: 'btn primary', type: 'submit' }
+        }
+      }
+    },
     { name: 'all-inputs', input: { selector: 'input[type="text"]', all: true }, description: 'Find all text inputs' },
   ],
   invalidExamples: [
@@ -139,7 +154,25 @@ Use before clicking to verify element is visible and enabled.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'check-button', input: { selector: '#submit' }, description: 'Verify button is clickable' },
+    { 
+      name: 'check-button', 
+      input: { selector: '#submit' }, 
+      description: 'Verify button is clickable',
+      response: {
+        success: true,
+        data: {
+          selector: 'body > form > button#submit',
+          tagName: 'button',
+          classList: ['btn', 'primary'],
+          box: { x: 100, y: 200, width: 120, height: 40, visible: true, display: 'inline-block', visibility: 'visible', opacity: 1 },
+          text: { innerText: 'Submit', textContent: 'Submit', innerHTML: 'Submit' },
+          attributes: { id: 'submit', class: 'btn primary', type: 'submit' },
+          properties: { disabled: false, hidden: false, type: 'submit' },
+          hierarchy: { parent: 'form#login', children: 0, depth: 4 },
+          styles: { display: 'inline-block', visibility: 'visible', opacity: '1' }
+        }
+      }
+    },
     { name: 'check-input', input: { selector: 'input[name="email"]' }, description: 'Get input state and value' },
   ],
   invalidExamples: [

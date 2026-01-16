@@ -37,13 +37,27 @@ function generateApiMd(): string {
     '',
     '> **Auto-generated from `src/api-schema.ts`** - Do not edit directly.',
     '',
-    'The API is self-documenting: `GET` any `POST` endpoint to see its schema.',
+    '## Quick Start',
+    '',
+    '```bash',
+    '# Is it working?',
+    'curl localhost:8700/status',
+    '',
+    '# What tabs are connected?',
+    'curl localhost:8700/windows',
+    '',
+    "# What's on the page?",
+    'curl -X POST localhost:8700/tree -d \'{"mode":"actionable"}\'',
+    '',
+    '# Click something',
+    'curl -X POST localhost:8700/click -d \'{"selector":"#submit"}\'',
+    '```',
     '',
     '---',
     '',
   ]
 
-  // Group endpoints by category
+  // Group endpoints by category - ordered by "what you need first"
   const byCategory = new Map<string, typeof ALL_ENDPOINTS>()
   for (const ep of ALL_ENDPOINTS) {
     const cat = (ep as any).category || 'other'
@@ -51,19 +65,20 @@ function generateApiMd(): string {
     byCategory.get(cat)!.push(ep)
   }
 
-  const categoryOrder = ['dom', 'interaction', 'navigation', 'mutations', 'events', 'debug', 'selection', 'windows', 'recording', 'testing', 'meta', 'other']
+  // Order by workflow: connect -> see -> do -> watch -> advanced
+  const categoryOrder = ['meta', 'dom', 'interaction', 'navigation', 'events', 'mutations', 'selection', 'windows', 'recording', 'testing', 'debug', 'other']
   const categoryTitles: Record<string, string> = {
-    dom: 'DOM Inspection',
-    interaction: 'Interaction',
-    navigation: 'Navigation',
-    mutations: 'Mutation Watching',
-    events: 'Event Watching',
-    debug: 'Debug & Eval',
-    selection: 'Selection Tool',
-    windows: 'Windows & Tabs',
-    recording: 'Recording',
-    testing: 'Testing',
-    meta: 'Status & Meta',
+    meta: 'Connection & Status',
+    dom: 'See the Page',
+    interaction: 'Do Things',
+    navigation: 'Navigate',
+    events: 'Watch What Happens',
+    mutations: 'Watch DOM Changes',
+    selection: 'User Selection',
+    windows: 'Multiple Tabs',
+    recording: 'Record & Replay',
+    testing: 'Run Tests',
+    debug: 'Escape Hatches',
     other: 'Other',
   }
 
@@ -115,6 +130,21 @@ function generateApiMd(): string {
           lines.push('  ```json')
           lines.push(`  ${JSON.stringify(ex.input)}`)
           lines.push('  ```')
+          
+          // Include response example if present
+          if (ex.response) {
+            lines.push('  Response:')
+            lines.push('  ```json')
+            lines.push(`  ${JSON.stringify(ex.response, null, 2).split('\n').join('\n  ')}`)
+            lines.push('  ```')
+          }
+          
+          // Include curl example if present
+          if (ex.curl) {
+            lines.push('  ```bash')
+            lines.push(`  ${ex.curl}`)
+            lines.push('  ```')
+          }
         }
         lines.push('')
       }

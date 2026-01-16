@@ -2,11 +2,69 @@
 
 > **Auto-generated from `src/api-schema.ts`** - Do not edit directly.
 
-The API is self-documenting: `GET` any `POST` endpoint to see its schema.
+## Quick Start
+
+```bash
+# Is it working?
+curl localhost:8700/status
+
+# What tabs are connected?
+curl localhost:8700/windows
+
+# What's on the page?
+curl -X POST localhost:8700/tree -d '{"mode":"actionable"}'
+
+# Click something
+curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
+```
 
 ---
 
-## DOM Inspection
+## Connection & Status
+
+### `GET /status`
+
+**Server status**
+
+Returns server info and connected browser count.
+
+Response: { version, uptime, browsers: n, focused?: windowId }
+
+Use to verify server is running and browsers are connected before testing.
+
+---
+
+### `GET /version`
+
+**Get server version**
+
+Returns the Haltija server version.
+
+Response: { version: "1.0.0" }
+
+---
+
+### `GET /docs`
+
+**Quick start guide**
+
+Human-readable getting started docs for AI agents.
+
+Returns markdown-formatted quick start guide with common workflows.
+
+---
+
+### `GET /api`
+
+**Full API reference**
+
+Complete API documentation with all endpoints.
+
+Returns structured JSON with all endpoints, their parameters, and examples.
+
+---
+
+## See the Page
 
 ### `POST /tree`
 
@@ -79,9 +137,22 @@ Response: { tagName, id, className, textContent, attributes: {...} }
   ```json
   {"selector":"#submit-btn"}
   ```
-- **by-text**: Find button by text
+  Response:
   ```json
-  {"selector":"button:contains(\"Save\")"}
+  {
+    "success": true,
+    "data": {
+      "tagName": "button",
+      "id": "submit-btn",
+      "className": "btn primary",
+      "textContent": "Submit",
+      "attributes": {
+        "id": "submit-btn",
+        "class": "btn primary",
+        "type": "submit"
+      }
+    }
+  }
   ```
 - **all-inputs**: Find all text inputs
   ```json
@@ -121,6 +192,55 @@ Use before clicking to verify element is visible and enabled.
 - **check-button**: Verify button is clickable
   ```json
   {"selector":"#submit"}
+  ```
+  Response:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "selector": "body > form > button#submit",
+      "tagName": "button",
+      "classList": [
+        "btn",
+        "primary"
+      ],
+      "box": {
+        "x": 100,
+        "y": 200,
+        "width": 120,
+        "height": 40,
+        "visible": true,
+        "display": "inline-block",
+        "visibility": "visible",
+        "opacity": 1
+      },
+      "text": {
+        "innerText": "Submit",
+        "textContent": "Submit",
+        "innerHTML": "Submit"
+      },
+      "attributes": {
+        "id": "submit",
+        "class": "btn primary",
+        "type": "submit"
+      },
+      "properties": {
+        "disabled": false,
+        "hidden": false,
+        "type": "submit"
+      },
+      "hierarchy": {
+        "parent": "form#login",
+        "children": 0,
+        "depth": 4
+      },
+      "styles": {
+        "display": "inline-block",
+        "visibility": "visible",
+        "opacity": "1"
+      }
+    }
+  }
   ```
 - **check-input**: Get input state and value
   ```json
@@ -215,7 +335,7 @@ Response: { found: true, selector: "...", element: {...} } or { found: true, ele
 
 ---
 
-## Interaction
+## Do Things
 
 ### `POST /click`
 
@@ -587,7 +707,7 @@ Response: { success: true, data: <return value> }
 
 ---
 
-## Navigation
+## Navigate
 
 ### `POST /navigate`
 
@@ -655,71 +775,7 @@ Use after /navigate to verify you're on the expected page.
 
 ---
 
-## Mutation Watching
-
-### `POST /mutations/watch`
-
-**Start watching DOM mutations**
-
-Begin capturing DOM changes: elements added/removed, attributes changed, text modified.
-
-Presets filter out framework noise:
-- smart (default): Auto-detects React, Tailwind, etc.
-- minimal: Only element add/remove
-- none: Everything (noisy)
-
-Get captured mutations via /mutations/status.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `root` | string,null | Root selector to watch (default body) |
-| `childList` | boolean,null | Watch child additions/removals (default true) |
-| `attributes` | boolean,null | Watch attribute changes (default true) |
-| `characterData` | boolean,null | Watch text content changes (default false) |
-| `subtree` | boolean,null | Watch all descendants (default true) |
-| `debounce` | number,null | Debounce ms (default 100) |
-| `preset` | string,null | Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none |
-| `filters` | ,null | Custom filter configuration |
-| `pierceShadow` | boolean,null | Watch inside shadow DOM (default false) |
-
-**Examples:**
-
-- **default**: Watch all DOM changes with smart filtering
-  ```json
-  {}
-  ```
-- **form-only**: Watch form for new elements
-  ```json
-  {"root":"form","preset":"minimal"}
-  ```
-- **react-app**: Filter React internals
-  ```json
-  {"preset":"react"}
-  ```
-
----
-
-### `POST /mutations/unwatch`
-
-**Stop watching mutations**
-
-Stop capturing DOM mutations. Call this when done to free resources.
-
----
-
-### `GET /mutations/status`
-
-**Get mutation watch status**
-
-Check if mutation watching is active and get captured mutations.
-
-Response: { watching: boolean, mutations: [...], summary: { added, removed, changed } }
-
----
-
-## Event Watching
+## Watch What Happens
 
 ### `POST /events/watch`
 
@@ -793,7 +849,381 @@ Typically see 90%+ reduction (e.g., 2000 raw events → 80 semantic events).
 
 ---
 
-## Debug & Eval
+## Watch DOM Changes
+
+### `POST /mutations/watch`
+
+**Start watching DOM mutations**
+
+Begin capturing DOM changes: elements added/removed, attributes changed, text modified.
+
+Presets filter out framework noise:
+- smart (default): Auto-detects React, Tailwind, etc.
+- minimal: Only element add/remove
+- none: Everything (noisy)
+
+Get captured mutations via /mutations/status.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `root` | string,null | Root selector to watch (default body) |
+| `childList` | boolean,null | Watch child additions/removals (default true) |
+| `attributes` | boolean,null | Watch attribute changes (default true) |
+| `characterData` | boolean,null | Watch text content changes (default false) |
+| `subtree` | boolean,null | Watch all descendants (default true) |
+| `debounce` | number,null | Debounce ms (default 100) |
+| `preset` | string,null | Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none |
+| `filters` | ,null | Custom filter configuration |
+| `pierceShadow` | boolean,null | Watch inside shadow DOM (default false) |
+
+**Examples:**
+
+- **default**: Watch all DOM changes with smart filtering
+  ```json
+  {}
+  ```
+- **form-only**: Watch form for new elements
+  ```json
+  {"root":"form","preset":"minimal"}
+  ```
+- **react-app**: Filter React internals
+  ```json
+  {"preset":"react"}
+  ```
+
+---
+
+### `POST /mutations/unwatch`
+
+**Stop watching mutations**
+
+Stop capturing DOM mutations. Call this when done to free resources.
+
+---
+
+### `GET /mutations/status`
+
+**Get mutation watch status**
+
+Check if mutation watching is active and get captured mutations.
+
+Response: { watching: boolean, mutations: [...], summary: { added, removed, changed } }
+
+---
+
+## User Selection
+
+### `POST /select/start`
+
+**Start interactive selection**
+
+Let user drag to select a region on the page.
+
+After calling this, the user can draw a rectangle on the page.
+Call /select/result to get the elements within the selection.
+
+Response: { success: true, message: "Selection mode active" }
+
+---
+
+### `POST /select/cancel`
+
+**Cancel selection mode**
+
+Exit selection mode without capturing. Use if user changed their mind.
+
+---
+
+### `GET /select/status`
+
+**Check if selection is active**
+
+Check whether selection mode is currently active.
+
+Response: { active: boolean, hasResult: boolean }
+
+---
+
+### `GET /select/result`
+
+**Get selection result**
+
+After user completes selection, returns the region and elements within.
+
+Response: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }
+
+Use the selectors from this response in subsequent /click or /type calls.
+
+---
+
+### `POST /select/clear`
+
+**Clear selection result**
+
+Clear any stored selection result. Use before starting a new selection.
+
+---
+
+## Multiple Tabs
+
+### `GET /windows`
+
+**List connected windows**
+
+Returns all connected browser windows/tabs with IDs, URLs, and titles.
+
+Response: { windows: [{ id, url, title, focused }] }
+
+Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
+
+---
+
+### `POST /tabs/open`
+
+**Open a new tab**
+
+Desktop app only. Opens a new tab with optional URL.
+
+If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `url` | string,null | URL to open |
+
+**Examples:**
+
+- **blank**: Open blank tab
+  ```json
+  {}
+  ```
+- **with-url**: Open tab with URL
+  ```json
+  {"url":"https://example.com"}
+  ```
+
+---
+
+### `POST /tabs/close`
+
+**Close a tab**
+
+Desktop app only. Closes the specified tab by window ID.
+
+Get window IDs from /windows endpoint.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `window` | string | Window ID to close *(required)* |
+
+**Examples:**
+
+- **close**: Close specific tab
+  ```json
+  {"window":"window-abc123"}
+  ```
+
+---
+
+### `POST /tabs/focus`
+
+**Focus a tab**
+
+Desktop app only. Brings the specified tab to front.
+
+Useful when working with multiple tabs to ensure the right one is visible.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `window` | string | Window ID to focus *(required)* |
+
+**Examples:**
+
+- **focus**: Bring tab to front
+  ```json
+  {"window":"window-abc123"}
+  ```
+
+---
+
+## Record & Replay
+
+### `POST /recording/start`
+
+**Start recording user actions**
+
+Begin capturing user interactions as semantic events.
+
+The recording captures clicks, typing, navigation, and more.
+Use /recording/stop to finish, then /recording/generate to create a test.
+
+---
+
+### `POST /recording/stop`
+
+**Stop recording**
+
+Stop capturing user actions.
+
+Response: { events: [...], duration: ms, eventCount: n }
+
+After stopping, use /recording/generate to convert events to a test.
+
+---
+
+### `POST /recording/generate`
+
+**Generate test from recording**
+
+Converts recorded semantic events into a JSON test file.
+
+The generated test can be run with /test/run or saved for later use.
+
+Response: { test: { version, name, url, steps: [...] } }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `name` | string,null | Test name |
+
+**Examples:**
+
+- **named**: Generate with custom name
+  ```json
+  {"name":"Login flow test"}
+  ```
+- **default**: Generate with auto-generated name
+  ```json
+  {}
+  ```
+
+---
+
+### `GET /recordings`
+
+**List saved recordings**
+
+List all saved recordings on the server.
+
+Response: { recordings: [{ name, created, eventCount, duration }] }
+
+---
+
+## Run Tests
+
+### `POST /test/run`
+
+**Run a JSON test**
+
+Execute a test defined in Haltija JSON format.
+
+Test structure:
+{
+  "version": 1,
+  "name": "Login flow",
+  "url": "http://localhost:3000/login",
+  "steps": [
+    { "action": "type", "selector": "#email", "text": "user@example.com" },
+    { "action": "type", "selector": "#password", "text": "secret123" },
+    { "action": "click", "selector": "button[type=submit]" },
+    { "action": "assert", "assertion": { "type": "url", "pattern": "/dashboard" } }
+  ]
+}
+
+Step actions: navigate, click, type, key, wait, assert, eval, verify
+
+Output formats:
+- json: Structured result with step-by-step details
+- github: Annotations for GitHub Actions + markdown summary
+- human: Colored terminal output
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `test` | any | Test object with steps *(required)* |
+| `format` | string,null | Output format: json (structured), github (annotations + summary), human (readable) |
+| `stepDelay` | number,null | Milliseconds between steps (default 100) |
+| `timeout` | number,null | Milliseconds timeout per step (default 5000) |
+| `stopOnFailure` | boolean,null | Stop on first failure (default true) |
+
+**Examples:**
+
+- **simple-test**: Simple click and verify
+  ```json
+  {"test":{"version":1,"name":"Click button","url":"http://localhost:3000","steps":[{"action":"click","selector":"#submit"},{"action":"assert","assertion":{"type":"exists","selector":".success"}}]}}
+  ```
+- **github-output**: Get GitHub Actions format
+  ```json
+  {"test":{"version":1,"name":"Test","url":"http://localhost:3000","steps":[]},"format":"github"}
+  ```
+
+---
+
+### `POST /test/suite`
+
+**Run multiple tests**
+
+Execute a suite of tests, optionally stopping on first failure.
+
+Input: { tests: [test1, test2, ...], format?, stopOnFailure? }
+
+Response includes per-test results and overall summary.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `tests` | array | Array of test objects *(required)* |
+| `format` | string,null | Output format: json (structured), github (annotations + summary), human (readable) |
+| `testDelay` | number,null | Milliseconds between tests (default 500) |
+| `stepDelay` | number,null | Milliseconds between steps (default 100) |
+| `timeout` | number,null | Milliseconds timeout per step (default 5000) |
+| `stopOnFailure` | boolean,null | Stop on first failure (default false for suites) |
+
+**Examples:**
+
+- **two-tests**: Run two tests, continue on failure
+  ```json
+  {"tests":[{"version":1,"name":"Login","url":"http://localhost:3000/login","steps":[]},{"version":1,"name":"Dashboard","url":"http://localhost:3000/dashboard","steps":[]}],"stopOnFailure":false}
+  ```
+
+---
+
+### `POST /test/validate`
+
+**Validate test without running**
+
+Check that a test is well-formed and all selectors exist on the current page.
+
+Use this to pre-check tests before running. Returns validation errors without executing steps.
+
+Response: { valid: boolean, errors?: [{ step?, message }] }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `test` | any | Test object to validate *(required)* |
+
+**Examples:**
+
+- **validate**: Validate test before running
+  ```json
+  {"test":{"version":1,"name":"Test","url":"http://localhost:3000","steps":[{"action":"click","selector":"#btn"}]}}
+  ```
+
+---
+
+## Escape Hatches
 
 ### `GET /console`
 
@@ -913,359 +1343,5 @@ Great for debugging test failures - call this when something goes wrong.
   ```json
   {"trigger":"test-failure","context":{"step":3,"error":"Element not found"}}
   ```
-
----
-
-## Selection Tool
-
-### `POST /select/start`
-
-**Start interactive selection**
-
-Let user drag to select a region on the page.
-
-After calling this, the user can draw a rectangle on the page.
-Call /select/result to get the elements within the selection.
-
-Response: { success: true, message: "Selection mode active" }
-
----
-
-### `POST /select/cancel`
-
-**Cancel selection mode**
-
-Exit selection mode without capturing. Use if user changed their mind.
-
----
-
-### `GET /select/status`
-
-**Check if selection is active**
-
-Check whether selection mode is currently active.
-
-Response: { active: boolean, hasResult: boolean }
-
----
-
-### `GET /select/result`
-
-**Get selection result**
-
-After user completes selection, returns the region and elements within.
-
-Response: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }
-
-Use the selectors from this response in subsequent /click or /type calls.
-
----
-
-### `POST /select/clear`
-
-**Clear selection result**
-
-Clear any stored selection result. Use before starting a new selection.
-
----
-
-## Windows & Tabs
-
-### `GET /windows`
-
-**List connected windows**
-
-Returns all connected browser windows/tabs with IDs, URLs, and titles.
-
-Response: { windows: [{ id, url, title, focused }] }
-
-Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
-
----
-
-### `POST /tabs/open`
-
-**Open a new tab**
-
-Desktop app only. Opens a new tab with optional URL.
-
-If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `url` | string,null | URL to open |
-
-**Examples:**
-
-- **blank**: Open blank tab
-  ```json
-  {}
-  ```
-- **with-url**: Open tab with URL
-  ```json
-  {"url":"https://example.com"}
-  ```
-
----
-
-### `POST /tabs/close`
-
-**Close a tab**
-
-Desktop app only. Closes the specified tab by window ID.
-
-Get window IDs from /windows endpoint.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `window` | string | Window ID to close *(required)* |
-
-**Examples:**
-
-- **close**: Close specific tab
-  ```json
-  {"window":"window-abc123"}
-  ```
-
----
-
-### `POST /tabs/focus`
-
-**Focus a tab**
-
-Desktop app only. Brings the specified tab to front.
-
-Useful when working with multiple tabs to ensure the right one is visible.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `window` | string | Window ID to focus *(required)* |
-
-**Examples:**
-
-- **focus**: Bring tab to front
-  ```json
-  {"window":"window-abc123"}
-  ```
-
----
-
-## Recording
-
-### `POST /recording/start`
-
-**Start recording user actions**
-
-Begin capturing user interactions as semantic events.
-
-The recording captures clicks, typing, navigation, and more.
-Use /recording/stop to finish, then /recording/generate to create a test.
-
----
-
-### `POST /recording/stop`
-
-**Stop recording**
-
-Stop capturing user actions.
-
-Response: { events: [...], duration: ms, eventCount: n }
-
-After stopping, use /recording/generate to convert events to a test.
-
----
-
-### `POST /recording/generate`
-
-**Generate test from recording**
-
-Converts recorded semantic events into a JSON test file.
-
-The generated test can be run with /test/run or saved for later use.
-
-Response: { test: { version, name, url, steps: [...] } }
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `name` | string,null | Test name |
-
-**Examples:**
-
-- **named**: Generate with custom name
-  ```json
-  {"name":"Login flow test"}
-  ```
-- **default**: Generate with auto-generated name
-  ```json
-  {}
-  ```
-
----
-
-### `GET /recordings`
-
-**List saved recordings**
-
-List all saved recordings on the server.
-
-Response: { recordings: [{ name, created, eventCount, duration }] }
-
----
-
-## Testing
-
-### `POST /test/run`
-
-**Run a JSON test**
-
-Execute a test defined in Haltija JSON format.
-
-Test structure:
-{
-  "version": 1,
-  "name": "Login flow",
-  "url": "http://localhost:3000/login",
-  "steps": [
-    { "action": "type", "selector": "#email", "text": "user@example.com" },
-    { "action": "type", "selector": "#password", "text": "secret123" },
-    { "action": "click", "selector": "button[type=submit]" },
-    { "action": "assert", "assertion": { "type": "url", "pattern": "/dashboard" } }
-  ]
-}
-
-Step actions: navigate, click, type, key, wait, assert, eval, verify
-
-Output formats:
-- json: Structured result with step-by-step details
-- github: Annotations for GitHub Actions + markdown summary
-- human: Colored terminal output
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `test` | any | Test object with steps *(required)* |
-| `format` | string,null | Output format: json (structured), github (annotations + summary), human (readable) |
-| `stepDelay` | number,null | Milliseconds between steps (default 100) |
-| `timeout` | number,null | Milliseconds timeout per step (default 5000) |
-| `stopOnFailure` | boolean,null | Stop on first failure (default true) |
-
-**Examples:**
-
-- **simple-test**: Simple click and verify
-  ```json
-  {"test":{"version":1,"name":"Click button","url":"http://localhost:3000","steps":[{"action":"click","selector":"#submit"},{"action":"assert","assertion":{"type":"exists","selector":".success"}}]}}
-  ```
-- **github-output**: Get GitHub Actions format
-  ```json
-  {"test":{"version":1,"name":"Test","url":"http://localhost:3000","steps":[]},"format":"github"}
-  ```
-
----
-
-### `POST /test/suite`
-
-**Run multiple tests**
-
-Execute a suite of tests, optionally stopping on first failure.
-
-Input: { tests: [test1, test2, ...], format?, stopOnFailure? }
-
-Response includes per-test results and overall summary.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `tests` | array | Array of test objects *(required)* |
-| `format` | string,null | Output format: json (structured), github (annotations + summary), human (readable) |
-| `testDelay` | number,null | Milliseconds between tests (default 500) |
-| `stepDelay` | number,null | Milliseconds between steps (default 100) |
-| `timeout` | number,null | Milliseconds timeout per step (default 5000) |
-| `stopOnFailure` | boolean,null | Stop on first failure (default false for suites) |
-
-**Examples:**
-
-- **two-tests**: Run two tests, continue on failure
-  ```json
-  {"tests":[{"version":1,"name":"Login","url":"http://localhost:3000/login","steps":[]},{"version":1,"name":"Dashboard","url":"http://localhost:3000/dashboard","steps":[]}],"stopOnFailure":false}
-  ```
-
----
-
-### `POST /test/validate`
-
-**Validate test without running**
-
-Check that a test is well-formed and all selectors exist on the current page.
-
-Use this to pre-check tests before running. Returns validation errors without executing steps.
-
-Response: { valid: boolean, errors?: [{ step?, message }] }
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `test` | any | Test object to validate *(required)* |
-
-**Examples:**
-
-- **validate**: Validate test before running
-  ```json
-  {"test":{"version":1,"name":"Test","url":"http://localhost:3000","steps":[{"action":"click","selector":"#btn"}]}}
-  ```
-
----
-
-## Status & Meta
-
-### `GET /status`
-
-**Server status**
-
-Returns server info and connected browser count.
-
-Response: { version, uptime, browsers: n, focused?: windowId }
-
-Use to verify server is running and browsers are connected before testing.
-
----
-
-### `GET /version`
-
-**Get server version**
-
-Returns the Haltija server version.
-
-Response: { version: "1.0.0" }
-
----
-
-### `GET /docs`
-
-**Quick start guide**
-
-Human-readable getting started docs for AI agents.
-
-Returns markdown-formatted quick start guide with common workflows.
-
----
-
-### `GET /api`
-
-**Full API reference**
-
-Complete API documentation with all endpoints.
-
-Returns structured JSON with all endpoints, their parameters, and examples.
 
 ---
