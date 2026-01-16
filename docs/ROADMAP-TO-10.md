@@ -186,6 +186,8 @@ docker run -p 4000:4000 haltija/haltija
 
 What's needed for production deployment at scale.
 
+**Approach**: Dogfood in real CI environment first. The items below are hypotheses - actual friction points will emerge from integration with real workflows (CI systems, Copilot, PR processes). Build what's actually needed, not what's imagined.
+
 ### 4.1 API Authentication
 **Problem**: No auth on REST API. Anyone on localhost can control the browser.
 
