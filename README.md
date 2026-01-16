@@ -1,40 +1,34 @@
 # Haltija
 
-**Give AI agents eyes and hands in the browser.**
-
-[Executive Summary](docs/EXECUTIVE-SUMMARY.md) - What Haltija is, who it's for, and where it's going.
-
-[Roadmap](docs/ROADMAP-TO-10.md) - The path from solid product to industry standard.
-
-<!-- TODO: Add side-by-side video demo -->
-
----
-
-## What You Can Do Now
-
-**"Fix this CSS bug"** - The agent sees your actual DOM, finds the selector mismatch, fixes it. Two minutes, not twenty.
-
-**"Test the checkout flow"** - The agent clicks through your app, watches what happens, writes a test. No Playwright scripts to maintain.
-
-**"What's wrong with this page?"** - Point at an area. The agent sees the elements, their structure, their accessibility issues.
-
-**"Show me how to do X"** - Record yourself doing it. The agent watches, learns, can replay or generate tests.
-
-**"Why is this broken for the customer?"** - See exactly what they see. Same browser, same state, same bug.
-
----
-
-## How It Works
-
-Your AI assistant can query your live browser:
+**Make any web app AI-controllable in 30 seconds.**
 
 ```bash
-curl localhost:8700/tree                    # See the DOM
-curl -X POST localhost:8700/click -d '{"selector":"#submit"}'  # Click things
-curl localhost:8700/events                  # Watch what happens
+bunx haltija
 ```
 
-No screenshots. No copy-pasting HTML. The agent sees what you see.
+```html
+<script src="http://localhost:8700/component.js"></script>
+```
+
+That's it. Your AI agent can now see the DOM, click buttons, fill forms, and watch what happens.
+
+<!-- TODO: Add 30-second demo video once public -->
+
+---
+
+[Executive Summary](docs/EXECUTIVE-SUMMARY.md) | [Roadmap](docs/ROADMAP-TO-10.md) | [API Reference](#full-documentation)
+
+---
+
+## What This Enables
+
+**"Fix this CSS bug"** - The agent sees your actual DOM, finds the mismatch, fixes it.
+
+**"Test the checkout flow"** - The agent clicks through your app, watches what happens, writes a test.
+
+**"Why is this broken?"** - See exactly what users see. Same browser, same state, same bug.
+
+No screenshots. No copy-pasting HTML. No Playwright scripts. The agent sees what you see.
 
 ---
 
