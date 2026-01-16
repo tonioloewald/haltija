@@ -98,9 +98,9 @@ The threat model assumes a trusted local environment. The server binds to localh
 
 Haltija lets you tell Claude to browse the web for you. Run the server, open the desktop app or inject the widget, and Claude can see pages, click buttons, fill forms, and tell you what happened.
 
-Setup takes two minutes: install Bun, run `bunx haltija`, open the Haltija app, and add the MCP server to Claude Desktop. Now Claude has a browser.
+Setup takes two minutes: install Bun, run `bunx haltija`, open the Haltija app, and paste the agent prompt into your conversation. Now Claude has a browser.
 
-- **Works with Claude Desktop** via MCP integration
+- **Copy-paste prompt** gets Claude controlling your browser immediately (simpler than MCP)
 - **Visual feedback** shows cursor movement and action subtitles as Claude operates
 - **Explore any website** with the included Electron browser
 - **Record your actions** and let Claude replay or modify them

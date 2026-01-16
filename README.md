@@ -107,11 +107,16 @@ bunx haltija
 
 **Option C: Desktop app** - Double-click Haltija.app. Works on any site, no CSP issues.
 
-### 3. Give your agent the endpoint
+### 3. Give your agent the prompt
+
+Copy the prompt from [docs/agent-prompt.md](docs/agent-prompt.md) into your conversation. That's it.
 
 ```bash
-curl localhost:8700/docs  # Everything the agent needs
+# Or fetch it programmatically
+curl localhost:8700/docs
 ```
+
+**Why a prompt, not MCP?** In practice, copy-pasting the prompt works better than MCP integration. The agent gets full context upfront, understands the API immediately, and doesn't need tool discovery. MCP adds complexity without benefit here - Haltija's value is simplicity.
 
 ---
 
