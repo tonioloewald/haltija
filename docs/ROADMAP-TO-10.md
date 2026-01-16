@@ -109,6 +109,8 @@ const tree = await h.tree({ depth: 2 })
 - Add prompt generation option (convert recording to Claude prompt, not just test JSON)
 - Or: document that Claude can read the test JSON and replicate the workflow
 
+**Low priority**: CLI test runner (`bunx haltija run test.json`) - works via API already, CLI feels like regression to Playwright model
+
 ### 2.6 "Flight Recorder" UI
 **Problem**: "Click with Diff" produces powerful data, but it's just JSON.
 
