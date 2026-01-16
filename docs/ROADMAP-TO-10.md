@@ -93,26 +93,34 @@ const tree = await h.tree({ depth: 2 })
 
 ---
 
-## Phase 3: Platform Expansion (Medium effort, medium impact)
+## Phase 3: Platform Expansion (Low-medium effort, medium impact)
 
-Remove "macOS only" from the limitations list.
+Build script already works on macOS and Linux. Just needs documentation and pre-built binaries.
 
-### 3.1 Windows Desktop App
-**Problem**: Windows users can't use the Electron app.
-
-**Solution**:
-- Add Windows build to electron-builder config
-- Test on Windows, fix platform-specific issues
-- Installer (.exe) and portable options
-
-### 3.2 Linux Desktop App
-**Problem**: Linux users (many developers) excluded.
+### 3.1 Document Local Build Process
+**Problem**: Users don't know they can build locally.
 
 **Solution**:
-- Add Linux build (AppImage, .deb)
-- Test on common distros (Ubuntu, Fedora)
+- Document `npm run build` in apps/desktop
+- Explain Playwright-like "build where you are" model
+- Add to Quick Start for non-macOS users
 
-### 3.3 Docker Image
+### 3.2 Windows Testing
+**Problem**: Windows build untested.
+
+**Solution**:
+- Test build script on Windows
+- Fix any platform-specific issues
+- Add Windows to CI build matrix
+
+### 3.3 Pre-built Binaries
+**Problem**: Building locally requires dev environment.
+
+**Solution**:
+- GitHub releases with macOS (arm64, x64), Linux, Windows builds
+- Automated release workflow on tag
+
+### 3.4 Docker Image
 **Problem**: Cloud deployment requires manual setup.
 
 **Solution**:
@@ -236,7 +244,7 @@ Build the moat through adoption.
 |-------|--------|--------|---------|
 | 1. Docs & Discovery | Low | High | Now |
 | 2. Developer Experience | Medium | High | Next |
-| 3. Platform Expansion | Medium | Medium | After 2 |
+| 3. Platform Expansion | Low-Medium | Medium | After 2 |
 | 4. Enterprise Readiness | High | Medium | When needed |
 | 5. Cloud & CI | High | Transformative | The goal |
 | 6. Ecosystem | Ongoing | Cumulative | Continuous |

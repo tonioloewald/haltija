@@ -34,9 +34,9 @@ The technical differentiator is semantic events. Rather than exposing raw DOM ev
 - **Extensible**: new endpoints require schema definition + handler, router handles the rest
 - **Built on Bun** for fast startup and minimal resource footprint
 
-**Limitations**: macOS only for the desktop app currently. Shadow DOM support is workable but not seamless. No iframe traversal for cross-origin content.
+**Limitations**: Shadow DOM support is workable but not seamless. No iframe traversal for cross-origin content.
 
-**Missing**: Node.js support for the server (Bun-only currently), Windows/Linux desktop builds, browser extension for persistent injection.
+**Missing**: Node.js support for the server (Bun-only currently), browser extension for persistent injection, pre-built binaries for all platforms (build script works on macOS/Linux, Windows untested).
 
 ---
 
@@ -153,7 +153,7 @@ Puppeteer exposes browser internals. You think in selectors, wait conditions, an
 | Audience | Primary Value | Key Limitation |
 |----------|--------------|----------------|
 | CEO | Reduced QA costs, AI-native testing | Needs investment to productionize |
-| CTO | Clean architecture, semantic events | macOS-only desktop, Bun-only server |
+| CTO | Clean architecture, semantic events | Bun-only server, Windows untested |
 | UI Engineer | One-line integration, real DOM access | No cross-origin iframe support |
 | QA Engineer | Natural language tests, auto-fixing | AI latency vs direct selectors |
 | Security | Localhost-only, visible operation | No API auth, CSP bypassed in app |
