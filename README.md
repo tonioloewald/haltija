@@ -2,6 +2,8 @@
 
 **Give AI agents eyes and hands in the browser.**
 
+[Executive Summary](docs/EXECUTIVE-SUMMARY.md) - What Haltija is, who it's for, and where it's going.
+
 <!-- TODO: Add side-by-side video demo -->
 
 ---
