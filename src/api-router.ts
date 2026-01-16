@@ -22,6 +22,8 @@ import { handlers, type HandlerContext } from './api-handlers'
 const GET_DEFAULTS: Record<string, Record<string, any>> = {
   '/tree': { selector: 'body', depth: 3 },
   '/screenshot': {},  // Full page capture
+  '/click': {},  // selector required via query param
+  '/type': {},   // selector and text required via query params
   '/unhighlight': {},
   '/refresh': {},
   '/mutationsUnwatch': {},
@@ -100,6 +102,15 @@ export function createRouter(contextFactory: ContextFactory) {
           }
         }
         const body = { ...defaults, ...queryParams }
+        // Validate against schema (catches missing required params)
+        const validation = validateInput(endpoint, body)
+        if (!validation.valid) {
+          return Response.json({
+            success: false,
+            error: validation.error,
+            schema: endpoint.input?.schema,
+          }, { status: 400, headers: ctx.headers })
+        }
         return handler(body, ctx)
       }
       // No defaults - return self-documenting schema

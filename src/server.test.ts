@@ -299,14 +299,13 @@ describe('tosijs-dev server', () => {
       expect(data.error).toContain('code')
     })
     
-    it('GET on /click returns self-documenting schema (schemaEndpoint)', async () => {
-      // Endpoints using schemaEndpoint() return docs on GET instead of 405
+    it('GET on /click without selector returns validation error', async () => {
+      // GET on /click now attempts the action, so missing selector returns 400
       const res = await fetch(`${BASE_URL}/click`)
-      expect(res.ok).toBe(true)
+      expect(res.status).toBe(400)
       
       const data = await res.json()
-      expect(data.endpoint).toBe('/click')
-      expect(data.method).toBe('POST')
+      expect(data.error).toContain('selector')
     })
     
     it('returns helpful error when selector is missing on /click', async () => {
@@ -539,39 +538,24 @@ describe('schema-driven self-documenting endpoints', () => {
   // These tests verify that POST endpoints using schemaEndpoint() return
   // self-documenting JSON when accessed via GET
   
-  it('GET on /click returns schema documentation', async () => {
+  it('GET on /click attempts action (returns error without selector)', async () => {
+    // GET on /click now uses defaults and attempts the action
     const res = await fetch(`${BASE_URL}/click`)
-    expect(res.ok).toBe(true)
+    expect(res.status).toBe(400)
     
     const data = await res.json()
-    expect(data.endpoint).toBe('/click')
-    expect(data.method).toBe('POST')
-    expect(data.summary).toBe('Click an element')
-    expect(data.description).toContain('mouseenter')
-    expect(data.input).toBeDefined()
-    expect(data.input.type).toBe('object')
-    // selector is optional now (can use text instead)
-    expect(data.input.properties.selector).toBeDefined()
-    expect(data.input.properties.text).toBeDefined()
-    expect(data.usage).toContain('curl -X POST')
+    // Missing required selector
+    expect(data.error).toContain('selector')
   })
   
-  it('GET on /type returns schema with all options documented', async () => {
+  it('GET on /type attempts action (returns error without required params)', async () => {
+    // GET on /type now uses defaults and attempts the action
     const res = await fetch(`${BASE_URL}/type`)
-    expect(res.ok).toBe(true)
+    expect(res.status).toBe(400)
     
     const data = await res.json()
-    expect(data.endpoint).toBe('/type')
-    expect(data.method).toBe('POST')
-    expect(data.input.properties.selector).toBeDefined()
-    expect(data.input.properties.text).toBeDefined()
-    expect(data.input.properties.humanlike).toBeDefined()
-    expect(data.input.properties.typoRate).toBeDefined()
-    expect(data.input.properties.minDelay).toBeDefined()
-    expect(data.input.properties.maxDelay).toBeDefined()
-    // Required fields
-    expect(data.input.required).toContain('selector')
-    expect(data.input.required).toContain('text')
+    // Missing required selector and text
+    expect(data.error).toBeDefined()
   })
   
   it('GET on /tree uses defaults and returns tree (or error if no browser)', async () => {
