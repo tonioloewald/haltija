@@ -1,8 +1,17 @@
 # Roadmap to 10/10
 
-Current state: **8.5/10** - Solid architecture, real utility, but rough edges and missing pieces prevent broader adoption.
+Current state: **9/10** - Best-in-class developer tool. GET support for actions, `/key` endpoint, diff-on-action, iframe visibility, simplified API.
 
 Goal: **10/10** - The standard way AI agents interact with browsers.
+
+**Recent Progress (v0.1.9):**
+- ✅ GET support for `/click`, `/type`, `/key` - simpler curl commands
+- ✅ `/key` endpoint for keyboard shortcuts with realistic event lifecycle
+- ✅ `diff: true` option - see what changed after actions
+- ✅ `/form` endpoint - extract all form values as JSON
+- ✅ Iframe visibility - always show `frameSrc` even for cross-origin
+- ✅ `/status` includes windows - fewer round trips
+- ✅ Contextual tree flags - validation state, wouldScroll, focused
 
 ---
 
@@ -47,9 +56,9 @@ The product is better than people can tell. Fix that first.
 
 ---
 
-## Phase 2: Developer Experience (Medium effort, high impact)
+## Phase 2: Developer Experience & "Hobbyist Lock-In" (Medium effort, high impact)
 
-Make the first 5 minutes flawless.
+Make it impossible for an individual developer to use anything else.
 
 ### 2.1 Node.js Support
 **Problem**: Bun-only limits adoption. Many teams aren't on Bun yet.
@@ -90,6 +99,33 @@ const tree = await h.tree({ depth: 2 })
 - Type-safe, auto-complete friendly
 - Async/await native
 - Publish to npm
+
+### 2.5 "Watch and Learn" Mode
+**Problem**: Copy/pasting prompts is low friction, but *zero* friction is better.
+
+**Solution**:
+- User clicks through a workflow manually
+- Haltija emits the exact prompt/schema instructions to replicate it
+- "I just did the task. Here is the prompt to make Claude do it forever."
+- Converts manual exploration into reproducible automation
+
+### 2.6 "Flight Recorder" UI
+**Problem**: "Click with Diff" produces powerful data, but it's just JSON.
+
+**Solution**:
+- Visual playback UI in Desktop App
+- Timeline view: Action → DOM Diff (visualized) → Result
+- Let humans *see* the diff the way the AI saw it
+- Builds trust in the "black box" of AI decision-making
+
+### 2.7 Skill Marketplace / Community Registry
+**Problem**: Sharing automation recipes is ad-hoc.
+
+**Solution**:
+- GitHub repo or lightweight registry of "Haltija Skills"
+- Pre-built skills for top SaaS apps (Stripe checkout, Gmail, etc.)
+- `haltija-skill-stripe-checkout`, `haltija-skill-gmail-cleanup`
+- Install Haltija → instantly have robust skills for common workflows
 
 ---
 
@@ -168,6 +204,34 @@ What's needed for production deployment at scale.
 - Connection pooling for multiple browser instances
 - Session isolation
 - Parallel test execution
+
+### 4.5 Automated Test Reports
+**Problem**: Managers don't trust AI. They need to see the work.
+
+**Solution**:
+- Generate markdown or HTML reports after test runs
+- "Checked 40 flows. Found 2 bugs."
+- Screenshots and plain-English reproduction steps for failures
+- Replaces Jira tickets with artifacts of proof
+- Exportable for stakeholder review
+
+### 4.6 "Signed/Safe" Enterprise Mode
+**Problem**: Security teams hate "Magic Apps" that strip CSP.
+
+**Solution**:
+- Browser extension deployed via Group Policy
+- Respects CSP but gets necessary access legitimately
+- Checks the compliance box for enterprise security reviews
+- Optional: extension-only mode (no CSP stripping)
+
+### 4.7 Fleet Orchestration
+**Problem**: Localhost is a ceiling for enterprise scale.
+
+**Solution**:
+- Spin up 50+ headless Haltija instances in Kubernetes
+- Hammer staging environments in parallel
+- "My personal AI assistant" → "Our CI/CD Infrastructure"
+- Central management console for fleet status
 
 ---
 
@@ -255,9 +319,19 @@ Build the moat through adoption.
 
 A product is 10/10 when it becomes the obvious default choice.
 
-**Phase 1-2** gets us to **9/10**: Easy to discover, easy to use, works everywhere developers work.
+**We're at 9/10 now**: Best-in-class developer tool. GET support, `/key`, diff-on-action, simplified API.
 
-**Phase 5** gets us to **10/10**: AI QA in CI that just works. Push code, get human-readable test results, auto-fixed tests, real bug reports.
+**Phase 2 additions lock in developers**:
+- "Watch and Learn" mode (zero-friction automation)
+- Flight Recorder UI (visualize the AI's view)
+- Skill Marketplace (community moat)
+
+**Phase 4-5 unlocks enterprise**:
+- Fleet orchestration (Kubernetes scale)
+- Automated reports (artifacts of proof)
+- Signed/Safe mode (compliance checkbox)
+
+**Phase 5 gets us to 10/10**: AI QA in CI that just works. Push code, get human-readable test results, auto-fixed tests, real bug reports.
 
 The question isn't "can we build this?" - the architecture supports it. The question is "do we invest in making it real?"
 
