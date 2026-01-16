@@ -4440,6 +4440,8 @@
         this.performRealisticType(payload2, msg2.id);
       } else if (action2 === "click") {
         this.performRealisticClick(payload2, msg2.id);
+      } else if (action2 === "key") {
+        this.performKey(payload2, msg2.id);
       } else {
         this.respond(msg2.id, false, null, `Unknown interaction action: ${action2}`);
       }
@@ -4799,6 +4801,130 @@
       } catch (err) {
         this.respond(responseId, false, null, err.message);
       }
+    }
+    async performKey(payload2, responseId) {
+      const { key, selector, ctrlKey, shiftKey, altKey, metaKey, repeat = 1 } = payload2;
+      try {
+        let target = null;
+        if (selector) {
+          target = document.querySelector(selector);
+          if (!target) {
+            this.respond(responseId, false, null, `Element not found: ${selector}`);
+            return;
+          }
+          target.focus();
+        } else {
+          target = document.activeElement || document.body;
+        }
+        const modifiers = [];
+        if (ctrlKey)
+          modifiers.push({ key: "Control", code: "ControlLeft" });
+        if (shiftKey)
+          modifiers.push({ key: "Shift", code: "ShiftLeft" });
+        if (altKey)
+          modifiers.push({ key: "Alt", code: "AltLeft" });
+        if (metaKey)
+          modifiers.push({ key: "Meta", code: "MetaLeft" });
+        for (let i = modifiers.length - 1;i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [modifiers[i], modifiers[j]] = [modifiers[j], modifiers[i]];
+        }
+        const eventOpts = {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: !!ctrlKey,
+          shiftKey: !!shiftKey,
+          altKey: !!altKey,
+          metaKey: !!metaKey
+        };
+        const code2 = this.getKeyCode(key);
+        const modStr = [
+          ctrlKey && "Ctrl",
+          shiftKey && "Shift",
+          altKey && "Alt",
+          metaKey && "Cmd"
+        ].filter(Boolean).join("+");
+        const keyLabel = modStr ? `${modStr}+${key}` : key;
+        this.showSubtitle(`Pressing ${keyLabel}${repeat > 1 ? ` ×${repeat}` : ""}`, 2000);
+        for (const mod of modifiers) {
+          target.dispatchEvent(new KeyboardEvent("keydown", {
+            ...eventOpts,
+            key: mod.key,
+            code: mod.code
+          }));
+          await this.sleep(10 + Math.random() * 20);
+        }
+        for (let i = 0;i < repeat; i++) {
+          const isRepeat = i > 0;
+          target.dispatchEvent(new KeyboardEvent("keydown", {
+            ...eventOpts,
+            key,
+            code: code2,
+            repeat: isRepeat
+          }));
+          if (key.length === 1) {
+            target.dispatchEvent(new KeyboardEvent("keypress", {
+              ...eventOpts,
+              key,
+              code: code2,
+              charCode: key.charCodeAt(0)
+            }));
+          }
+          if (isRepeat) {
+            await this.sleep(30 + Math.random() * 20);
+          }
+        }
+        target.dispatchEvent(new KeyboardEvent("keyup", {
+          ...eventOpts,
+          key,
+          code: code2
+        }));
+        const releaseOrder = [...modifiers].reverse();
+        for (const mod of releaseOrder) {
+          await this.sleep(10 + Math.random() * 20);
+          target.dispatchEvent(new KeyboardEvent("keyup", {
+            ...eventOpts,
+            key: mod.key,
+            code: mod.code
+          }));
+        }
+        this.respond(responseId, true, {
+          key,
+          modifiers: { ctrlKey, shiftKey, altKey, metaKey },
+          repeat,
+          target: selector || "activeElement"
+        });
+      } catch (err) {
+        this.respond(responseId, false, null, err.message);
+      }
+    }
+    getKeyCode(key) {
+      const specialKeys = {
+        Enter: "Enter",
+        Escape: "Escape",
+        Tab: "Tab",
+        Backspace: "Backspace",
+        Delete: "Delete",
+        ArrowUp: "ArrowUp",
+        ArrowDown: "ArrowDown",
+        ArrowLeft: "ArrowLeft",
+        ArrowRight: "ArrowRight",
+        Home: "Home",
+        End: "End",
+        PageUp: "PageUp",
+        PageDown: "PageDown",
+        " ": "Space",
+        Space: "Space"
+      };
+      if (specialKeys[key])
+        return specialKeys[key];
+      if (/^F\d{1,2}$/.test(key))
+        return key;
+      if (/^[a-zA-Z]$/.test(key))
+        return `Key${key.toUpperCase()}`;
+      if (/^[0-9]$/.test(key))
+        return `Digit${key}`;
+      return key;
     }
     getElementLabel(el) {
       const text = el.textContent?.trim().slice(0, 30);

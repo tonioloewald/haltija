@@ -438,6 +438,74 @@
     }
   },
   {
+    "path": "/key",
+    "method": "POST",
+    "summary": "Send keyboard input",
+    "description": "Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.\n\nTarget element defaults to document.activeElement. Use selector to focus a specific element first.\n\nSupports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.\n\nCommon keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Key to press (e.g., \"Enter\", \"Escape\", \"a\", \"ArrowDown\")"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Element to focus first (default: activeElement)"
+        },
+        "ctrlKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Ctrl/Control"
+        },
+        "shiftKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Shift"
+        },
+        "altKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Alt/Option"
+        },
+        "metaKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Meta/Command"
+        },
+        "repeat": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Repeat count for key hold (default 1)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/drag",
     "method": "POST",
     "summary": "Drag from an element",

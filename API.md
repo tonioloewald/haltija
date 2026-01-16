@@ -506,6 +506,64 @@ Options:
 
 ---
 
+### `POST /key`
+
+**Send keyboard input**
+
+Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
+
+Target element defaults to document.activeElement. Use selector to focus a specific element first.
+
+Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.
+
+Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `key` | string | Key to press (e.g., "Enter", "Escape", "a", "ArrowDown") *(required)* |
+| `selector` | string,null | Element to focus first (default: activeElement) |
+| `ctrlKey` | boolean,null | Hold Ctrl/Control |
+| `shiftKey` | boolean,null | Hold Shift |
+| `altKey` | boolean,null | Hold Alt/Option |
+| `metaKey` | boolean,null | Hold Meta/Command |
+| `repeat` | number,null | Repeat count for key hold (default 1) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **escape**: Close modal/cancel
+  ```json
+  {"key":"Escape"}
+  ```
+- **enter**: Submit form
+  ```json
+  {"key":"Enter"}
+  ```
+- **save**: Ctrl+S save shortcut
+  ```json
+  {"key":"s","ctrlKey":true}
+  ```
+- **tab**: Tab from element
+  ```json
+  {"key":"Tab","selector":"#first-input"}
+  ```
+- **shift-tab**: Shift+Tab backwards
+  ```json
+  {"key":"Tab","shiftKey":true}
+  ```
+- **arrow-nav**: Navigate down 3 times
+  ```json
+  {"key":"ArrowDown","repeat":3}
+  ```
+- **select-all**: Ctrl+A in element
+  ```json
+  {"key":"a","ctrlKey":true,"selector":"#editor"}
+  ```
+
+---
+
 ### `POST /drag`
 
 **Drag from an element**

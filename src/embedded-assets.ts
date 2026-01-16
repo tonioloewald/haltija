@@ -952,14 +952,18 @@ export const API_MD = `# Haltija API Reference
 # Is it working?
 curl localhost:8700/status
 
-# What tabs are connected?
-curl localhost:8700/windows
+# What's on the page? (GET works with defaults)
+curl localhost:8700/tree
 
-# What's on the page?
-curl -X POST localhost:8700/tree -d '{"mode":"actionable"}'
+# Click something (GET or POST)
+curl "localhost:8700/click?selector=%23submit"
 
-# Click something
-curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
+# Type into an input
+curl "localhost:8700/type?selector=input&text=hello"
+
+# Send keyboard shortcut
+curl "localhost:8700/key?key=Escape"
+curl "localhost:8700/key?key=s&ctrlKey=true"
 \`\`\`
 
 ---
@@ -1446,6 +1450,66 @@ Options:
 - **contenteditable**: Type into contenteditable
   \`\`\`json
   {"selector":"[contenteditable]","text":"Hello world"}
+  \`\`\`
+
+---
+
+### \`GET|POST /key\`
+
+**Send keyboard input**
+
+Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
+
+GET works: \`GET /key?key=Escape\` or \`GET /key?key=s&ctrlKey=true\`
+
+Target element defaults to document.activeElement. Use selector to focus a specific element first.
+
+Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.
+
+Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`key\` | string | Key to press (e.g., "Enter", "Escape", "a", "ArrowDown") *(required)* |
+| \`selector\` | string,null | Element to focus first (default: activeElement) |
+| \`ctrlKey\` | boolean,null | Hold Ctrl/Control |
+| \`shiftKey\` | boolean,null | Hold Shift |
+| \`altKey\` | boolean,null | Hold Alt/Option |
+| \`metaKey\` | boolean,null | Hold Meta/Command |
+| \`repeat\` | number,null | Repeat count for key hold (default 1) |
+| \`window\` | string,null | Target window ID |
+
+**Examples:**
+
+- **escape**: Close modal/cancel
+  \`\`\`json
+  {"key":"Escape"}
+  \`\`\`
+- **enter**: Submit form
+  \`\`\`json
+  {"key":"Enter"}
+  \`\`\`
+- **save**: Ctrl+S save shortcut
+  \`\`\`json
+  {"key":"s","ctrlKey":true}
+  \`\`\`
+- **tab**: Tab from element
+  \`\`\`json
+  {"key":"Tab","selector":"#first-input"}
+  \`\`\`
+- **shift-tab**: Shift+Tab backwards
+  \`\`\`json
+  {"key":"Tab","shiftKey":true}
+  \`\`\`
+- **arrow-nav**: Navigate down 3 times
+  \`\`\`json
+  {"key":"ArrowDown","repeat":3}
+  \`\`\`
+- **select-all**: Ctrl+A in element
+  \`\`\`json
+  {"key":"a","ctrlKey":true,"selector":"#editor"}
   \`\`\`
 
 ---

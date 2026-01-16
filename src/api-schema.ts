@@ -301,6 +301,42 @@ Options:
   ],
 })
 
+export const key = endpoint({
+  path: '/key',
+  method: 'POST',
+  summary: 'Send keyboard input',
+  description: `Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
+
+Target element defaults to document.activeElement. Use selector to focus a specific element first.
+
+Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.
+
+Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.`,
+  category: 'interaction',
+  input: s.object({
+    key: s.string.describe('Key to press (e.g., "Enter", "Escape", "a", "ArrowDown")'),
+    selector: s.string.describe('Element to focus first (default: activeElement)').optional,
+    ctrlKey: s.boolean.describe('Hold Ctrl/Control').optional,
+    shiftKey: s.boolean.describe('Hold Shift').optional,
+    altKey: s.boolean.describe('Hold Alt/Option').optional,
+    metaKey: s.boolean.describe('Hold Meta/Command').optional,
+    repeat: s.number.describe('Repeat count for key hold (default 1)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'escape', input: { key: 'Escape' }, description: 'Close modal/cancel' },
+    { name: 'enter', input: { key: 'Enter' }, description: 'Submit form' },
+    { name: 'save', input: { key: 's', ctrlKey: true }, description: 'Ctrl+S save shortcut' },
+    { name: 'tab', input: { key: 'Tab', selector: '#first-input' }, description: 'Tab from element' },
+    { name: 'shift-tab', input: { key: 'Tab', shiftKey: true }, description: 'Shift+Tab backwards' },
+    { name: 'arrow-nav', input: { key: 'ArrowDown', repeat: 3 }, description: 'Navigate down 3 times' },
+    { name: 'select-all', input: { key: 'a', ctrlKey: true, selector: '#editor' }, description: 'Ctrl+A in element' },
+  ],
+  invalidExamples: [
+    { name: 'missing-key', input: {}, error: 'key is required' },
+  ],
+})
+
 export const drag = endpoint({
   path: '/drag',
   method: 'POST',
@@ -1179,6 +1215,7 @@ export const endpoints = {
   // Interaction
   click,
   type,
+  key,
   drag,
   highlight,
   unhighlight,

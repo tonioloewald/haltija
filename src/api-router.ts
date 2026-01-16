@@ -24,6 +24,7 @@ const GET_DEFAULTS: Record<string, Record<string, any>> = {
   '/screenshot': {},  // Full page capture
   '/click': {},  // selector required via query param
   '/type': {},   // selector and text required via query params
+  '/key': {},    // key required via query param
   '/unhighlight': {},
   '/refresh': {},
   '/mutationsUnwatch': {},

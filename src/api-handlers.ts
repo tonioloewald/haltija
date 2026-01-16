@@ -479,6 +479,27 @@ registerHandler(api.type, async (body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
+// Key handler - send keyboard input with full event lifecycle
+registerHandler(api.key, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const repeat = body.repeat ?? 1
+  
+  // Calculate timeout: base + per-repeat time
+  const timeout = 5000 + repeat * 100
+  
+  const response = await ctx.requestFromBrowser('interaction', 'key', {
+    key: body.key,
+    selector: body.selector,
+    ctrlKey: body.ctrlKey,
+    shiftKey: body.shiftKey,
+    altKey: body.altKey,
+    metaKey: body.metaKey,
+    repeat,
+  }, timeout, windowId)
+  
+  return Response.json(response, { headers: ctx.headers })
+})
+
 // Inspect handler
 registerHandler(api.inspect, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId

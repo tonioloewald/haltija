@@ -5484,6 +5484,8 @@ export class DevChannel extends HTMLElement {
       this.performRealisticType(payload, msg.id)
     } else if (action === 'click') {
       this.performRealisticClick(payload, msg.id)
+    } else if (action === 'key') {
+      this.performKey(payload, msg.id)
     } else {
       this.respond(msg.id, false, null, `Unknown interaction action: ${action}`)
     }
@@ -5981,6 +5983,179 @@ export class DevChannel extends HTMLElement {
     } catch (err: any) {
       this.respond(responseId, false, null, err.message)
     }
+  }
+  
+  /**
+   * Performs key press with full event lifecycle.
+   * Modifiers are pressed first (in random order), then the main key, then modifiers released.
+   */
+  private async performKey(
+    payload: {
+      key: string
+      selector?: string
+      ctrlKey?: boolean
+      shiftKey?: boolean
+      altKey?: boolean
+      metaKey?: boolean
+      repeat?: number
+    },
+    responseId: string
+  ) {
+    const { key, selector, ctrlKey, shiftKey, altKey, metaKey, repeat = 1 } = payload
+    
+    try {
+      // Focus target element if specified, otherwise use activeElement
+      let target: HTMLElement | null = null
+      if (selector) {
+        target = document.querySelector(selector) as HTMLElement
+        if (!target) {
+          this.respond(responseId, false, null, `Element not found: ${selector}`)
+          return
+        }
+        target.focus()
+      } else {
+        target = document.activeElement as HTMLElement || document.body
+      }
+      
+      // Build modifier key info
+      const modifiers: { key: string, code: string }[] = []
+      if (ctrlKey) modifiers.push({ key: 'Control', code: 'ControlLeft' })
+      if (shiftKey) modifiers.push({ key: 'Shift', code: 'ShiftLeft' })
+      if (altKey) modifiers.push({ key: 'Alt', code: 'AltLeft' })
+      if (metaKey) modifiers.push({ key: 'Meta', code: 'MetaLeft' })
+      
+      // Shuffle modifiers for realistic random order
+      for (let i = modifiers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [modifiers[i], modifiers[j]] = [modifiers[j], modifiers[i]]
+      }
+      
+      // Common event options
+      const eventOpts = {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: !!ctrlKey,
+        shiftKey: !!shiftKey,
+        altKey: !!altKey,
+        metaKey: !!metaKey,
+      }
+      
+      // Get key code for main key
+      const code = this.getKeyCode(key)
+      
+      // Show visual feedback
+      const modStr = [
+        ctrlKey && 'Ctrl',
+        shiftKey && 'Shift', 
+        altKey && 'Alt',
+        metaKey && 'Cmd'
+      ].filter(Boolean).join('+')
+      const keyLabel = modStr ? `${modStr}+${key}` : key
+      this.showSubtitle(`Pressing ${keyLabel}${repeat > 1 ? ` ×${repeat}` : ''}`, 2000)
+      
+      // Press modifier keys down (in random order)
+      for (const mod of modifiers) {
+        target.dispatchEvent(new KeyboardEvent('keydown', {
+          ...eventOpts,
+          key: mod.key,
+          code: mod.code,
+        }))
+        await this.sleep(10 + Math.random() * 20)
+      }
+      
+      // Press main key (with repeat if requested)
+      for (let i = 0; i < repeat; i++) {
+        const isRepeat = i > 0
+        
+        // keydown
+        target.dispatchEvent(new KeyboardEvent('keydown', {
+          ...eventOpts,
+          key,
+          code,
+          repeat: isRepeat,
+        }))
+        
+        // keypress for printable characters (deprecated but some apps need it)
+        if (key.length === 1) {
+          target.dispatchEvent(new KeyboardEvent('keypress', {
+            ...eventOpts,
+            key,
+            code,
+            charCode: key.charCodeAt(0),
+          }))
+        }
+        
+        // Small delay between repeats
+        if (isRepeat) {
+          await this.sleep(30 + Math.random() * 20)
+        }
+      }
+      
+      // keyup for main key
+      target.dispatchEvent(new KeyboardEvent('keyup', {
+        ...eventOpts,
+        key,
+        code,
+      }))
+      
+      // Release modifier keys (reverse order for realism, but shuffled)
+      const releaseOrder = [...modifiers].reverse()
+      for (const mod of releaseOrder) {
+        await this.sleep(10 + Math.random() * 20)
+        target.dispatchEvent(new KeyboardEvent('keyup', {
+          ...eventOpts,
+          key: mod.key,
+          code: mod.code,
+        }))
+      }
+      
+      this.respond(responseId, true, { 
+        key, 
+        modifiers: { ctrlKey, shiftKey, altKey, metaKey },
+        repeat,
+        target: selector || 'activeElement',
+      })
+    } catch (err: any) {
+      this.respond(responseId, false, null, err.message)
+    }
+  }
+  
+  /**
+   * Get the code value for a key
+   */
+  private getKeyCode(key: string): string {
+    // Special keys
+    const specialKeys: Record<string, string> = {
+      'Enter': 'Enter',
+      'Escape': 'Escape',
+      'Tab': 'Tab',
+      'Backspace': 'Backspace',
+      'Delete': 'Delete',
+      'ArrowUp': 'ArrowUp',
+      'ArrowDown': 'ArrowDown',
+      'ArrowLeft': 'ArrowLeft',
+      'ArrowRight': 'ArrowRight',
+      'Home': 'Home',
+      'End': 'End',
+      'PageUp': 'PageUp',
+      'PageDown': 'PageDown',
+      ' ': 'Space',
+      'Space': 'Space',
+    }
+    
+    if (specialKeys[key]) return specialKeys[key]
+    
+    // Function keys
+    if (/^F\d{1,2}$/.test(key)) return key
+    
+    // Letters
+    if (/^[a-zA-Z]$/.test(key)) return `Key${key.toUpperCase()}`
+    
+    // Digits
+    if (/^[0-9]$/.test(key)) return `Digit${key}`
+    
+    // Default: use key as code
+    return key
   }
   
   /**
