@@ -349,6 +349,8 @@ Two ways to target elements:
 
 Automatically fails if element is not found or is disabled. Check response.success to verify.
 
+With diff:true, returns what changed after the click - added/removed elements, attribute changes, focus, scroll.
+
 **Parameters:**
 
 | Name | Type | Description |
@@ -356,6 +358,8 @@ Automatically fails if element is not found or is disabled. Check response.succe
 | `selector` | string,null | CSS selector of element to click |
 | `text` | string,null | Text content to find (alternative to selector) |
 | `tag` | string,null | Tag name when using text (default: any clickable element) |
+| `diff` | boolean,null | Return DOM diff showing what changed after click (default false) |
+| `diffDelay` | number,null | Wait ms before capturing "after" state (default 100) |
 | `window` | string,null | Target window ID |
 
 **Examples:**
@@ -383,6 +387,10 @@ Automatically fails if element is not found or is disabled. Check response.succe
 - **by-role**: Click by ARIA
   ```json
   {"selector":"[role=\"button\"][aria-label=\"Close\"]"}
+  ```
+- **with-diff**: Click and see what changed
+  ```json
+  {"selector":".add-item","diff":true}
   ```
 
 ---
@@ -421,6 +429,8 @@ Options:
 | `typoRate` | number,null | Typo probability 0-1 (default 0.03) |
 | `minDelay` | number,null | Min ms between keys (default 50) |
 | `maxDelay` | number,null | Max ms between keys (default 150) |
+| `diff` | boolean,null | Return DOM diff showing what changed after typing (default false) |
+| `diffDelay` | number,null | Wait ms before capturing "after" state (default 100) |
 | `window` | string,null | Target window ID |
 
 **Examples:**

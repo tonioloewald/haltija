@@ -224,12 +224,16 @@ Two ways to target elements:
 - selector: CSS selector (traditional)
 - text + tag: Find by text content (more reliable for dynamic UIs)
 
-Automatically fails if element is not found or is disabled. Check response.success to verify.`,
+Automatically fails if element is not found or is disabled. Check response.success to verify.
+
+With diff:true, returns what changed after the click - added/removed elements, attribute changes, focus, scroll.`,
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of element to click').optional,
     text: s.string.describe('Text content to find (alternative to selector)').optional,
     tag: s.string.describe('Tag name when using text (default: any clickable element)').optional,
+    diff: s.boolean.describe('Return DOM diff showing what changed after click (default false)').optional,
+    diffDelay: s.number.describe('Wait ms before capturing "after" state (default 100)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -239,6 +243,7 @@ Automatically fails if element is not found or is disabled. Check response.succe
     { name: 'button-by-text', input: { text: 'Submit', tag: 'button' }, description: 'Click button by text' },
     { name: 'link-by-text', input: { text: 'Learn more', tag: 'a' }, description: 'Click link by text' },
     { name: 'by-role', input: { selector: '[role="button"][aria-label="Close"]' }, description: 'Click by ARIA' },
+    { name: 'with-diff', input: { selector: '.add-item', diff: true }, description: 'Click and see what changed' },
   ],
   invalidExamples: [
     { name: 'missing-both', input: {}, error: 'selector or text is required' },
@@ -277,6 +282,8 @@ Options:
     typoRate: s.number.describe('Typo probability 0-1 (default 0.03)').optional,
     minDelay: s.number.describe('Min ms between keys (default 50)').optional,
     maxDelay: s.number.describe('Max ms between keys (default 150)').optional,
+    diff: s.boolean.describe('Return DOM diff showing what changed after typing (default false)').optional,
+    diffDelay: s.number.describe('Wait ms before capturing "after" state (default 100)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -1213,7 +1220,7 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-15T19:28:47.048Z',
+  updated: '2026-01-16T13:24:57.511Z',
   checksum: 'b235dc22',
 }
 

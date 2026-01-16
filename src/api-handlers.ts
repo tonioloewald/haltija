@@ -70,6 +70,182 @@ export function registerHandler<T>(
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // ============================================
+// DOM Diff Support
+// ============================================
+
+/** Snapshot of DOM state for diffing */
+interface DomSnapshot {
+  elements: Map<string, { tag: string; text: string; attrs: Record<string, string>; childCount: number }>
+  focused: string | null
+  scrollY: number
+  scrollX: number
+}
+
+/** Semantic diff result */
+export interface DomDiff {
+  added: string[]
+  removed: string[]
+  changed: Array<{ selector: string; changes: Record<string, { from: any; to: any }> }>
+  focused: string | null
+  scrolled: boolean
+}
+
+/** Capture DOM snapshot for diffing - runs in browser */
+const SNAPSHOT_CODE = `(function() {
+  const snapshot = { elements: {}, focused: null, scrollY: window.scrollY, scrollX: window.scrollX };
+  
+  // Get focused element selector
+  if (document.activeElement && document.activeElement !== document.body) {
+    const el = document.activeElement;
+    snapshot.focused = el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className ? '.' + el.className.split(' ')[0] : '');
+  }
+  
+  // Capture visible elements (limit to prevent huge snapshots)
+  const elements = document.querySelectorAll('body *:not(script):not(style):not(noscript)');
+  let count = 0;
+  for (const el of elements) {
+    if (count > 500) break;
+    
+    // Skip invisible elements
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    
+    // Generate selector
+    let selector;
+    if (el.id) selector = '#' + el.id;
+    else if (el.getAttribute('data-testid')) selector = '[data-testid="' + el.getAttribute('data-testid') + '"]';
+    else {
+      // Use tag + nth-child for uniqueness
+      const parent = el.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children);
+        const sameTag = siblings.filter(s => s.tagName === el.tagName);
+        if (sameTag.length > 1) {
+          const idx = sameTag.indexOf(el) + 1;
+          selector = el.tagName.toLowerCase() + ':nth-of-type(' + idx + ')';
+        } else {
+          selector = el.tagName.toLowerCase();
+        }
+        // Add parent context
+        if (parent.id) selector = '#' + parent.id + ' > ' + selector;
+        else if (parent !== document.body) {
+          const pTag = parent.tagName.toLowerCase();
+          selector = pTag + ' > ' + selector;
+        }
+      } else {
+        selector = el.tagName.toLowerCase();
+      }
+    }
+    
+    // Capture element state
+    const attrs = {};
+    for (const attr of el.attributes) {
+      if (!attr.name.startsWith('data-haltija')) {
+        attrs[attr.name] = attr.value;
+      }
+    }
+    
+    snapshot.elements[selector] = {
+      tag: el.tagName.toLowerCase(),
+      text: (el.textContent || '').trim().slice(0, 50),
+      attrs,
+      childCount: el.children.length,
+    };
+    count++;
+  }
+  
+  return snapshot;
+})()`
+
+/** Compute semantic diff between two snapshots */
+function computeDiff(before: any, after: any): DomDiff {
+  const diff: DomDiff = {
+    added: [],
+    removed: [],
+    changed: [],
+    focused: after.focused !== before.focused ? after.focused : null,
+    scrolled: Math.abs(after.scrollY - before.scrollY) > 10 || Math.abs(after.scrollX - before.scrollX) > 10,
+  }
+  
+  const beforeKeys = new Set(Object.keys(before.elements))
+  const afterKeys = new Set(Object.keys(after.elements))
+  
+  // Find added elements
+  for (const key of afterKeys) {
+    if (!beforeKeys.has(key)) {
+      diff.added.push(key)
+    }
+  }
+  
+  // Find removed elements
+  for (const key of beforeKeys) {
+    if (!afterKeys.has(key)) {
+      diff.removed.push(key)
+    }
+  }
+  
+  // Find changed elements (in both snapshots)
+  for (const key of beforeKeys) {
+    if (!afterKeys.has(key)) continue
+    
+    const b = before.elements[key]
+    const a = after.elements[key]
+    const changes: Record<string, { from: any; to: any }> = {}
+    
+    // Check childCount change
+    if (a.childCount !== b.childCount) {
+      changes.childCount = { from: b.childCount, to: a.childCount }
+    }
+    
+    // Check text change (significant changes only)
+    if (a.text !== b.text && (a.text.length > 0 || b.text.length > 0)) {
+      changes.text = { from: b.text, to: a.text }
+    }
+    
+    // Check attribute changes
+    const allAttrs = new Set([...Object.keys(b.attrs), ...Object.keys(a.attrs)])
+    for (const attr of allAttrs) {
+      if (b.attrs[attr] !== a.attrs[attr]) {
+        changes[`@${attr}`] = { from: b.attrs[attr], to: a.attrs[attr] }
+      }
+    }
+    
+    if (Object.keys(changes).length > 0) {
+      diff.changed.push({ selector: key, changes })
+    }
+  }
+  
+  return diff
+}
+
+/** Capture snapshot, perform action, capture again, return diff */
+async function withDiff<T>(
+  ctx: HandlerContext,
+  windowId: string | undefined,
+  action: () => Promise<T>,
+  diffDelay: number = 100
+): Promise<{ result: T; diff: DomDiff }> {
+  // Capture before state
+  const beforeResp = await ctx.requestFromBrowser('eval', 'exec', { code: SNAPSHOT_CODE }, 5000, windowId)
+  const before = beforeResp.success ? beforeResp.data : { elements: {}, focused: null, scrollY: 0, scrollX: 0 }
+  
+  // Perform the action
+  const result = await action()
+  
+  // Wait for DOM to settle
+  await sleep(diffDelay)
+  
+  // Capture after state
+  const afterResp = await ctx.requestFromBrowser('eval', 'exec', { code: SNAPSHOT_CODE }, 5000, windowId)
+  const after = afterResp.success ? afterResp.data : { elements: {}, focused: null, scrollY: 0, scrollX: 0 }
+  
+  // Compute diff
+  const diff = computeDiff(before, after)
+  
+  return { result, diff }
+}
+
+// ============================================
 // Handler Implementations
 // ============================================
 
@@ -78,8 +254,11 @@ import * as api from './api-schema'
 
 // Click handler - fires full mouse event lifecycle
 // Supports both selector and text-based targeting
+// With diff:true, returns what changed after the click
 registerHandler(api.click, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
+  const wantDiff = body.diff === true
+  const diffDelay = body.diffDelay ?? 100
   let selector = body.selector
   
   // If text is provided, find the element first (only visible elements)
@@ -130,9 +309,19 @@ registerHandler(api.click, async (body, ctx) => {
     return Response.json({ success: false, error: 'selector or text is required' }, { status: 400, headers: ctx.headers })
   }
   
-  // Use interaction channel for realistic click with cursor overlay
-  const response = await ctx.requestFromBrowser('interaction', 'click', { selector }, 5000, windowId)
+  // If diff requested, wrap the action with before/after snapshots
+  if (wantDiff) {
+    const { result: response, diff } = await withDiff(
+      ctx,
+      windowId,
+      () => ctx.requestFromBrowser('interaction', 'click', { selector }, 5000, windowId),
+      diffDelay
+    )
+    return Response.json({ ...response, selector, diff }, { headers: ctx.headers })
+  }
   
+  // Standard click without diff
+  const response = await ctx.requestFromBrowser('interaction', 'click', { selector }, 5000, windowId)
   return Response.json({ ...response, selector }, { headers: ctx.headers })
 })
 
@@ -257,8 +446,11 @@ registerHandler(api.drag, async (body, ctx) => {
 })
 
 // Type handler - realistic typing with full event lifecycle
+// With diff:true, returns what changed after typing
 registerHandler(api.type, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
+  const wantDiff = body.diff === true
+  const diffDelay = body.diffDelay ?? 100
   
   // Calculate timeout based on text length and typing speed
   // Worst case: humanlike with typos, max delay 150ms per char + typo overhead
@@ -266,7 +458,7 @@ registerHandler(api.type, async (body, ctx) => {
   const perCharTimeout = (body.maxDelay ?? 150) * 2 // Account for typos and delays
   const timeout = baseTimeout + (body.text?.length || 0) * perCharTimeout
   
-  const response = await ctx.requestFromBrowser('interaction', 'type', {
+  const doType = () => ctx.requestFromBrowser('interaction', 'type', {
     selector: body.selector,
     text: body.text,
     focusMode: body.focusMode,
@@ -278,6 +470,12 @@ registerHandler(api.type, async (body, ctx) => {
     maxDelay: body.maxDelay,
   }, timeout, windowId)
   
+  if (wantDiff) {
+    const { result: response, diff } = await withDiff(ctx, windowId, doType, diffDelay)
+    return Response.json({ ...response, diff }, { headers: ctx.headers })
+  }
+  
+  const response = await doType()
   return Response.json(response, { headers: ctx.headers })
 })
 

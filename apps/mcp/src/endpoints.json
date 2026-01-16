@@ -239,7 +239,7 @@
     "path": "/click",
     "method": "POST",
     "summary": "Click an element",
-    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nTwo ways to target elements:\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
+    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nTwo ways to target elements:\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.\n\nWith diff:true, returns what changed after the click - added/removed elements, attribute changes, focus, scroll.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -263,6 +263,20 @@
             "null"
           ],
           "description": "Tag name when using text (default: any clickable element)"
+        },
+        "diff": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return DOM diff showing what changed after click (default false)"
+        },
+        "diffDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing \"after\" state (default 100)"
         },
         "window": {
           "type": [
@@ -345,6 +359,20 @@
             "null"
           ],
           "description": "Max ms between keys (default 150)"
+        },
+        "diff": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return DOM diff showing what changed after typing (default false)"
+        },
+        "diffDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing \"after\" state (default 100)"
         },
         "window": {
           "type": [
