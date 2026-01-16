@@ -42,6 +42,13 @@
           ],
           "description": "Pierce shadow DOM (default true)"
         },
+        "pierceFrames": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Pierce same-origin iframes (default true)"
+        },
         "compact": {
           "type": [
             "boolean",

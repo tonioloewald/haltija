@@ -1029,6 +1029,7 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
     compact = false,
     pierceShadow = true,
+    pierceFrames = true,
     visibleOnly = false,
   } = options
 
@@ -1272,6 +1273,30 @@ function buildDomTree(el: Element, options: DomTreeRequest, currentDepth = 0): D
     
     if (shadowChildren.length > 0) {
       node.shadowChildren = shadowChildren
+    }
+  }
+
+  // Iframe content (if pierceFrames is enabled and element is an iframe)
+  if (pierceFrames && tagName === 'iframe' && currentDepth < maxDepth) {
+    const iframe = el as HTMLIFrameElement
+    node.frameSrc = iframe.src || iframe.getAttribute('srcdoc') ? '(srcdoc)' : undefined
+    
+    try {
+      // This will throw for cross-origin iframes (security restriction)
+      const iframeDoc = iframe.contentDocument
+      if (iframeDoc && iframeDoc.body) {
+        const frameBody = buildDomTree(iframeDoc.body, options, currentDepth + 1)
+        if (frameBody) {
+          node.frameContent = frameBody
+          // Mark that we successfully pierced this frame
+          if (!node.flags) node.flags = {}
+          node.flags.framePierced = true
+        }
+      }
+    } catch (e) {
+      // Cross-origin iframe - can't access content
+      if (!node.flags) node.flags = {}
+      node.flags.crossOrigin = true
     }
   }
 

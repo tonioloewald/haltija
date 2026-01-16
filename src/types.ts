@@ -848,8 +848,10 @@ export interface DomTreeRequest {
   ignoreSelectors?: string[]
   /** Compact mode: minimal output (default: false) */
   compact?: boolean
-  /** Pierce shadow DOM boundaries (default: false) */
+  /** Pierce shadow DOM boundaries (default: true) */
   pierceShadow?: boolean
+  /** Pierce same-origin iframe boundaries (default: true) */
+  pierceFrames?: boolean
   /** Filter out hidden elements (default: false). When true, elements that are not visible are excluded from the tree. */
   visibleOnly?: boolean
   /** Return actionable summary instead of full tree (buttons, links, inputs, headings) */
@@ -877,6 +879,10 @@ export interface DomTreeNode {
   children?: DomTreeNode[]
   /** Shadow DOM children (if pierceShadow is true) */
   shadowChildren?: DomTreeNode[]
+  /** Iframe document content (if pierceFrames is true and same-origin) */
+  frameContent?: DomTreeNode
+  /** Iframe src URL (for reference, especially if cross-origin) */
+  frameSrc?: string
   /** Flags for quick scanning */
   flags?: {
     /** Has event bindings (xinjs, b8r, etc.) */
@@ -913,6 +919,10 @@ export interface DomTreeNode {
     wouldScroll?: boolean
     /** Element currently has focus */
     focused?: boolean
+    /** Iframe content was successfully accessed (same-origin) */
+    framePierced?: boolean
+    /** Iframe is cross-origin (content not accessible) */
+    crossOrigin?: boolean
   }
   /** Position info (if requested) */
   box?: { x: number; y: number; w: number; h: number; visible: boolean }

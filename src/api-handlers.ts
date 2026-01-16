@@ -547,6 +547,7 @@ registerHandler(api.tree, async (body, ctx) => {
     includeText: body.includeText,
     compact: body.compact,
     pierceShadow: body.pierceShadow,
+    pierceFrames: body.pierceFrames,
     visibleOnly: body.visibleOnly,
     ancestors: body.ancestors,
   }, 5000, windowId)

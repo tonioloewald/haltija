@@ -855,6 +855,7 @@
       ignoreSelectors = DEFAULT_IGNORE_SELECTORS,
       compact = false,
       pierceShadow = true,
+      pierceFrames = true,
       visibleOnly = false
     } = options;
     for (const selector of ignoreSelectors) {
@@ -1030,6 +1031,26 @@
       }
       if (shadowChildren.length > 0) {
         node.shadowChildren = shadowChildren;
+      }
+    }
+    if (pierceFrames && tagName === "iframe" && currentDepth < maxDepth) {
+      const iframe = el;
+      node.frameSrc = iframe.src || iframe.getAttribute("srcdoc") ? "(srcdoc)" : undefined;
+      try {
+        const iframeDoc = iframe.contentDocument;
+        if (iframeDoc && iframeDoc.body) {
+          const frameBody = buildDomTree(iframeDoc.body, options, currentDepth + 1);
+          if (frameBody) {
+            node.frameContent = frameBody;
+            if (!node.flags)
+              node.flags = {};
+            node.flags.framePierced = true;
+          }
+        }
+      } catch (e) {
+        if (!node.flags)
+          node.flags = {};
+        node.flags.crossOrigin = true;
       }
     }
     if (currentDepth < maxDepth && el.children.length > 0) {
