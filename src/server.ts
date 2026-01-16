@@ -2124,6 +2124,7 @@ For complete API reference with all options and response formats:
       url: w.url,
       title: w.title,
       active: w.active,
+      focused: w.id === focusedWindowId,
       connectedAt: w.connectedAt,
       lastSeen: w.lastSeen,
       label: w.label,
@@ -2133,6 +2134,11 @@ For complete API reference with all options and response formats:
       windows: windowList,
       focused: focusedWindowId,
       count: windowList.length,
+      hint: windowList.length > 1 
+        ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
+        : windowList.length === 1
+        ? 'One tab connected. Commands automatically target it.'
+        : 'No tabs connected. Inject the widget into a browser tab.',
     }, { headers })
   }
   

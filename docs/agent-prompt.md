@@ -153,9 +153,15 @@ curl http://localhost:8700/select/result
 
 ## Multiple tabs
 
+If you're not sure which tab you're controlling:
 ```bash
-curl http://localhost:8700/windows              # List tabs
-curl http://localhost:8700/tree?window=abc123   # Target specific tab
+curl http://localhost:8700/windows   # Shows all connected tabs with IDs, URLs, titles
+```
+
+Response includes which tab is focused and hints about targeting. To target a specific tab:
+```bash
+curl http://localhost:8700/tree?window=abc123   # Query params work on any endpoint
+curl -X POST http://localhost:8700/click -d '{"selector":"#btn", "window":"abc123"}'  # Or in body
 ```
 
 ## More info
