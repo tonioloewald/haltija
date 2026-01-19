@@ -1,6 +1,6 @@
 {
   "name": "tosijs-dev",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Browser control for AI agents - query DOM, click, type, run JS, watch mutations",
   "type": "module",
   "main": "dist/index.js",
