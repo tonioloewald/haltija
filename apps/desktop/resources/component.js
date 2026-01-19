@@ -188,7 +188,9 @@
         dataset[key] = htmlEl.dataset[key] || "";
       }
     }
-    const childTags = [...new Set(Array.from(el.children).map((c) => c.tagName.toLowerCase()))];
+    const childTags = [
+      ...new Set(Array.from(el.children).map((c) => c.tagName.toLowerCase()))
+    ];
     return {
       selector: getSelector(el),
       tagName: el.tagName.toLowerCase(),
@@ -368,7 +370,15 @@
       ]
     },
     b8rjs: {
-      interestingAttributes: ["data-event", "data-bind", "data-list", "data-component", "aria-", "role", "title"],
+      interestingAttributes: [
+        "data-event",
+        "data-bind",
+        "data-list",
+        "data-component",
+        "aria-",
+        "role",
+        "title"
+      ],
       ignoreClasses: ["^animate-", "^transition-"]
     },
     tailwind: {
@@ -624,7 +634,15 @@
     }
     return false;
   }
-  var INTERACTIVE_TAGS = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "DETAILS", "SUMMARY"]);
+  var INTERACTIVE_TAGS = new Set([
+    "A",
+    "BUTTON",
+    "INPUT",
+    "SELECT",
+    "TEXTAREA",
+    "DETAILS",
+    "SUMMARY"
+  ]);
   var DEFAULT_INTERESTING_CLASSES = ["-xin-event", "-xin-data", "-xin-"];
   var DEFAULT_INTERESTING_ATTRS = [
     "aria-",
@@ -965,7 +983,7 @@
     if (visibility.visible) {
       const rect = el.getBoundingClientRect();
       const inViewport = rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth;
-      if (!inViewport && (rect.width > 0 && rect.height > 0)) {
+      if (!inViewport && rect.width > 0 && rect.height > 0) {
         flags.wouldScroll = true;
       }
     }
@@ -1016,7 +1034,13 @@
     const maxDepth = depth < 0 ? Infinity : depth;
     if (pierceShadow && el.shadowRoot && currentDepth < maxDepth) {
       const shadowChildren = [];
-      const shadowSkipTags = new Set(["STYLE", "SLOT", "LINK", "SCRIPT", "TEMPLATE"]);
+      const shadowSkipTags = new Set([
+        "STYLE",
+        "SLOT",
+        "LINK",
+        "SCRIPT",
+        "TEMPLATE"
+      ]);
       for (const child of el.shadowRoot.children) {
         if (shadowSkipTags.has(child.tagName))
           continue;
@@ -1094,7 +1118,7 @@
       --tosijs-highlight-bg: rgba(99, 102, 241, 0.1);
       --tosijs-highlight-glow: rgba(99, 102, 241, 0.3);
     }
-    
+
     #haltija-highlight {
       position: fixed;
       pointer-events: none;
@@ -1106,7 +1130,7 @@
       transition: all 0.15s ease-out;
       display: none;
     }
-    
+
     #haltija-highlight-label {
       position: absolute;
       top: -28px;
@@ -1217,8 +1241,26 @@
     SEMANTIC_PRESETS = {
       minimal: ["interaction", "navigation", "recording"],
       interactive: ["interaction", "navigation", "input", "focus", "recording"],
-      detailed: ["interaction", "navigation", "input", "focus", "hover", "scroll", "recording"],
-      debug: ["interaction", "navigation", "input", "focus", "hover", "scroll", "mutation", "console", "recording"]
+      detailed: [
+        "interaction",
+        "navigation",
+        "input",
+        "focus",
+        "hover",
+        "scroll",
+        "recording"
+      ],
+      debug: [
+        "interaction",
+        "navigation",
+        "input",
+        "focus",
+        "hover",
+        "scroll",
+        "mutation",
+        "console",
+        "recording"
+      ]
     };
     rawEventCounts = {};
     semanticEventCounts = {
@@ -1383,17 +1425,17 @@
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
         }
-        
+
         :host(.animating-hide) {
           transition: left 0.3s ease-out, bottom 0.3s ease-in;
         }
-        
+
         :host(.animating-show) {
           transition: left 0.3s ease-in, bottom 0.3s ease-out;
         }
-        
 
-        
+
+
         .widget {
           background: #1a1a2e;
           color: #eee;
@@ -1403,24 +1445,24 @@
           min-width: 320px;
           transition: all 0.3s ease-out;
         }
-        
+
         :host(.minimized) .widget {
           border-radius: 8px 8px 0 0;
         }
-        
+
         :host(.minimized) .body {
           display: none;
         }
-        
+
         .widget.flash {
           animation: flash 0.5s ease-out;
         }
-        
+
         @keyframes flash {
           0%, 100% { box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
           50% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.8); }
         }
-        
+
         .header {
           display: flex;
           align-items: center;
@@ -1430,7 +1472,7 @@
           cursor: move;
           user-select: none;
         }
-        
+
         .logo-wrapper {
           position: relative;
           width: 24px;
@@ -1439,36 +1481,36 @@
           align-items: center;
           justify-content: center;
         }
-        
+
         .status-ring {
           position: absolute;
           inset: 0;
           border-radius: 50%;
           border: 2px solid #666;
         }
-        
+
         .status-ring.connected { border-color: #22c55e; }
         .status-ring.connecting { border-color: #eab308; animation: pulse 1s infinite; }
         .status-ring.paused { border-color: #f97316; }
         .status-ring.disconnected { border-color: #ef4444; }
-        
+
         .logo {
           font-size: 14px;
           line-height: 1;
           z-index: 1;
         }
-        
+
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
-        
+
         .title {
           flex: 1;
           font-weight: 500;
           font-size: 12px;
         }
-        
+
         .indicators {
           display: flex;
           gap: 6px;
@@ -1478,7 +1520,7 @@
           text-overflow: ellipsis;
           max-width: 120px;
         }
-        
+
         .indicator {
           font-size: 10px;
           padding: 2px 6px;
@@ -1486,28 +1528,28 @@
           font-weight: 500;
           white-space: nowrap;
         }
-        
+
         .indicator.errors {
           background: #ef4444;
           color: white;
           cursor: pointer;
         }
-        
+
         .indicator.errors:hover {
           background: #dc2626;
         }
-        
+
         .indicator.recording {
           background: #ef4444;
           color: white;
           animation: pulse 1s infinite;
         }
-        
+
         .controls {
           display: flex;
           gap: 4px;
         }
-        
+
         .btn {
           background: transparent;
           border: none;
@@ -1518,7 +1560,7 @@
           font-size: 14px;
           line-height: 1;
         }
-        
+
         .btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .btn.active { color: #6366f1; }
         .btn.danger:hover { color: #ef4444; }
@@ -1527,13 +1569,13 @@
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
-        
+
         .body {
           padding: 8px 12px;
           font-size: 10px;
           color: #666;
         }
-        
+
         .test-controls {
           display: flex;
           gap: 4px;
@@ -1541,7 +1583,7 @@
           padding-top: 8px;
           border-top: 1px solid #333;
         }
-        
+
         .test-btn {
           flex: 1;
           background: #2a2a4a;
@@ -1557,18 +1599,18 @@
           justify-content: center;
           gap: 4px;
         }
-        
+
         .test-btn:hover { background: #3a3a5a; color: #fff; border-color: #666; }
         .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .test-btn.recording { background: #4a2a2a; border-color: #ef4444; color: #ef4444; }
         .test-btn.recording:hover { background: #5a3a3a; }
-        
+
         .step-count {
           font-size: 9px;
           color: #888;
           margin-top: 4px;
         }
-        
+
         /* Log Viewer Panel */
         .log-panel {
           display: none;
@@ -1577,11 +1619,11 @@
           overflow: hidden;
           flex-direction: column;
         }
-        
+
         .log-panel.open {
           display: flex;
         }
-        
+
         .log-header {
           display: flex;
           align-items: center;
@@ -1591,14 +1633,14 @@
           border-bottom: 1px solid #333;
           flex-shrink: 0;
         }
-        
+
         .log-title {
           flex: 1;
           font-size: 10px;
           font-weight: 500;
           color: #888;
         }
-        
+
         .log-filter {
           font-size: 9px;
           padding: 2px 6px;
@@ -1608,12 +1650,12 @@
           color: #aaa;
           cursor: pointer;
         }
-        
+
         .log-filter:hover {
           background: #3a3a5a;
           border-color: #666;
         }
-        
+
         .log-scroll-btn {
           font-size: 10px;
           padding: 2px 6px;
@@ -1623,18 +1665,18 @@
           color: #666;
           cursor: pointer;
         }
-        
+
         .log-scroll-btn.active {
           background: #2a4a2a;
           border-color: #22c55e;
           color: #22c55e;
         }
-        
+
         .log-scroll-btn:hover {
           border-color: #666;
           color: #888;
         }
-        
+
         .log-content {
           flex: 1;
           overflow-y: auto;
@@ -1642,52 +1684,52 @@
           font-family: ui-monospace, monospace;
           font-size: 10px;
         }
-        
+
         .log-empty {
           padding: 20px;
           text-align: center;
           color: #555;
           font-style: italic;
         }
-        
+
         .log-entry {
           border-bottom: 1px solid #222;
         }
-        
+
         .log-entry:hover {
           background: #222;
         }
-        
+
         details.log-entry > summary {
           cursor: pointer;
           list-style: none;
         }
-        
+
         details.log-entry > summary::-webkit-details-marker {
           display: none;
         }
-        
+
         details.log-entry[open] {
           background: #1a1a2e;
         }
-        
+
         .log-entry-main {
           display: flex;
           gap: 8px;
           padding: 4px 12px;
           align-items: baseline;
         }
-        
+
         .log-entry.no-payload .log-entry-main {
           padding: 4px 12px;
         }
-        
+
         .log-time {
           color: #555;
           flex-shrink: 0;
           width: 65px;
         }
-        
+
         .log-cat {
           font-size: 8px;
           padding: 1px 4px;
@@ -1696,7 +1738,7 @@
           text-transform: uppercase;
           font-weight: 600;
         }
-        
+
         .log-cat.interaction { background: #3b82f6; color: white; }
         .log-cat.navigation { background: #8b5cf6; color: white; }
         .log-cat.input { background: #22c55e; color: white; }
@@ -1708,15 +1750,15 @@
         .log-cat.error { background: #ef4444; color: white; }
         .log-cat.warn { background: #f59e0b; color: black; }
         .log-cat.log { background: #6b7280; color: white; }
-        
+
         .console-entry.error { border-left: 3px solid #ef4444; }
         .console-entry.warn { border-left: 3px solid #f59e0b; }
-        
+
         .log-console-detail {
           padding: 8px;
           background: #1a1a2e;
         }
-        
+
         .log-console-detail pre {
           margin: 0;
           white-space: pre-wrap;
@@ -1724,18 +1766,18 @@
           font-size: 10px;
           color: #ccc;
         }
-        
+
         .log-stack {
           margin-top: 8px !important;
           color: #888 !important;
           font-size: 9px !important;
         }
-        
+
         .log-type {
           color: #aaa;
           flex-shrink: 0;
         }
-        
+
         .log-target {
           color: #6366f1;
           overflow: hidden;
@@ -1743,30 +1785,30 @@
           white-space: nowrap;
           flex: 1;
         }
-        
+
         .log-payload-table {
           width: 100%;
           margin: 4px 12px 8px 12px;
           font-size: 9px;
           border-collapse: collapse;
         }
-        
+
         .log-payload-table td {
           padding: 2px 8px 2px 0;
           vertical-align: top;
         }
-        
+
         .log-key {
           color: #888;
           white-space: nowrap;
           width: 1%;
         }
-        
+
         .log-val {
           color: #aaa;
           word-break: break-all;
         }
-        
+
         /* Test output modal */
         .test-modal {
           display: none;
@@ -1877,7 +1919,7 @@
           border-color: #666;
         }
       </style>
-      
+
       <div class="widget">
         <div class="header">
           <div class="logo-wrapper">
@@ -1895,7 +1937,7 @@
           </div>
         </div>
         <div class="body">
-            <a href="javascript:(function(){fetch('${this.serverUrl.replace("ws:", "http:").replace("wss:", "https:").replace("/ws/browser", "")}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();" 
+            <a href="javascript:(function(){fetch('${this.serverUrl.replace("ws:", "http:").replace("wss:", "https:").replace("/ws/browser", "")}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();"
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">\uD83E\uDDDD bookmark</a>
@@ -1920,7 +1962,7 @@
           </div>
         </div>
       </div>
-      
+
       <div class="test-modal">
         <div class="test-modal-content">
           <div class="test-modal-header">
@@ -3179,7 +3221,18 @@
           return;
         if (target.tagName === "INPUT") {
           const inputType = target.type;
-          if (["checkbox", "radio", "range", "color", "date", "time", "datetime-local", "month", "week", "file"].includes(inputType)) {
+          if ([
+            "checkbox",
+            "radio",
+            "range",
+            "color",
+            "date",
+            "time",
+            "datetime-local",
+            "month",
+            "week",
+            "file"
+          ].includes(inputType)) {
             return;
           }
         }
@@ -3238,7 +3291,15 @@
           return;
         const tagName = target.tagName.toLowerCase();
         const inputType = target.type || "";
-        if (tagName === "input" && ["text", "password", "email", "search", "tel", "url", "number"].includes(inputType)) {
+        if (tagName === "input" && [
+          "text",
+          "password",
+          "email",
+          "search",
+          "tel",
+          "url",
+          "number"
+        ].includes(inputType)) {
           return;
         }
         if (tagName === "select") {
@@ -3581,7 +3642,9 @@
       document.addEventListener("copy", this.semanticHandlers.copy, true);
       document.addEventListener("paste", this.semanticHandlers.paste, true);
       document.addEventListener("selectionchange", this.semanticHandlers.selectionchange);
-      window.addEventListener("scroll", this.semanticHandlers.scroll, { passive: true });
+      window.addEventListener("scroll", this.semanticHandlers.scroll, {
+        passive: true
+      });
       document.addEventListener("mouseover", this.semanticHandlers.mouseover, true);
       document.addEventListener("mouseout", this.semanticHandlers.mouseout, true);
       document.addEventListener("focusin", this.semanticHandlers.focus, true);
@@ -3718,10 +3781,26 @@
         const isContentEditable = field.isContentEditable;
         if (field.tagName === "INPUT") {
           const inputType = field.type;
-          if (["checkbox", "radio", "range", "color", "date", "time", "datetime-local", "month", "week", "file"].includes(inputType)) {
+          if ([
+            "checkbox",
+            "radio",
+            "range",
+            "color",
+            "date",
+            "time",
+            "datetime-local",
+            "month",
+            "week",
+            "file"
+          ].includes(inputType)) {
             if (this.typingState.timeout)
               clearTimeout(this.typingState.timeout);
-            this.typingState = { field: null, startTime: 0, text: "", timeout: null };
+            this.typingState = {
+              field: null,
+              startTime: 0,
+              text: "",
+              timeout: null
+            };
             return;
           }
         }
@@ -4147,10 +4226,12 @@
     handleNavigationMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
       if (action2 === "refresh") {
-        if (payload2.hard) {
+        if (payload2.soft) {
           location.reload();
         } else {
-          location.reload();
+          const url = new URL(location.href);
+          url.searchParams.set("_haltija_refresh", Date.now().toString());
+          location.href = url.toString();
         }
         this.respond(msg2.id, true);
       } else if (action2 === "goto") {
@@ -4220,7 +4301,10 @@
             this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
             return;
           }
-          const opts = { fullStyles: payload2.fullStyles, matchedRules: payload2.matchedRules };
+          const opts = {
+            fullStyles: payload2.fullStyles,
+            matchedRules: payload2.matchedRules
+          };
           this.respond(msg2.id, true, inspectElement(el, opts));
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
@@ -4228,7 +4312,10 @@
       } else if (action2 === "inspectAll") {
         try {
           const elements = document.querySelectorAll(payload2.selector);
-          const opts = { fullStyles: payload2.fullStyles, matchedRules: payload2.matchedRules };
+          const opts = {
+            fullStyles: payload2.fullStyles,
+            matchedRules: payload2.matchedRules
+          };
           const results = Array.from(elements).slice(0, payload2.limit || 10).map((el) => inspectElement(el, opts));
           this.respond(msg2.id, true, results);
         } catch (err) {
@@ -4326,7 +4413,11 @@
                 targetWidth = Math.round(targetWidth);
                 targetHeight = Math.round(targetHeight);
                 if (format === "png" && targetWidth === img.width && targetHeight === img.height) {
-                  resolve({ image: dataUrl, width: img.width, height: img.height });
+                  resolve({
+                    image: dataUrl,
+                    width: img.width,
+                    height: img.height
+                  });
                   return;
                 }
                 const canvas = document.createElement("canvas");
@@ -4390,8 +4481,8 @@
             this.respond(msg2.id, true, {
               viewport,
               image: null,
-              note: "No capture method available. Use Electron app or load html2canvas.",
-              hint: 'In Electron: captures work automatically. In browser: add <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>'
+              note: "Screenshot capture requires the Haltija Desktop app.",
+              source: "viewport-only"
             });
           }
         } catch (err) {
@@ -4539,7 +4630,11 @@
       if (mode === "keyboard") {
         if (document.activeElement && document.activeElement !== document.body) {
           const prev = document.activeElement;
-          prev.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", bubbles: true }));
+          prev.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Tab",
+            code: "Tab",
+            bubbles: true
+          }));
           prev.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
           prev.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
         }
@@ -4549,7 +4644,12 @@
         el.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", code: "Tab", bubbles: true }));
         return;
       }
-      const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+      const mouseOpts = {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y
+      };
       el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
       el.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
       el.dispatchEvent(new MouseEvent("mousemove", mouseOpts));
@@ -4567,7 +4667,11 @@
         const input = el;
         input.select();
         await this.sleep(10);
-        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Backspace",
+          code: "Backspace",
+          bubbles: true
+        }));
         el.dispatchEvent(new InputEvent("beforeinput", {
           bubbles: true,
           cancelable: true,
@@ -4578,7 +4682,11 @@
           bubbles: true,
           inputType: "deleteContentBackward"
         }));
-        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keyup", {
+          key: "Backspace",
+          code: "Backspace",
+          bubbles: true
+        }));
       } else if (isContentEditable) {
         const selection = window.getSelection();
         const range = document.createRange();
@@ -4586,7 +4694,11 @@
         selection?.removeAllRanges();
         selection?.addRange(range);
         await this.sleep(10);
-        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Backspace",
+          code: "Backspace",
+          bubbles: true
+        }));
         el.dispatchEvent(new InputEvent("beforeinput", {
           bubbles: true,
           cancelable: true,
@@ -4597,7 +4709,11 @@
           bubbles: true,
           inputType: "deleteContentBackward"
         }));
-        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keyup", {
+          key: "Backspace",
+          code: "Backspace",
+          bubbles: true
+        }));
       }
     }
     async typeCharacter(el, char, isNativeInput, isContentEditable) {
@@ -4641,7 +4757,11 @@
       }));
     }
     async deleteCharacter(el, isNativeInput, isContentEditable) {
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Backspace",
+        code: "Backspace",
+        bubbles: true
+      }));
       const beforeInputEvent = new InputEvent("beforeinput", {
         bubbles: true,
         cancelable: true,
@@ -4670,7 +4790,11 @@
           inputType: "deleteContentBackward"
         }));
       }
-      el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", code: "Backspace", bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", {
+        key: "Backspace",
+        code: "Backspace",
+        bubbles: true
+      }));
     }
     setNativeValue(el, value) {
       const prototype = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -4777,7 +4901,13 @@
         const rect = el.getBoundingClientRect();
         const x = rect.left + rect.width / 2;
         const y = rect.top + rect.height / 2;
-        const mouseOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+        const mouseOpts = {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          button: 0
+        };
         const elementLabel = this.getElementLabel(el);
         this.showCursor(x, y, "\uD83D\uDC46");
         this.showSubtitle(`Clicking ${elementLabel}`);
@@ -4803,7 +4933,15 @@
       }
     }
     async performKey(payload2, responseId) {
-      const { key, selector, ctrlKey, shiftKey, altKey, metaKey, repeat = 1 } = payload2;
+      const {
+        key,
+        selector,
+        ctrlKey,
+        shiftKey,
+        altKey,
+        metaKey,
+        repeat = 1
+      } = payload2;
       try {
         let target = null;
         if (selector) {
@@ -5085,7 +5223,15 @@
           consoleEntries: []
         };
         this.watchEvents({
-          events: ["click", "input", "change", "keydown", "submit", "focus", "blur"]
+          events: [
+            "click",
+            "input",
+            "change",
+            "keydown",
+            "submit",
+            "focus",
+            "blur"
+          ]
         }, `recording-${this.recording.id}`);
         this.respond(msg2.id, true, { sessionId: this.recording.id });
       } else if (action2 === "stop") {
@@ -5154,7 +5300,9 @@
       this.mutationConfig = config;
       const root = config.root ? document.querySelector(config.root) : document.body;
       if (!root) {
-        this.send("mutations", "error", { error: `Root element not found: ${config.root}` });
+        this.send("mutations", "error", {
+          error: `Root element not found: ${config.root}`
+        });
         return;
       }
       const preset = config.preset ?? "smart";
@@ -5190,7 +5338,10 @@
       if (config.pierceShadow) {
         this.attachShadowObservers(root, observerOptions, debounceMs);
       }
-      this.send("mutations", "started", { config, shadowRoots: this.shadowObservers.size });
+      this.send("mutations", "started", {
+        config,
+        shadowRoots: this.shadowObservers.size
+      });
     }
     attachShadowObservers(root, options, debounceMs) {
       const attachToShadowRoot = (shadowRoot) => {
@@ -5295,7 +5446,16 @@
               }
               added++;
               const hasId = !!el.id;
-              const isSignificant = ["DIALOG", "MODAL", "FORM", "BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"].includes(el.tagName);
+              const isSignificant = [
+                "DIALOG",
+                "MODAL",
+                "FORM",
+                "BUTTON",
+                "A",
+                "INPUT",
+                "SELECT",
+                "TEXTAREA"
+              ].includes(el.tagName);
               const isCustomElement = el.tagName.includes("-");
               const classes = el.className?.toString().split(/\s+/).filter(Boolean) || [];
               const { interesting: interestingClasses } = filterClasses(classes, rules);
@@ -5322,7 +5482,16 @@
               }
               removed++;
               const hasId = !!el.id;
-              const isSignificant = ["DIALOG", "MODAL", "FORM", "BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"].includes(el.tagName);
+              const isSignificant = [
+                "DIALOG",
+                "MODAL",
+                "FORM",
+                "BUTTON",
+                "A",
+                "INPUT",
+                "SELECT",
+                "TEXTAREA"
+              ].includes(el.tagName);
               const isCustomElement = el.tagName.includes("-");
               if (hasId || isSignificant || isCustomElement) {
                 notable.push({
@@ -5567,7 +5736,13 @@
       this.respond(responseId, true);
     }
     interceptConsole() {
-      const levels = ["log", "info", "warn", "error", "debug"];
+      const levels = [
+        "log",
+        "info",
+        "warn",
+        "error",
+        "debug"
+      ];
       for (const level of levels) {
         this.originalConsole[level] = console[level];
         console[level] = (...args) => {

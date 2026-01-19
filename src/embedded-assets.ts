@@ -1694,7 +1694,7 @@ Response: { success: true, waited: ms, found?: boolean }
 Call a method or access a property on an element by selector. Convenience wrapper around /eval.
 
 This avoids writing querySelector boilerplate. Two modes:
-- With args (even empty []): Calls element.method(...args) 
+- With args (even empty []): Calls element.method(...args)
 - Without args: Returns element.property value
 
 Return value is JSON-serialized. Promises are awaited.
@@ -1797,24 +1797,24 @@ Use /location after to verify navigation succeeded.
 
 **Refresh the page**
 
-Reload the current page. Use hard: true to bypass cache.
+Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`hard\` | boolean,null | Bypass cache (default false) |
+| \`soft\` | boolean,null | Use cached resources if available (default false = hard refresh) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
 
-- **soft**: Normal refresh
+- **hard**: Hard refresh (default, bypasses cache)
   \`\`\`json
   {}
   \`\`\`
-- **hard**: Bypass cache
+- **soft**: Soft refresh (uses cache)
   \`\`\`json
-  {"hard":true}
+  {"soft":true}
   \`\`\`
 
 ---
@@ -2340,9 +2340,9 @@ Return values are JSON-serialized. Promises are awaited.
 
 Capture the page or a specific element as base64 PNG/WebP/JPEG.
 
-Response: { success, image: "data:image/png;base64,...", width, height, source }
+Works automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.
 
-Source indicates capture method: "electron" (best), "html2canvas", or "viewport-only".
+Response: { success, image: "data:image/png;base64,...", width, height, source }
 
 **Parameters:**
 

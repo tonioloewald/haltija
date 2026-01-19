@@ -772,16 +772,16 @@
     "path": "/refresh",
     "method": "POST",
     "summary": "Refresh the page",
-    "description": "Reload the current page. Use hard: true to bypass cache.",
+    "description": "Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "hard": {
+        "soft": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "Bypass cache (default false)"
+          "description": "Use cached resources if available (default false = hard refresh)"
         },
         "window": {
           "type": [
@@ -985,7 +985,7 @@
     "path": "/call",
     "method": "POST",
     "summary": "Call a method or get a property on an element",
-    "description": "Call a method or access a property on an element by selector. Convenience wrapper around /eval.\n\nThis avoids writing querySelector boilerplate. Two modes:\n- With args (even empty []): Calls element.method(...args) \n- Without args: Returns element.property value\n\nReturn value is JSON-serialized. Promises are awaited.\n\nResponse: { success: true, data: <return value> }",
+    "description": "Call a method or access a property on an element by selector. Convenience wrapper around /eval.\n\nThis avoids writing querySelector boilerplate. Two modes:\n- With args (even empty []): Calls element.method(...args)\n- Without args: Returns element.property value\n\nReturn value is JSON-serialized. Promises are awaited.\n\nResponse: { success: true, data: <return value> }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1024,7 +1024,7 @@
     "path": "/screenshot",
     "method": "POST",
     "summary": "Capture a screenshot",
-    "description": "Capture the page or a specific element as base64 PNG/WebP/JPEG.\n\nResponse: { success, image: \"data:image/png;base64,...\", width, height, source }\n\nSource indicates capture method: \"electron\" (best), \"html2canvas\", or \"viewport-only\".",
+    "description": "Capture the page or a specific element as base64 PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\nResponse: { success, image: \"data:image/png;base64,...\", width, height, source }",
     "inputSchema": {
       "type": "object",
       "properties": {

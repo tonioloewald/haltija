@@ -19,6 +19,9 @@ bun test src/server.test.ts       # Single test file
 # E2E tests (run with Playwright on Node.js - NOT Bun)
 bun run test:e2e
 
+# Run all tests (unit + E2E)
+bun run test:all
+
 # Run server for development
 bun run dist/server.js
 # or
@@ -29,10 +32,10 @@ bunx haltija
 
 **Playwright runs on Node.js, not Bun.** This is the most common source of test failures:
 
-- Unit tests (`*.test.ts` except `playwright.test.ts`) can use Bun APIs
-- Playwright tests CANNOT use Bun APIs - if you see "Cannot find package 'bun'" in Playwright, the test is importing Bun-only code
-- `playwright.config.ts` uses `testMatch: '**/playwright.test.ts'` to exclude unit tests
-- E2E tests are in files matching `*.playwright.ts`
+- Unit tests (`*.test.ts`) use Bun APIs and run with `bun test`
+- E2E tests use `.playwright.ts` suffix (e.g., `e2e.playwright.ts`, `mutation.playwright.ts`)
+- Playwright tests CANNOT import Bun-only code - if you see "Cannot find package 'bun'" in Playwright, you're importing Bun-specific code
+- `playwright.config.ts` uses `testMatch: '**/*.playwright.ts'` to only run Playwright tests
 
 ## Architecture
 
@@ -56,6 +59,7 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/api-handlers.ts` | Handler implementations for routed endpoints |
 | `src/types.ts` | All TypeScript types (DevMessage, TestStep, SemanticEvent, etc.) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
+| `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
 
 ### Request Flow
 
@@ -72,6 +76,7 @@ Browser Tab              Server (Bun)           AI Agent
 - Commands can target specific windows: `?window=<id>`
 - `focusedWindowId` tracks which window receives untargeted commands
 - `windows` Map tracks all connected windows with their state
+- Window types: `tab`, `popup`, `iframe` (tracked via `windowType`)
 
 ### Schema-Driven API
 
@@ -79,6 +84,7 @@ Endpoints are defined in `api-schema.ts` using `tosijs-schema`:
 - GET on a POST endpoint returns self-documenting schema
 - POST validates body against schema before calling handler
 - Schema generates MCP tool definitions for Claude Desktop
+- `SCHEMA_FINGERPRINT` tracks API changes for cache invalidation
 
 ### Semantic Events
 
@@ -125,3 +131,4 @@ Located in `apps/desktop/`. The Electron shell:
 Located in `apps/mcp/`. Provides Model Context Protocol tools for Claude Desktop:
 - Generates tool definitions from `api-schema.ts`
 - Translates MCP JSON-RPC to REST API calls
+- Setup: `bunx haltija --setup-mcp`

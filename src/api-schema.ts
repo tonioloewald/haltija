@@ -1,12 +1,12 @@
 /**
  * Haltija API Schema Definitions
- * 
+ *
  * Single source of truth for:
  * - Server request validation
- * - API documentation generation  
+ * - API documentation generation
  * - MCP tool definitions
  * - Self-documenting endpoints (GET returns schema, POST executes)
- * 
+ *
  * Uses tosijs-schema for JSON Schema generation with TypeScript inference.
  */
 
@@ -18,29 +18,29 @@ import { s, type Infer } from 'tosijs-schema'
 
 /** Example of valid input for an endpoint */
 export interface EndpointExample<T = any> {
-  name: string              // Short identifier for the example
-  input: T                  // Valid input object
-  description?: string      // What this example demonstrates
-  response?: any            // Example response (for documentation)
-  curl?: string             // Example curl command (for documentation)
+  name: string // Short identifier for the example
+  input: T // Valid input object
+  description?: string // What this example demonstrates
+  response?: any // Example response (for documentation)
+  curl?: string // Example curl command (for documentation)
 }
 
 /** Example of invalid input (for test generation) */
 export interface InvalidExample {
-  name?: string             // Optional identifier
-  input: any                // Invalid input object
-  error: string             // Expected error substring
+  name?: string // Optional identifier
+  input: any // Invalid input object
+  error: string // Expected error substring
 }
 
 export interface EndpointDef<TInput = any> {
   path: string
   method: 'GET' | 'POST'
-  summary: string           // One-line description
-  description?: string      // Detailed description for docs
-  input?: { schema: any, validate: (data: any, opts?: any) => boolean }
-  examples?: EndpointExample<TInput>[]      // Valid input examples
-  invalidExamples?: InvalidExample[]        // Invalid inputs for testing
-  category?: string         // Grouping for docs (interaction, dom, events, etc.)
+  summary: string // One-line description
+  description?: string // Detailed description for docs
+  input?: { schema: any; validate: (data: any, opts?: any) => boolean }
+  examples?: EndpointExample<TInput>[] // Valid input examples
+  invalidExamples?: InvalidExample[] // Invalid inputs for testing
+  category?: string // Grouping for docs (interaction, dom, events, etc.)
 }
 
 // Helper to create endpoint with proper typing
@@ -51,7 +51,7 @@ function endpoint<T>(def: EndpointDef<T>): EndpointDef<T> {
 // ============================================
 // DOM Endpoints
 // ============================================
-// 
+//
 // Choosing the right DOM tool:
 // - /tree: Get page structure overview. Start here to understand layout.
 // - /query: Quick check if element exists, get basic info (tag, id, class, text).
@@ -77,19 +77,42 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
   input: s.object({
     selector: s.string.describe('Root element selector').optional,
     depth: s.number.describe('Max depth (-1 = unlimited, default 3)').optional,
-    includeText: s.boolean.describe('Include text content (default true)').optional,
-    visibleOnly: s.boolean.describe('Only visible elements (default false)').optional,
-    pierceShadow: s.boolean.describe('Pierce shadow DOM (default true)').optional,
-    pierceFrames: s.boolean.describe('Pierce same-origin iframes (default true)').optional,
+    includeText: s.boolean.describe('Include text content (default true)')
+      .optional,
+    visibleOnly: s.boolean.describe('Only visible elements (default false)')
+      .optional,
+    pierceShadow: s.boolean.describe('Pierce shadow DOM (default true)')
+      .optional,
+    pierceFrames: s.boolean.describe(
+      'Pierce same-origin iframes (default true)',
+    ).optional,
     compact: s.boolean.describe('Minimal output (default false)').optional,
-    ancestors: s.boolean.describe('Include ancestor path from root (default false)').optional,
+    ancestors: s.boolean.describe(
+      'Include ancestor path from root (default false)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'overview', input: { depth: 2 }, description: 'Quick page overview' },
-    { name: 'form-only', input: { selector: 'form', depth: -1 }, description: 'Full form structure' },
-    { name: 'visible-buttons', input: { selector: 'body', visibleOnly: true, depth: 4 }, description: 'Find visible interactive elements' },
-    { name: 'with-context', input: { selector: '#deep-element', ancestors: true }, description: 'See element with parent context' },
+    {
+      name: 'overview',
+      input: { depth: 2 },
+      description: 'Quick page overview',
+    },
+    {
+      name: 'form-only',
+      input: { selector: 'form', depth: -1 },
+      description: 'Full form structure',
+    },
+    {
+      name: 'visible-buttons',
+      input: { selector: 'body', visibleOnly: true, depth: 4 },
+      description: 'Find visible interactive elements',
+    },
+    {
+      name: 'with-context',
+      input: { selector: '#deep-element', ancestors: true },
+      description: 'See element with parent context',
+    },
   ],
 })
 
@@ -105,12 +128,13 @@ Response: { tagName, id, className, textContent, attributes: {...} }`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
-    all: s.boolean.describe('Return all matches (default false = first only)').optional,
+    all: s.boolean.describe('Return all matches (default false = first only)')
+      .optional,
   }),
   examples: [
-    { 
-      name: 'by-id', 
-      input: { selector: '#submit-btn' }, 
+    {
+      name: 'by-id',
+      input: { selector: '#submit-btn' },
       description: 'Find element by ID',
       response: {
         success: true,
@@ -119,15 +143,27 @@ Response: { tagName, id, className, textContent, attributes: {...} }`,
           id: 'submit-btn',
           className: 'btn primary',
           textContent: 'Submit',
-          attributes: { id: 'submit-btn', class: 'btn primary', type: 'submit' }
-        }
-      }
+          attributes: {
+            id: 'submit-btn',
+            class: 'btn primary',
+            type: 'submit',
+          },
+        },
+      },
     },
-    { name: 'all-inputs', input: { selector: 'input[type="text"]', all: true }, description: 'Find all text inputs' },
+    {
+      name: 'all-inputs',
+      input: { selector: 'input[type="text"]', all: true },
+      description: 'Find all text inputs',
+    },
   ],
   invalidExamples: [
     { name: 'missing-selector', input: {}, error: 'selector is required' },
-    { name: 'wrong-type', input: { selector: 123 }, error: 'selector must be string' },
+    {
+      name: 'wrong-type',
+      input: { selector: 123 },
+      error: 'selector must be string',
+    },
   ],
 })
 
@@ -150,14 +186,18 @@ Use before clicking to verify element is visible and enabled.`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('CSS selector'),
-    fullStyles: s.boolean.describe('Include all computed styles (default: false)').optional,
-    matchedRules: s.boolean.describe('Include matched CSS rules with specificity (default: false)').optional,
+    fullStyles: s.boolean.describe(
+      'Include all computed styles (default: false)',
+    ).optional,
+    matchedRules: s.boolean.describe(
+      'Include matched CSS rules with specificity (default: false)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { 
-      name: 'check-button', 
-      input: { selector: '#submit' }, 
+    {
+      name: 'check-button',
+      input: { selector: '#submit' },
       description: 'Verify button is clickable',
       response: {
         success: true,
@@ -165,16 +205,37 @@ Use before clicking to verify element is visible and enabled.`,
           selector: 'body > form > button#submit',
           tagName: 'button',
           classList: ['btn', 'primary'],
-          box: { x: 100, y: 200, width: 120, height: 40, visible: true, display: 'inline-block', visibility: 'visible', opacity: 1 },
-          text: { innerText: 'Submit', textContent: 'Submit', innerHTML: 'Submit' },
+          box: {
+            x: 100,
+            y: 200,
+            width: 120,
+            height: 40,
+            visible: true,
+            display: 'inline-block',
+            visibility: 'visible',
+            opacity: 1,
+          },
+          text: {
+            innerText: 'Submit',
+            textContent: 'Submit',
+            innerHTML: 'Submit',
+          },
           attributes: { id: 'submit', class: 'btn primary', type: 'submit' },
           properties: { disabled: false, hidden: false, type: 'submit' },
           hierarchy: { parent: 'form#login', children: 0, depth: 4 },
-          styles: { display: 'inline-block', visibility: 'visible', opacity: '1' }
-        }
-      }
+          styles: {
+            display: 'inline-block',
+            visibility: 'visible',
+            opacity: '1',
+          },
+        },
+      },
     },
-    { name: 'check-input', input: { selector: 'input[name="email"]' }, description: 'Get input state and value' },
+    {
+      name: 'check-input',
+      input: { selector: 'input[name="email"]' },
+      description: 'Get input state and value',
+    },
   ],
   invalidExamples: [
     { name: 'missing-selector', input: {}, error: 'selector is required' },
@@ -197,14 +258,30 @@ Response: array of inspection objects`,
   input: s.object({
     selector: s.string.describe('CSS selector'),
     limit: s.number.describe('Max elements (default 10)').optional,
-    fullStyles: s.boolean.describe('Include all computed styles (default: false)').optional,
-    matchedRules: s.boolean.describe('Include matched CSS rules with specificity (default: false)').optional,
+    fullStyles: s.boolean.describe(
+      'Include all computed styles (default: false)',
+    ).optional,
+    matchedRules: s.boolean.describe(
+      'Include matched CSS rules with specificity (default: false)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'all-buttons', input: { selector: 'button, [role="button"]', limit: 20 }, description: 'Find all clickable buttons' },
-    { name: 'form-fields', input: { selector: 'input, select, textarea' }, description: 'List all form inputs' },
-    { name: 'nav-links', input: { selector: 'nav a', limit: 15 }, description: 'Get navigation links' },
+    {
+      name: 'all-buttons',
+      input: { selector: 'button, [role="button"]', limit: 20 },
+      description: 'Find all clickable buttons',
+    },
+    {
+      name: 'form-fields',
+      input: { selector: 'input, select, textarea' },
+      description: 'List all form inputs',
+    },
+    {
+      name: 'nav-links',
+      input: { selector: 'nav a', limit: 15 },
+      description: 'Get navigation links',
+    },
   ],
 })
 
@@ -231,24 +308,63 @@ With diff:true, returns what changed after the click - added/removed elements, a
   category: 'interaction',
   input: s.object({
     selector: s.string.describe('CSS selector of element to click').optional,
-    text: s.string.describe('Text content to find (alternative to selector)').optional,
-    tag: s.string.describe('Tag name when using text (default: any clickable element)').optional,
-    diff: s.boolean.describe('Return DOM diff showing what changed after click (default false)').optional,
-    diffDelay: s.number.describe('Wait ms before capturing "after" state (default 100)').optional,
+    text: s.string.describe('Text content to find (alternative to selector)')
+      .optional,
+    tag: s.string.describe(
+      'Tag name when using text (default: any clickable element)',
+    ).optional,
+    diff: s.boolean.describe(
+      'Return DOM diff showing what changed after click (default false)',
+    ).optional,
+    diffDelay: s.number.describe(
+      'Wait ms before capturing "after" state (default 100)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'by-id', input: { selector: '#submit' }, description: 'Click button by ID' },
-    { name: 'by-class', input: { selector: '.btn-primary' }, description: 'Click by class' },
-    { name: 'by-text', input: { text: 'Save' }, description: 'Click element containing "Save"' },
-    { name: 'button-by-text', input: { text: 'Submit', tag: 'button' }, description: 'Click button by text' },
-    { name: 'link-by-text', input: { text: 'Learn more', tag: 'a' }, description: 'Click link by text' },
-    { name: 'by-role', input: { selector: '[role="button"][aria-label="Close"]' }, description: 'Click by ARIA' },
-    { name: 'with-diff', input: { selector: '.add-item', diff: true }, description: 'Click and see what changed' },
+    {
+      name: 'by-id',
+      input: { selector: '#submit' },
+      description: 'Click button by ID',
+    },
+    {
+      name: 'by-class',
+      input: { selector: '.btn-primary' },
+      description: 'Click by class',
+    },
+    {
+      name: 'by-text',
+      input: { text: 'Save' },
+      description: 'Click element containing "Save"',
+    },
+    {
+      name: 'button-by-text',
+      input: { text: 'Submit', tag: 'button' },
+      description: 'Click button by text',
+    },
+    {
+      name: 'link-by-text',
+      input: { text: 'Learn more', tag: 'a' },
+      description: 'Click link by text',
+    },
+    {
+      name: 'by-role',
+      input: { selector: '[role="button"][aria-label="Close"]' },
+      description: 'Click by ARIA',
+    },
+    {
+      name: 'with-diff',
+      input: { selector: '.add-item', diff: true },
+      description: 'Click and see what changed',
+    },
   ],
   invalidExamples: [
     { name: 'missing-both', input: {}, error: 'selector or text is required' },
-    { name: 'wrong-type', input: { selector: 123 }, error: 'selector must be string' },
+    {
+      name: 'wrong-type',
+      input: { selector: 123 },
+      error: 'selector must be string',
+    },
   ],
 })
 
@@ -274,30 +390,80 @@ Options:
 - clear: Clear existing content before typing (default false)`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector of input/textarea/contenteditable'),
+    selector: s.string.describe(
+      'CSS selector of input/textarea/contenteditable',
+    ),
     text: s.string.describe('Text to type'),
-    humanlike: s.boolean.describe('Human-like delays and typos (default true)').optional,
-    focusMode: s.enum(['mouse', 'keyboard', 'direct'] as const).describe('How to focus: mouse (default), keyboard, or direct').optional,
-    clear: s.boolean.describe('Clear existing content before typing (default false)').optional,
-    blur: s.boolean.describe('Blur element after typing to trigger change event (default true)').optional,
+    humanlike: s.boolean.describe('Human-like delays and typos (default true)')
+      .optional,
+    focusMode: s
+      .enum(['mouse', 'keyboard', 'direct'] as const)
+      .describe('How to focus: mouse (default), keyboard, or direct').optional,
+    clear: s.boolean.describe(
+      'Clear existing content before typing (default false)',
+    ).optional,
+    blur: s.boolean.describe(
+      'Blur element after typing to trigger change event (default true)',
+    ).optional,
     typoRate: s.number.describe('Typo probability 0-1 (default 0.03)').optional,
     minDelay: s.number.describe('Min ms between keys (default 50)').optional,
     maxDelay: s.number.describe('Max ms between keys (default 150)').optional,
-    diff: s.boolean.describe('Return DOM diff showing what changed after typing (default false)').optional,
-    diffDelay: s.number.describe('Wait ms before capturing "after" state (default 100)').optional,
+    diff: s.boolean.describe(
+      'Return DOM diff showing what changed after typing (default false)',
+    ).optional,
+    diffDelay: s.number.describe(
+      'Wait ms before capturing "after" state (default 100)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'email', input: { selector: '#email', text: 'user@example.com' }, description: 'Type email address' },
-    { name: 'password', input: { selector: 'input[type="password"]', text: 'secret123' }, description: 'Type password' },
-    { name: 'fast-test', input: { selector: 'input', text: 'hello', humanlike: false, focusMode: 'direct' }, description: 'Fast typing for tests' },
-    { name: 'keyboard-focus', input: { selector: '#search', text: 'query', focusMode: 'keyboard' }, description: 'Focus via Tab key' },
-    { name: 'clear-first', input: { selector: '#name', text: 'New Name', clear: true }, description: 'Clear field then type' },
-    { name: 'contenteditable', input: { selector: '[contenteditable]', text: 'Hello world' }, description: 'Type into contenteditable' },
+    {
+      name: 'email',
+      input: { selector: '#email', text: 'user@example.com' },
+      description: 'Type email address',
+    },
+    {
+      name: 'password',
+      input: { selector: 'input[type="password"]', text: 'secret123' },
+      description: 'Type password',
+    },
+    {
+      name: 'fast-test',
+      input: {
+        selector: 'input',
+        text: 'hello',
+        humanlike: false,
+        focusMode: 'direct',
+      },
+      description: 'Fast typing for tests',
+    },
+    {
+      name: 'keyboard-focus',
+      input: { selector: '#search', text: 'query', focusMode: 'keyboard' },
+      description: 'Focus via Tab key',
+    },
+    {
+      name: 'clear-first',
+      input: { selector: '#name', text: 'New Name', clear: true },
+      description: 'Clear field then type',
+    },
+    {
+      name: 'contenteditable',
+      input: { selector: '[contenteditable]', text: 'Hello world' },
+      description: 'Type into contenteditable',
+    },
   ],
   invalidExamples: [
-    { name: 'missing-text', input: { selector: '#input' }, error: 'text is required' },
-    { name: 'missing-selector', input: { text: 'hello' }, error: 'selector is required' },
+    {
+      name: 'missing-text',
+      input: { selector: '#input' },
+      error: 'text is required',
+    },
+    {
+      name: 'missing-selector',
+      input: { text: 'hello' },
+      error: 'selector is required',
+    },
   ],
 })
 
@@ -314,8 +480,12 @@ Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for hol
 Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.`,
   category: 'interaction',
   input: s.object({
-    key: s.string.describe('Key to press (e.g., "Enter", "Escape", "a", "ArrowDown")'),
-    selector: s.string.describe('Element to focus first (default: activeElement)').optional,
+    key: s.string.describe(
+      'Key to press (e.g., "Enter", "Escape", "a", "ArrowDown")',
+    ),
+    selector: s.string.describe(
+      'Element to focus first (default: activeElement)',
+    ).optional,
     ctrlKey: s.boolean.describe('Hold Ctrl/Control').optional,
     shiftKey: s.boolean.describe('Hold Shift').optional,
     altKey: s.boolean.describe('Hold Alt/Option').optional,
@@ -324,13 +494,37 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'escape', input: { key: 'Escape' }, description: 'Close modal/cancel' },
+    {
+      name: 'escape',
+      input: { key: 'Escape' },
+      description: 'Close modal/cancel',
+    },
     { name: 'enter', input: { key: 'Enter' }, description: 'Submit form' },
-    { name: 'save', input: { key: 's', ctrlKey: true }, description: 'Ctrl+S save shortcut' },
-    { name: 'tab', input: { key: 'Tab', selector: '#first-input' }, description: 'Tab from element' },
-    { name: 'shift-tab', input: { key: 'Tab', shiftKey: true }, description: 'Shift+Tab backwards' },
-    { name: 'arrow-nav', input: { key: 'ArrowDown', repeat: 3 }, description: 'Navigate down 3 times' },
-    { name: 'select-all', input: { key: 'a', ctrlKey: true, selector: '#editor' }, description: 'Ctrl+A in element' },
+    {
+      name: 'save',
+      input: { key: 's', ctrlKey: true },
+      description: 'Ctrl+S save shortcut',
+    },
+    {
+      name: 'tab',
+      input: { key: 'Tab', selector: '#first-input' },
+      description: 'Tab from element',
+    },
+    {
+      name: 'shift-tab',
+      input: { key: 'Tab', shiftKey: true },
+      description: 'Shift+Tab backwards',
+    },
+    {
+      name: 'arrow-nav',
+      input: { key: 'ArrowDown', repeat: 3 },
+      description: 'Navigate down 3 times',
+    },
+    {
+      name: 'select-all',
+      input: { key: 'a', ctrlKey: true, selector: '#editor' },
+      description: 'Ctrl+A in element',
+    },
   ],
   invalidExamples: [
     { name: 'missing-key', input: {}, error: 'key is required' },
@@ -353,12 +547,28 @@ Good for: sliders, resize handles, drag-and-drop reordering, range inputs.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'slider-right', input: { selector: '.slider-handle', deltaX: 100 }, description: 'Move slider right' },
-    { name: 'resize', input: { selector: '.resize-handle', deltaX: 50, deltaY: 50 }, description: 'Resize element' },
-    { name: 'reorder', input: { selector: '.drag-item', deltaY: 80 }, description: 'Drag item down in list' },
+    {
+      name: 'slider-right',
+      input: { selector: '.slider-handle', deltaX: 100 },
+      description: 'Move slider right',
+    },
+    {
+      name: 'resize',
+      input: { selector: '.resize-handle', deltaX: 50, deltaY: 50 },
+      description: 'Resize element',
+    },
+    {
+      name: 'reorder',
+      input: { selector: '.drag-item', deltaY: 80 },
+      description: 'Drag item down in list',
+    },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: { deltaX: 100 }, error: 'selector is required' },
+    {
+      name: 'missing-selector',
+      input: { deltaX: 100 },
+      error: 'selector is required',
+    },
   ],
 })
 
@@ -374,13 +584,26 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
     selector: s.string.describe('CSS selector'),
     label: s.string.describe('Label text to show').optional,
     color: s.string.describe('CSS color (default #6366f1)').optional,
-    duration: s.number.describe('Auto-hide after ms (omit for manual)').optional,
+    duration: s.number.describe('Auto-hide after ms (omit for manual)')
+      .optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'point-out', input: { selector: '#login-btn', label: 'Click here' }, description: 'Show user where to click' },
-    { name: 'error-red', input: { selector: '.error', label: 'Problem', color: '#ef4444' }, description: 'Highlight error in red' },
-    { name: 'temporary', input: { selector: 'button', duration: 3000 }, description: 'Auto-hide after 3s' },
+    {
+      name: 'point-out',
+      input: { selector: '#login-btn', label: 'Click here' },
+      description: 'Show user where to click',
+    },
+    {
+      name: 'error-red',
+      input: { selector: '.error', label: 'Problem', color: '#ef4444' },
+      description: 'Highlight error in red',
+    },
+    {
+      name: 'temporary',
+      input: { selector: 'button', duration: 3000 },
+      description: 'Auto-hide after 3s',
+    },
   ],
   invalidExamples: [
     { name: 'missing-selector', input: {}, error: 'selector is required' },
@@ -414,17 +637,38 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.`,
     y: s.number.describe('Absolute Y position in pixels').optional,
     deltaX: s.number.describe('Relative horizontal scroll in pixels').optional,
     deltaY: s.number.describe('Relative vertical scroll in pixels').optional,
-    duration: s.number.describe('Animation duration in ms (default 500)').optional,
-    easing: s.string.describe('Easing function: ease-out (default), ease-in-out, linear').optional,
-    block: s.string.describe('Vertical alignment: center (default), start, end, nearest').optional,
+    duration: s.number.describe('Animation duration in ms (default 500)')
+      .optional,
+    easing: s.string.describe(
+      'Easing function: ease-out (default), ease-in-out, linear',
+    ).optional,
+    block: s.string.describe(
+      'Vertical alignment: center (default), start, end, nearest',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'to-element', input: { selector: '#pricing' }, description: 'Scroll pricing section into view' },
+    {
+      name: 'to-element',
+      input: { selector: '#pricing' },
+      description: 'Scroll pricing section into view',
+    },
     { name: 'to-top', input: { y: 0 }, description: 'Scroll to top of page' },
-    { name: 'to-bottom', input: { selector: 'footer' }, description: 'Scroll to footer' },
-    { name: 'down-500', input: { deltaY: 500 }, description: 'Scroll down 500px' },
-    { name: 'slow-scroll', input: { selector: '#section', duration: 1000, easing: 'ease-in-out' }, description: 'Slow animated scroll' },
+    {
+      name: 'to-bottom',
+      input: { selector: 'footer' },
+      description: 'Scroll to footer',
+    },
+    {
+      name: 'down-500',
+      input: { deltaY: 500 },
+      description: 'Scroll down 500px',
+    },
+    {
+      name: 'slow-scroll',
+      input: { selector: '#section', duration: 1000, easing: 'ease-in-out' },
+      description: 'Slow animated scroll',
+    },
   ],
 })
 
@@ -449,17 +693,35 @@ Response: { success: true, waited: ms, found?: boolean }`,
   input: s.object({
     ms: s.number.describe('Milliseconds to wait').optional,
     forElement: s.string.describe('CSS selector to wait for').optional,
-    hidden: s.boolean.describe('Wait for element to disappear (default false)').optional,
+    hidden: s.boolean.describe('Wait for element to disappear (default false)')
+      .optional,
     timeout: s.number.describe('Max wait time in ms (default 5000)').optional,
-    pollInterval: s.number.describe('Polling interval in ms (default 100)').optional,
+    pollInterval: s.number.describe('Polling interval in ms (default 100)')
+      .optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
     { name: 'delay', input: { ms: 500 }, description: 'Simple 500ms delay' },
-    { name: 'for-element', input: { forElement: '.modal' }, description: 'Wait for modal to appear' },
-    { name: 'for-hidden', input: { forElement: '.loading', hidden: true }, description: 'Wait for loading to disappear' },
-    { name: 'with-timeout', input: { forElement: 'button[data-ready]', timeout: 10000 }, description: 'Wait up to 10s' },
-    { name: 'element-plus-delay', input: { forElement: '.dropdown', ms: 100 }, description: 'Wait for dropdown, then 100ms for animation' },
+    {
+      name: 'for-element',
+      input: { forElement: '.modal' },
+      description: 'Wait for modal to appear',
+    },
+    {
+      name: 'for-hidden',
+      input: { forElement: '.loading', hidden: true },
+      description: 'Wait for loading to disappear',
+    },
+    {
+      name: 'with-timeout',
+      input: { forElement: 'button[data-ready]', timeout: 10000 },
+      description: 'Wait up to 10s',
+    },
+    {
+      name: 'element-plus-delay',
+      input: { forElement: '.dropdown', ms: 100 },
+      description: 'Wait for dropdown, then 100ms for animation',
+    },
   ],
 })
 
@@ -481,15 +743,27 @@ Response: { fields: { name: value, ... }, form: { action, method, id } }
 Works with standard forms and most framework components (React, Vue, etc).`,
   category: 'dom',
   input: s.object({
-    selector: s.string.describe('Form selector (default: first form on page)').optional,
-    includeDisabled: s.boolean.describe('Include disabled fields (default false)').optional,
-    includeHidden: s.boolean.describe('Include hidden fields (default false)').optional,
+    selector: s.string.describe('Form selector (default: first form on page)')
+      .optional,
+    includeDisabled: s.boolean.describe(
+      'Include disabled fields (default false)',
+    ).optional,
+    includeHidden: s.boolean.describe('Include hidden fields (default false)')
+      .optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
     { name: 'first-form', input: {}, description: 'Get data from first form' },
-    { name: 'by-id', input: { selector: '#login-form' }, description: 'Get specific form data' },
-    { name: 'with-hidden', input: { selector: 'form', includeHidden: true }, description: 'Include hidden fields like CSRF tokens' },
+    {
+      name: 'by-id',
+      input: { selector: '#login-form' },
+      description: 'Get specific form data',
+    },
+    {
+      name: 'with-hidden',
+      input: { selector: 'form', includeHidden: true },
+      description: 'Include hidden fields like CSRF tokens',
+    },
   ],
 })
 
@@ -505,21 +779,50 @@ Response: { found: true, selector: "...", element: {...} } or { found: true, ele
   category: 'dom',
   input: s.object({
     text: s.string.describe('Text to search for (substring match)'),
-    tag: s.string.describe('Limit to specific tag (button, a, div, etc)').optional,
-    exact: s.boolean.describe('Require exact text match (default false = substring)').optional,
-    all: s.boolean.describe('Return all matches (default false = first only)').optional,
-    visible: s.boolean.describe('Only visible elements (default true)').optional,
+    tag: s.string.describe('Limit to specific tag (button, a, div, etc)')
+      .optional,
+    exact: s.boolean.describe(
+      'Require exact text match (default false = substring)',
+    ).optional,
+    all: s.boolean.describe('Return all matches (default false = first only)')
+      .optional,
+    visible: s.boolean.describe('Only visible elements (default true)')
+      .optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'button-by-text', input: { text: 'Submit', tag: 'button' }, description: 'Find Submit button' },
-    { name: 'link-by-text', input: { text: 'Learn more', tag: 'a' }, description: 'Find link by text' },
-    { name: 'exact-match', input: { text: 'OK', tag: 'button', exact: true }, description: 'Find button with exact "OK" text' },
-    { name: 'all-matches', input: { text: 'Delete', tag: 'button', all: true }, description: 'Find all Delete buttons' },
-    { name: 'any-element', input: { text: 'Error:' }, description: 'Find any element containing "Error:"' },
+    {
+      name: 'button-by-text',
+      input: { text: 'Submit', tag: 'button' },
+      description: 'Find Submit button',
+    },
+    {
+      name: 'link-by-text',
+      input: { text: 'Learn more', tag: 'a' },
+      description: 'Find link by text',
+    },
+    {
+      name: 'exact-match',
+      input: { text: 'OK', tag: 'button', exact: true },
+      description: 'Find button with exact "OK" text',
+    },
+    {
+      name: 'all-matches',
+      input: { text: 'Delete', tag: 'button', all: true },
+      description: 'Find all Delete buttons',
+    },
+    {
+      name: 'any-element',
+      input: { text: 'Error:' },
+      description: 'Find any element containing "Error:"',
+    },
   ],
   invalidExamples: [
-    { name: 'missing-text', input: { tag: 'button' }, error: 'text is required' },
+    {
+      name: 'missing-text',
+      input: { tag: 'button' },
+      error: 'text is required',
+    },
   ],
 })
 
@@ -536,8 +839,16 @@ Use /location after to verify navigation succeeded.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'full-url', input: { url: 'https://example.com/login' }, description: 'Navigate to full URL' },
-    { name: 'relative', input: { url: '/dashboard' }, description: 'Navigate to relative path' },
+    {
+      name: 'full-url',
+      input: { url: 'https://example.com/login' },
+      description: 'Navigate to full URL',
+    },
+    {
+      name: 'relative',
+      input: { url: '/dashboard' },
+      description: 'Navigate to relative path',
+    },
   ],
   invalidExamples: [
     { name: 'missing-url', input: {}, error: 'url is required' },
@@ -548,15 +859,26 @@ export const refresh = endpoint({
   path: '/refresh',
   method: 'POST',
   summary: 'Refresh the page',
-  description: 'Reload the current page. Use hard: true to bypass cache.',
+  description:
+    'Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.',
   category: 'navigation',
   input: s.object({
-    hard: s.boolean.describe('Bypass cache (default false)').optional,
+    soft: s.boolean.describe(
+      'Use cached resources if available (default false = hard refresh)',
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'soft', input: {}, description: 'Normal refresh' },
-    { name: 'hard', input: { hard: true }, description: 'Bypass cache' },
+    {
+      name: 'hard',
+      input: {},
+      description: 'Hard refresh (default, bypasses cache)',
+    },
+    {
+      name: 'soft',
+      input: { soft: true },
+      description: 'Soft refresh (uses cache)',
+    },
   ],
 })
 
@@ -598,19 +920,40 @@ Get captured mutations via /mutations/status.`,
   category: 'mutations',
   input: s.object({
     root: s.string.describe('Root selector to watch (default body)').optional,
-    childList: s.boolean.describe('Watch child additions/removals (default true)').optional,
-    attributes: s.boolean.describe('Watch attribute changes (default true)').optional,
-    characterData: s.boolean.describe('Watch text content changes (default false)').optional,
-    subtree: s.boolean.describe('Watch all descendants (default true)').optional,
+    childList: s.boolean.describe(
+      'Watch child additions/removals (default true)',
+    ).optional,
+    attributes: s.boolean.describe('Watch attribute changes (default true)')
+      .optional,
+    characterData: s.boolean.describe(
+      'Watch text content changes (default false)',
+    ).optional,
+    subtree: s.boolean.describe('Watch all descendants (default true)')
+      .optional,
     debounce: s.number.describe('Debounce ms (default 100)').optional,
-    preset: s.string.describe('Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none').optional,
+    preset: s.string.describe(
+      'Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none',
+    ).optional,
     filters: s.any.describe('Custom filter configuration').optional,
-    pierceShadow: s.boolean.describe('Watch inside shadow DOM (default false)').optional,
+    pierceShadow: s.boolean.describe('Watch inside shadow DOM (default false)')
+      .optional,
   }),
   examples: [
-    { name: 'default', input: {}, description: 'Watch all DOM changes with smart filtering' },
-    { name: 'form-only', input: { root: 'form', preset: 'minimal' }, description: 'Watch form for new elements' },
-    { name: 'react-app', input: { preset: 'react' }, description: 'Filter React internals' },
+    {
+      name: 'default',
+      input: {},
+      description: 'Watch all DOM changes with smart filtering',
+    },
+    {
+      name: 'form-only',
+      input: { root: 'form', preset: 'minimal' },
+      description: 'Watch form for new elements',
+    },
+    {
+      name: 'react-app',
+      input: { preset: 'react' },
+      description: 'Filter React internals',
+    },
   ],
 })
 
@@ -618,7 +961,8 @@ export const mutationsUnwatch = endpoint({
   path: '/mutations/unwatch',
   method: 'POST',
   summary: 'Stop watching mutations',
-  description: 'Stop capturing DOM mutations. Call this when done to free resources.',
+  description:
+    'Stop capturing DOM mutations. Call this when done to free resources.',
   category: 'mutations',
   input: s.object({}),
 })
@@ -654,13 +998,28 @@ Presets control verbosity:
 Categories: interaction, navigation, input, hover, scroll, mutation, focus, console`,
   category: 'events',
   input: s.object({
-    preset: s.string.describe('Verbosity: minimal, interactive, detailed, debug').optional,
-    categories: s.array(s.string).describe('Specific categories to watch').optional,
+    preset: s.string.describe(
+      'Verbosity: minimal, interactive, detailed, debug',
+    ).optional,
+    categories: s.array(s.string).describe('Specific categories to watch')
+      .optional,
   }),
   examples: [
-    { name: 'default', input: { preset: 'interactive' }, description: 'Recommended for most use cases' },
-    { name: 'minimal', input: { preset: 'minimal' }, description: 'Only clicks and navigation' },
-    { name: 'custom', input: { categories: ['interaction', 'input', 'console'] }, description: 'Specific categories' },
+    {
+      name: 'default',
+      input: { preset: 'interactive' },
+      description: 'Recommended for most use cases',
+    },
+    {
+      name: 'minimal',
+      input: { preset: 'minimal' },
+      description: 'Only clicks and navigation',
+    },
+    {
+      name: 'custom',
+      input: { categories: ['interaction', 'input', 'console'] },
+      description: 'Specific categories',
+    },
   ],
 })
 
@@ -727,11 +1086,31 @@ Return values are JSON-serialized. Promises are awaited.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
-    { name: 'get-title', input: { code: 'document.title' }, description: 'Get page title' },
-    { name: 'count-items', input: { code: 'document.querySelectorAll(".item").length' }, description: 'Count elements' },
-    { name: 'get-value', input: { code: 'document.querySelector("#email").value' }, description: 'Get input value' },
-    { name: 'check-state', input: { code: 'window.localStorage.getItem("token") !== null' }, description: 'Check auth state' },
-    { name: 'scroll-position', input: { code: '({ x: window.scrollX, y: window.scrollY })' }, description: 'Get scroll position' },
+    {
+      name: 'get-title',
+      input: { code: 'document.title' },
+      description: 'Get page title',
+    },
+    {
+      name: 'count-items',
+      input: { code: 'document.querySelectorAll(".item").length' },
+      description: 'Count elements',
+    },
+    {
+      name: 'get-value',
+      input: { code: 'document.querySelector("#email").value' },
+      description: 'Get input value',
+    },
+    {
+      name: 'check-state',
+      input: { code: 'window.localStorage.getItem("token") !== null' },
+      description: 'Check auth state',
+    },
+    {
+      name: 'scroll-position',
+      input: { code: '({ x: window.scrollX, y: window.scrollY })' },
+      description: 'Get scroll position',
+    },
   ],
   invalidExamples: [
     { name: 'missing-code', input: {}, error: 'code is required' },
@@ -745,7 +1124,7 @@ export const call = endpoint({
   description: `Call a method or access a property on an element by selector. Convenience wrapper around /eval.
 
 This avoids writing querySelector boilerplate. Two modes:
-- With args (even empty []): Calls element.method(...args) 
+- With args (even empty []): Calls element.method(...args)
 - Without args: Returns element.property value
 
 Return value is JSON-serialized. Promises are awaited.
@@ -755,28 +1134,94 @@ Response: { success: true, data: <return value> }`,
   input: s.object({
     selector: s.string.describe('CSS selector of the element'),
     method: s.string.describe('Method name to call or property name to get'),
-    args: s.array(s.any).describe('Arguments to pass (omit to get property value)').optional,
+    args: s
+      .array(s.any)
+      .describe('Arguments to pass (omit to get property value)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
     // Property access (no args)
-    { name: 'get-value', input: { selector: '#email', method: 'value' }, description: 'Get input value' },
-    { name: 'get-checked', input: { selector: '#agree', method: 'checked' }, description: 'Get checkbox state' },
-    { name: 'get-inner-html', input: { selector: '#content', method: 'innerHTML' }, description: 'Get element HTML' },
-    { name: 'get-dataset', input: { selector: '#item', method: 'dataset' }, description: 'Get data attributes' },
-    { name: 'get-open', input: { selector: 'dialog', method: 'open' }, description: 'Check if dialog is open' },
+    {
+      name: 'get-value',
+      input: { selector: '#email', method: 'value' },
+      description: 'Get input value',
+    },
+    {
+      name: 'get-checked',
+      input: { selector: '#agree', method: 'checked' },
+      description: 'Get checkbox state',
+    },
+    {
+      name: 'get-inner-html',
+      input: { selector: '#content', method: 'innerHTML' },
+      description: 'Get element HTML',
+    },
+    {
+      name: 'get-dataset',
+      input: { selector: '#item', method: 'dataset' },
+      description: 'Get data attributes',
+    },
+    {
+      name: 'get-open',
+      input: { selector: 'dialog', method: 'open' },
+      description: 'Check if dialog is open',
+    },
     // Method calls (with args, even empty)
-    { name: 'show-popover', input: { selector: '#my-popover', method: 'showPopover', args: [] }, description: 'Show a popover element' },
-    { name: 'hide-popover', input: { selector: '#my-popover', method: 'hidePopover', args: [] }, description: 'Hide a popover element' },
-    { name: 'play-video', input: { selector: 'video', method: 'play', args: [] }, description: 'Play a video element' },
-    { name: 'focus', input: { selector: '#email', method: 'focus', args: [] }, description: 'Focus an input element' },
-    { name: 'scroll-into-view', input: { selector: '#section', method: 'scrollIntoView', args: [{ behavior: 'smooth' }] }, description: 'Scroll with options' },
-    { name: 'set-attribute', input: { selector: '#btn', method: 'setAttribute', args: ['disabled', 'true'] }, description: 'Set an attribute' },
-    { name: 'get-bounding-rect', input: { selector: '#box', method: 'getBoundingClientRect', args: [] }, description: 'Get element geometry' },
+    {
+      name: 'show-popover',
+      input: { selector: '#my-popover', method: 'showPopover', args: [] },
+      description: 'Show a popover element',
+    },
+    {
+      name: 'hide-popover',
+      input: { selector: '#my-popover', method: 'hidePopover', args: [] },
+      description: 'Hide a popover element',
+    },
+    {
+      name: 'play-video',
+      input: { selector: 'video', method: 'play', args: [] },
+      description: 'Play a video element',
+    },
+    {
+      name: 'focus',
+      input: { selector: '#email', method: 'focus', args: [] },
+      description: 'Focus an input element',
+    },
+    {
+      name: 'scroll-into-view',
+      input: {
+        selector: '#section',
+        method: 'scrollIntoView',
+        args: [{ behavior: 'smooth' }],
+      },
+      description: 'Scroll with options',
+    },
+    {
+      name: 'set-attribute',
+      input: {
+        selector: '#btn',
+        method: 'setAttribute',
+        args: ['disabled', 'true'],
+      },
+      description: 'Set an attribute',
+    },
+    {
+      name: 'get-bounding-rect',
+      input: { selector: '#box', method: 'getBoundingClientRect', args: [] },
+      description: 'Get element geometry',
+    },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: { method: 'click' }, error: 'selector is required' },
-    { name: 'missing-method', input: { selector: '#btn' }, error: 'method is required' },
+    {
+      name: 'missing-selector',
+      input: { method: 'click' },
+      error: 'selector is required',
+    },
+    {
+      name: 'missing-method',
+      input: { selector: '#btn' },
+      error: 'method is required',
+    },
   ],
 })
 
@@ -790,20 +1235,29 @@ export const screenshot = endpoint({
   summary: 'Capture a screenshot',
   description: `Capture the page or a specific element as base64 PNG/WebP/JPEG.
 
-Response: { success, image: "data:image/png;base64,...", width, height, source }
+Works automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.
 
-Source indicates capture method: "electron" (best), "html2canvas", or "viewport-only".`,
+Response: { success, image: "data:image/png;base64,...", width, height, source }`,
   category: 'debug',
   input: s.object({
-    selector: s.string.describe('Element to capture (omit for full page)').optional,
+    selector: s.string.describe('Element to capture (omit for full page)')
+      .optional,
     scale: s.number.describe('Scale factor (default 1)').optional,
     maxWidth: s.number.describe('Max width in pixels').optional,
     maxHeight: s.number.describe('Max height in pixels').optional,
   }),
   examples: [
     { name: 'full-page', input: {}, description: 'Capture entire page' },
-    { name: 'element', input: { selector: '#chart' }, description: 'Capture specific element' },
-    { name: 'thumbnail', input: { scale: 0.5, maxWidth: 400 }, description: 'Small thumbnail' },
+    {
+      name: 'element',
+      input: { selector: '#chart' },
+      description: 'Capture specific element',
+    },
+    {
+      name: 'thumbnail',
+      input: { scale: 0.5, maxWidth: 400 },
+      description: 'Small thumbnail',
+    },
   ],
 })
 
@@ -832,7 +1286,8 @@ export const selectCancel = endpoint({
   path: '/select/cancel',
   method: 'POST',
   summary: 'Cancel selection mode',
-  description: 'Exit selection mode without capturing. Use if user changed their mind.',
+  description:
+    'Exit selection mode without capturing. Use if user changed their mind.',
   category: 'selection',
   input: s.object({}),
 })
@@ -863,7 +1318,8 @@ export const selectClear = endpoint({
   path: '/select/clear',
   method: 'POST',
   summary: 'Clear selection result',
-  description: 'Clear any stored selection result. Use before starting a new selection.',
+  description:
+    'Clear any stored selection result. Use before starting a new selection.',
   category: 'selection',
   input: s.object({}),
 })
@@ -901,7 +1357,11 @@ If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
   }),
   examples: [
     { name: 'blank', input: {}, description: 'Open blank tab' },
-    { name: 'with-url', input: { url: 'https://example.com' }, description: 'Open tab with URL' },
+    {
+      name: 'with-url',
+      input: { url: 'https://example.com' },
+      description: 'Open tab with URL',
+    },
   ],
 })
 
@@ -917,7 +1377,11 @@ Get window IDs from /windows endpoint.`,
     window: s.string.describe('Window ID to close'),
   }),
   examples: [
-    { name: 'close', input: { window: 'window-abc123' }, description: 'Close specific tab' },
+    {
+      name: 'close',
+      input: { window: 'window-abc123' },
+      description: 'Close specific tab',
+    },
   ],
   invalidExamples: [
     { name: 'missing-window', input: {}, error: 'window is required' },
@@ -936,7 +1400,11 @@ Useful when working with multiple tabs to ensure the right one is visible.`,
     window: s.string.describe('Window ID to focus'),
   }),
   examples: [
-    { name: 'focus', input: { window: 'window-abc123' }, description: 'Bring tab to front' },
+    {
+      name: 'focus',
+      input: { window: 'window-abc123' },
+      description: 'Bring tab to front',
+    },
   ],
 })
 
@@ -989,8 +1457,16 @@ Response: { test: { version, name, url, steps: [...] } }`,
     name: s.string.describe('Test name').optional,
   }),
   examples: [
-    { name: 'named', input: { name: 'Login flow test' }, description: 'Generate with custom name' },
-    { name: 'default', input: {}, description: 'Generate with auto-generated name' },
+    {
+      name: 'named',
+      input: { name: 'Login flow test' },
+      description: 'Generate with custom name',
+    },
+    {
+      name: 'default',
+      input: {},
+      description: 'Generate with auto-generated name',
+    },
   ],
 })
 
@@ -1032,10 +1508,17 @@ Output formats:
   category: 'testing',
   input: s.object({
     test: s.any.describe('Test object with steps'),
-    format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
-    stepDelay: s.number.describe('Milliseconds between steps (default 100)').optional,
-    timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
-    stopOnFailure: s.boolean.describe('Stop on first failure (default true)').optional,
+    format: s
+      .enum(['json', 'github', 'human'] as const)
+      .describe(
+        'Output format: json (structured), github (annotations + summary), human (readable)',
+      ).optional,
+    stepDelay: s.number.describe('Milliseconds between steps (default 100)')
+      .optional,
+    timeout: s.number.describe('Milliseconds timeout per step (default 5000)')
+      .optional,
+    stopOnFailure: s.boolean.describe('Stop on first failure (default true)')
+      .optional,
   }),
   examples: [
     {
@@ -1047,19 +1530,27 @@ Output formats:
           url: 'http://localhost:3000',
           steps: [
             { action: 'click', selector: '#submit' },
-            { action: 'assert', assertion: { type: 'exists', selector: '.success' } }
-          ]
-        }
+            {
+              action: 'assert',
+              assertion: { type: 'exists', selector: '.success' },
+            },
+          ],
+        },
       },
-      description: 'Simple click and verify'
+      description: 'Simple click and verify',
     },
     {
       name: 'github-output',
       input: {
-        test: { version: 1, name: 'Test', url: 'http://localhost:3000', steps: [] },
-        format: 'github'
+        test: {
+          version: 1,
+          name: 'Test',
+          url: 'http://localhost:3000',
+          steps: [],
+        },
+        format: 'github',
       },
-      description: 'Get GitHub Actions format'
+      description: 'Get GitHub Actions format',
     },
   ],
 })
@@ -1076,23 +1567,42 @@ Response includes per-test results and overall summary.`,
   category: 'testing',
   input: s.object({
     tests: s.array(s.any).describe('Array of test objects'),
-    format: s.enum(['json', 'github', 'human'] as const).describe('Output format: json (structured), github (annotations + summary), human (readable)').optional,
-    testDelay: s.number.describe('Milliseconds between tests (default 500)').optional,
-    stepDelay: s.number.describe('Milliseconds between steps (default 100)').optional,
-    timeout: s.number.describe('Milliseconds timeout per step (default 5000)').optional,
-    stopOnFailure: s.boolean.describe('Stop on first failure (default false for suites)').optional,
+    format: s
+      .enum(['json', 'github', 'human'] as const)
+      .describe(
+        'Output format: json (structured), github (annotations + summary), human (readable)',
+      ).optional,
+    testDelay: s.number.describe('Milliseconds between tests (default 500)')
+      .optional,
+    stepDelay: s.number.describe('Milliseconds between steps (default 100)')
+      .optional,
+    timeout: s.number.describe('Milliseconds timeout per step (default 5000)')
+      .optional,
+    stopOnFailure: s.boolean.describe(
+      'Stop on first failure (default false for suites)',
+    ).optional,
   }),
   examples: [
     {
       name: 'two-tests',
       input: {
         tests: [
-          { version: 1, name: 'Login', url: 'http://localhost:3000/login', steps: [] },
-          { version: 1, name: 'Dashboard', url: 'http://localhost:3000/dashboard', steps: [] }
+          {
+            version: 1,
+            name: 'Login',
+            url: 'http://localhost:3000/login',
+            steps: [],
+          },
+          {
+            version: 1,
+            name: 'Dashboard',
+            url: 'http://localhost:3000/dashboard',
+            steps: [],
+          },
         ],
-        stopOnFailure: false
+        stopOnFailure: false,
       },
-      description: 'Run two tests, continue on failure'
+      description: 'Run two tests, continue on failure',
     },
   ],
 })
@@ -1114,9 +1624,14 @@ Response: { valid: boolean, errors?: [{ step?, message }] }`,
     {
       name: 'validate',
       input: {
-        test: { version: 1, name: 'Test', url: 'http://localhost:3000', steps: [{ action: 'click', selector: '#btn' }] }
+        test: {
+          version: 1,
+          name: 'Test',
+          url: 'http://localhost:3000',
+          steps: [{ action: 'click', selector: '#btn' }],
+        },
       },
-      description: 'Validate test before running'
+      description: 'Validate test before running',
     },
   ],
 })
@@ -1141,12 +1656,25 @@ Response: { snapshot: { url, title, viewport, dom, console, timestamp } }
 Great for debugging test failures - call this when something goes wrong.`,
   category: 'debug',
   input: s.object({
-    trigger: s.string.describe('What triggered the snapshot (e.g., "manual", "test-failure")').optional,
+    trigger: s.string.describe(
+      'What triggered the snapshot (e.g., "manual", "test-failure")',
+    ).optional,
     context: s.any.describe('Additional context about the snapshot').optional,
   }),
   examples: [
-    { name: 'manual', input: { trigger: 'manual' }, description: 'Manual debug snapshot' },
-    { name: 'test-fail', input: { trigger: 'test-failure', context: { step: 3, error: 'Element not found' } }, description: 'Capture after test failure' },
+    {
+      name: 'manual',
+      input: { trigger: 'manual' },
+      description: 'Manual debug snapshot',
+    },
+    {
+      name: 'test-fail',
+      input: {
+        trigger: 'test-failure',
+        context: { step: 3, error: 'Element not found' },
+      },
+      description: 'Capture after test failure',
+    },
   ],
 })
 
@@ -1211,7 +1739,7 @@ export const endpoints = {
   inspectAll,
   find,
   formData,
-  
+
   // Interaction
   click,
   type,
@@ -1221,44 +1749,44 @@ export const endpoints = {
   unhighlight,
   scroll,
   wait,
-  
+
   // Navigation
   navigate,
   refresh,
   location,
-  
+
   // Mutations
   mutationsWatch,
   mutationsUnwatch,
   mutationsStatus,
-  
+
   // Events
   eventsWatch,
   eventsUnwatch,
   events,
   eventsStats,
-  
+
   // Console & Eval
   console: console_,
   eval: eval_,
   call,
-  
+
   // Screenshots
   screenshot,
-  
+
   // Selection
   selectStart,
   selectCancel,
   selectStatus,
   selectResult,
   selectClear,
-  
+
   // Windows
   windows,
   tabsOpen,
   tabsClose,
   tabsFocus,
-  
+
   // Recording
   recordingStart,
   recordingStop,
@@ -1267,10 +1795,10 @@ export const endpoints = {
   testRun,
   testSuite,
   testValidate,
-  
+
   // Snapshots
   snapshot,
-  
+
   // Meta
   status,
   version,
@@ -1300,23 +1828,26 @@ export const SCHEMA_FINGERPRINT = {
 export function computeSchemaFingerprint(): string {
   // Build a simple representation of each endpoint
   const parts: string[] = []
-  
+
   const names = Object.keys(endpoints).sort()
   for (const name of names) {
     const ep = endpoints[name as keyof typeof endpoints]
     // Get input property names if available
-    const inputProps = ep.input && typeof ep.input === 'object' && 'properties' in ep.input
-      ? Object.keys((ep.input as any).properties || {}).sort().join(',')
-      : ''
+    const inputProps =
+      ep.input && typeof ep.input === 'object' && 'properties' in ep.input
+        ? Object.keys((ep.input as any).properties || {})
+            .sort()
+            .join(',')
+        : ''
     parts.push(`${name}:${ep.path}:${ep.method}:${inputProps}`)
   }
-  
+
   const str = parts.join('|')
-  
+
   // Simple hash function (djb2)
   let hash = 5381
   for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i)
+    hash = (hash << 5) + hash + str.charCodeAt(i)
     hash = hash >>> 0 // Convert to unsigned 32-bit
   }
   return hash.toString(16).padStart(8, '0')
@@ -1339,21 +1870,25 @@ export function getEndpointDocs(ep: EndpointDef): object {
     summary: ep.summary,
     description: ep.description,
     input: ep.input?.schema,
-    usage: ep.method === 'POST' 
-      ? `curl -X POST localhost:8700${ep.path} -H "Content-Type: application/json" -d '{...}'`
-      : `curl localhost:8700${ep.path}`,
+    usage:
+      ep.method === 'POST'
+        ? `curl -X POST localhost:8700${ep.path} -H "Content-Type: application/json" -d '{...}'`
+        : `curl localhost:8700${ep.path}`,
   }
 }
 
 /** Validate request body against endpoint schema */
-export function validateInput(ep: EndpointDef, body: any): { valid: boolean, error?: string } {
+export function validateInput(
+  ep: EndpointDef,
+  body: any,
+): { valid: boolean; error?: string } {
   if (!ep.input) return { valid: true }
-  
+
   let error: string | undefined
   const valid = ep.input.validate(body, (path: string, msg: string) => {
     error = `${path}: ${msg}`
   })
-  
+
   return { valid, error }
 }
 
