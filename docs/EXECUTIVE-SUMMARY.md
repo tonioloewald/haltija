@@ -130,6 +130,55 @@ The semantic event system is particularly interesting: instead of raw DOM events
 
 ---
 
+## Efficiency & Performance
+
+Haltija is designed for efficiency - reducing the data agents need to process while preserving the information they need to act.
+
+### Event Reduction: 99%+
+
+Raw DOM events are noisy. A user typing "hello@example.com" generates dozens of keydown, keypress, input, and keyup events. Haltija's semantic event system aggregates these into a single `input:typed` event with the final value. Typical reduction: **99%+ fewer events** while preserving user intent.
+
+### DOM Reduction
+
+Full DOM trees are massive. Haltija filters to what matters:
+- Interactive elements (buttons, inputs, links)
+- Visible content (hidden elements filtered)
+- Interesting attributes (ARIA, data-*, roles)
+- Configurable depth limits
+
+A 10,000-node DOM might reduce to 200 relevant nodes for a form-filling task.
+
+### Ref IDs: Efficient Re-targeting
+
+Every element in `/tree` output includes a ref ID (e.g., `@1`, `@42`). Agents can use these refs instead of CSS selectors for subsequent commands:
+
+```bash
+# First, get the tree
+curl localhost:8700/tree
+# Response includes: { "tag": "button", "ref": "@42", "text": "Submit" }
+
+# Later, click by ref - no selector matching needed
+curl -X POST localhost:8700/click -d '{"ref": "@42"}'
+```
+
+Refs survive DOM changes better than selectors (which break when classes change) and are faster to resolve (direct lookup vs. CSS matching).
+
+### Measuring Efficiency
+
+Use the `/stats` endpoint or click the 📊 button in the widget to see real metrics:
+
+```json
+{
+  "events": { "raw": 1847, "semantic": 23, "reductionPercent": 98.8 },
+  "dom": { "processed": 3420, "inTree": 156, "reductionPercent": 95.4 },
+  "refs": { "assigned": 156, "resolved": 42, "stale": 3, "hitRate": 93.3 }
+}
+```
+
+Console access: `haltija.copyStats()` copies full stats to clipboard.
+
+---
+
 ## For Existing Puppeteer MCP / Browser Automation Users
 
 If you're using Puppeteer MCP, Playwright MCP, or similar tools, Haltija offers a different philosophy: user-centric rather than developer-centric.

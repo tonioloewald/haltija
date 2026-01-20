@@ -298,20 +298,30 @@ export const click = endpoint({
   summary: 'Click an element',
   description: `Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
-Two ways to target elements:
+Three ways to target elements:
+- ref: Ref ID from /tree output (e.g., @1, @42) - fastest, survives DOM changes
 - selector: CSS selector (traditional)
 - text + tag: Find by text content (more reliable for dynamic UIs)
 
-Automatically fails if element is not found or is disabled. Check response.success to verify.
+Options:
+- autoWait: Wait for element to appear before clicking (default false). Eliminates need for separate /wait call.
+- diff: Return what changed after the click (added/removed elements, attribute changes)
 
-With diff:true, returns what changed after the click - added/removed elements, attribute changes, focus, scroll.`,
+Automatically fails if element is not found or is disabled. Check response.success to verify.`,
   category: 'interaction',
   input: s.object({
+    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
     selector: s.string.describe('CSS selector of element to click').optional,
     text: s.string.describe('Text content to find (alternative to selector)')
       .optional,
     tag: s.string.describe(
       'Tag name when using text (default: any clickable element)',
+    ).optional,
+    autoWait: s.boolean.describe(
+      'Wait for element to appear before clicking (default false)',
+    ).optional,
+    timeout: s.number.describe(
+      'Max wait time in ms when autoWait is true (default 5000)',
     ).optional,
     diff: s.boolean.describe(
       'Return DOM diff showing what changed after click (default false)',
@@ -357,6 +367,16 @@ With diff:true, returns what changed after the click - added/removed elements, a
       input: { selector: '.add-item', diff: true },
       description: 'Click and see what changed',
     },
+    {
+      name: 'auto-wait',
+      input: { selector: '.modal-button', autoWait: true },
+      description: 'Wait for element then click',
+    },
+    {
+      name: 'auto-wait-timeout',
+      input: { selector: '.slow-element', autoWait: true, timeout: 10000 },
+      description: 'Wait up to 10s for element',
+    },
   ],
   invalidExamples: [
     { name: 'missing-both', input: {}, error: 'selector or text is required' },
@@ -374,6 +394,8 @@ export const type = endpoint({
   summary: 'Type text into an element',
   description: `Focus element and type text character by character with realistic event lifecycle.
 
+Target element via ref (from /tree output) or selector.
+
 Simulates real user behavior:
 1. Focus via mouse click (default) or keyboard Tab
 2. Full keystroke events: keydown → beforeinput → input → keyup
@@ -382,6 +404,7 @@ Simulates real user behavior:
 Handles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).
 
 Options:
+- autoWait: Wait for element to appear before typing (default false). Eliminates need for separate /wait call.
 - humanlike: Add realistic delays and occasional typos (default true)
 - focusMode: How to focus the element before typing
   - "mouse" (default): Full mouse lifecycle (mouseenter → click → focus)
@@ -390,10 +413,17 @@ Options:
 - clear: Clear existing content before typing (default false)`,
   category: 'interaction',
   input: s.object({
+    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
     selector: s.string.describe(
       'CSS selector of input/textarea/contenteditable',
-    ),
+    ).optional,
     text: s.string.describe('Text to type'),
+    autoWait: s.boolean.describe(
+      'Wait for element to appear before typing (default false)',
+    ).optional,
+    timeout: s.number.describe(
+      'Max wait time in ms when autoWait is true (default 5000)',
+    ).optional,
     humanlike: s.boolean.describe('Human-like delays and typos (default true)')
       .optional,
     focusMode: s
@@ -473,7 +503,7 @@ export const key = endpoint({
   summary: 'Send keyboard input',
   description: `Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
 
-Target element defaults to document.activeElement. Use selector to focus a specific element first.
+Target element defaults to document.activeElement. Use ref or selector to focus a specific element first.
 
 Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.
 
@@ -483,6 +513,7 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
     key: s.string.describe(
       'Key to press (e.g., "Enter", "Escape", "a", "ArrowDown")',
     ),
+    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
     selector: s.string.describe(
       'Element to focus first (default: activeElement)',
     ).optional,
@@ -1266,18 +1297,54 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 // ============================================
 //
 // Interactive selection lets users point at elements instead of writing selectors.
-// Workflow: selectStart → (user draws region) → selectResult → use elements
+// Consolidated endpoint: /select with action parameter
 
+export const select = endpoint({
+  path: '/select',
+  method: 'POST',
+  summary: 'Interactive element selection',
+  description: `Let user point at elements on the page instead of writing selectors.
+
+Actions:
+- start: Begin selection mode (user can draw a rectangle)
+- result: Get elements from completed selection
+- cancel: Exit selection mode without capturing
+- clear: Clear stored selection result
+- status: Check if selection is active
+
+Workflow: start → (user draws region) → result → use returned selectors`,
+  category: 'selection',
+  input: s.object({
+    action: s
+      .enum(['start', 'result', 'cancel', 'clear', 'status'] as const)
+      .describe('Selection action to perform (default: result)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    {
+      name: 'start',
+      input: { action: 'start' },
+      description: 'Begin selection mode',
+    },
+    {
+      name: 'result',
+      input: { action: 'result' },
+      description: 'Get selected elements',
+    },
+    {
+      name: 'status',
+      input: { action: 'status' },
+      description: 'Check if selection is active',
+    },
+  ],
+})
+
+// Legacy endpoints for backwards compatibility (deprecated)
 export const selectStart = endpoint({
   path: '/select/start',
   method: 'POST',
-  summary: 'Start interactive selection',
-  description: `Let user drag to select a region on the page.
-
-After calling this, the user can draw a rectangle on the page.
-Call /select/result to get the elements within the selection.
-
-Response: { success: true, message: "Selection mode active" }`,
+  summary: '[Deprecated] Use /select with action:"start"',
+  description: 'Deprecated: Use POST /select {"action":"start"} instead.',
   category: 'selection',
   input: s.object({}),
 })
@@ -1285,9 +1352,8 @@ Response: { success: true, message: "Selection mode active" }`,
 export const selectCancel = endpoint({
   path: '/select/cancel',
   method: 'POST',
-  summary: 'Cancel selection mode',
-  description:
-    'Exit selection mode without capturing. Use if user changed their mind.',
+  summary: '[Deprecated] Use /select with action:"cancel"',
+  description: 'Deprecated: Use POST /select {"action":"cancel"} instead.',
   category: 'selection',
   input: s.object({}),
 })
@@ -1295,31 +1361,24 @@ export const selectCancel = endpoint({
 export const selectStatus = endpoint({
   path: '/select/status',
   method: 'GET',
-  summary: 'Check if selection is active',
-  description: `Check whether selection mode is currently active.
-
-Response: { active: boolean, hasResult: boolean }`,
+  summary: '[Deprecated] Use /select with action:"status"',
+  description: 'Deprecated: Use POST /select {"action":"status"} instead.',
   category: 'selection',
 })
 
 export const selectResult = endpoint({
   path: '/select/result',
   method: 'GET',
-  summary: 'Get selection result',
-  description: `After user completes selection, returns the region and elements within.
-
-Response: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }
-
-Use the selectors from this response in subsequent /click or /type calls.`,
+  summary: '[Deprecated] Use /select with action:"result"',
+  description: 'Deprecated: Use POST /select {"action":"result"} instead.',
   category: 'selection',
 })
 
 export const selectClear = endpoint({
   path: '/select/clear',
   method: 'POST',
-  summary: 'Clear selection result',
-  description:
-    'Clear any stored selection result. Use before starting a new selection.',
+  summary: '[Deprecated] Use /select with action:"clear"',
+  description: 'Deprecated: Use POST /select {"action":"clear"} instead.',
   category: 'selection',
   input: s.object({}),
 })
@@ -1412,20 +1471,59 @@ Useful when working with multiple tabs to ensure the right one is visible.`,
 // Recording & Testing
 // ============================================
 //
-// Recording workflow:
-// 1. recordingStart - begin capturing user actions
-// 2. User interacts with page (clicks, types, navigates)
-// 3. recordingStop - stop capturing
-// 4. recordingGenerate - convert to runnable test
+// Consolidated recording endpoint with action parameter
 
+export const recording = endpoint({
+  path: '/recording',
+  method: 'POST',
+  summary: 'Record user actions and generate tests',
+  description: `Record user interactions and convert them to runnable tests.
+
+Actions:
+- start: Begin capturing user interactions
+- stop: Stop capturing, returns recorded events
+- generate: Convert recording to JSON test format
+- list: List all saved recordings
+
+Workflow: start → (user interacts) → stop → generate → run with /test`,
+  category: 'recording',
+  input: s.object({
+    action: s
+      .enum(['start', 'stop', 'generate', 'list'] as const)
+      .describe('Recording action to perform'),
+    name: s.string.describe('Test name (for generate action)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    {
+      name: 'start',
+      input: { action: 'start' },
+      description: 'Begin recording',
+    },
+    {
+      name: 'stop',
+      input: { action: 'stop' },
+      description: 'Stop and get events',
+    },
+    {
+      name: 'generate',
+      input: { action: 'generate', name: 'Login flow' },
+      description: 'Generate test from recording',
+    },
+    {
+      name: 'list',
+      input: { action: 'list' },
+      description: 'List saved recordings',
+    },
+  ],
+})
+
+// Legacy endpoints for backwards compatibility (deprecated)
 export const recordingStart = endpoint({
   path: '/recording/start',
   method: 'POST',
-  summary: 'Start recording user actions',
-  description: `Begin capturing user interactions as semantic events.
-
-The recording captures clicks, typing, navigation, and more.
-Use /recording/stop to finish, then /recording/generate to create a test.`,
+  summary: '[Deprecated] Use /recording with action:"start"',
+  description: 'Deprecated: Use POST /recording {"action":"start"} instead.',
   category: 'recording',
   input: s.object({}),
 })
@@ -1433,12 +1531,8 @@ Use /recording/stop to finish, then /recording/generate to create a test.`,
 export const recordingStop = endpoint({
   path: '/recording/stop',
   method: 'POST',
-  summary: 'Stop recording',
-  description: `Stop capturing user actions.
-
-Response: { events: [...], duration: ms, eventCount: n }
-
-After stopping, use /recording/generate to convert events to a test.`,
+  summary: '[Deprecated] Use /recording with action:"stop"',
+  description: 'Deprecated: Use POST /recording {"action":"stop"} instead.',
   category: 'recording',
   input: s.object({}),
 })
@@ -1446,37 +1540,19 @@ After stopping, use /recording/generate to convert events to a test.`,
 export const recordingGenerate = endpoint({
   path: '/recording/generate',
   method: 'POST',
-  summary: 'Generate test from recording',
-  description: `Converts recorded semantic events into a JSON test file.
-
-The generated test can be run with /test/run or saved for later use.
-
-Response: { test: { version, name, url, steps: [...] } }`,
+  summary: '[Deprecated] Use /recording with action:"generate"',
+  description: 'Deprecated: Use POST /recording {"action":"generate"} instead.',
   category: 'recording',
   input: s.object({
     name: s.string.describe('Test name').optional,
   }),
-  examples: [
-    {
-      name: 'named',
-      input: { name: 'Login flow test' },
-      description: 'Generate with custom name',
-    },
-    {
-      name: 'default',
-      input: {},
-      description: 'Generate with auto-generated name',
-    },
-  ],
 })
 
 export const recordings = endpoint({
   path: '/recordings',
   method: 'GET',
-  summary: 'List saved recordings',
-  description: `List all saved recordings on the server.
-
-Response: { recordings: [{ name, created, eventCount, duration }] }`,
+  summary: '[Deprecated] Use /recording with action:"list"',
+  description: 'Deprecated: Use POST /recording {"action":"list"} instead.',
   category: 'recording',
 })
 
@@ -1700,20 +1776,16 @@ Use to verify server is running and browsers are connected before testing.`,
 export const version = endpoint({
   path: '/version',
   method: 'GET',
-  summary: 'Get server version',
-  description: `Returns the Haltija server version.
-
-Response: { version: "1.0.0" }`,
+  summary: '[Deprecated] Use /status instead',
+  description: `Deprecated: Version is included in /status response.`,
   category: 'meta',
 })
 
 export const docs = endpoint({
   path: '/docs',
   method: 'GET',
-  summary: 'Quick start guide',
-  description: `Human-readable getting started docs for AI agents.
-
-Returns markdown-formatted quick start guide with common workflows.`,
+  summary: '[Deprecated] Use /api instead',
+  description: `Deprecated: Use /api for complete API documentation.`,
   category: 'meta',
 })
 
@@ -1724,6 +1796,23 @@ export const api = endpoint({
   description: `Complete API documentation with all endpoints.
 
 Returns structured JSON with all endpoints, their parameters, and examples.`,
+  category: 'meta',
+})
+
+export const stats = endpoint({
+  path: '/stats',
+  method: 'GET',
+  summary: 'Efficiency and usage statistics',
+  description: `Returns metrics showing Haltija's efficiency vs raw DOM events.
+
+Response includes:
+- session: { startTime, uptimeMs, uptimeFormatted }
+- events: { raw, semantic, reductionPercent, byCategory }
+- dom: { processed, inTree, inActionable, reductionPercent }
+- refs: { assigned, resolved, stale, hitRate }
+- endpoints: { [name]: { calls, success, errors, avgMs } }
+
+Use this to verify efficiency claims (99%+ event reduction, etc.) and debug performance.`,
   category: 'meta',
 })
 
@@ -1774,7 +1863,9 @@ export const endpoints = {
   // Screenshots
   screenshot,
 
-  // Selection
+  // Selection (consolidated)
+  select,
+  // Legacy selection endpoints (deprecated)
   selectStart,
   selectCancel,
   selectStatus,
@@ -1787,11 +1878,15 @@ export const endpoints = {
   tabsClose,
   tabsFocus,
 
-  // Recording
+  // Recording (consolidated)
+  recording,
+  // Legacy recording endpoints (deprecated)
   recordingStart,
   recordingStop,
   recordingGenerate,
   recordings,
+  
+  // Testing
   testRun,
   testSuite,
   testValidate,
@@ -1801,8 +1896,9 @@ export const endpoints = {
 
   // Meta
   status,
-  version,
-  docs,
+  stats,
+  version, // deprecated
+  docs, // deprecated
   api,
 } as const
 
@@ -1817,8 +1913,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-16T14:06:31.802Z',
-  checksum: '891f63b4',
+  updated: '2026-01-20T05:45:30.696Z',
+  checksum: 'c124d5c3',
 }
 
 /**

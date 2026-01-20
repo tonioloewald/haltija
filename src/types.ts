@@ -867,6 +867,8 @@ export interface DomTreeRequest {
 export interface DomTreeNode {
   /** Tag name (lowercase) */
   tag: string
+  /** Ref ID for this element (e.g., @1, @2) - allows efficient re-targeting */
+  ref?: string
   /** Element ID if present */
   id?: string
   /** Interesting classes only (filtered) */

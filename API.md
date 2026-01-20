@@ -34,23 +34,36 @@ Use to verify server is running and browsers are connected before testing.
 
 ---
 
+### `GET /stats`
+
+**Efficiency and usage statistics**
+
+Returns metrics showing Haltija's efficiency vs raw DOM events.
+
+Response includes:
+- session: { startTime, uptimeMs, uptimeFormatted }
+- events: { raw, semantic, reductionPercent, byCategory }
+- dom: { processed, inTree, inActionable, reductionPercent }
+- refs: { assigned, resolved, stale, hitRate }
+- endpoints: { [name]: { calls, success, errors, avgMs } }
+
+Use this to verify efficiency claims (99%+ event reduction, etc.) and debug performance.
+
+---
+
 ### `GET /version`
 
-**Get server version**
+**[Deprecated] Use /status instead**
 
-Returns the Haltija server version.
-
-Response: { version: "1.0.0" }
+Deprecated: Version is included in /status response.
 
 ---
 
 ### `GET /docs`
 
-**Quick start guide**
+**[Deprecated] Use /api instead**
 
-Human-readable getting started docs for AI agents.
-
-Returns markdown-formatted quick start guide with common workflows.
+Deprecated: Use /api for complete API documentation.
 
 ---
 
@@ -387,21 +400,27 @@ Works with standard forms and most framework components (React, Vue, etc).
 
 Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
-Two ways to target elements:
+Three ways to target elements:
+- ref: Ref ID from /tree output (e.g., @1, @42) - fastest, survives DOM changes
 - selector: CSS selector (traditional)
 - text + tag: Find by text content (more reliable for dynamic UIs)
 
-Automatically fails if element is not found or is disabled. Check response.success to verify.
+Options:
+- autoWait: Wait for element to appear before clicking (default false). Eliminates need for separate /wait call.
+- diff: Return what changed after the click (added/removed elements, attribute changes)
 
-With diff:true, returns what changed after the click - added/removed elements, attribute changes, focus, scroll.
+Automatically fails if element is not found or is disabled. Check response.success to verify.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
+| `ref` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
 | `selector` | string,null | CSS selector of element to click |
 | `text` | string,null | Text content to find (alternative to selector) |
 | `tag` | string,null | Tag name when using text (default: any clickable element) |
+| `autoWait` | boolean,null | Wait for element to appear before clicking (default false) |
+| `timeout` | number,null | Max wait time in ms when autoWait is true (default 5000) |
 | `diff` | boolean,null | Return DOM diff showing what changed after click (default false) |
 | `diffDelay` | number,null | Wait ms before capturing "after" state (default 100) |
 | `window` | string,null | Target window ID |
@@ -436,6 +455,14 @@ With diff:true, returns what changed after the click - added/removed elements, a
   ```json
   {"selector":".add-item","diff":true}
   ```
+- **auto-wait**: Wait for element then click
+  ```json
+  {"selector":".modal-button","autoWait":true}
+  ```
+- **auto-wait-timeout**: Wait up to 10s for element
+  ```json
+  {"selector":".slow-element","autoWait":true,"timeout":10000}
+  ```
 
 ---
 
@@ -445,6 +472,8 @@ With diff:true, returns what changed after the click - added/removed elements, a
 
 Focus element and type text character by character with realistic event lifecycle.
 
+Target element via ref (from /tree output) or selector.
+
 Simulates real user behavior:
 1. Focus via mouse click (default) or keyboard Tab
 2. Full keystroke events: keydown → beforeinput → input → keyup
@@ -453,6 +482,7 @@ Simulates real user behavior:
 Handles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).
 
 Options:
+- autoWait: Wait for element to appear before typing (default false). Eliminates need for separate /wait call.
 - humanlike: Add realistic delays and occasional typos (default true)
 - focusMode: How to focus the element before typing
   - "mouse" (default): Full mouse lifecycle (mouseenter → click → focus)
@@ -464,8 +494,11 @@ Options:
 
 | Name | Type | Description |
 |------|------|-------------|
-| `selector` | string | CSS selector of input/textarea/contenteditable *(required)* |
+| `ref` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
+| `selector` | string,null | CSS selector of input/textarea/contenteditable |
 | `text` | string | Text to type *(required)* |
+| `autoWait` | boolean,null | Wait for element to appear before typing (default false) |
+| `timeout` | number,null | Max wait time in ms when autoWait is true (default 5000) |
 | `humanlike` | boolean,null | Human-like delays and typos (default true) |
 | `focusMode` | string,null | How to focus: mouse (default), keyboard, or direct |
 | `clear` | boolean,null | Clear existing content before typing (default false) |
@@ -512,7 +545,7 @@ Options:
 
 Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.
 
-Target element defaults to document.activeElement. Use selector to focus a specific element first.
+Target element defaults to document.activeElement. Use ref or selector to focus a specific element first.
 
 Supports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.
 
@@ -523,6 +556,7 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
 | Name | Type | Description |
 |------|------|-------------|
 | `key` | string | Key to press (e.g., "Enter", "Escape", "a", "ArrowDown") *(required)* |
+| `ref` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
 | `selector` | string,null | Element to focus first (default: activeElement) |
 | `ctrlKey` | boolean,null | Hold Ctrl/Control |
 | `shiftKey` | boolean,null | Hold Shift |
@@ -1027,54 +1061,82 @@ Response: { watching: boolean, mutations: [...], summary: { added, removed, chan
 
 ## User Selection
 
+### `POST /select`
+
+**Interactive element selection**
+
+Let user point at elements on the page instead of writing selectors.
+
+Actions:
+- start: Begin selection mode (user can draw a rectangle)
+- result: Get elements from completed selection
+- cancel: Exit selection mode without capturing
+- clear: Clear stored selection result
+- status: Check if selection is active
+
+Workflow: start → (user draws region) → result → use returned selectors
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `action` | string,null | Selection action to perform (default: result) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **start**: Begin selection mode
+  ```json
+  {"action":"start"}
+  ```
+- **result**: Get selected elements
+  ```json
+  {"action":"result"}
+  ```
+- **status**: Check if selection is active
+  ```json
+  {"action":"status"}
+  ```
+
+---
+
 ### `POST /select/start`
 
-**Start interactive selection**
+**[Deprecated] Use /select with action:"start"**
 
-Let user drag to select a region on the page.
-
-After calling this, the user can draw a rectangle on the page.
-Call /select/result to get the elements within the selection.
-
-Response: { success: true, message: "Selection mode active" }
+Deprecated: Use POST /select {"action":"start"} instead.
 
 ---
 
 ### `POST /select/cancel`
 
-**Cancel selection mode**
+**[Deprecated] Use /select with action:"cancel"**
 
-Exit selection mode without capturing. Use if user changed their mind.
+Deprecated: Use POST /select {"action":"cancel"} instead.
 
 ---
 
 ### `GET /select/status`
 
-**Check if selection is active**
+**[Deprecated] Use /select with action:"status"**
 
-Check whether selection mode is currently active.
-
-Response: { active: boolean, hasResult: boolean }
+Deprecated: Use POST /select {"action":"status"} instead.
 
 ---
 
 ### `GET /select/result`
 
-**Get selection result**
+**[Deprecated] Use /select with action:"result"**
 
-After user completes selection, returns the region and elements within.
-
-Response: { bounds: { x, y, width, height }, elements: [{ selector, tagName, text, ... }] }
-
-Use the selectors from this response in subsequent /click or /type calls.
+Deprecated: Use POST /select {"action":"result"} instead.
 
 ---
 
 ### `POST /select/clear`
 
-**Clear selection result**
+**[Deprecated] Use /select with action:"clear"**
 
-Clear any stored selection result. Use before starting a new selection.
+Deprecated: Use POST /select {"action":"clear"} instead.
 
 ---
 
@@ -1167,38 +1229,70 @@ Useful when working with multiple tabs to ensure the right one is visible.
 
 ## Record & Replay
 
+### `POST /recording`
+
+**Record user actions and generate tests**
+
+Record user interactions and convert them to runnable tests.
+
+Actions:
+- start: Begin capturing user interactions
+- stop: Stop capturing, returns recorded events
+- generate: Convert recording to JSON test format
+- list: List all saved recordings
+
+Workflow: start → (user interacts) → stop → generate → run with /test
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `action` | string | Recording action to perform *(required)* |
+| `name` | string,null | Test name (for generate action) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **start**: Begin recording
+  ```json
+  {"action":"start"}
+  ```
+- **stop**: Stop and get events
+  ```json
+  {"action":"stop"}
+  ```
+- **generate**: Generate test from recording
+  ```json
+  {"action":"generate","name":"Login flow"}
+  ```
+- **list**: List saved recordings
+  ```json
+  {"action":"list"}
+  ```
+
+---
+
 ### `POST /recording/start`
 
-**Start recording user actions**
+**[Deprecated] Use /recording with action:"start"**
 
-Begin capturing user interactions as semantic events.
-
-The recording captures clicks, typing, navigation, and more.
-Use /recording/stop to finish, then /recording/generate to create a test.
+Deprecated: Use POST /recording {"action":"start"} instead.
 
 ---
 
 ### `POST /recording/stop`
 
-**Stop recording**
+**[Deprecated] Use /recording with action:"stop"**
 
-Stop capturing user actions.
-
-Response: { events: [...], duration: ms, eventCount: n }
-
-After stopping, use /recording/generate to convert events to a test.
+Deprecated: Use POST /recording {"action":"stop"} instead.
 
 ---
 
 ### `POST /recording/generate`
 
-**Generate test from recording**
+**[Deprecated] Use /recording with action:"generate"**
 
-Converts recorded semantic events into a JSON test file.
-
-The generated test can be run with /test/run or saved for later use.
-
-Response: { test: { version, name, url, steps: [...] } }
+Deprecated: Use POST /recording {"action":"generate"} instead.
 
 **Parameters:**
 
@@ -1206,26 +1300,13 @@ Response: { test: { version, name, url, steps: [...] } }
 |------|------|-------------|
 | `name` | string,null | Test name |
 
-**Examples:**
-
-- **named**: Generate with custom name
-  ```json
-  {"name":"Login flow test"}
-  ```
-- **default**: Generate with auto-generated name
-  ```json
-  {}
-  ```
-
 ---
 
 ### `GET /recordings`
 
-**List saved recordings**
+**[Deprecated] Use /recording with action:"list"**
 
-List all saved recordings on the server.
-
-Response: { recordings: [{ name, created, eventCount, duration }] }
+Deprecated: Use POST /recording {"action":"list"} instead.
 
 ---
 

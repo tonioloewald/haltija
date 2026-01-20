@@ -65,6 +65,203 @@ const SERVER_SESSION_ID = ''
 // Generate unique IDs
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+// ============================================
+// Ref ID System
+// ============================================
+// Assigns short tokens like @1, @2 to elements for efficient agent communication.
+// Uses WeakRef to allow garbage collection of detached elements.
+
+class RefRegistry {
+  private refs = new Map<string, WeakRef<Element>>()
+  private elementToRef = new WeakMap<Element, string>()
+  private counter = 0
+  
+  /** Assign a ref to an element (or return existing ref) */
+  assign(el: Element): string {
+    // Check if element already has a ref
+    const existing = this.elementToRef.get(el)
+    if (existing) {
+      // Verify element is still valid
+      const weakRef = this.refs.get(existing)
+      if (weakRef?.deref() === el) {
+        return existing
+      }
+    }
+    
+    // Assign new ref
+    const ref = `@${++this.counter}`
+    this.refs.set(ref, new WeakRef(el))
+    this.elementToRef.set(el, ref)
+    return ref
+  }
+  
+  /** Resolve a ref to an element, or null if element left DOM */
+  resolve(ref: string): Element | null {
+    const weakRef = this.refs.get(ref)
+    if (!weakRef) return null
+    
+    const el = weakRef.deref()
+    if (!el || !document.contains(el)) {
+      // Element was garbage collected or removed from DOM
+      this.refs.delete(ref)
+      return null
+    }
+    return el
+  }
+  
+  /** Check if a ref is still valid */
+  isValid(ref: string): boolean {
+    return this.resolve(ref) !== null
+  }
+  
+  /** Get stats about the registry */
+  getStats(): { assigned: number; valid: number; stale: number } {
+    let valid = 0
+    let stale = 0
+    
+    for (const [ref, weakRef] of this.refs) {
+      const el = weakRef.deref()
+      if (el && document.contains(el)) {
+        valid++
+      } else {
+        stale++
+        this.refs.delete(ref) // Clean up while we're here
+      }
+    }
+    
+    return { assigned: this.counter, valid, stale }
+  }
+  
+  /** Clear all refs (e.g., on page navigation) */
+  clear(): void {
+    this.refs.clear()
+    this.counter = 0
+  }
+}
+
+// Global ref registry instance
+const refRegistry = new RefRegistry()
+
+// ============================================
+// Stats Collection
+// ============================================
+// Tracks usage metrics for efficiency claims and debugging
+
+interface HaltijaStats {
+  // Session info
+  sessionStart: number
+  
+  // Event processing efficiency
+  rawEventsReceived: number
+  semanticEventsEmitted: number
+  eventsByCategory: Record<string, number>
+  
+  // DOM efficiency
+  domNodesProcessed: number
+  domNodesInTree: number
+  domNodesInActionable: number
+  
+  // Ref system usage
+  refsAssigned: number
+  refsResolved: number
+  refsStale: number
+  
+  // API usage
+  endpointCalls: Record<string, { success: number; errors: number; totalMs: number }>
+}
+
+// Global stats instance
+const stats: HaltijaStats = {
+  sessionStart: Date.now(),
+  rawEventsReceived: 0,
+  semanticEventsEmitted: 0,
+  eventsByCategory: {},
+  domNodesProcessed: 0,
+  domNodesInTree: 0,
+  domNodesInActionable: 0,
+  refsAssigned: 0,
+  refsResolved: 0,
+  refsStale: 0,
+  endpointCalls: {},
+}
+
+/** Record an endpoint call */
+function recordEndpointCall(endpoint: string, success: boolean, durationMs: number): void {
+  if (!stats.endpointCalls[endpoint]) {
+    stats.endpointCalls[endpoint] = { success: 0, errors: 0, totalMs: 0 }
+  }
+  if (success) {
+    stats.endpointCalls[endpoint].success++
+  } else {
+    stats.endpointCalls[endpoint].errors++
+  }
+  stats.endpointCalls[endpoint].totalMs += durationMs
+}
+
+/** Get formatted stats */
+function getFormattedStats(): {
+  session: { startTime: string; uptimeMs: number; uptimeFormatted: string }
+  events: { raw: number; semantic: number; reductionPercent: number; byCategory: Record<string, number> }
+  dom: { processed: number; inTree: number; inActionable: number; reductionPercent: number }
+  refs: { assigned: number; resolved: number; stale: number; hitRate: number }
+  endpoints: Record<string, { calls: number; success: number; errors: number; avgMs: number }>
+} {
+  const uptimeMs = Date.now() - stats.sessionStart
+  const hours = Math.floor(uptimeMs / 3600000)
+  const minutes = Math.floor((uptimeMs % 3600000) / 60000)
+  const seconds = Math.floor((uptimeMs % 60000) / 1000)
+  
+  const eventReduction = stats.rawEventsReceived > 0 
+    ? ((1 - stats.semanticEventsEmitted / stats.rawEventsReceived) * 100).toFixed(1)
+    : '0.0'
+    
+  const domReduction = stats.domNodesProcessed > 0
+    ? ((1 - stats.domNodesInTree / stats.domNodesProcessed) * 100).toFixed(1)
+    : '0.0'
+    
+  const refHitRate = (stats.refsResolved + stats.refsStale) > 0
+    ? ((stats.refsResolved / (stats.refsResolved + stats.refsStale)) * 100).toFixed(1)
+    : '100.0'
+  
+  const endpoints: Record<string, { calls: number; success: number; errors: number; avgMs: number }> = {}
+  for (const [name, data] of Object.entries(stats.endpointCalls)) {
+    const calls = data.success + data.errors
+    endpoints[name] = {
+      calls,
+      success: data.success,
+      errors: data.errors,
+      avgMs: calls > 0 ? Math.round(data.totalMs / calls) : 0
+    }
+  }
+  
+  return {
+    session: {
+      startTime: new Date(stats.sessionStart).toISOString(),
+      uptimeMs,
+      uptimeFormatted: `${hours}h ${minutes}m ${seconds}s`
+    },
+    events: {
+      raw: stats.rawEventsReceived,
+      semantic: stats.semanticEventsEmitted,
+      reductionPercent: parseFloat(eventReduction),
+      byCategory: { ...stats.eventsByCategory }
+    },
+    dom: {
+      processed: stats.domNodesProcessed,
+      inTree: stats.domNodesInTree,
+      inActionable: stats.domNodesInActionable,
+      reductionPercent: parseFloat(domReduction)
+    },
+    refs: {
+      assigned: stats.refsAssigned,
+      resolved: stats.refsResolved,
+      stale: stats.refsStale,
+      hitRate: parseFloat(refHitRate)
+    },
+    endpoints
+  }
+}
+
 // Get a stable CSS selector path to an element
 // Handles shadow DOM by marking shadow root boundaries with ::shadow
 function getSelector(el: Element): string {
@@ -1270,10 +1467,17 @@ function buildDomTree(
   const tagName = el.tagName.toLowerCase()
   const htmlEl = el as HTMLElement
 
+  // Track stats
+  stats.domNodesProcessed++
+
   // Build the node
   const node: DomTreeNode = {
     tag: tagName,
   }
+
+  // Assign ref ID for this element (allows efficient re-targeting)
+  node.ref = refRegistry.assign(el)
+  stats.refsAssigned++
 
   // ID (always include if present)
   if (el.id) {
@@ -1583,6 +1787,9 @@ function buildDomTree(
     node.truncated = true
     node.childCount = el.children.length
   }
+
+  // Track that this node is included in tree output
+  stats.domNodesInTree++
 
   return node
 }
@@ -2575,6 +2782,7 @@ export class DevChannel extends HTMLElement {
             <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">👆</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">🎬</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
+            <button class="btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">📊</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
             <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
           </div>
@@ -2643,6 +2851,7 @@ export class DevChannel extends HTMLElement {
         if (action === 'clear-logs') this.clearLogPanel()
         if (action === 'record') this.toggleRecording()
         if (action === 'select') this.startSelection()
+        if (action === 'stats') this.copyStatsToClipboard()
         if (action === 'close-modal') this.closeTestModal()
         if (action === 'copy-test') this.copyTest()
         if (action === 'download-test') this.downloadTest()
@@ -3356,6 +3565,34 @@ export class DevChannel extends HTMLElement {
           }, 2000)
         }
       })
+    }
+  }
+
+  private async copyStatsToClipboard() {
+    // Get ref stats and update global stats
+    const refStats = refRegistry.getStats()
+    stats.refsStale = refStats.stale
+    
+    const formattedStats = getFormattedStats()
+    const json = JSON.stringify(formattedStats, null, 2)
+    
+    try {
+      await navigator.clipboard.writeText(json)
+      console.log(`${LOG_PREFIX} Stats copied to clipboard!`)
+      console.log(formattedStats)
+      
+      // Visual feedback - flash the stats button
+      const statsBtn = this.shadowRoot?.querySelector('[data-action="stats"]')
+      if (statsBtn) {
+        statsBtn.textContent = '✓'
+        setTimeout(() => {
+          statsBtn.textContent = '📊'
+        }, 1500)
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Failed to copy stats:`, err)
+      // Fallback: log to console
+      console.log(`${LOG_PREFIX} Stats (copy manually):`, json)
     }
   }
 
@@ -5224,11 +5461,16 @@ export class DevChannel extends HTMLElement {
   // Count a raw DOM event for noise metrics
   private countRawEvent(eventType: string) {
     this.rawEventCounts[eventType] = (this.rawEventCounts[eventType] || 0) + 1
+    stats.rawEventsReceived++
   }
 
   private emitSemanticEvent(event: SemanticEvent) {
     // Count semantic event for metrics
     this.semanticEventCounts[event.category]++
+    
+    // Update global stats
+    stats.semanticEventsEmitted++
+    stats.eventsByCategory[event.category] = (stats.eventsByCategory[event.category] || 0) + 1
 
     // Check if this event category is subscribed
     if (this.semanticSubscription) {
@@ -5714,6 +5956,15 @@ export class DevChannel extends HTMLElement {
           console.error(`${LOG_PREFIX} Failed to reload:`, err)
         })
     }
+
+    // Get stats about efficiency and usage
+    if (action === 'stats') {
+      // Get ref registry stats
+      const refStats = refRegistry.getStats()
+      stats.refsStale = refStats.stale
+      
+      this.respond(msg.id, true, getFormattedStats())
+    }
   }
 
   private handleNavigationMessage(msg: DevMessage) {
@@ -6141,7 +6392,8 @@ export class DevChannel extends HTMLElement {
    */
   private async performRealisticType(
     payload: {
-      selector: string
+      selector?: string
+      ref?: string
       text: string
       focusMode?: 'mouse' | 'keyboard' | 'direct'
       clear?: boolean
@@ -6155,6 +6407,7 @@ export class DevChannel extends HTMLElement {
   ) {
     const {
       selector,
+      ref,
       text,
       focusMode = 'mouse',
       clear = false,
@@ -6165,9 +6418,32 @@ export class DevChannel extends HTMLElement {
       maxDelay = 150,
     } = payload
 
-    const el = document.querySelector(selector) as HTMLElement
+    // Resolve element from ref or selector
+    let el: HTMLElement | null = null
+    let targetDesc = ''
+    
+    if (ref) {
+      el = refRegistry.resolve(ref) as HTMLElement
+      targetDesc = ref
+      if (el) {
+        stats.refsResolved++
+      } else {
+        stats.refsStale++
+        this.respond(
+          responseId,
+          false,
+          null,
+          `Ref not found or element removed from DOM: ${ref}`,
+        )
+        return
+      }
+    } else if (selector) {
+      el = document.querySelector(selector) as HTMLElement
+      targetDesc = selector
+    }
+    
     if (!el) {
-      this.respond(responseId, false, null, `Element not found: ${selector}`)
+      this.respond(responseId, false, null, `Element not found: ${targetDesc}`)
       return
     }
 
@@ -6700,16 +6976,39 @@ export class DevChannel extends HTMLElement {
    * Performs realistic click with full event lifecycle.
    */
   private async performRealisticClick(
-    payload: { selector: string },
+    payload: { selector?: string; ref?: string },
     responseId: string,
   ) {
-    const el = document.querySelector(payload.selector) as HTMLElement
+    // Resolve element from ref or selector
+    let el: HTMLElement | null = null
+    let targetDesc = ''
+    
+    if (payload.ref) {
+      el = refRegistry.resolve(payload.ref) as HTMLElement
+      targetDesc = payload.ref
+      if (el) {
+        stats.refsResolved++
+      } else {
+        stats.refsStale++
+        this.respond(
+          responseId,
+          false,
+          null,
+          `Ref not found or element removed from DOM: ${payload.ref}`,
+        )
+        return
+      }
+    } else if (payload.selector) {
+      el = document.querySelector(payload.selector) as HTMLElement
+      targetDesc = payload.selector
+    }
+    
     if (!el) {
       this.respond(
         responseId,
         false,
         null,
-        `Element not found: ${payload.selector}`,
+        `Element not found: ${targetDesc}`,
       )
       return
     }
@@ -6721,7 +7020,7 @@ export class DevChannel extends HTMLElement {
         responseId,
         false,
         null,
-        `Element "${payload.selector}" is not visible: ${hiddenReason}`,
+        `Element "${targetDesc}" is not visible: ${hiddenReason}`,
       )
       return
     }
@@ -6792,6 +7091,7 @@ export class DevChannel extends HTMLElement {
     payload: {
       key: string
       selector?: string
+      ref?: string
       ctrlKey?: boolean
       shiftKey?: boolean
       altKey?: boolean
@@ -6803,6 +7103,7 @@ export class DevChannel extends HTMLElement {
     const {
       key,
       selector,
+      ref,
       ctrlKey,
       shiftKey,
       altKey,
@@ -6811,10 +7112,29 @@ export class DevChannel extends HTMLElement {
     } = payload
 
     try {
-      // Focus target element if specified, otherwise use activeElement
+      // Focus target element if specified (via ref or selector), otherwise use activeElement
       let target: HTMLElement | null = null
-      if (selector) {
+      let targetDesc = ''
+      
+      if (ref) {
+        target = refRegistry.resolve(ref) as HTMLElement
+        targetDesc = ref
+        if (target) {
+          stats.refsResolved++
+          target.focus()
+        } else {
+          stats.refsStale++
+          this.respond(
+            responseId,
+            false,
+            null,
+            `Ref not found or element removed from DOM: ${ref}`,
+          )
+          return
+        }
+      } else if (selector) {
         target = document.querySelector(selector) as HTMLElement
+        targetDesc = selector
         if (!target) {
           this.respond(
             responseId,
@@ -6827,6 +7147,7 @@ export class DevChannel extends HTMLElement {
         target.focus()
       } else {
         target = (document.activeElement as HTMLElement) || document.body
+        targetDesc = 'activeElement'
       }
 
       // Build modifier key info
@@ -8105,4 +8426,42 @@ if (typeof window !== 'undefined') {
   } else {
     autoInject()
   }
+  
+  // Expose haltija utilities on window for console access
+  ;(window as any).haltija = (window as any).haltija || {}
+  Object.assign((window as any).haltija, {
+    /** Get current stats */
+    stats: () => getFormattedStats(),
+    
+    /** Copy stats to clipboard as JSON and return them */
+    copyStats: async () => {
+      const formattedStats = getFormattedStats()
+      const json = JSON.stringify(formattedStats, null, 2)
+      try {
+        await navigator.clipboard.writeText(json)
+        console.log(`${LOG_PREFIX} Stats copied to clipboard!`)
+        console.log(formattedStats)
+        return formattedStats
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to copy to clipboard:`, err)
+        console.log(`${LOG_PREFIX} Stats:`, json)
+        return formattedStats
+      }
+    },
+    
+    /** Get ref registry info */
+    refs: () => refRegistry.getStats(),
+    
+    /** Clear all refs (e.g., after major DOM changes) */
+    clearRefs: () => {
+      refRegistry.clear()
+      console.log(`${LOG_PREFIX} Ref registry cleared`)
+    },
+    
+    /** Resolve a ref to its element */
+    resolveRef: (ref: string) => refRegistry.resolve(ref),
+    
+    /** Version info */
+    version: VERSION,
+  })
 }

@@ -1,8 +1,15 @@
-# Roadmap to 10/10
+# Roadmap to 11/10
 
 Current state: **9/10** - Best-in-class developer tool. GET support for actions, `/key` endpoint, diff-on-action, iframe visibility, simplified API.
 
 Goal: **10/10** - The standard way AI agents interact with browsers.
+
+Beyond: **11/10** - Agent-as-a-Service for browsers. Zero-config AI automation.
+
+**Current Focus: Phase 5 - CI Integration POC**
+- ✅ CI documentation written (`docs/CI-INTEGRATION.md`)
+- 🔄 Dogfooding in real CI environment
+- 🔄 Discovering actual friction points
 
 **Recent Progress (v0.1.9):**
 - ✅ GET support for `/click`, `/type`, `/key` - simpler curl commands
@@ -323,14 +330,15 @@ Build the moat through adoption.
 |-------|--------|--------|---------|
 | 1. Docs & Discovery | Low | High | Now |
 | 2. Developer Experience | Medium | High | Next |
-| 3. Platform Expansion | Low-Medium | Medium | After 2 |
-| 4. Enterprise Readiness | High | Medium | When needed |
-| 5. Cloud & CI | High | Transformative | The goal |
+| 3. Platform Expansion | Low-Medium | Medium | ✅ Done |
+| 4. Enterprise Readiness | High | Medium | Dogfood first |
+| 5. Cloud & CI | High | Transformative | The 10/10 |
 | 6. Ecosystem | Ongoing | Cumulative | Continuous |
+| 7. Hosted Service | Medium | Business | The 11/10 |
 
 ---
 
-## What Gets Us to 10/10
+## What Gets Us to 10/10 (and Beyond)
 
 A product is 10/10 when it becomes the obvious default choice.
 
@@ -348,7 +356,211 @@ A product is 10/10 when it becomes the obvious default choice.
 
 **Phase 5 gets us to 10/10**: AI QA in CI that just works. Push code, get human-readable test results, auto-fixed tests, real bug reports.
 
-The question isn't "can we build this?" - the architecture supports it. The question is "do we invest in making it real?"
+**Phase 7 gets us to 11/10**: Agent-as-a-Service. One curl command = AI controlling a browser. No setup, no MCP, no local Claude. Just:
+```bash
+curl https://yourco.haltija.net/do -d '{"task": "fill out the signup form"}'
+```
+
+The architecture makes this possible: we route messages, we don't run browsers. Near-zero marginal cost while competitors burn money on browser infrastructure.
+
+---
+
+## Phase 7: Hosted Service & Agent-as-a-Service (The 11/10)
+
+This is what makes Haltija a business, not just a tool.
+
+### The Architecture Insight
+
+**Why this is cheap to run:**
+- Competitors (Browserbase, Playwright Cloud) host actual browsers = $$$
+- Haltija just routes messages between agent and browser
+- Browser runs on customer's machine/CI (they pay for compute)
+- Our relay is WebSocket routing = pennies
+
+**Cost projection:**
+| Users | Concurrent Sessions | Monthly Cost |
+|-------|---------------------|--------------|
+| 1,000 | ~200 | ~$5 |
+| 10,000 | ~2,000 | ~$20 |
+| 100,000 | ~20,000 | ~$50 |
+
+That's 95%+ margins on the relay itself.
+
+### 7.1 Core Infrastructure
+
+**Firebase stack (known quantity):**
+- **Auth**: Firebase Auth (OAuth, email, API keys for CI)
+- **Database**: Firestore for users, subscriptions, test definitions, run history
+- **Storage**: Firebase Storage for recordings, screenshots, reports
+- **Hosting**: Firebase Hosting for dashboard UI
+
+**Relay service (Fly.io):**
+- Lightweight WebSocket routing
+- Scales horizontally
+- Global edge locations
+- ~$20/mo handles thousands of customers
+
+### 7.2 Domain Structure
+
+```
+haltija.dev           - marketing site, docs
+app.haltija.dev       - dashboard (Firebase Hosting)
+api.haltija.dev       - shared API (free tier, auth via token)
+
+*.haltija.net         - customer-specific endpoints
+acme.haltija.net      - Acme Corp's dedicated relay
+initech.haltija.net   - Initech's dedicated relay
+```
+
+**Benefits of customer subdomains:**
+- Session isolation (can't accidentally route to wrong customer)
+- Natural CORS scoping
+- Per-customer rate limiting
+- Premium feel for enterprise
+
+### 7.3 Payments & Subscriptions
+
+**Stripe integration:**
+- Usage-based pricing model
+- Metered billing on commands/test runs
+
+**Proposed tiers:**
+| Tier | Price | Limits |
+|------|-------|--------|
+| Free | $0 | 1K commands/mo, 10 test runs |
+| Pro | $29/mo | 50K commands/mo, 500 test runs |
+| Team | $99/mo | 500K commands/mo, unlimited tests |
+| Enterprise | Custom | Unlimited, SLA, dedicated subdomain |
+
+### 7.4 Telemetry & Analytics
+
+**Instrument Haltija to learn what works:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Telemetry Events                          │
+├─────────────────────────────────────────────────────────────┤
+│ Usage:     command_invoked, test_run_started, test_passed   │
+│ Utility:   command_success_rate, avg_response_time          │
+│ Usability: command_retry_count, error_frequency, feedback   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Per-command tracking:**
+- Invocation count
+- Success/failure rate
+- Average latency
+- Common error messages
+- Retry patterns (agent retried 3x = friction signal)
+
+### 7.5 Agent Feedback Endpoint
+
+Let agents report friction directly:
+
+```
+POST /feedback
+{
+  "type": "friction" | "suggestion" | "error",
+  "context": "tried to click dropdown but it was inside shadow DOM",
+  "command": "/click",
+  "severity": "medium"
+}
+```
+
+**Dashboard aggregates:**
+- "Agents retry /click 40% more when targeting shadow DOM"
+- "Common friction: form submission timing"
+- "Feature request: better iframe support (12 reports)"
+
+### 7.6 Magic Token: Agent-as-a-Service
+
+**The killer feature - zero config agents:**
+
+Current setup requires:
+1. Install Claude Desktop / configure MCP
+2. Get API keys from Anthropic
+3. Configure the MCP server
+4. Figure out the system prompt
+5. Connect to Haltija
+
+**Magic token flow:**
+1. Sign up at haltija.dev
+2. Add your Anthropic key (stored encrypted)
+3. Get a magic token
+4. Done:
+```bash
+curl https://yourco.haltija.net/do \
+  -H "Authorization: Bearer xxx" \
+  -d '{"task": "click the login button"}'
+```
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│              haltija.net (hosted)                            │
+│  ┌─────────┐    ┌─────────┐    ┌─────────┐                 │
+│  │  Auth   │───▶│  Agent  │───▶│  Relay  │─────────────────┼──▶ Browser
+│  │ + Keys  │    │ (Claude)│    │         │                 │    (your machine)
+│  └─────────┘    └─────────┘    └─────────┘                 │
+└─────────────────────────────────────────────────────────────┘
+         ▲
+         │
+    curl/REST (your CI, scripts, whatever)
+```
+
+**What this enables:**
+- **Zero config agents** - no MCP setup, no local Claude
+- **API-first automation** - natural language over REST
+- **Composable** - chain from shell scripts, CI, webhooks
+- **Key management** - one place for API keys, rotate easily
+
+**Pricing options:**
+- Bring your own key: just pay relay costs
+- Use our pool: markup on token usage (like OpenRouter model)
+
+### 7.7 Bookmarklet + HTTPS
+
+**HTTPS is non-negotiable** for the hosted service:
+- Bookmarklet can `fetch()` from any page without CSP blocking
+- WebSocket upgrades work (`wss://`)
+- No mixed-content warnings
+- Agents in CI connect without cert hacks
+
+**Magic bookmarklet flow:**
+1. User clicks bookmarklet on any page
+2. Widget injected, connects to `wss://api.haltija.dev/ws?token=xxx`
+3. Agent can now control that browser from anywhere
+
+Use case: "Click this bookmarklet and I can see your browser" for remote debugging/support.
+
+### 7.8 Dashboard
+
+**What users see:**
+- Active sessions (which browsers connected)
+- Usage metrics (commands, test runs, costs)
+- Telemetry insights (what's working, what's failing)
+- Feedback inbox (agent-reported friction)
+- Test history and reports
+- API key management
+
+---
+
+## The Business Model
+
+**Why this works:**
+
+1. **Near-zero marginal cost** - we route messages, we don't run browsers
+2. **Competitor moat** - they're stuck with expensive browser infrastructure
+3. **Usage-aligned pricing** - customers pay for value delivered
+4. **Enterprise upsell** - dedicated subdomains, SLAs, compliance
+
+**Revenue projection (conservative):**
+- 100 Pro × $29 = $2,900/mo
+- 10 Team × $99 = $990/mo
+- Infrastructure: ~$100/mo
+- Margin: ~95%
+
+**The real insight:** A week to build the core product. Another week or two for hosted service MVP. Competitors maintain Kubernetes clusters of browsers.
 
 ---
 
@@ -365,10 +577,15 @@ Things we're explicitly not building:
 
 ## Success Metrics
 
-How we know we've hit 10/10:
-
+**How we know we've hit 10/10:**
 - Teams choosing Haltija over Playwright for new projects
 - "We deleted our E2E test suite and use Haltija" case studies
 - AI QA catching real bugs before users do
 - PR comments from Haltija that developers actually read
-- Internal adoption at Anthropic as proof point
+
+**How we know we've hit 11/10:**
+- Customers using `/do` endpoint without ever installing anything locally
+- Revenue from hosted service exceeds infrastructure costs by 10x+
+- Agent feedback endpoint surfacing real product insights
+- "I just curl Haltija" becomes a thing people say
+- Startups building products on top of the Haltija API

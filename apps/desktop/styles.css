@@ -1,3 +1,14 @@
+:root {
+  /* Color palette for context menus and other dynamic elements */
+  --surface: #1a1a2e;
+  --surface-hover: #252540;
+  --border: #333;
+  --text: #fff;
+  --text-muted: #888;
+  --hover: #2a2a4a;
+  --accent: #6366f1;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -11,8 +22,8 @@ html, body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--surface);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   overflow: hidden;

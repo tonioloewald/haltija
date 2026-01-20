@@ -14,6 +14,41 @@ import { ALL_ENDPOINTS, validateInput, getEndpointDocs, type EndpointDef } from 
 import { handlers, type HandlerContext } from './api-handlers'
 
 // ============================================
+// Deprecation Detection
+// ============================================
+
+/** Check if an endpoint is deprecated based on its summary */
+function isDeprecated(endpoint: EndpointDef): boolean {
+  return endpoint.summary.startsWith('[Deprecated]')
+}
+
+/** Extract deprecation message from endpoint description */
+function getDeprecationMessage(endpoint: EndpointDef): string | null {
+  if (!isDeprecated(endpoint)) return null
+  // Description typically starts with "Deprecated: Use X instead"
+  const match = endpoint.description?.match(/^Deprecated:\s*(.+)$/m)
+  return match ? match[1] : endpoint.summary.replace('[Deprecated] ', '')
+}
+
+/** Add deprecation notice to response if endpoint is deprecated */
+async function wrapWithDeprecation(response: Response, endpoint: EndpointDef): Promise<Response> {
+  const message = getDeprecationMessage(endpoint)
+  if (!message) return response
+  
+  // Clone and modify JSON responses
+  try {
+    const data = await response.json()
+    return Response.json({ ...data, deprecated: message }, { 
+      status: response.status, 
+      headers: response.headers 
+    })
+  } catch {
+    // Non-JSON response, return as-is
+    return response
+  }
+}
+
+// ============================================
 // GET Defaults for POST Endpoints
 // ============================================
 // These endpoints can work with GET using sensible defaults.
@@ -112,7 +147,8 @@ export function createRouter(contextFactory: ContextFactory) {
             schema: endpoint.input?.schema,
           }, { status: 400, headers: ctx.headers })
         }
-        return handler(body, ctx)
+        const response = await handler(body, ctx)
+        return wrapWithDeprecation(response, endpoint)
       }
       // No defaults - return self-documenting schema
       return Response.json(getEndpointDocs(endpoint), { headers: ctx.headers })
@@ -128,7 +164,8 @@ export function createRouter(contextFactory: ContextFactory) {
     
     // GET endpoints - no body validation needed
     if (endpoint.method === 'GET') {
-      return handler({}, ctx)
+      const response = await handler({}, ctx)
+      return wrapWithDeprecation(response, endpoint)
     }
     
     // POST endpoints - parse and validate body
@@ -154,8 +191,9 @@ export function createRouter(contextFactory: ContextFactory) {
       }, { status: 400, headers: ctx.headers })
     }
     
-    // Call handler with validated body
-    return handler(body, ctx)
+    // Call handler with validated body and wrap with deprecation notice if needed
+    const response = await handler(body, ctx)
+    return wrapWithDeprecation(response, endpoint)
   }
 }
 

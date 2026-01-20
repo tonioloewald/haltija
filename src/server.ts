@@ -1034,9 +1034,21 @@ For complete API reference with all options and response formats:
     }, { headers })
   }
   
-  // Version endpoint - get component version from connected browser
+  // Stats endpoint - efficiency and usage metrics
+  if (path === '/stats' && req.method === 'GET') {
+    const windowId = url.searchParams.get('window') || undefined
+    const response = await requestFromBrowser('system', 'stats', {}, 5000, windowId)
+    if (response.success) {
+      return Response.json(response.data, { headers })
+    } else {
+      return Response.json({ error: response.error || 'Failed to get stats' }, { status: 500, headers })
+    }
+  }
+  
+  // Version endpoint - DEPRECATED, use /status instead
   if (path === '/version' && req.method === 'GET') {
     const response = await requestFromBrowser('system', 'version', {})
+    const deprecated = 'Use GET /status instead - version is included there'
     if (response.success) {
       return Response.json({
         server: SERVER_VERSION,
@@ -1046,13 +1058,15 @@ For complete API reference with all options and response formats:
           url: response.data.url,
           title: response.data.title,
           state: response.data.state,
-        }
+        },
+        deprecated,
       }, { headers })
     } else {
       return Response.json({
         server: SERVER_VERSION,
         component: null,
-        error: response.error || 'No browser connected'
+        error: response.error || 'No browser connected',
+        deprecated,
       }, { headers })
     }
   }
