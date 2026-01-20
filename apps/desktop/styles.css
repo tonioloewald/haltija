@@ -185,7 +185,8 @@ body {
   flex: 1;
   display: flex;
   gap: 4px;
-  max-width: 800px;
+  min-width: 200px;
+  /* No max-width - let it grow on wide displays */
 }
 
 #url-input {

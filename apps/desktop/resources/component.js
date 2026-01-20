@@ -1546,9 +1546,13 @@
         :host {
           display: block;
           position: fixed;
-          z-index: 999999;
+          z-index: 2147483647; /* Max z-index to ensure visibility over all content */
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
+        }
+        
+        :host(.widget-hidden) {
+          display: none;
         }
 
         :host(.animating-hide) {
@@ -2950,12 +2954,20 @@
     }
     show() {
       this.widgetHidden = false;
+      this.classList.remove("widget-hidden");
       this.render();
       this.flash();
     }
+    hide() {
+      this.widgetHidden = true;
+      this.classList.add("widget-hidden");
+    }
     toggleHidden() {
-      this.widgetHidden = !this.widgetHidden;
-      this.render();
+      if (this.widgetHidden) {
+        this.show();
+      } else {
+        this.hide();
+      }
     }
     toggleMinimize() {
       const isMinimized = this.classList.contains("minimized");

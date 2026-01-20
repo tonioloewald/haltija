@@ -1000,6 +1000,29 @@ For complete API reference with all options and response formats:
     })
   }
 
+  // Compact JSON endpoint listing for agent discoverability
+  // Returns minimal info about all endpoints - what an agent needs to understand capabilities
+  if (path === '/endpoints' && req.method === 'GET') {
+    const endpointList = api.ALL_ENDPOINTS.map(ep => {
+      const inputSchema = api.getInputSchema(ep)
+      const params = inputSchema && typeof inputSchema === 'object' && 'properties' in inputSchema
+        ? Object.keys((inputSchema as any).properties || {})
+        : []
+      return {
+        path: ep.path,
+        method: ep.method,
+        summary: ep.summary,
+        params,
+        category: (ep as any).category || 'other',
+      }
+    })
+    return Response.json({ 
+      endpoints: endpointList,
+      count: endpointList.length,
+      hint: 'GET /api for full documentation, GET /docs for quick start'
+    }, { headers })
+  }
+
   // ============================================
   // Schema-driven router (Phase 1: fall through if no handler)
   // ============================================

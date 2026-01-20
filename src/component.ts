@@ -2271,9 +2271,13 @@ export class DevChannel extends HTMLElement {
         :host {
           display: block;
           position: fixed;
-          z-index: 999999;
+          z-index: 2147483647; /* Max z-index to ensure visibility over all content */
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
+        }
+        
+        :host(.widget-hidden) {
+          display: none;
         }
 
         :host(.animating-hide) {
@@ -3995,13 +3999,22 @@ export class DevChannel extends HTMLElement {
 
   private show() {
     this.widgetHidden = false
+    this.classList.remove('widget-hidden')
     this.render()
     this.flash()
   }
 
+  private hide() {
+    this.widgetHidden = true
+    this.classList.add('widget-hidden')
+  }
+
   private toggleHidden() {
-    this.widgetHidden = !this.widgetHidden
-    this.render()
+    if (this.widgetHidden) {
+      this.show()
+    } else {
+      this.hide()
+    }
   }
 
   private toggleMinimize() {
