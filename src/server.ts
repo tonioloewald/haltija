@@ -701,7 +701,7 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Server version
-  const SERVER_VERSION = '0.1.6'
+  const SERVER_VERSION = VERSION
   
   // Built-in docs (shipped with Haltija)
   const builtinDocs: Record<string, { path: string; description: string }> = {

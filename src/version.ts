@@ -7,4 +7,4 @@
  */
 
 // Shared version - update when making changes
-export const VERSION = '0.1.9'
+export const VERSION = '0.2.0'
