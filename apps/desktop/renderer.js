@@ -270,8 +270,46 @@ function navigate(url, tabId = activeTabId) {
     )
   }
 
-  // Use loadURL for blob/data URLs (src attribute doesn't work reliably for these)
-  if (tab.url.startsWith('blob:') || tab.url.startsWith('data:')) {
+  // Handle blob URLs specially - they're origin-bound, so we need to fetch and convert
+  if (tab.url.startsWith('blob:')) {
+    // Try to fetch from the active webview's context and convert to data URL
+    const sourceWebview = getActiveWebview()
+    if (sourceWebview && sourceWebview !== tab.webview) {
+      // Fetch blob from source tab and convert to data URL
+      sourceWebview
+        .executeJavaScript(
+          `
+        (async () => {
+          try {
+            const response = await fetch("${tab.url}");
+            const blob = await response.blob();
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            return null;
+          }
+        })()
+      `,
+        )
+        .then((dataUrl) => {
+          if (dataUrl) {
+            tab.webview.loadURL(dataUrl)
+          } else {
+            // Fallback - try loading directly (might work if same origin)
+            tab.webview.loadURL(tab.url)
+          }
+        })
+        .catch(() => {
+          tab.webview.loadURL(tab.url)
+        })
+    } else {
+      // Same tab or no source - try direct load
+      tab.webview.loadURL(tab.url)
+    }
+  } else if (tab.url.startsWith('data:')) {
     tab.webview.loadURL(tab.url)
   } else {
     tab.webview.src = tab.url
