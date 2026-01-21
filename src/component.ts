@@ -75,7 +75,7 @@ class RefRegistry {
   private refs = new Map<string, WeakRef<Element>>()
   private elementToRef = new WeakMap<Element, string>()
   private counter = 0
-  
+
   /** Assign a ref to an element (or return existing ref) */
   assign(el: Element): string {
     // Check if element already has a ref
@@ -87,19 +87,19 @@ class RefRegistry {
         return existing
       }
     }
-    
+
     // Assign new ref
     const ref = `@${++this.counter}`
     this.refs.set(ref, new WeakRef(el))
     this.elementToRef.set(el, ref)
     return ref
   }
-  
+
   /** Resolve a ref to an element, or null if element left DOM */
   resolve(ref: string): Element | null {
     const weakRef = this.refs.get(ref)
     if (!weakRef) return null
-    
+
     const el = weakRef.deref()
     if (!el || !document.contains(el)) {
       // Element was garbage collected or removed from DOM
@@ -108,17 +108,17 @@ class RefRegistry {
     }
     return el
   }
-  
+
   /** Check if a ref is still valid */
   isValid(ref: string): boolean {
     return this.resolve(ref) !== null
   }
-  
+
   /** Get stats about the registry */
   getStats(): { assigned: number; valid: number; stale: number } {
     let valid = 0
     let stale = 0
-    
+
     for (const [ref, weakRef] of this.refs) {
       const el = weakRef.deref()
       if (el && document.contains(el)) {
@@ -128,10 +128,10 @@ class RefRegistry {
         this.refs.delete(ref) // Clean up while we're here
       }
     }
-    
+
     return { assigned: this.counter, valid, stale }
   }
-  
+
   /** Clear all refs (e.g., on page navigation) */
   clear(): void {
     this.refs.clear()
@@ -150,24 +150,27 @@ const refRegistry = new RefRegistry()
 interface HaltijaStats {
   // Session info
   sessionStart: number
-  
+
   // Event processing efficiency
   rawEventsReceived: number
   semanticEventsEmitted: number
   eventsByCategory: Record<string, number>
-  
+
   // DOM efficiency
   domNodesProcessed: number
   domNodesInTree: number
   domNodesInActionable: number
-  
+
   // Ref system usage
   refsAssigned: number
   refsResolved: number
   refsStale: number
-  
+
   // API usage
-  endpointCalls: Record<string, { success: number; errors: number; totalMs: number }>
+  endpointCalls: Record<
+    string,
+    { success: number; errors: number; totalMs: number }
+  >
 }
 
 // Global stats instance
@@ -186,7 +189,11 @@ const stats: HaltijaStats = {
 }
 
 /** Record an endpoint call */
-function recordEndpointCall(endpoint: string, success: boolean, durationMs: number): void {
+function recordEndpointCall(
+  endpoint: string,
+  success: boolean,
+  durationMs: number,
+): void {
   if (!stats.endpointCalls[endpoint]) {
     stats.endpointCalls[endpoint] = { success: 0, errors: 0, totalMs: 0 }
   }
@@ -201,64 +208,89 @@ function recordEndpointCall(endpoint: string, success: boolean, durationMs: numb
 /** Get formatted stats */
 function getFormattedStats(): {
   session: { startTime: string; uptimeMs: number; uptimeFormatted: string }
-  events: { raw: number; semantic: number; reductionPercent: number; byCategory: Record<string, number> }
-  dom: { processed: number; inTree: number; inActionable: number; reductionPercent: number }
+  events: {
+    raw: number
+    semantic: number
+    reductionPercent: number
+    byCategory: Record<string, number>
+  }
+  dom: {
+    processed: number
+    inTree: number
+    inActionable: number
+    reductionPercent: number
+  }
   refs: { assigned: number; resolved: number; stale: number; hitRate: number }
-  endpoints: Record<string, { calls: number; success: number; errors: number; avgMs: number }>
+  endpoints: Record<
+    string,
+    { calls: number; success: number; errors: number; avgMs: number }
+  >
 } {
   const uptimeMs = Date.now() - stats.sessionStart
   const hours = Math.floor(uptimeMs / 3600000)
   const minutes = Math.floor((uptimeMs % 3600000) / 60000)
   const seconds = Math.floor((uptimeMs % 60000) / 1000)
-  
-  const eventReduction = stats.rawEventsReceived > 0 
-    ? ((1 - stats.semanticEventsEmitted / stats.rawEventsReceived) * 100).toFixed(1)
-    : '0.0'
-    
-  const domReduction = stats.domNodesProcessed > 0
-    ? ((1 - stats.domNodesInTree / stats.domNodesProcessed) * 100).toFixed(1)
-    : '0.0'
-    
-  const refHitRate = (stats.refsResolved + stats.refsStale) > 0
-    ? ((stats.refsResolved / (stats.refsResolved + stats.refsStale)) * 100).toFixed(1)
-    : '100.0'
-  
-  const endpoints: Record<string, { calls: number; success: number; errors: number; avgMs: number }> = {}
+
+  const eventReduction =
+    stats.rawEventsReceived > 0
+      ? (
+          (1 - stats.semanticEventsEmitted / stats.rawEventsReceived) *
+          100
+        ).toFixed(1)
+      : '0.0'
+
+  const domReduction =
+    stats.domNodesProcessed > 0
+      ? ((1 - stats.domNodesInTree / stats.domNodesProcessed) * 100).toFixed(1)
+      : '0.0'
+
+  const refHitRate =
+    stats.refsResolved + stats.refsStale > 0
+      ? (
+          (stats.refsResolved / (stats.refsResolved + stats.refsStale)) *
+          100
+        ).toFixed(1)
+      : '100.0'
+
+  const endpoints: Record<
+    string,
+    { calls: number; success: number; errors: number; avgMs: number }
+  > = {}
   for (const [name, data] of Object.entries(stats.endpointCalls)) {
     const calls = data.success + data.errors
     endpoints[name] = {
       calls,
       success: data.success,
       errors: data.errors,
-      avgMs: calls > 0 ? Math.round(data.totalMs / calls) : 0
+      avgMs: calls > 0 ? Math.round(data.totalMs / calls) : 0,
     }
   }
-  
+
   return {
     session: {
       startTime: new Date(stats.sessionStart).toISOString(),
       uptimeMs,
-      uptimeFormatted: `${hours}h ${minutes}m ${seconds}s`
+      uptimeFormatted: `${hours}h ${minutes}m ${seconds}s`,
     },
     events: {
       raw: stats.rawEventsReceived,
       semantic: stats.semanticEventsEmitted,
       reductionPercent: parseFloat(eventReduction),
-      byCategory: { ...stats.eventsByCategory }
+      byCategory: { ...stats.eventsByCategory },
     },
     dom: {
       processed: stats.domNodesProcessed,
       inTree: stats.domNodesInTree,
       inActionable: stats.domNodesInActionable,
-      reductionPercent: parseFloat(domReduction)
+      reductionPercent: parseFloat(domReduction),
     },
     refs: {
       assigned: stats.refsAssigned,
       resolved: stats.refsResolved,
       stale: stats.refsStale,
-      hitRate: parseFloat(refHitRate)
+      hitRate: parseFloat(refHitRate),
     },
-    endpoints
+    endpoints,
   }
 }
 
@@ -2275,7 +2307,7 @@ export class DevChannel extends HTMLElement {
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
         }
-        
+
         :host(.widget-hidden) {
           display: none;
         }
@@ -3576,15 +3608,15 @@ export class DevChannel extends HTMLElement {
     // Get ref stats and update global stats
     const refStats = refRegistry.getStats()
     stats.refsStale = refStats.stale
-    
+
     const formattedStats = getFormattedStats()
     const json = JSON.stringify(formattedStats, null, 2)
-    
+
     try {
       await navigator.clipboard.writeText(json)
       console.log(`${LOG_PREFIX} Stats copied to clipboard!`)
       console.log(formattedStats)
-      
+
       // Visual feedback - flash the stats button
       const statsBtn = this.shadowRoot?.querySelector('[data-action="stats"]')
       if (statsBtn) {
@@ -5480,10 +5512,11 @@ export class DevChannel extends HTMLElement {
   private emitSemanticEvent(event: SemanticEvent) {
     // Count semantic event for metrics
     this.semanticEventCounts[event.category]++
-    
+
     // Update global stats
     stats.semanticEventsEmitted++
-    stats.eventsByCategory[event.category] = (stats.eventsByCategory[event.category] || 0) + 1
+    stats.eventsByCategory[event.category] =
+      (stats.eventsByCategory[event.category] || 0) + 1
 
     // Check if this event category is subscribed
     if (this.semanticSubscription) {
@@ -5975,7 +6008,7 @@ export class DevChannel extends HTMLElement {
       // Get ref registry stats
       const refStats = refRegistry.getStats()
       stats.refsStale = refStats.stale
-      
+
       this.respond(msg.id, true, getFormattedStats())
     }
   }
@@ -5989,10 +6022,15 @@ export class DevChannel extends HTMLElement {
         location.reload()
       } else {
         // Hard refresh (default) - bypass cache
-        // Use cache-busting URL parameter since location.reload(true) is deprecated
-        const url = new URL(location.href)
-        url.searchParams.set('_haltija_refresh', Date.now().toString())
-        location.href = url.toString()
+        // For blob: URLs (and other non-http URLs), just reload since we can't modify the URL
+        if (location.protocol === 'blob:' || location.protocol === 'data:') {
+          location.reload()
+        } else {
+          // Use cache-busting URL parameter since location.reload(true) is deprecated
+          const url = new URL(location.href)
+          url.searchParams.set('_haltija_refresh', Date.now().toString())
+          location.href = url.toString()
+        }
       }
       this.respond(msg.id, true)
     } else if (action === 'goto') {
@@ -6434,7 +6472,7 @@ export class DevChannel extends HTMLElement {
     // Resolve element from ref or selector
     let el: HTMLElement | null = null
     let targetDesc = ''
-    
+
     if (ref) {
       el = refRegistry.resolve(ref) as HTMLElement
       targetDesc = ref
@@ -6454,7 +6492,7 @@ export class DevChannel extends HTMLElement {
       el = document.querySelector(selector) as HTMLElement
       targetDesc = selector
     }
-    
+
     if (!el) {
       this.respond(responseId, false, null, `Element not found: ${targetDesc}`)
       return
@@ -6995,7 +7033,7 @@ export class DevChannel extends HTMLElement {
     // Resolve element from ref or selector
     let el: HTMLElement | null = null
     let targetDesc = ''
-    
+
     if (payload.ref) {
       el = refRegistry.resolve(payload.ref) as HTMLElement
       targetDesc = payload.ref
@@ -7015,14 +7053,9 @@ export class DevChannel extends HTMLElement {
       el = document.querySelector(payload.selector) as HTMLElement
       targetDesc = payload.selector
     }
-    
+
     if (!el) {
-      this.respond(
-        responseId,
-        false,
-        null,
-        `Element not found: ${targetDesc}`,
-      )
+      this.respond(responseId, false, null, `Element not found: ${targetDesc}`)
       return
     }
 
@@ -7128,7 +7161,7 @@ export class DevChannel extends HTMLElement {
       // Focus target element if specified (via ref or selector), otherwise use activeElement
       let target: HTMLElement | null = null
       let targetDesc = ''
-      
+
       if (ref) {
         target = refRegistry.resolve(ref) as HTMLElement
         targetDesc = ref
@@ -8439,13 +8472,13 @@ if (typeof window !== 'undefined') {
   } else {
     autoInject()
   }
-  
+
   // Expose haltija utilities on window for console access
   ;(window as any).haltija = (window as any).haltija || {}
   Object.assign((window as any).haltija, {
     /** Get current stats */
     stats: () => getFormattedStats(),
-    
+
     /** Copy stats to clipboard as JSON and return them */
     copyStats: async () => {
       const formattedStats = getFormattedStats()
@@ -8461,19 +8494,19 @@ if (typeof window !== 'undefined') {
         return formattedStats
       }
     },
-    
+
     /** Get ref registry info */
     refs: () => refRegistry.getStats(),
-    
+
     /** Clear all refs (e.g., after major DOM changes) */
     clearRefs: () => {
       refRegistry.clear()
       console.log(`${LOG_PREFIX} Ref registry cleared`)
     },
-    
+
     /** Resolve a ref to its element */
     resolveRef: (ref: string) => refRegistry.resolve(ref),
-    
+
     /** Version info */
     version: VERSION,
   })

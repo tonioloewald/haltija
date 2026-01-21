@@ -1550,7 +1550,7 @@
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
         }
-        
+
         :host(.widget-hidden) {
           display: none;
         }
@@ -4398,9 +4398,13 @@
         if (payload2.soft) {
           location.reload();
         } else {
-          const url = new URL(location.href);
-          url.searchParams.set("_haltija_refresh", Date.now().toString());
-          location.href = url.toString();
+          if (location.protocol === "blob:" || location.protocol === "data:") {
+            location.reload();
+          } else {
+            const url = new URL(location.href);
+            url.searchParams.set("_haltija_refresh", Date.now().toString());
+            location.href = url.toString();
+          }
         }
         this.respond(msg2.id, true);
       } else if (action2 === "goto") {
