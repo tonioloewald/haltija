@@ -270,7 +270,12 @@ function navigate(url, tabId = activeTabId) {
     )
   }
 
-  tab.webview.src = tab.url
+  // Use loadURL for blob/data URLs (src attribute doesn't work reliably for these)
+  if (tab.url.startsWith('blob:') || tab.url.startsWith('data:')) {
+    tab.webview.loadURL(tab.url)
+  } else {
+    tab.webview.src = tab.url
+  }
 
   if (tabId === activeTabId) {
     urlInput.value = tab.url

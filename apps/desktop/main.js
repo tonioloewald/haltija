@@ -1,6 +1,6 @@
 /**
  * Haltija Desktop - God Mode Browser
- * 
+ *
  * An Electron shell that:
  * 1. Strips CSP and X-Frame-Options headers (works on any site)
  * 2. Auto-injects the Haltija widget on every page
@@ -8,7 +8,16 @@
  * 4. Runs its own embedded Haltija server (or connects to existing)
  */
 
-const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu, dialog, clipboard } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  session,
+  ipcMain,
+  desktopCapturer,
+  Menu,
+  dialog,
+  clipboard,
+} = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -35,9 +44,21 @@ function getClaudeDesktopConfigPath() {
   const home = os.homedir()
   switch (process.platform) {
     case 'darwin':
-      return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+      return path.join(
+        home,
+        'Library',
+        'Application Support',
+        'Claude',
+        'claude_desktop_config.json',
+      )
     case 'win32':
-      return path.join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json')
+      return path.join(
+        home,
+        'AppData',
+        'Roaming',
+        'Claude',
+        'claude_desktop_config.json',
+      )
     case 'linux':
       return path.join(home, '.config', 'claude', 'claude_desktop_config.json')
     default:
@@ -49,13 +70,15 @@ function getClaudeDesktopConfigPath() {
 function findMcpServerPath() {
   const candidates = [
     // Packaged app
-    process.resourcesPath ? path.join(process.resourcesPath, 'mcp', 'index.js') : null,
+    process.resourcesPath
+      ? path.join(process.resourcesPath, 'mcp', 'index.js')
+      : null,
     // Development - relative to this file
     path.join(__dirname, '..', 'mcp', 'build', 'index.js'),
     // From repo root
     path.join(__dirname, '..', '..', 'apps', 'mcp', 'build', 'index.js'),
   ].filter(Boolean)
-  
+
   for (const p of candidates) {
     if (fs.existsSync(p)) return p
   }
@@ -66,7 +89,7 @@ function findMcpServerPath() {
 function isHaltijaConfigured() {
   const configPath = getClaudeDesktopConfigPath()
   if (!fs.existsSync(configPath)) return false
-  
+
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     return !!config.mcpServers?.haltija
@@ -87,15 +110,15 @@ function setupMcpConfig() {
   if (!mcpPath) {
     return { success: false, error: 'MCP server not found' }
   }
-  
+
   const configPath = getClaudeDesktopConfigPath()
   const configDir = path.dirname(configPath)
-  
+
   // Create config directory if needed
   if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true })
   }
-  
+
   // Read or create config
   let config = { mcpServers: {} }
   if (fs.existsSync(configPath)) {
@@ -109,13 +132,13 @@ function setupMcpConfig() {
       config = { mcpServers: {} }
     }
   }
-  
+
   // Add Haltija
   config.mcpServers.haltija = {
     command: 'node',
-    args: [mcpPath]
+    args: [mcpPath],
   }
-  
+
   try {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     return { success: true, configPath }
@@ -128,34 +151,39 @@ function setupMcpConfig() {
 async function checkAndPromptMcpSetup() {
   // Skip if Claude Desktop isn't installed
   if (!isClaudeDesktopInstalled()) {
-    console.log('[Haltija Desktop] Claude Desktop not detected, skipping MCP setup prompt')
+    console.log(
+      '[Haltija Desktop] Claude Desktop not detected, skipping MCP setup prompt',
+    )
     return
   }
-  
+
   // Skip if already configured
   if (isHaltijaConfigured()) {
-    console.log('[Haltija Desktop] Haltija MCP already configured in Claude Desktop')
+    console.log(
+      '[Haltija Desktop] Haltija MCP already configured in Claude Desktop',
+    )
     return
   }
-  
+
   // Skip if MCP server not found
   const mcpPath = findMcpServerPath()
   if (!mcpPath) {
     console.log('[Haltija Desktop] MCP server not found, skipping setup prompt')
     return
   }
-  
+
   // Show dialog
   const result = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    buttons: ['Configure', 'Skip', 'Don\'t Ask Again'],
+    buttons: ['Configure', 'Skip', "Don't Ask Again"],
     defaultId: 0,
     cancelId: 1,
     title: 'Claude Desktop Integration',
     message: 'Configure Haltija for Claude Desktop?',
-    detail: 'This will give Claude native browser control tools (click, type, query DOM, etc.).\n\nYou\'ll need to restart Claude Desktop after configuration.'
+    detail:
+      "This will give Claude native browser control tools (click, type, query DOM, etc.).\n\nYou'll need to restart Claude Desktop after configuration.",
   })
-  
+
   if (result.response === 0) {
     // Configure
     const setupResult = setupMcpConfig()
@@ -165,7 +193,8 @@ async function checkAndPromptMcpSetup() {
         buttons: ['OK'],
         title: 'Configuration Complete',
         message: 'Haltija configured successfully!',
-        detail: 'Restart Claude Desktop to activate the integration.\n\nMake sure Haltija is running when you use Claude.'
+        detail:
+          'Restart Claude Desktop to activate the integration.\n\nMake sure Haltija is running when you use Claude.',
       })
     } else {
       await dialog.showMessageBox(mainWindow, {
@@ -173,7 +202,7 @@ async function checkAndPromptMcpSetup() {
         buttons: ['OK'],
         title: 'Configuration Failed',
         message: 'Could not configure Haltija',
-        detail: setupResult.error
+        detail: setupResult.error,
       })
     }
   } else if (result.response === 2) {
@@ -187,7 +216,9 @@ async function checkAndPromptMcpSetup() {
       // electron-store not available, use a simple file
       const prefPath = path.join(app.getPath('userData'), 'preferences.json')
       let prefs = {}
-      try { prefs = JSON.parse(fs.readFileSync(prefPath, 'utf8')) } catch {}
+      try {
+        prefs = JSON.parse(fs.readFileSync(prefPath, 'utf8'))
+      } catch {}
       prefs.skipMcpSetup = true
       fs.writeFileSync(prefPath, JSON.stringify(prefs, null, 2))
     }
@@ -243,24 +274,28 @@ function createWindow() {
  */
 function setupMenu() {
   const isMac = process.platform === 'darwin'
-  
+
   const template = [
     // App menu (macOS only)
-    ...(isMac ? [{
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
-    }] : []),
-    
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ]
+      : []),
+
     // File menu
     {
       label: 'File',
@@ -268,23 +303,23 @@ function setupMenu() {
         {
           label: 'New Tab',
           accelerator: 'CmdOrCtrl+T',
-          click: () => mainWindow?.webContents.send('menu-new-tab')
+          click: () => mainWindow?.webContents.send('menu-new-tab'),
         },
         {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
-          click: () => mainWindow?.webContents.send('menu-close-tab')
+          click: () => mainWindow?.webContents.send('menu-close-tab'),
         },
         {
           label: 'Close Other Tabs',
           accelerator: 'CmdOrCtrl+Alt+W',
-          click: () => mainWindow?.webContents.send('menu-close-other-tabs')
+          click: () => mainWindow?.webContents.send('menu-close-other-tabs'),
         },
         { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' }
-      ]
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
     },
-    
+
     // Edit menu
     {
       label: 'Edit',
@@ -295,10 +330,10 @@ function setupMenu() {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' }
-      ]
+        { role: 'selectAll' },
+      ],
     },
-    
+
     // View menu - CRITICAL: No reload accelerators here
     {
       label: 'View',
@@ -306,29 +341,29 @@ function setupMenu() {
         {
           label: 'Reload Tab',
           accelerator: 'CmdOrCtrl+R',
-          click: () => mainWindow?.webContents.send('menu-reload-tab')
+          click: () => mainWindow?.webContents.send('menu-reload-tab'),
         },
         {
           label: 'Force Reload Tab',
           accelerator: 'CmdOrCtrl+Shift+R',
-          click: () => mainWindow?.webContents.send('menu-force-reload-tab')
+          click: () => mainWindow?.webContents.send('menu-force-reload-tab'),
         },
         { type: 'separator' },
         {
           label: 'Developer Tools (Shell)',
           accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
-          click: () => mainWindow?.webContents.toggleDevTools()
+          click: () => mainWindow?.webContents.toggleDevTools(),
         },
         {
           label: 'Developer Tools (Tab)',
           accelerator: isMac ? 'Alt+Cmd+J' : 'Ctrl+Shift+J',
-          click: () => mainWindow?.webContents.send('menu-devtools-tab')
+          click: () => mainWindow?.webContents.send('menu-devtools-tab'),
         },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
+        { role: 'togglefullscreen' },
+      ],
     },
-    
+
     // Navigate menu
     {
       label: 'Navigate',
@@ -336,35 +371,32 @@ function setupMenu() {
         {
           label: 'Back',
           accelerator: 'CmdOrCtrl+[',
-          click: () => mainWindow?.webContents.send('menu-back')
+          click: () => mainWindow?.webContents.send('menu-back'),
         },
         {
           label: 'Forward',
           accelerator: 'CmdOrCtrl+]',
-          click: () => mainWindow?.webContents.send('menu-forward')
+          click: () => mainWindow?.webContents.send('menu-forward'),
         },
         { type: 'separator' },
         {
           label: 'Focus Address Bar',
           accelerator: 'CmdOrCtrl+L',
-          click: () => mainWindow?.webContents.send('menu-focus-url')
-        }
-      ]
+          click: () => mainWindow?.webContents.send('menu-focus-url'),
+        },
+      ],
     },
-    
+
     // Window menu
     {
       label: 'Window',
       submenu: [
         { role: 'minimize' },
         { role: 'zoom' },
-        ...(isMac ? [
-          { type: 'separator' },
-          { role: 'front' }
-        ] : [])
-      ]
+        ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : []),
+      ],
     },
-    
+
     // Help menu
     {
       label: 'Help',
@@ -376,27 +408,34 @@ function setupMenu() {
             clipboard.writeText(prompt)
             // Show brief notification
             if (mainWindow) {
-              mainWindow.webContents.send('show-notification', 'Agent prompt copied to clipboard')
+              mainWindow.webContents.send(
+                'show-notification',
+                'Agent prompt copied to clipboard',
+              )
             }
-          }
+          },
         },
         { type: 'separator' },
         {
           label: 'API Documentation',
           click: () => {
-            require('electron').shell.openExternal(`http://localhost:${HALTIJA_PORT}/api`)
-          }
+            require('electron').shell.openExternal(
+              `http://localhost:${HALTIJA_PORT}/api`,
+            )
+          },
         },
         {
           label: 'Quick Start Guide',
           click: () => {
-            require('electron').shell.openExternal(`http://localhost:${HALTIJA_PORT}/docs`)
-          }
-        }
-      ]
-    }
+            require('electron').shell.openExternal(
+              `http://localhost:${HALTIJA_PORT}/docs`,
+            )
+          },
+        },
+      ],
+    },
   ]
-  
+
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
 }
@@ -455,25 +494,33 @@ All POST endpoints return: {"success": true, "data": ...} or {"success": false, 
  * Strip security headers that prevent our widget from working
  */
 function setupHeaderStripping() {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const headers = { ...details.responseHeaders }
-    
-    // Remove CSP headers
-    delete headers['content-security-policy']
-    delete headers['Content-Security-Policy']
-    delete headers['content-security-policy-report-only']
-    delete headers['Content-Security-Policy-Report-Only']
-    
-    // Remove frame options
-    delete headers['x-frame-options']
-    delete headers['X-Frame-Options']
-    
-    // Remove other restrictive headers
-    delete headers['x-content-type-options']
-    delete headers['X-Content-Type-Options']
-    
-    callback({ responseHeaders: headers })
-  })
+  // Apply to both default session and our custom partition
+  const sessions = [
+    session.defaultSession,
+    session.fromPartition('persist:haltija'),
+  ]
+
+  for (const sess of sessions) {
+    sess.webRequest.onHeadersReceived((details, callback) => {
+      const headers = { ...details.responseHeaders }
+
+      // Remove CSP headers
+      delete headers['content-security-policy']
+      delete headers['Content-Security-Policy']
+      delete headers['content-security-policy-report-only']
+      delete headers['Content-Security-Policy-Report-Only']
+
+      // Remove frame options
+      delete headers['x-frame-options']
+      delete headers['X-Frame-Options']
+
+      // Remove other restrictive headers
+      delete headers['x-content-type-options']
+      delete headers['X-Content-Type-Options']
+
+      callback({ responseHeaders: headers })
+    })
+  }
 }
 
 /**
@@ -481,15 +528,15 @@ function setupHeaderStripping() {
  */
 function setupWidgetInjection() {
   const { webContents } = require('electron')
-  
+
   // Monitor all webContents for page loads
-  webContents.getAllWebContents().forEach(wc => setupWebContentsInjection(wc))
-  
+  webContents.getAllWebContents().forEach((wc) => setupWebContentsInjection(wc))
+
   // Also monitor for new webContents (like webviews)
   app.on('web-contents-created', (event, wc) => {
     setupWebContentsInjection(wc)
   })
-  
+
   // Inject into the main webview when it loads (legacy support)
   ipcMain.on('webview-ready', (event, webContentsId) => {
     const wc = webContents.fromId(webContentsId)
@@ -501,11 +548,11 @@ function setupWidgetInjection() {
 
 function setupWebContentsInjection(wc) {
   const wcType = wc.getType()
-  
+
   // Inject into webviews (tabs) and popup windows (auth flows, etc.)
   // Skip the main Electron renderer (browserView/webview parent)
   if (wcType !== 'webview' && wcType !== 'window') return
-  
+
   // For windows, skip the main Electron shell
   if (wcType === 'window') {
     // The main window loads index.html - don't inject there
@@ -513,16 +560,16 @@ function setupWebContentsInjection(wc) {
     const url = wc.getURL()
     if (url.startsWith('file://') || url === 'about:blank') return
   }
-  
+
   console.log('[Haltija Desktop] Monitoring webContents:', wc.id, wc.getType())
-  
+
   // Intercept window.open() calls - redirect to tabs instead of new windows
   // Exception: allow auth popups which need to close and callback
   wc.setWindowOpenHandler(({ url, frameName, features }) => {
     console.log('[Haltija Desktop] Intercepted window.open:', url)
-    
+
     // Allow OAuth/auth popups - they need popup behavior to work
-    const isAuthPopup = 
+    const isAuthPopup =
       url.includes('accounts.google.com') ||
       url.includes('/__/auth/') ||
       url.includes('/emulator/auth') ||
@@ -531,19 +578,19 @@ function setupWebContentsInjection(wc) {
       url.includes('signin') ||
       url.includes('login') ||
       frameName === 'firebaseAuth'
-    
+
     if (isAuthPopup) {
       console.log('[Haltija Desktop] Allowing auth popup:', url)
       return { action: 'allow' }
     }
-    
+
     // Regular links: open as new tab instead of window
     if (mainWindow && mainWindow.webContents) {
       mainWindow.webContents.send('open-url-in-tab', url)
     }
     return { action: 'deny' }
   })
-  
+
   // Capture console messages from the webview
   wc.on('console-message', (event, level, message, line, sourceId) => {
     try {
@@ -553,7 +600,7 @@ function setupWebContentsInjection(wc) {
       // Ignore write errors when app is closing
     }
   })
-  
+
   wc.on('did-finish-load', () => {
     try {
       const url = wc.getURL()
@@ -565,7 +612,7 @@ function setupWebContentsInjection(wc) {
       // Ignore errors when app is closing
     }
   })
-  
+
   wc.on('did-navigate', (event, url) => {
     try {
       console.log('[Haltija Desktop] did-navigate:', url)
@@ -578,12 +625,12 @@ function setupWebContentsInjection(wc) {
 async function injectWidget(webContents) {
   const url = webContents.getURL()
   console.log('[Haltija Desktop] Injecting widget into:', url)
-  
+
   // Skip about:blank and file:// URLs (Electron shell itself)
   if (!url || url === 'about:blank' || url.startsWith('file://')) {
     return
   }
-  
+
   try {
     // Check if already injected
     const alreadyPresent = await webContents.executeJavaScript(`
@@ -593,28 +640,35 @@ async function injectWidget(webContents) {
       console.log('[Haltija Desktop] Widget already present')
       return
     }
-    
+
     // Fetch component.js from our local server (main process can do this, bypasses CORS)
     // Add cache-buster to ensure we always get fresh code
     const cacheBuster = Date.now()
     const componentCode = await new Promise((resolve, reject) => {
-      http.get(`${HALTIJA_SERVER}/component.js?_=${cacheBuster}`, (res) => {
-        // Set encoding to UTF-8 to properly handle Unicode characters
-        res.setEncoding('utf8')
-        let data = ''
-        res.on('data', chunk => data += chunk)
-        res.on('end', () => resolve(data))
-      }).on('error', reject)
+      http
+        .get(`${HALTIJA_SERVER}/component.js?_=${cacheBuster}`, (res) => {
+          // Set encoding to UTF-8 to properly handle Unicode characters
+          res.setEncoding('utf8')
+          let data = ''
+          res.on('data', (chunk) => (data += chunk))
+          res.on('end', () => resolve(data))
+        })
+        .on('error', reject)
     })
-    
-    console.log('[Haltija Desktop] Got component.js, length:', componentCode.length)
-    
+
+    console.log(
+      '[Haltija Desktop] Got component.js, length:',
+      componentCode.length,
+    )
+
     // Set config for auto-inject, then execute component code
     // component.ts will handle deduplication, ID generation, and element creation
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
-    await webContents.executeJavaScript(`window.__haltija_config__ = { serverUrl: '${wsUrl}' };`)
+    await webContents.executeJavaScript(
+      `window.__haltija_config__ = { serverUrl: '${wsUrl}' };`,
+    )
     await webContents.executeJavaScript(componentCode)
-    
+
     console.log('[Haltija Desktop] Widget injected successfully')
   } catch (err) {
     console.error('[Haltija Desktop] Failed to inject widget:', err.message)
@@ -628,34 +682,44 @@ function setupScreenCapture() {
   // Full page capture
   ipcMain.handle('capture-page', async (event) => {
     if (!mainWindow) return null
-    
+
     try {
       // Use the sender's webContents - this is the webview that made the request
       const sender = event.sender
-      console.log('[Haltija Desktop] capture-page from:', sender.id, sender.getType())
-      
+      console.log(
+        '[Haltija Desktop] capture-page from:',
+        sender.id,
+        sender.getType(),
+      )
+
       // Capture the sender (which should be the webview that called this)
       const image = await sender.capturePage()
       return {
         success: true,
         data: image.toDataURL(),
-        size: { width: image.getSize().width, height: image.getSize().height }
+        size: { width: image.getSize().width, height: image.getSize().height },
       }
     } catch (err) {
       console.error('Screen capture failed:', err)
       return { success: false, error: err.message }
     }
   })
-  
+
   // Element-specific capture (crops from full page)
   ipcMain.handle('capture-element', async (event, selector) => {
     if (!mainWindow) return { success: false, error: 'No window' }
-    
+
     try {
       // Use event.sender to get the correct webview (fixes multi-tab issue)
       const sender = event.sender
-      console.log('[Haltija Desktop] capture-element from:', sender.id, sender.getType(), 'selector:', selector)
-      
+      console.log(
+        '[Haltija Desktop] capture-element from:',
+        sender.id,
+        sender.getType(),
+        'selector:',
+        selector,
+      )
+
       // Get element bounds
       const bounds = await sender.executeJavaScript(`
         (function() {
@@ -670,18 +734,18 @@ function setupScreenCapture() {
           };
         })()
       `)
-      
+
       if (!bounds) {
         return { success: false, error: `Element not found: ${selector}` }
       }
-      
+
       // Capture with specific rect
       const image = await sender.capturePage(bounds)
       return {
         success: true,
         data: image.toDataURL(),
         selector,
-        bounds
+        bounds,
       }
     } catch (err) {
       console.error('Element capture failed:', err)
@@ -713,12 +777,13 @@ async function startEmbeddedServer() {
   // Determine architecture
   const arch = os.arch() === 'arm64' ? 'arm64' : 'x64'
   const platform = os.platform()
-  
+
   // Find the server binary - look in common locations
-  const binaryName = platform === 'win32' 
-    ? `haltija-server-${arch}.exe` 
-    : `haltija-server-${arch}`
-  
+  const binaryName =
+    platform === 'win32'
+      ? `haltija-server-${arch}.exe`
+      : `haltija-server-${arch}`
+
   const possiblePaths = [
     // Packaged app: in resources
     path.join(process.resourcesPath || '', binaryName),
@@ -727,10 +792,10 @@ async function startEmbeddedServer() {
     // Fallback: try the repo dist
     path.join(__dirname, '..', '..', 'dist', 'server.js'),
   ]
-  
+
   let serverPath = null
   let useCompiledBinary = false
-  
+
   for (const p of possiblePaths) {
     if (p && fs.existsSync(p)) {
       serverPath = p
@@ -738,10 +803,13 @@ async function startEmbeddedServer() {
       break
     }
   }
-  
+
   console.log('[Haltija Desktop] Starting embedded server...')
-  console.log('[Haltija Desktop] Server path:', serverPath || 'fallback to bunx')
-  
+  console.log(
+    '[Haltija Desktop] Server path:',
+    serverPath || 'fallback to bunx',
+  )
+
   // Find component.js - server needs this to inject session ID
   const componentPaths = [
     path.join(process.resourcesPath || '', 'component.js'),
@@ -755,27 +823,31 @@ async function startEmbeddedServer() {
       break
     }
   }
-  
+
   if (serverPath && useCompiledBinary) {
     // Run compiled standalone binary with cwd set to find component.js
     embeddedServer = spawn(serverPath, [], {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: componentDir || path.dirname(serverPath),
-      env: { ...process.env, PORT: HALTIJA_PORT.toString() }
+      env: { ...process.env, PORT: HALTIJA_PORT.toString() },
     })
   } else if (serverPath) {
     // Run with bun (development)
     embeddedServer = spawn('bun', ['run', serverPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PORT: HALTIJA_PORT.toString() }
+      env: { ...process.env, PORT: HALTIJA_PORT.toString() },
     })
   } else {
     // Fallback to bunx haltija
-    embeddedServer = spawn('bunx', ['haltija', '--port', HALTIJA_PORT.toString()], {
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
+    embeddedServer = spawn(
+      'bunx',
+      ['haltija', '--port', HALTIJA_PORT.toString()],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
   }
-  
+
   embeddedServer.stdout.on('data', (data) => {
     try {
       console.log(`[Server] ${data.toString().trim()}`)
@@ -783,7 +855,7 @@ async function startEmbeddedServer() {
       // Ignore write errors when app is closing
     }
   })
-  
+
   embeddedServer.stderr.on('data', (data) => {
     try {
       console.error(`[Server] ${data.toString().trim()}`)
@@ -791,30 +863,30 @@ async function startEmbeddedServer() {
       // Ignore write errors when app is closing
     }
   })
-  
+
   embeddedServer.stdout.on('error', () => {})
   embeddedServer.stderr.on('error', () => {})
-  
+
   embeddedServer.on('error', (err) => {
     console.error('[Haltija Desktop] Failed to start server:', err)
   })
-  
+
   embeddedServer.on('exit', (code) => {
     if (embeddedServer) {
       console.log(`[Haltija Desktop] Server exited with code ${code}`)
       embeddedServer = null
     }
   })
-  
+
   // Wait for server to be ready
   for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 200))
     if (await checkServerRunning()) {
       console.log('[Haltija Desktop] Server ready')
       return true
     }
   }
-  
+
   console.error('[Haltija Desktop] Server failed to start')
   return false
 }
@@ -824,12 +896,12 @@ async function startEmbeddedServer() {
  */
 async function ensureServer() {
   const running = await checkServerRunning()
-  
+
   if (running) {
     console.log('[Haltija Desktop] Using existing server at', HALTIJA_SERVER)
     return true
   }
-  
+
   return await startEmbeddedServer()
 }
 
@@ -837,18 +909,20 @@ async function ensureServer() {
 app.whenReady().then(async () => {
   // Start or connect to server first
   const serverReady = await ensureServer()
-  
+
   if (!serverReady) {
-    console.error('[Haltija Desktop] Could not start server. Install bun: https://bun.sh')
+    console.error(
+      '[Haltija Desktop] Could not start server. Install bun: https://bun.sh',
+    )
     // Continue anyway - user might start server manually
   }
-  
+
   setupMenu()
   setupHeaderStripping()
   setupWidgetInjection()
   setupScreenCapture()
   createWindow()
-  
+
   // Check for Claude Desktop MCP setup (after window is ready)
   if (!hasSkippedMcpSetup()) {
     // Small delay to let window fully render
@@ -878,11 +952,14 @@ app.on('will-quit', () => {
 })
 
 // Handle certificate errors (for self-signed certs in dev)
-app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-  if (url.startsWith('https://localhost')) {
-    event.preventDefault()
-    callback(true)
-  } else {
-    callback(false)
-  }
-})
+app.on(
+  'certificate-error',
+  (event, webContents, url, error, certificate, callback) => {
+    if (url.startsWith('https://localhost')) {
+      event.preventDefault()
+      callback(true)
+    } else {
+      callback(false)
+    }
+  },
+)
