@@ -626,8 +626,15 @@ async function injectWidget(webContents) {
   const url = webContents.getURL()
   console.log('[Haltija Desktop] Injecting widget into:', url)
 
-  // Skip about:blank and file:// URLs (Electron shell itself)
-  if (!url || url === 'about:blank' || url.startsWith('file://')) {
+  // Skip about:blank, file://, blob:, and data: URLs
+  // blob/data URLs are often PDFs, downloads, or generated content that shouldn't have widget
+  if (
+    !url ||
+    url === 'about:blank' ||
+    url.startsWith('file://') ||
+    url.startsWith('blob:') ||
+    url.startsWith('data:')
+  ) {
     return
   }
 
