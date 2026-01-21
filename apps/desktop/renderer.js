@@ -270,45 +270,83 @@ function navigate(url, tabId = activeTabId) {
     )
   }
 
-  // Handle blob URLs specially - they're origin-bound, so we need to fetch and convert
+  // Handle blob URLs specially - fetch and convert to data URL
   if (tab.url.startsWith('blob:')) {
-    // Try to fetch from the active webview's context and convert to data URL
-    const sourceWebview = getActiveWebview()
-    if (sourceWebview && sourceWebview !== tab.webview) {
-      // Fetch blob from source tab and convert to data URL
-      sourceWebview
-        .executeJavaScript(
-          `
+    console.log('[Haltija] Loading blob URL:', tab.url)
+
+    // Find any webview that can access this blob
+    const sourceWebview = getActiveWebview() || tab.webview
+
+    // Fetch blob and convert to data URL
+    sourceWebview
+      .executeJavaScript(
+        `
         (async () => {
           try {
+            console.log('[Haltija] Fetching blob:', "${tab.url}");
             const response = await fetch("${tab.url}");
+            console.log('[Haltija] Response:', response.status, response.type);
             const blob = await response.blob();
+            console.log('[Haltija] Blob:', blob.size, blob.type);
             return new Promise((resolve) => {
               const reader = new FileReader();
               reader.onloadend = () => resolve(reader.result);
               reader.readAsDataURL(blob);
             });
           } catch (e) {
+            console.error('[Haltija] Blob fetch error:', e);
             return null;
           }
         })()
       `,
-        )
-        .then((dataUrl) => {
-          if (dataUrl) {
-            tab.webview.loadURL(dataUrl)
+      )
+      .then((dataUrl) => {
+        console.log('[Haltija] Data URL length:', dataUrl?.length)
+        if (dataUrl) {
+          // Extract mime type and check if it's displayable
+          const mimeMatch = dataUrl.match(/^data:([^;,]+)/)
+          const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'
+          console.log('[Haltija] Mime type:', mimeType)
+
+          if (mimeType.startsWith('text/html')) {
+            // For HTML, decode and write directly
+            const base64 = dataUrl.split(',')[1]
+            const html = atob(base64)
+            tab.webview.loadURL('about:blank')
+            tab.webview.addEventListener(
+              'did-finish-load',
+              () => {
+                tab.webview.executeJavaScript(
+                  `document.write(${JSON.stringify(html)}); document.close();`,
+                )
+              },
+              { once: true },
+            )
+          } else if (
+            mimeType.startsWith('image/') ||
+            mimeType === 'application/pdf'
+          ) {
+            // For images and PDFs, create an HTML wrapper
+            const html =
+              mimeType === 'application/pdf'
+                ? `<!DOCTYPE html><html><body style="margin:0;height:100vh"><embed src="${dataUrl}" type="application/pdf" width="100%" height="100%"></body></html>`
+                : `<!DOCTYPE html><html><body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1a1a1a"><img src="${dataUrl}" style="max-width:100%;max-height:100vh"></body></html>`
+            tab.webview.loadURL(
+              'data:text/html;charset=utf-8,' + encodeURIComponent(html),
+            )
           } else {
-            // Fallback - try loading directly (might work if same origin)
-            tab.webview.loadURL(tab.url)
+            // Try loading data URL directly
+            tab.webview.loadURL(dataUrl)
           }
-        })
-        .catch(() => {
+        } else {
+          console.log('[Haltija] Falling back to direct load')
           tab.webview.loadURL(tab.url)
-        })
-    } else {
-      // Same tab or no source - try direct load
-      tab.webview.loadURL(tab.url)
-    }
+        }
+      })
+      .catch((err) => {
+        console.error('[Haltija] executeJavaScript error:', err)
+        tab.webview.loadURL(tab.url)
+      })
   } else if (tab.url.startsWith('data:')) {
     tab.webview.loadURL(tab.url)
   } else {
