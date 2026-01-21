@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('haltija', {
   onMenuBack: (callback) => ipcRenderer.on('menu-back', callback),
   onMenuForward: (callback) => ipcRenderer.on('menu-forward', callback),
   onMenuFocusUrl: (callback) => ipcRenderer.on('menu-focus-url', callback),
+  
+  // Notifications from main process
+  onShowNotification: (callback) => ipcRenderer.on('show-notification', (event, message) => callback(message)),
 })
 
 console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))

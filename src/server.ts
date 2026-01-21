@@ -701,7 +701,7 @@ async function handleRest(req: Request): Promise<Response> {
   }
   
   // Server version
-  const SERVER_VERSION = '0.1.6'
+  const SERVER_VERSION = VERSION
   
   // Built-in docs (shipped with Haltija)
   const builtinDocs: Record<string, { path: string; description: string }> = {
@@ -1000,6 +1000,29 @@ For complete API reference with all options and response formats:
     })
   }
 
+  // Compact JSON endpoint listing for agent discoverability
+  // Returns minimal info about all endpoints - what an agent needs to understand capabilities
+  if (path === '/endpoints' && req.method === 'GET') {
+    const endpointList = api.ALL_ENDPOINTS.map(ep => {
+      const inputSchema = api.getInputSchema(ep)
+      const params = inputSchema && typeof inputSchema === 'object' && 'properties' in inputSchema
+        ? Object.keys((inputSchema as any).properties || {})
+        : []
+      return {
+        path: ep.path,
+        method: ep.method,
+        summary: ep.summary,
+        params,
+        category: (ep as any).category || 'other',
+      }
+    })
+    return Response.json({ 
+      endpoints: endpointList,
+      count: endpointList.length,
+      hint: 'GET /api for full documentation, GET /docs for quick start'
+    }, { headers })
+  }
+
   // ============================================
   // Schema-driven router (Phase 1: fall through if no handler)
   // ============================================
@@ -1034,9 +1057,21 @@ For complete API reference with all options and response formats:
     }, { headers })
   }
   
-  // Version endpoint - get component version from connected browser
+  // Stats endpoint - efficiency and usage metrics
+  if (path === '/stats' && req.method === 'GET') {
+    const windowId = url.searchParams.get('window') || undefined
+    const response = await requestFromBrowser('system', 'stats', {}, 5000, windowId)
+    if (response.success) {
+      return Response.json(response.data, { headers })
+    } else {
+      return Response.json({ error: response.error || 'Failed to get stats' }, { status: 500, headers })
+    }
+  }
+  
+  // Version endpoint - DEPRECATED, use /status instead
   if (path === '/version' && req.method === 'GET') {
     const response = await requestFromBrowser('system', 'version', {})
+    const deprecated = 'Use GET /status instead - version is included there'
     if (response.success) {
       return Response.json({
         server: SERVER_VERSION,
@@ -1046,13 +1081,15 @@ For complete API reference with all options and response formats:
           url: response.data.url,
           title: response.data.title,
           state: response.data.state,
-        }
+        },
+        deprecated,
       }, { headers })
     } else {
       return Response.json({
         server: SERVER_VERSION,
         component: null,
-        error: response.error || 'No browser connected'
+        error: response.error || 'No browser connected',
+        deprecated,
       }, { headers })
     }
   }

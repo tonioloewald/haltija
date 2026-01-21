@@ -5,6 +5,7 @@
 1. **[Getting Started: Service](getting-started/service.md)** - Run `bunx haltija` and inject the widget
 2. **[Getting Started: App](getting-started/app.md)** - Add one script tag to your app
 3. **[Getting Started: Playground](getting-started/playground.md)** - Interactive testing environment
+4. **[CI Integration](CI-INTEGRATION.md)** - Run Haltija in GitHub Actions and other CI systems
 
 ## Recipes
 
@@ -53,14 +54,14 @@ docs/
     service.md               # Start the server
     app.md                   # Add to your app
     playground.md            # Interactive testing
+  CI-INTEGRATION.md          # GitHub Actions, CI/CD setup
   recipes.md                 # Common workflows with examples
   EXECUTIVE-SUMMARY.md       # For stakeholders
-  ROADMAP-TO-10.md           # Product roadmap
+  ROADMAP.md                 # Product roadmap (to 11/10)
   agent-prompt.md            # AI agent system prompt
   UX-CRIMES.md               # Anti-pattern detection
 API.md                       # Auto-generated API reference
 CLAUDE.md                    # Developer guide (for AI and humans)
 COMPONENT-PATTERNS.md        # Widget architecture patterns
-ROADMAP.md                   # Development phases
 TODO.md                      # Issues and ideas
 ```

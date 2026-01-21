@@ -8,7 +8,7 @@
  * 4. Runs its own embedded Haltija server (or connects to existing)
  */
 
-const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu, dialog } = require('electron')
+const { app, BrowserWindow, session, ipcMain, desktopCapturer, Menu, dialog, clipboard } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -363,11 +363,92 @@ function setupMenu() {
           { role: 'front' }
         ] : [])
       ]
+    },
+    
+    // Help menu
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Copy Agent Prompt',
+          click: () => {
+            const prompt = getAgentPrompt()
+            clipboard.writeText(prompt)
+            // Show brief notification
+            if (mainWindow) {
+              mainWindow.webContents.send('show-notification', 'Agent prompt copied to clipboard')
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'API Documentation',
+          click: () => {
+            require('electron').shell.openExternal(`http://localhost:${HALTIJA_PORT}/api`)
+          }
+        },
+        {
+          label: 'Quick Start Guide',
+          click: () => {
+            require('electron').shell.openExternal(`http://localhost:${HALTIJA_PORT}/docs`)
+          }
+        }
+      ]
     }
   ]
   
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
+}
+
+/**
+ * Get the agent prompt for clipboard copy
+ */
+function getAgentPrompt() {
+  return `I have Haltija running at http://localhost:${HALTIJA_PORT}. You can see and control my browser.
+
+**Quick start:**
+1. Check server: curl http://localhost:${HALTIJA_PORT}/status
+2. Find tabs: curl http://localhost:${HALTIJA_PORT}/windows
+3. See what's on page: curl -X POST http://localhost:${HALTIJA_PORT}/tree -d '{"selector":"body","mode":"actionable"}'
+4. Do something: curl -X POST http://localhost:${HALTIJA_PORT}/click -d '{"selector":"button"}'
+
+**Key endpoints:**
+- GET /status - check connection, list tabs
+- GET /windows - list connected tabs with IDs
+- GET /endpoints - compact JSON list of all capabilities
+- POST /tree - see page structure (use mode:"actionable" for interactive elements)
+- POST /click - click an element
+- POST /type - type into a field
+- POST /scroll - smooth scroll to element or position
+- POST /highlight - show the user an element (with optional label)
+- POST /wait - wait for element to appear/disappear or fixed delay
+- POST /eval - run JavaScript (escape hatch)
+- POST /screenshot - capture page image
+- GET /events - recent events including network errors
+- GET /console - recent console logs/errors
+- GET /select/result - get elements user has selected in browser
+
+**Screenshot options:**
+- format: "png" (default), "webp", "jpeg"
+- scale: 0.5 = half size (saves bandwidth)
+- maxWidth/maxHeight: constrain dimensions
+- selector: capture specific element instead of full page
+
+Example: curl -X POST http://localhost:${HALTIJA_PORT}/screenshot -d '{"scale":0.5,"format":"webp"}'
+
+**Wait for async UI:**
+- curl -X POST http://localhost:${HALTIJA_PORT}/wait -d '{"forElement":".modal"}'
+- curl -X POST http://localhost:${HALTIJA_PORT}/wait -d '{"forElement":".loading","hidden":true}'
+
+**Showing things to the user:**
+Use /highlight to visually show the user what you're referring to:
+- curl -X POST http://localhost:${HALTIJA_PORT}/highlight -d '{"selector":"#btn","label":"Click here"}'
+
+**Target a specific tab:** Add ?window=<id> or include "window":"id" in POST body
+
+All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}
+`
 }
 
 /**

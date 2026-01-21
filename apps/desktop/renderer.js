@@ -725,9 +725,55 @@ if (window.haltija && window.haltija.onOpenUrlInTab) {
   })
 }
 
+// Simple toast notification
+function showNotification(message, duration = 2000) {
+  // Remove existing notification if any
+  const existing = document.getElementById('toast-notification')
+  if (existing) existing.remove()
+  
+  const toast = document.createElement('div')
+  toast.id = 'toast-notification'
+  toast.textContent = message
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent, #6366f1);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: toast-in 0.2s ease-out;
+  `
+  
+  // Add animation style if not present
+  if (!document.getElementById('toast-styles')) {
+    const style = document.createElement('style')
+    style.id = 'toast-styles'
+    style.textContent = `
+      @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+      @keyframes toast-out { to { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+    `
+    document.head.appendChild(style)
+  }
+  
+  document.body.appendChild(toast)
+  
+  setTimeout(() => {
+    toast.style.animation = 'toast-out 0.2s ease-in forwards'
+    setTimeout(() => toast.remove(), 200)
+  }, duration)
+}
+
 // Listen for menu commands from main process
 // These handle Cmd+R, Cmd+T, etc. from the application menu
 if (window.haltija) {
+  // Notifications
+  window.haltija.onShowNotification?.(showNotification)
+  
   window.haltija.onMenuNewTab?.(() => {
     createTab()
   })

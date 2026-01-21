@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "0.1.10";
+  var VERSION = "0.2.2";
 
   // src/component.ts
   var VERSION2 = VERSION;
@@ -45,6 +45,127 @@
   var LOG_PREFIX = "[haltija]";
   var SERVER_SESSION_ID = "";
   var uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  class RefRegistry {
+    refs = new Map;
+    elementToRef = new WeakMap;
+    counter = 0;
+    assign(el) {
+      const existing = this.elementToRef.get(el);
+      if (existing) {
+        const weakRef = this.refs.get(existing);
+        if (weakRef?.deref() === el) {
+          return existing;
+        }
+      }
+      const ref = `@${++this.counter}`;
+      this.refs.set(ref, new WeakRef(el));
+      this.elementToRef.set(el, ref);
+      return ref;
+    }
+    resolve(ref) {
+      const weakRef = this.refs.get(ref);
+      if (!weakRef)
+        return null;
+      const el = weakRef.deref();
+      if (!el || !document.contains(el)) {
+        this.refs.delete(ref);
+        return null;
+      }
+      return el;
+    }
+    isValid(ref) {
+      return this.resolve(ref) !== null;
+    }
+    getStats() {
+      let valid = 0;
+      let stale = 0;
+      for (const [ref, weakRef] of this.refs) {
+        const el = weakRef.deref();
+        if (el && document.contains(el)) {
+          valid++;
+        } else {
+          stale++;
+          this.refs.delete(ref);
+        }
+      }
+      return { assigned: this.counter, valid, stale };
+    }
+    clear() {
+      this.refs.clear();
+      this.counter = 0;
+    }
+  }
+  var refRegistry = new RefRegistry;
+  var stats = {
+    sessionStart: Date.now(),
+    rawEventsReceived: 0,
+    semanticEventsEmitted: 0,
+    eventsByCategory: {},
+    domNodesProcessed: 0,
+    domNodesInTree: 0,
+    domNodesInActionable: 0,
+    refsAssigned: 0,
+    refsResolved: 0,
+    refsStale: 0,
+    endpointCalls: {}
+  };
+  function recordEndpointCall(endpoint, success, durationMs) {
+    if (!stats.endpointCalls[endpoint]) {
+      stats.endpointCalls[endpoint] = { success: 0, errors: 0, totalMs: 0 };
+    }
+    if (success) {
+      stats.endpointCalls[endpoint].success++;
+    } else {
+      stats.endpointCalls[endpoint].errors++;
+    }
+    stats.endpointCalls[endpoint].totalMs += durationMs;
+  }
+  function getFormattedStats() {
+    const uptimeMs = Date.now() - stats.sessionStart;
+    const hours = Math.floor(uptimeMs / 3600000);
+    const minutes = Math.floor(uptimeMs % 3600000 / 60000);
+    const seconds = Math.floor(uptimeMs % 60000 / 1000);
+    const eventReduction = stats.rawEventsReceived > 0 ? ((1 - stats.semanticEventsEmitted / stats.rawEventsReceived) * 100).toFixed(1) : "0.0";
+    const domReduction = stats.domNodesProcessed > 0 ? ((1 - stats.domNodesInTree / stats.domNodesProcessed) * 100).toFixed(1) : "0.0";
+    const refHitRate = stats.refsResolved + stats.refsStale > 0 ? (stats.refsResolved / (stats.refsResolved + stats.refsStale) * 100).toFixed(1) : "100.0";
+    const endpoints = {};
+    for (const [name, data] of Object.entries(stats.endpointCalls)) {
+      const calls = data.success + data.errors;
+      endpoints[name] = {
+        calls,
+        success: data.success,
+        errors: data.errors,
+        avgMs: calls > 0 ? Math.round(data.totalMs / calls) : 0
+      };
+    }
+    return {
+      session: {
+        startTime: new Date(stats.sessionStart).toISOString(),
+        uptimeMs,
+        uptimeFormatted: `${hours}h ${minutes}m ${seconds}s`
+      },
+      events: {
+        raw: stats.rawEventsReceived,
+        semantic: stats.semanticEventsEmitted,
+        reductionPercent: parseFloat(eventReduction),
+        byCategory: { ...stats.eventsByCategory }
+      },
+      dom: {
+        processed: stats.domNodesProcessed,
+        inTree: stats.domNodesInTree,
+        inActionable: stats.domNodesInActionable,
+        reductionPercent: parseFloat(domReduction)
+      },
+      refs: {
+        assigned: stats.refsAssigned,
+        resolved: stats.refsResolved,
+        stale: stats.refsStale,
+        hitRate: parseFloat(refHitRate)
+      },
+      endpoints
+    };
+  }
   function getSelector(el) {
     const shadowPrefix = [];
     let rootNode = el.getRootNode();
@@ -891,9 +1012,12 @@
     }
     const tagName = el.tagName.toLowerCase();
     const htmlEl = el;
+    stats.domNodesProcessed++;
     const node = {
       tag: tagName
     };
+    node.ref = refRegistry.assign(el);
+    stats.refsAssigned++;
     if (el.id) {
       node.id = el.id;
     }
@@ -1103,6 +1227,7 @@
       node.truncated = true;
       node.childCount = el.children.length;
     }
+    stats.domNodesInTree++;
     return node;
   }
   var highlightOverlay = null;
@@ -1421,9 +1546,13 @@
         :host {
           display: block;
           position: fixed;
-          z-index: 999999;
+          z-index: 2147483647; /* Max z-index to ensure visibility over all content */
           font-family: system-ui, -apple-system, sans-serif;
           font-size: 12px;
+        }
+        
+        :host(.widget-hidden) {
+          display: none;
         }
 
         :host(.animating-hide) {
@@ -1932,6 +2061,7 @@
             <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">\uD83D\uDC46</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">\uD83C\uDFAC</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">\uD83D\uDCCB</button>
+            <button class="btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">\uD83D\uDCCA</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
             <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
           </div>
@@ -2002,6 +2132,8 @@
             this.toggleRecording();
           if (action2 === "select")
             this.startSelection();
+          if (action2 === "stats")
+            this.copyStatsToClipboard();
           if (action2 === "close-modal")
             this.closeTestModal();
           if (action2 === "copy-test")
@@ -2516,6 +2648,27 @@
         });
       }
     }
+    async copyStatsToClipboard() {
+      const refStats = refRegistry.getStats();
+      stats.refsStale = refStats.stale;
+      const formattedStats = getFormattedStats();
+      const json = JSON.stringify(formattedStats, null, 2);
+      try {
+        await navigator.clipboard.writeText(json);
+        console.log(`${LOG_PREFIX} Stats copied to clipboard!`);
+        console.log(formattedStats);
+        const statsBtn = this.shadowRoot?.querySelector('[data-action="stats"]');
+        if (statsBtn) {
+          statsBtn.textContent = "✓";
+          setTimeout(() => {
+            statsBtn.textContent = "\uD83D\uDCCA";
+          }, 1500);
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to copy stats:`, err);
+        console.log(`${LOG_PREFIX} Stats (copy manually):`, json);
+      }
+    }
     downloadTest() {
       const nameInput = this.shadowRoot?.querySelector(".test-name");
       const jsonArea = this.shadowRoot?.querySelector(".test-json");
@@ -2801,12 +2954,20 @@
     }
     show() {
       this.widgetHidden = false;
+      this.classList.remove("widget-hidden");
       this.render();
       this.flash();
     }
+    hide() {
+      this.widgetHidden = true;
+      this.classList.add("widget-hidden");
+    }
     toggleHidden() {
-      this.widgetHidden = !this.widgetHidden;
-      this.render();
+      if (this.widgetHidden) {
+        this.show();
+      } else {
+        this.hide();
+      }
     }
     toggleMinimize() {
       const isMinimized = this.classList.contains("minimized");
@@ -3886,9 +4047,12 @@
     }
     countRawEvent(eventType) {
       this.rawEventCounts[eventType] = (this.rawEventCounts[eventType] || 0) + 1;
+      stats.rawEventsReceived++;
     }
     emitSemanticEvent(event) {
       this.semanticEventCounts[event.category]++;
+      stats.semanticEventsEmitted++;
+      stats.eventsByCategory[event.category] = (stats.eventsByCategory[event.category] || 0) + 1;
       if (this.semanticSubscription) {
         const categories = this.semanticSubscription.categories || (this.semanticSubscription.preset ? this.SEMANTIC_PRESETS[this.semanticSubscription.preset] : null);
         if (categories && !categories.includes(event.category)) {
@@ -4222,6 +4386,11 @@
           console.error(`${LOG_PREFIX} Failed to reload:`, err);
         });
       }
+      if (action === "stats") {
+        const refStats = refRegistry.getStats();
+        stats.refsStale = refStats.stale;
+        this.respond(msg.id, true, getFormattedStats());
+      }
     }
     handleNavigationMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
@@ -4540,6 +4709,7 @@
     async performRealisticType(payload2, responseId) {
       const {
         selector,
+        ref,
         text,
         focusMode = "mouse",
         clear = false,
@@ -4549,9 +4719,24 @@
         minDelay = 50,
         maxDelay = 150
       } = payload2;
-      const el = document.querySelector(selector);
+      let el = null;
+      let targetDesc = "";
+      if (ref) {
+        el = refRegistry.resolve(ref);
+        targetDesc = ref;
+        if (el) {
+          stats.refsResolved++;
+        } else {
+          stats.refsStale++;
+          this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${ref}`);
+          return;
+        }
+      } else if (selector) {
+        el = document.querySelector(selector);
+        targetDesc = selector;
+      }
       if (!el) {
-        this.respond(responseId, false, null, `Element not found: ${selector}`);
+        this.respond(responseId, false, null, `Element not found: ${targetDesc}`);
         return;
       }
       try {
@@ -4885,14 +5070,29 @@
       return null;
     }
     async performRealisticClick(payload2, responseId) {
-      const el = document.querySelector(payload2.selector);
+      let el = null;
+      let targetDesc = "";
+      if (payload2.ref) {
+        el = refRegistry.resolve(payload2.ref);
+        targetDesc = payload2.ref;
+        if (el) {
+          stats.refsResolved++;
+        } else {
+          stats.refsStale++;
+          this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${payload2.ref}`);
+          return;
+        }
+      } else if (payload2.selector) {
+        el = document.querySelector(payload2.selector);
+        targetDesc = payload2.selector;
+      }
       if (!el) {
-        this.respond(responseId, false, null, `Element not found: ${payload2.selector}`);
+        this.respond(responseId, false, null, `Element not found: ${targetDesc}`);
         return;
       }
       const hiddenReason = this.getHiddenReason(el);
       if (hiddenReason) {
-        this.respond(responseId, false, null, `Element "${payload2.selector}" is not visible: ${hiddenReason}`);
+        this.respond(responseId, false, null, `Element "${targetDesc}" is not visible: ${hiddenReason}`);
         return;
       }
       try {
@@ -4936,6 +5136,7 @@
       const {
         key,
         selector,
+        ref,
         ctrlKey,
         shiftKey,
         altKey,
@@ -4944,8 +5145,21 @@
       } = payload2;
       try {
         let target = null;
-        if (selector) {
+        let targetDesc = "";
+        if (ref) {
+          target = refRegistry.resolve(ref);
+          targetDesc = ref;
+          if (target) {
+            stats.refsResolved++;
+            target.focus();
+          } else {
+            stats.refsStale++;
+            this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${ref}`);
+            return;
+          }
+        } else if (selector) {
           target = document.querySelector(selector);
+          targetDesc = selector;
           if (!target) {
             this.respond(responseId, false, null, `Element not found: ${selector}`);
             return;
@@ -4953,6 +5167,7 @@
           target.focus();
         } else {
           target = document.activeElement || document.body;
+          targetDesc = "activeElement";
         }
         const modifiers = [];
         if (ctrlKey)
@@ -5846,5 +6061,30 @@
     } else {
       autoInject();
     }
+    window.haltija = window.haltija || {};
+    Object.assign(window.haltija, {
+      stats: () => getFormattedStats(),
+      copyStats: async () => {
+        const formattedStats = getFormattedStats();
+        const json = JSON.stringify(formattedStats, null, 2);
+        try {
+          await navigator.clipboard.writeText(json);
+          console.log(`${LOG_PREFIX} Stats copied to clipboard!`);
+          console.log(formattedStats);
+          return formattedStats;
+        } catch (err) {
+          console.error(`${LOG_PREFIX} Failed to copy to clipboard:`, err);
+          console.log(`${LOG_PREFIX} Stats:`, json);
+          return formattedStats;
+        }
+      },
+      refs: () => refRegistry.getStats(),
+      clearRefs: () => {
+        refRegistry.clear();
+        console.log(`${LOG_PREFIX} Ref registry cleared`);
+      },
+      resolveRef: (ref) => refRegistry.resolve(ref),
+      version: VERSION2
+    });
   }
 })();

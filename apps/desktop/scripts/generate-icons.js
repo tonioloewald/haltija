@@ -14,7 +14,7 @@ const { execSync } = require('child_process')
 
 const APP_DIR = dirname(__dirname)
 const ROOT_DIR = join(APP_DIR, '../..')
-const SVG_PATH = join(ROOT_DIR, 'haltija-circle.svg')
+const SVG_PATH = join(ROOT_DIR, 'haltija-icon.svg')
 const ICONS_DIR = join(APP_DIR, 'icons')
 
 const SIZES = [1024, 512, 256, 128, 64, 32, 16]

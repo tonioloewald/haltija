@@ -26,6 +26,13 @@ bun run test:all
 bun run dist/server.js
 # or
 bunx haltija
+
+# Server CLI options
+haltija --https              # HTTPS mode (auto-generates certs)
+haltija --both               # HTTP + HTTPS simultaneously
+haltija --port 3000          # Custom port
+haltija --headless           # Playwright mode for CI
+haltija --docs-dir ./docs    # Custom reference docs directory
 ```
 
 ## Critical: Bun vs Playwright Test Separation
@@ -69,6 +76,13 @@ Browser Tab              Server (Bun)           AI Agent
 4. Handler calls `requestFromBrowser()` which sends WebSocket message to browser
 5. Browser widget (`component.ts`) executes action and returns response
 6. Response flows back through WebSocket → REST response
+
+### Ref ID System
+
+The `/tree` endpoint assigns stable ref IDs (e.g., `@1`, `@42`) to elements. Interaction endpoints (`/click`, `/type`, `/key`) accept `ref` parameter as an alternative to `selector`:
+- More efficient than CSS selectors (direct lookup vs DOM query)
+- Survives DOM updates within same page load
+- Use `ref: "@1"` instead of `selector: "#btn"` when working with tree output
 
 ### Multi-Window Support
 
@@ -132,3 +146,17 @@ Located in `apps/mcp/`. Provides Model Context Protocol tools for Claude Desktop
 - Generates tool definitions from `api-schema.ts`
 - Translates MCP JSON-RPC to REST API calls
 - Setup: `bunx haltija --setup-mcp`
+
+## Build Artifacts
+
+The build script (`scripts/build.ts`) generates:
+1. `src/version.ts` - Auto-generated from `package.json` version (do not edit)
+2. `dist/component.js` - Browser widget bundle (IIFE)
+3. `dist/server.js`, `dist/client.js`, `dist/index.js` - Bun runtime modules
+4. `apps/desktop/resources/component.js` - Synced copy for desktop app
+5. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
+6. `API.md` - Auto-generated API reference (do not edit directly)
+
+## Version Management
+
+Version is managed in `package.json` only. The build script generates `src/version.ts` automatically. Never edit `version.ts` directly.

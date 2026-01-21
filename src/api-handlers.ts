@@ -255,10 +255,13 @@ import * as api from './api-schema'
 // Click handler - fires full mouse event lifecycle
 // Supports both selector and text-based targeting
 // With diff:true, returns what changed after the click
+// With autoWait:true, waits for element to appear first
 registerHandler(api.click, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const wantDiff = body.diff === true
   const diffDelay = body.diffDelay ?? 100
+  const autoWait = body.autoWait === true
+  const timeout = body.timeout ?? 5000
   let selector = body.selector
   
   // If text is provided, find the element first (only visible elements)
@@ -307,6 +310,31 @@ registerHandler(api.click, async (body, ctx) => {
   
   if (!selector) {
     return Response.json({ success: false, error: 'selector or text is required' }, { status: 400, headers: ctx.headers })
+  }
+  
+  // If autoWait is enabled, wait for element to appear
+  if (autoWait) {
+    const startTime = Date.now()
+    const pollInterval = 100
+    const checkCode = `!!document.querySelector(${JSON.stringify(selector)}) && document.querySelector(${JSON.stringify(selector)}).offsetParent !== null`
+    
+    while (Date.now() - startTime < timeout) {
+      const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
+      if (checkResponse.success && checkResponse.data === true) {
+        break // Element found, proceed with click
+      }
+      await sleep(pollInterval)
+    }
+    
+    // Check one more time - if still not found, return error
+    const finalCheck = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
+    if (!finalCheck.success || finalCheck.data !== true) {
+      return Response.json({ 
+        success: false, 
+        error: `Timeout: element "${selector}" not found after ${timeout}ms`,
+        waited: Date.now() - startTime
+      }, { headers: ctx.headers })
+    }
   }
   
   // If diff requested, wrap the action with before/after snapshots
@@ -447,10 +475,38 @@ registerHandler(api.drag, async (body, ctx) => {
 
 // Type handler - realistic typing with full event lifecycle
 // With diff:true, returns what changed after typing
+// With autoWait:true, waits for element to appear first
 registerHandler(api.type, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const wantDiff = body.diff === true
   const diffDelay = body.diffDelay ?? 100
+  const autoWait = body.autoWait === true
+  const waitTimeout = body.timeout ?? 5000
+  
+  // If autoWait is enabled, wait for element to appear
+  if (autoWait && body.selector) {
+    const startTime = Date.now()
+    const pollInterval = 100
+    const checkCode = `!!document.querySelector(${JSON.stringify(body.selector)}) && document.querySelector(${JSON.stringify(body.selector)}).offsetParent !== null`
+    
+    while (Date.now() - startTime < waitTimeout) {
+      const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
+      if (checkResponse.success && checkResponse.data === true) {
+        break // Element found, proceed with type
+      }
+      await sleep(pollInterval)
+    }
+    
+    // Check one more time - if still not found, return error
+    const finalCheck = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
+    if (!finalCheck.success || finalCheck.data !== true) {
+      return Response.json({ 
+        success: false, 
+        error: `Timeout: element "${body.selector}" not found after ${waitTimeout}ms`,
+        waited: Date.now() - startTime
+      }, { headers: ctx.headers })
+    }
+  }
   
   // Calculate timeout based on text length and typing speed
   // Worst case: humanlike with typos, max delay 150ms per char + typo overhead
@@ -647,7 +703,41 @@ registerHandler(api.eventsUnwatch, async (_body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
-// Recording handlers
+// Consolidated recording handler
+registerHandler(api.recording, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const action = body.action
+  
+  switch (action) {
+    case 'start':
+      return Response.json(
+        await ctx.requestFromBrowser('recording', 'start', { name: body.name }, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'stop':
+      return Response.json(
+        await ctx.requestFromBrowser('recording', 'stop', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'generate':
+      return Response.json(
+        await ctx.requestFromBrowser('recording', 'generate', { name: body.name }, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'list':
+      return Response.json(
+        await ctx.requestFromBrowser('recording', 'list', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    default:
+      return Response.json(
+        { success: false, error: 'action is required: start, stop, generate, or list' },
+        { status: 400, headers: ctx.headers }
+      )
+  }
+})
+
+// Legacy recording handlers (deprecated - router adds deprecation notice automatically)
 registerHandler(api.recordingStart, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('recording', 'start', { name: body.name })
   return Response.json(response, { headers: ctx.headers })
@@ -658,7 +748,42 @@ registerHandler(api.recordingStop, async (_body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
-// Selection handlers
+// Consolidated selection handler
+registerHandler(api.select, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const action = body.action || 'result'
+  
+  switch (action) {
+    case 'start':
+      return Response.json(
+        await ctx.requestFromBrowser('selection', 'start', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'cancel':
+      return Response.json(
+        await ctx.requestFromBrowser('selection', 'cancel', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'clear':
+      return Response.json(
+        await ctx.requestFromBrowser('selection', 'clear', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'status':
+      return Response.json(
+        await ctx.requestFromBrowser('selection', 'status', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+    case 'result':
+    default:
+      return Response.json(
+        await ctx.requestFromBrowser('selection', 'result', {}, 5000, windowId),
+        { headers: ctx.headers }
+      )
+  }
+})
+
+// Legacy selection handlers (deprecated - router adds deprecation notice automatically)
 registerHandler(api.selectStart, async (_body, ctx) => {
   const response = await ctx.requestFromBrowser('selection', 'start', {})
   return Response.json(response, { headers: ctx.headers })
