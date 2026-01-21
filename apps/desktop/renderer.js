@@ -383,6 +383,36 @@ function setupWebviewEvents(tab) {
 
   webview.addEventListener('dom-ready', () => {
     // Widget injection is handled by main.js
+
+    // Inject default styles for blob/data URLs to ensure readability
+    const url = webview.getURL()
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+      webview.executeJavaScript(`
+        if (!document.getElementById('haltija-blob-styles')) {
+          const style = document.createElement('style');
+          style.id = 'haltija-blob-styles';
+          style.textContent = \`
+            html, body {
+              background: #fff;
+              color: #000;
+              margin: 0;
+              padding: 16px;
+              min-height: 100vh;
+              box-sizing: border-box;
+            }
+            pre {
+              white-space: pre-wrap;
+              word-wrap: break-word;
+              margin: 0;
+              font-family: ui-monospace, monospace;
+              font-size: 13px;
+              line-height: 1.4;
+            }
+          \`;
+          document.head.appendChild(style);
+        }
+      `)
+    }
   })
 
   webview.addEventListener('page-title-updated', (e) => {
