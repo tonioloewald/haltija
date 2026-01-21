@@ -112,6 +112,8 @@ function createTab(url, activate = true) {
     'contextIsolation=yes, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes',
   )
   webview.setAttribute('allowpopups', '')
+  // Share session across all tabs so blob URLs work between tabs
+  webview.setAttribute('partition', 'persist:haltija')
 
   webviewContainer.appendChild(webview)
 
