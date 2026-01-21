@@ -6,7 +6,7 @@
 const DEFAULT_SETTINGS = {
   serverMode: 'auto', // 'auto' | 'builtin' | 'external'
   serverUrl: 'http://localhost:8700',
-  confirmNewTabs: false
+  confirmNewTabs: false,
 }
 
 let settings = { ...DEFAULT_SETTINGS }
@@ -72,7 +72,7 @@ function getDefaultUrl() {
 function createTab(url, activate = true) {
   const tabId = `tab-${++tabIdCounter}`
   const tabUrl = url || getDefaultUrl()
-  
+
   // Create tab element
   const tabEl = document.createElement('div')
   tabEl.className = 'tab'
@@ -81,105 +81,115 @@ function createTab(url, activate = true) {
     <span class="tab-title">New Tab</span>
     <button class="tab-close" title="Close tab">×</button>
   `
-  
+
   // Tab click handlers
   tabEl.addEventListener('click', (e) => {
     if (!e.target.classList.contains('tab-close')) {
       activateTab(tabId)
     }
   })
-  
+
   tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
     e.stopPropagation()
     closeTab(tabId)
   })
-  
+
   tabBar.appendChild(tabEl)
-  
+
   // Create webview
   const webview = document.createElement('webview')
   webview.id = tabId
   webview.src = 'about:blank'
   // Use preload path from main preload script (exposes window.haltija.capturePage to web content)
   if (window.haltija?.webviewPreloadPath) {
-    webview.setAttribute('preload', 'file://' + window.haltija.webviewPreloadPath)
+    webview.setAttribute(
+      'preload',
+      'file://' + window.haltija.webviewPreloadPath,
+    )
   }
-  webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes')
+  webview.setAttribute(
+    'webpreferences',
+    'contextIsolation=yes, nodeIntegration=no, webSecurity=no, allowRunningInsecureContent=yes',
+  )
   webview.setAttribute('allowpopups', '')
-  
+
   webviewContainer.appendChild(webview)
-  
+
   // Store tab data
   const tab = {
     id: tabId,
     url: tabUrl,
     title: 'New Tab',
     element: tabEl,
-    webview: webview
+    webview: webview,
   }
   tabs.push(tab)
-  
+
   // Setup webview events
   setupWebviewEvents(tab)
-  
+
   // Activate and navigate
   if (activate) {
     activateTab(tabId)
   }
-  
+
   // Navigate after webview is ready
-  webview.addEventListener('did-attach', () => {
-    navigate(tabUrl, tabId)
-  }, { once: true })
-  
+  webview.addEventListener(
+    'did-attach',
+    () => {
+      navigate(tabUrl, tabId)
+    },
+    { once: true },
+  )
+
   // Fallback navigation
   setTimeout(() => {
     if (webview.getURL() === 'about:blank' || !webview.getURL()) {
       navigate(tabUrl, tabId)
     }
   }, 500)
-  
+
   return tab
 }
 
 // Activate a tab
 function activateTab(tabId) {
-  const tab = tabs.find(t => t.id === tabId)
+  const tab = tabs.find((t) => t.id === tabId)
   if (!tab) return
-  
+
   // Deactivate all tabs
-  tabs.forEach(t => {
+  tabs.forEach((t) => {
     t.element.classList.remove('active')
     t.webview.classList.remove('active')
   })
-  
+
   // Activate this tab
   tab.element.classList.add('active')
   tab.webview.classList.add('active')
   activeTabId = tabId
-  
+
   // Update URL bar and title
   urlInput.value = tab.url || ''
   document.title = tab.title ? `${tab.title} - Haltija` : 'Haltija'
-  
+
   // Update nav buttons
   updateNavButtons()
 }
 
 // Close a tab
 function closeTab(tabId) {
-  const tabIndex = tabs.findIndex(t => t.id === tabId)
+  const tabIndex = tabs.findIndex((t) => t.id === tabId)
   if (tabIndex === -1) return
-  
+
   const tab = tabs[tabIndex]
-  
+
   // Remove elements
   tab.element.remove()
   tab.webview.remove()
-  
+
   // Remove from array
   tabs.splice(tabIndex, 1)
-  
+
   // If this was the active tab, activate another
   if (activeTabId === tabId) {
     if (tabs.length > 0) {
@@ -195,7 +205,7 @@ function closeTab(tabId) {
 
 // Get active tab
 function getActiveTab() {
-  return tabs.find(t => t.id === activeTabId)
+  return tabs.find((t) => t.id === activeTabId)
 }
 
 // Get active webview
@@ -206,15 +216,19 @@ function getActiveWebview() {
 
 // Navigate to URL (with https->http fallback for any URL without explicit protocol)
 function navigate(url, tabId = activeTabId) {
-  const tab = tabs.find(t => t.id === tabId)
+  const tab = tabs.find((t) => t.id === tabId)
   if (!tab) return
-  
+
   // Track if we added the protocol (vs user explicitly typed it)
   let addedHttps = false
-  
-  // Add protocol if missing
-  if (url && !url.match(/^https?:\/\//)) {
-    if (url.includes('.') || url === 'localhost' || url.startsWith('localhost:')) {
+
+  // Add protocol if missing (but preserve blob:, data:, file:, etc.)
+  if (url && !url.match(/^(https?|blob|data|file|about|javascript):\/?\/?/i)) {
+    if (
+      url.includes('.') ||
+      url === 'localhost' ||
+      url.startsWith('localhost:')
+    ) {
       // Looks like a URL - try https first, will fallback to http on failure
       addedHttps = true
       url = 'https://' + url
@@ -222,13 +236,13 @@ function navigate(url, tabId = activeTabId) {
       url = 'https://www.google.com/search?q=' + encodeURIComponent(url)
     }
   }
-  
+
   tab.url = url || getDefaultUrl()
-  
+
   // If we added https://, set up fallback to http:// on connection failure
   if (addedHttps) {
     const httpUrl = tab.url.replace(/^https:/, 'http:')
-    
+
     // Listen for SSL/connection errors to fall back to http
     const failHandler = (e) => {
       // Common error codes: -501 (insecure), -102 (connection refused), -118 (connection timed out), -200+ (SSL errors)
@@ -243,15 +257,19 @@ function navigate(url, tabId = activeTabId) {
       }
     }
     tab.webview.addEventListener('did-fail-load', failHandler, { once: true })
-    
+
     // Clean up handler on success
-    tab.webview.addEventListener('did-finish-load', () => {
-      tab.webview.removeEventListener('did-fail-load', failHandler)
-    }, { once: true })
+    tab.webview.addEventListener(
+      'did-finish-load',
+      () => {
+        tab.webview.removeEventListener('did-fail-load', failHandler)
+      },
+      { once: true },
+    )
   }
-  
+
   tab.webview.src = tab.url
-  
+
   if (tabId === activeTabId) {
     urlInput.value = tab.url
   }
@@ -296,21 +314,21 @@ async function injectWidget(webview) {
   if (!currentUrl || currentUrl === 'about:blank') {
     return
   }
-  
+
   const serverUrl = getServerUrl()
   const script = `
     (function() {
       if (document.getElementById('haltija-widget')) {
         return;
       }
-      
+
       fetch('${serverUrl}/inject.js')
         .then(r => r.text())
         .then(code => eval(code))
         .catch(e => console.error('[Haltija] Injection failed:', e));
     })();
   `
-  
+
   try {
     await webview.executeJavaScript(script)
   } catch (err) {
@@ -321,14 +339,14 @@ async function injectWidget(webview) {
 // Setup webview events
 function setupWebviewEvents(tab) {
   const webview = tab.webview
-  
+
   webview.addEventListener('did-start-loading', () => {
     webview.classList.add('loading')
     if (tab.id === activeTabId) {
       statusDot.className = 'status-dot connecting'
     }
   })
-  
+
   webview.addEventListener('did-stop-loading', () => {
     webview.classList.remove('loading')
     if (tab.id === activeTabId) {
@@ -337,7 +355,7 @@ function setupWebviewEvents(tab) {
     }
     // Widget injection is handled by main.js
   })
-  
+
   webview.addEventListener('did-navigate', (e) => {
     tab.url = e.url
     if (tab.id === activeTabId) {
@@ -345,7 +363,7 @@ function setupWebviewEvents(tab) {
       updateNavButtons()
     }
   })
-  
+
   webview.addEventListener('did-navigate-in-page', (e) => {
     tab.url = e.url
     if (tab.id === activeTabId) {
@@ -353,18 +371,18 @@ function setupWebviewEvents(tab) {
       updateNavButtons()
     }
   })
-  
+
   webview.addEventListener('did-finish-load', () => {
     // Widget injection is handled by main.js
     if (window.haltija) {
       window.haltija.webviewReady(webview.getWebContentsId())
     }
   })
-  
+
   webview.addEventListener('dom-ready', () => {
     // Widget injection is handled by main.js
   })
-  
+
   webview.addEventListener('page-title-updated', (e) => {
     tab.title = e.title || 'New Tab'
     tab.element.querySelector('.tab-title').textContent = tab.title
@@ -372,11 +390,11 @@ function setupWebviewEvents(tab) {
       document.title = tab.title ? `${tab.title} - Haltija` : 'Haltija'
     }
   })
-  
+
   // Handle new window requests
   webview.addEventListener('new-window', async (e) => {
     e.preventDefault()
-    
+
     if (settings.confirmNewTabs) {
       const allowed = await showNewTabDialog(e.url)
       if (allowed) {
@@ -386,17 +404,17 @@ function setupWebviewEvents(tab) {
       createTab(e.url)
     }
   })
-  
+
   webview.addEventListener('console-message', (e) => {
     const prefix = e.level === 2 ? '[warn]' : e.level === 3 ? '[error]' : ''
     console.log(`[Tab ${tab.id}${prefix}]`, e.message)
   })
-  
+
   // Right-click context menu with Inspect Element
   webview.addEventListener('context-menu', (e) => {
     e.preventDefault()
     const { x, y } = e.params
-    
+
     // Create and show context menu
     const menu = document.createElement('div')
     menu.className = 'context-menu'
@@ -412,19 +430,28 @@ function setupWebviewEvents(tab) {
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       z-index: 10000;
     `
-    
+
     const items = [
-      { label: 'Back', action: () => webview.canGoBack() && webview.goBack(), enabled: webview.canGoBack() },
-      { label: 'Forward', action: () => webview.canGoForward() && webview.goForward(), enabled: webview.canGoForward() },
+      {
+        label: 'Back',
+        action: () => webview.canGoBack() && webview.goBack(),
+        enabled: webview.canGoBack(),
+      },
+      {
+        label: 'Forward',
+        action: () => webview.canGoForward() && webview.goForward(),
+        enabled: webview.canGoForward(),
+      },
       { label: 'Reload', action: () => webview.reload() },
       { type: 'separator' },
-      { label: 'Inspect Element', action: () => webview.inspectElement(x, y) }
+      { label: 'Inspect Element', action: () => webview.inspectElement(x, y) },
     ]
-    
-    items.forEach(item => {
+
+    items.forEach((item) => {
       if (item.type === 'separator') {
         const sep = document.createElement('div')
-        sep.style.cssText = 'height: 1px; background: var(--border); margin: 4px 0;'
+        sep.style.cssText =
+          'height: 1px; background: var(--border); margin: 4px 0;'
         menu.appendChild(sep)
       } else {
         const menuItem = document.createElement('div')
@@ -450,9 +477,9 @@ function setupWebviewEvents(tab) {
         menu.appendChild(menuItem)
       }
     })
-    
+
     document.body.appendChild(menu)
-    
+
     // Close menu on click outside
     const closeMenu = (evt) => {
       if (!menu.contains(evt.target)) {
@@ -464,7 +491,7 @@ function setupWebviewEvents(tab) {
     }
     setTimeout(() => document.addEventListener('click', closeMenu), 0)
   })
-  
+
   // Intercept keyboard shortcuts inside webview
   // This ensures Cmd+R reloads the webview, not the outer shell
   // Note: before-input-event provides input info via e.input property in Electron webview
@@ -472,7 +499,7 @@ function setupWebviewEvents(tab) {
     const input = e.input || e // Handle both webview event structure and potential variations
     const { type, key, meta, control } = input
     if (type !== 'keyDown') return
-    
+
     // Cmd/Ctrl + R = refresh this webview (prevent outer shell refresh)
     if ((meta || control) && key === 'r') {
       e.preventDefault()
@@ -480,7 +507,7 @@ function setupWebviewEvents(tab) {
       webview.reload()
       return
     }
-    
+
     // Cmd/Ctrl + L = focus address bar
     if ((meta || control) && key === 'l') {
       e.preventDefault()
@@ -489,7 +516,7 @@ function setupWebviewEvents(tab) {
       urlInput.select()
       return
     }
-    
+
     // Cmd/Ctrl + T = new tab
     if ((meta || control) && key === 't') {
       e.preventDefault()
@@ -497,7 +524,7 @@ function setupWebviewEvents(tab) {
       createTab()
       return
     }
-    
+
     // Cmd/Ctrl + W = close this tab
     if ((meta || control) && key === 'w') {
       e.preventDefault()
@@ -505,7 +532,7 @@ function setupWebviewEvents(tab) {
       closeTab(tab.id)
       return
     }
-    
+
     // Cmd/Ctrl + [ = back
     if ((meta || control) && key === '[') {
       e.preventDefault()
@@ -513,7 +540,7 @@ function setupWebviewEvents(tab) {
       if (webview.canGoBack()) webview.goBack()
       return
     }
-    
+
     // Cmd/Ctrl + ] = forward
     if ((meta || control) && key === ']') {
       e.preventDefault()
@@ -546,10 +573,12 @@ function hideNewTabDialog(allowed) {
 // Settings modal
 function showSettings() {
   // Populate form
-  document.querySelector(`input[name="server-mode"][value="${settings.serverMode}"]`).checked = true
+  document.querySelector(
+    `input[name="server-mode"][value="${settings.serverMode}"]`,
+  ).checked = true
   document.getElementById('server-url').value = settings.serverUrl
   document.getElementById('confirm-new-tabs').checked = settings.confirmNewTabs
-  
+
   settingsModal.classList.remove('hidden')
 }
 
@@ -558,10 +587,13 @@ function hideSettings() {
 }
 
 function applySettings() {
-  settings.serverMode = document.querySelector('input[name="server-mode"]:checked').value
-  settings.serverUrl = document.getElementById('server-url').value || DEFAULT_SETTINGS.serverUrl
+  settings.serverMode = document.querySelector(
+    'input[name="server-mode"]:checked',
+  ).value
+  settings.serverUrl =
+    document.getElementById('server-url').value || DEFAULT_SETTINGS.serverUrl
   settings.confirmNewTabs = document.getElementById('confirm-new-tabs').checked
-  
+
   saveSettings()
   hideSettings()
   checkHaltija()
@@ -621,40 +653,40 @@ document.addEventListener('keydown', (e) => {
     urlInput.focus()
     urlInput.select()
   }
-  
+
   // Cmd/Ctrl + R = refresh
   if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
     e.preventDefault()
     const webview = getActiveWebview()
     if (webview) webview.reload()
   }
-  
+
   // Cmd/Ctrl + T = new tab
   if ((e.metaKey || e.ctrlKey) && e.key === 't') {
     e.preventDefault()
     createTab()
   }
-  
+
   // Cmd/Ctrl + W = close tab
   if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
     e.preventDefault()
     if (activeTabId) closeTab(activeTabId)
   }
-  
+
   // Cmd/Ctrl + [ = back
   if ((e.metaKey || e.ctrlKey) && e.key === '[') {
     e.preventDefault()
     const webview = getActiveWebview()
     if (webview && webview.canGoBack()) webview.goBack()
   }
-  
+
   // Cmd/Ctrl + ] = forward
   if ((e.metaKey || e.ctrlKey) && e.key === ']') {
     e.preventDefault()
     const webview = getActiveWebview()
     if (webview && webview.canGoForward()) webview.goForward()
   }
-  
+
   // Cmd/Ctrl + 1-9 = switch to tab
   if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
     e.preventDefault()
@@ -663,7 +695,7 @@ document.addEventListener('keydown', (e) => {
       activateTab(tabs[index].id)
     }
   }
-  
+
   // Escape = close modals
   if (e.key === 'Escape') {
     hideSettings()
@@ -730,7 +762,7 @@ function showNotification(message, duration = 2000) {
   // Remove existing notification if any
   const existing = document.getElementById('toast-notification')
   if (existing) existing.remove()
-  
+
   const toast = document.createElement('div')
   toast.id = 'toast-notification'
   toast.textContent = message
@@ -748,7 +780,7 @@ function showNotification(message, duration = 2000) {
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     animation: toast-in 0.2s ease-out;
   `
-  
+
   // Add animation style if not present
   if (!document.getElementById('toast-styles')) {
     const style = document.createElement('style')
@@ -759,9 +791,9 @@ function showNotification(message, duration = 2000) {
     `
     document.head.appendChild(style)
   }
-  
+
   document.body.appendChild(toast)
-  
+
   setTimeout(() => {
     toast.style.animation = 'toast-out 0.2s ease-in forwards'
     setTimeout(() => toast.remove(), 200)
@@ -773,48 +805,50 @@ function showNotification(message, duration = 2000) {
 if (window.haltija) {
   // Notifications
   window.haltija.onShowNotification?.(showNotification)
-  
+
   window.haltija.onMenuNewTab?.(() => {
     createTab()
   })
-  
+
   window.haltija.onMenuCloseTab?.(() => {
     if (activeTabId) closeTab(activeTabId)
   })
-  
+
   window.haltija.onMenuCloseOtherTabs?.(() => {
     if (activeTabId && tabs.length > 1) {
       // Get IDs of tabs to close (all except active)
-      const tabsToClose = tabs.filter(t => t.id !== activeTabId).map(t => t.id)
-      tabsToClose.forEach(tabId => closeTab(tabId))
+      const tabsToClose = tabs
+        .filter((t) => t.id !== activeTabId)
+        .map((t) => t.id)
+      tabsToClose.forEach((tabId) => closeTab(tabId))
     }
   })
-  
+
   window.haltija.onMenuReloadTab?.(() => {
     const webview = getActiveWebview()
     if (webview) webview.reload()
   })
-  
+
   window.haltija.onMenuForceReloadTab?.(() => {
     const webview = getActiveWebview()
     if (webview) webview.reloadIgnoringCache()
   })
-  
+
   window.haltija.onMenuDevToolsTab?.(() => {
     const webview = getActiveWebview()
     if (webview) webview.openDevTools()
   })
-  
+
   window.haltija.onMenuBack?.(() => {
     const webview = getActiveWebview()
     if (webview && webview.canGoBack()) webview.goBack()
   })
-  
+
   window.haltija.onMenuForward?.(() => {
     const webview = getActiveWebview()
     if (webview && webview.canGoForward()) webview.goForward()
   })
-  
+
   window.haltija.onMenuFocusUrl?.(() => {
     urlInput.focus()
     urlInput.select()
