@@ -162,6 +162,10 @@ const windows = new Map<string, TrackedWindow>()
 // Connected agent clients (could be multiple)
 const agents = new Set<WebSocket>()
 
+// Agent session affinity: maps agent ID -> last window they interacted with
+// Agent ID comes from X-Haltija-Agent header or is auto-generated per request
+const agentWindowAffinity = new Map<string, string>()
+
 // Track the currently focused window ID (for routing untargeted commands)
 let focusedWindowId: string | null = null
 
@@ -556,19 +560,50 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
 
 // Create context factory for the router
 const createHandlerContext = (req: Request, url: URL): HandlerContext => {
-  const targetWindowId = url.searchParams.get('window') || undefined
+  // Session affinity: X-Haltija-Session header tracks agent sessions
+  const sessionId = req.headers.get('X-Haltija-Session') || undefined
+  
+  // Window targeting priority:
+  // 1. Explicit ?window= query param
+  // 2. Session's last-used window (if session header provided)
+  // 3. Focused window (default)
+  let targetWindowId = url.searchParams.get('window') || undefined
+  if (!targetWindowId && sessionId) {
+    targetWindowId = agentWindowAffinity.get(sessionId)
+  }
+  
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Session',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
+  
+  // Helper to get window info for response context
+  const getWindowInfo = (windowId?: string) => {
+    const id = windowId || targetWindowId || focusedWindowId
+    if (!id) return undefined
+    const win = windows.get(id)
+    if (!win) return undefined
+    return { id, url: win.url, title: win.title }
+  }
+  
+  // Helper to update session affinity when a window is explicitly targeted
+  const updateSessionAffinity = (windowId: string) => {
+    if (sessionId && windowId) {
+      agentWindowAffinity.set(sessionId, windowId)
+    }
+  }
+  
   return {
     requestFromBrowser,
     targetWindowId,
     headers,
     url,
+    sessionId,
+    getWindowInfo,
+    updateSessionAffinity,
   }
 }
 

@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "0.2.2";
+  var VERSION = "0.2.3";
 
   // src/component.ts
   var VERSION2 = VERSION;
@@ -1692,6 +1692,7 @@
 
         .btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .btn.active { color: #6366f1; }
+        .btn.has-selection { color: #22c55e; } /* Green to show selection is ready for retrieval */
         .btn.danger:hover { color: #ef4444; }
         .btn.recording { color: #ef4444; animation: pulse 1s infinite; }
         @keyframes pulse {
@@ -2835,14 +2836,16 @@
       }
       this.highlightedElements = [];
     }
+    selectionIndicator = null;
     async finalizeSelection() {
       if (!this.selectionRect) {
         this.cancelSelection();
         return;
       }
       const elements = this.getElementsInRect(this.selectionRect);
+      const savedRegion = { ...this.selectionRect };
       this.selectionResult = {
-        region: { ...this.selectionRect },
+        region: savedRegion,
         elements: elements.map((el) => {
           const rect = el.getBoundingClientRect();
           const attrs = {};
@@ -2877,11 +2880,57 @@
       const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]');
       if (selectBtn) {
         selectBtn.classList.remove("active");
+        selectBtn.classList.add("has-selection");
+        selectBtn.setAttribute("title", "Selection ready - click to clear");
+      }
+      this.createSelectionIndicator(savedRegion, elements.length);
+    }
+    createSelectionIndicator(region, elementCount) {
+      this.selectionIndicator?.remove();
+      const indicator = document.createElement("div");
+      indicator.className = "haltija-selection-indicator";
+      indicator.style.cssText = `
+      position: fixed;
+      left: ${region.x}px;
+      top: ${region.y}px;
+      width: ${region.width}px;
+      height: ${region.height}px;
+      border: 2px dashed #6366f1;
+      background: rgba(99, 102, 241, 0.1);
+      pointer-events: none;
+      z-index: 2147483645;
+      box-sizing: border-box;
+    `;
+      const label = document.createElement("div");
+      label.style.cssText = `
+      position: absolute;
+      bottom: -24px;
+      left: 0;
+      background: #6366f1;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: pointer;
+    `;
+      label.textContent = `${elementCount} element${elementCount !== 1 ? "s" : ""} selected - click to clear`;
+      label.title = "Click to clear selection";
+      label.onclick = () => this.clearSelection();
+      indicator.appendChild(label);
+      document.body.appendChild(indicator);
+      this.selectionIndicator = indicator;
+    }
+    removeSelectionIndicator() {
+      this.selectionIndicator?.remove();
+      this.selectionIndicator = null;
+      const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]');
+      if (selectBtn) {
+        selectBtn.classList.remove("has-selection");
         selectBtn.setAttribute("title", "Select elements (drag to select area)");
       }
-      setTimeout(() => {
-        this.clearHighlights();
-      }, 2000);
     }
     cancelSelection() {
       if (this.selectionOverlay?._cleanup) {
@@ -2907,6 +2956,7 @@
     clearSelection() {
       this.selectionResult = null;
       this.clearHighlights();
+      this.removeSelectionIndicator();
     }
     setupDrag(handle) {
       let startX = 0, startY = 0, startLeft = 0, startBottom = 0;
@@ -4227,6 +4277,9 @@
         case "eval":
           this.handleEvalMessage(msg2);
           break;
+        case "fetch":
+          this.handleFetchMessage(msg2);
+          break;
         case "recording":
           this.handleRecordingMessage(msg2);
           break;
@@ -4566,7 +4619,25 @@
           const scale = payload2?.scale || 1;
           const maxWidth = payload2?.maxWidth;
           const maxHeight = payload2?.maxHeight;
+          const chyron = payload2?.chyron !== false;
           const mimeType = format === "webp" ? "image/webp" : format === "jpeg" ? "image/jpeg" : "image/png";
+          const drawChyron = (ctx, width, height) => {
+            const chyronHeight = 24;
+            const padding = 8;
+            const fontSize = 12;
+            ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+            ctx.fillRect(0, height - chyronHeight, width, chyronHeight);
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `${fontSize}px system-ui, -apple-system, sans-serif`;
+            ctx.textBaseline = "middle";
+            const timestamp = new Date().toLocaleTimeString();
+            const title = document.title || "(no title)";
+            const url = location.href;
+            const maxUrlLen = Math.floor((width - padding * 2) / (fontSize * 0.6)) - title.length - timestamp.length - 10;
+            const truncatedUrl = url.length > maxUrlLen ? url.slice(0, maxUrlLen - 3) + "..." : url;
+            const text = `${title} | ${truncatedUrl} | ${timestamp}`;
+            ctx.fillText(text, padding, height - chyronHeight / 2);
+          };
           const convertFormat = async (dataUrl) => {
             return new Promise((resolve) => {
               const img = new Image;
@@ -4585,7 +4656,8 @@
                 }
                 targetWidth = Math.round(targetWidth);
                 targetHeight = Math.round(targetHeight);
-                if (format === "png" && targetWidth === img.width && targetHeight === img.height) {
+                const needsCanvas = chyron || format !== "png" || targetWidth !== img.width || targetHeight !== img.height;
+                if (!needsCanvas) {
                   resolve({
                     image: dataUrl,
                     width: img.width,
@@ -4598,6 +4670,9 @@
                 canvas.height = targetHeight;
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                if (chyron) {
+                  drawChyron(ctx, targetWidth, targetHeight);
+                }
                 resolve({
                   image: canvas.toDataURL(mimeType, quality),
                   width: targetWidth,
@@ -4696,6 +4771,54 @@
         this.respond(msg.id, true, result);
       } catch (err) {
         this.respond(msg.id, false, null, err.message);
+      }
+    }
+    async handleFetchMessage(msg2) {
+      const { url } = msg2.payload;
+      if (!url) {
+        this.respond(msg2.id, false, null, "url is required");
+        return;
+      }
+      try {
+        if (url.startsWith("data:")) {
+          const match = url.match(/^data:([^;,]+)?(?:;base64)?,(.*)$/);
+          if (!match) {
+            this.respond(msg2.id, false, null, "Invalid data URL format");
+            return;
+          }
+          const mimeType2 = match[1] || "text/plain";
+          const isBase64 = url.includes(";base64,");
+          const data = match[2];
+          const base642 = isBase64 ? data : btoa(decodeURIComponent(data));
+          const size = isBase64 ? Math.ceil(data.length * 0.75) : data.length;
+          this.respond(msg2.id, true, { mimeType: mimeType2, base64: base642, size, url });
+          return;
+        }
+        const response = await fetch(url);
+        if (!response.ok) {
+          this.respond(msg2.id, false, null, `Fetch failed: ${response.status} ${response.statusText}`);
+          return;
+        }
+        const blob = await response.blob();
+        const mimeType = blob.type || response.headers.get("content-type") || "application/octet-stream";
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader;
+          reader.onloadend = () => {
+            const dataUrl = reader.result;
+            const base64Part = dataUrl.split(",")[1] || "";
+            resolve(base64Part);
+          };
+          reader.onerror = () => reject(new Error("Failed to read blob"));
+          reader.readAsDataURL(blob);
+        });
+        this.respond(msg2.id, true, {
+          mimeType,
+          base64,
+          size: blob.size,
+          url
+        });
+      } catch (err) {
+        this.respond(msg2.id, false, null, err.message || "Fetch failed");
       }
     }
     handleInteractionMessage(msg2) {
@@ -5484,7 +5607,9 @@
         });
       } else if (action2 === "result") {
         if (this.selectionResult) {
-          this.respond(msg2.id, true, this.selectionResult);
+          const result2 = this.selectionResult;
+          this.clearSelection();
+          this.respond(msg2.id, true, result2);
         } else {
           this.respond(msg2.id, false, null, "No selection available");
         }
@@ -6065,8 +6190,21 @@
     } else {
       autoInject();
     }
-    window.haltija = window.haltija || {};
-    Object.assign(window.haltija, {
+    const existingHaltija = window.haltija || {};
+    const preservedProps = {};
+    for (const key of Object.keys(existingHaltija)) {
+      try {
+        preservedProps[key] = existingHaltija[key];
+      } catch (e) {}
+    }
+    if (typeof existingHaltija.capturePage === "function") {
+      preservedProps.capturePage = existingHaltija.capturePage;
+    }
+    if (typeof existingHaltija.captureElement === "function") {
+      preservedProps.captureElement = existingHaltija.captureElement;
+    }
+    window.haltija = {
+      ...preservedProps,
       stats: () => getFormattedStats(),
       copyStats: async () => {
         const formattedStats = getFormattedStats();
@@ -6089,6 +6227,6 @@
       },
       resolveRef: (ref) => refRegistry.resolve(ref),
       version: VERSION2
-    });
+    };
   }
 })();

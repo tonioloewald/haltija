@@ -33,12 +33,22 @@ export type RequestFromBrowserFn = (
   windowId?: string
 ) => Promise<DevResponse>
 
+/** Window info for response context */
+export interface WindowInfo {
+  id: string
+  url: string
+  title: string
+}
+
 /** Context passed to every handler */
 export interface HandlerContext {
   requestFromBrowser: RequestFromBrowserFn
   targetWindowId: string | undefined
   headers: Record<string, string>
   url: URL
+  sessionId: string | undefined
+  getWindowInfo: (windowId?: string) => WindowInfo | undefined
+  updateSessionAffinity: (windowId: string) => void
 }
 
 /** Handler function signature */
@@ -258,6 +268,10 @@ import * as api from './api-schema'
 // With autoWait:true, waits for element to appear first
 registerHandler(api.click, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
+  
+  // Update session affinity
+  if (windowId) ctx.updateSessionAffinity(windowId)
+  
   const wantDiff = body.diff === true
   const diffDelay = body.diffDelay ?? 100
   const autoWait = body.autoWait === true
@@ -367,6 +381,13 @@ registerHandler(api.query, async (body, ctx) => {
 registerHandler(api.eval_, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('eval', 'exec', { code: body.code }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+// Fetch handler - fetch URL from within tab context (essential for blob: URLs)
+registerHandler(api.fetchUrl, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('fetch', 'fetch', { url: body.url }, 30000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
 
@@ -632,7 +653,15 @@ registerHandler(api.tree, async (body, ctx) => {
 })
 
 // Screenshot handler - longer timeout since screenshots can be slow
+// Response includes window context so agent knows exactly what they captured
 registerHandler(api.screenshot, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  
+  // Update session affinity if targeting a specific window
+  if (windowId) {
+    ctx.updateSessionAffinity(windowId)
+  }
+  
   const response = await ctx.requestFromBrowser('dom', 'screenshot', {
     selector: body.selector,
     format: body.format,
@@ -640,8 +669,16 @@ registerHandler(api.screenshot, async (body, ctx) => {
     scale: body.scale,
     maxWidth: body.maxWidth,
     maxHeight: body.maxHeight,
-  }, 15000) // 15s timeout for screenshots (default is 5s)
-  return Response.json(response, { headers: ctx.headers })
+  }, 15000, windowId) // 15s timeout for screenshots (default is 5s)
+  
+  // Add window context to response so agent knows what they captured
+  const windowInfo = ctx.getWindowInfo(windowId)
+  const enrichedResponse = {
+    ...response,
+    window: windowInfo || { id: windowId || 'unknown', url: 'unknown', title: 'unknown' },
+  }
+  
+  return Response.json(enrichedResponse, { headers: ctx.headers })
 })
 
 // Tabs handlers

@@ -1033,6 +1033,32 @@
     }
   },
   {
+    "path": "/fetch",
+    "method": "POST",
+    "summary": "Fetch a URL from within the tab context",
+    "description": "Fetch a URL from within the browser tab's context. Essential for accessing blob: URLs\nwhich are only valid in the tab that created them.\n\nReturns the content as base64 with MIME type. Works with:\n- blob: URLs (e.g., blob:https://example.com/abc-123)\n- data: URLs (returned as-is)\n- Regular http/https URLs (fetched from tab's origin)\n\nResponse: { success: true, data: { mimeType, base64, size, url } }\n\nUse this when you see a blob URL in the DOM and need to access its content.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL to fetch (blob:, data:, http:, https:)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/call",
     "method": "POST",
     "summary": "Call a method or get a property on an element",
@@ -1106,6 +1132,20 @@
             "null"
           ],
           "description": "Max height in pixels"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        },
+        "chyron": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Burn page title, URL, timestamp into image (default true, set false for clean screenshot)"
         }
       },
       "required": [],

@@ -1148,6 +1148,43 @@ Return values are JSON-serialized. Promises are awaited.`,
   ],
 })
 
+export const fetchUrl = endpoint({
+  path: '/fetch',
+  method: 'POST',
+  summary: 'Fetch a URL from within the tab context',
+  description: `Fetch a URL from within the browser tab's context. Essential for accessing blob: URLs
+which are only valid in the tab that created them.
+
+Returns the content as base64 with MIME type. Works with:
+- blob: URLs (e.g., blob:https://example.com/abc-123)
+- data: URLs (returned as-is)
+- Regular http/https URLs (fetched from tab's origin)
+
+Response: { success: true, data: { mimeType, base64, size, url } }
+
+Use this when you see a blob URL in the DOM and need to access its content.`,
+  category: 'debug',
+  input: s.object({
+    url: s.string.describe('The URL to fetch (blob:, data:, http:, https:)'),
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    {
+      name: 'fetch-blob',
+      input: { url: 'blob:https://example.com/abc-123-def' },
+      description: 'Fetch a blob URL created by the page',
+    },
+    {
+      name: 'fetch-image',
+      input: { url: 'https://example.com/image.png' },
+      description: 'Fetch an image from the page origin',
+    },
+  ],
+  invalidExamples: [
+    { name: 'missing-url', input: {}, error: 'url is required' },
+  ],
+})
+
 export const call = endpoint({
   path: '/call',
   method: 'POST',
@@ -1276,9 +1313,11 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
     scale: s.number.describe('Scale factor (default 1)').optional,
     maxWidth: s.number.describe('Max width in pixels').optional,
     maxHeight: s.number.describe('Max height in pixels').optional,
+    window: s.string.describe('Target window ID').optional,
+    chyron: s.boolean.describe('Burn page title, URL, timestamp into image (default true, set false for clean screenshot)').optional,
   }),
   examples: [
-    { name: 'full-page', input: {}, description: 'Capture entire page' },
+    { name: 'full-page', input: {}, description: 'Capture entire page with chyron showing URL/title' },
     {
       name: 'element',
       input: { selector: '#chart' },
@@ -1288,6 +1327,11 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
       name: 'thumbnail',
       input: { scale: 0.5, maxWidth: 400 },
       description: 'Small thumbnail',
+    },
+    {
+      name: 'clean',
+      input: { chyron: false },
+      description: 'Clean screenshot without burned-in metadata',
     },
   ],
 })
@@ -1858,6 +1902,7 @@ export const endpoints = {
   // Console & Eval
   console: console_,
   eval: eval_,
+  fetch: fetchUrl,
   call,
 
   // Screenshots
@@ -1913,8 +1958,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-20T05:45:30.696Z',
-  checksum: 'c124d5c3',
+  updated: '2026-01-22T09:02:08.536Z',
+  checksum: '0b0c99f6',
 }
 
 /**

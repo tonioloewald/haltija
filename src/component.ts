@@ -2449,6 +2449,7 @@ export class DevChannel extends HTMLElement {
 
         .btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .btn.active { color: #6366f1; }
+        .btn.has-selection { color: #22c55e; } /* Green to show selection is ready for retrieval */
         .btn.danger:hover { color: #ef4444; }
         .btn.recording { color: #ef4444; animation: pulse 1s infinite; }
         @keyframes pulse {
@@ -3872,6 +3873,9 @@ export class DevChannel extends HTMLElement {
     this.highlightedElements = []
   }
 
+  // Persistent selection indicator element
+  private selectionIndicator: HTMLElement | null = null
+
   private async finalizeSelection() {
     if (!this.selectionRect) {
       this.cancelSelection()
@@ -3879,10 +3883,11 @@ export class DevChannel extends HTMLElement {
     }
 
     const elements = this.getElementsInRect(this.selectionRect)
+    const savedRegion = { ...this.selectionRect }
 
     // Build result
     this.selectionResult = {
-      region: { ...this.selectionRect },
+      region: savedRegion,
       elements: elements.map((el) => {
         const rect = el.getBoundingClientRect()
         const attrs: Record<string, string> = {}
@@ -3913,7 +3918,7 @@ export class DevChannel extends HTMLElement {
       `${LOG_PREFIX} Selection completed: ${elements.length} elements`,
     )
 
-    // Clean up selection UI but keep highlights briefly
+    // Clean up selection UI
     this.selectionOverlay?.remove()
     this.selectionBox?.remove()
     this.selectionOverlay = null
@@ -3922,17 +3927,76 @@ export class DevChannel extends HTMLElement {
     this.selectionStart = null
     this.selectionRect = null
 
-    // Update button
+    // Update button to show selection is pending retrieval
     const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
     if (selectBtn) {
       selectBtn.classList.remove('active')
-      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+      selectBtn.classList.add('has-selection')
+      selectBtn.setAttribute('title', 'Selection ready - click to clear')
     }
 
-    // Keep highlights visible for 2 seconds
-    setTimeout(() => {
-      this.clearHighlights()
-    }, 2000)
+    // Create persistent selection indicator that stays until agent retrieves or user clears
+    this.createSelectionIndicator(savedRegion, elements.length)
+  }
+
+  private createSelectionIndicator(
+    region: { x: number; y: number; width: number; height: number },
+    elementCount: number,
+  ) {
+    // Remove any existing indicator
+    this.selectionIndicator?.remove()
+
+    // Create indicator overlay
+    const indicator = document.createElement('div')
+    indicator.className = 'haltija-selection-indicator'
+    indicator.style.cssText = `
+      position: fixed;
+      left: ${region.x}px;
+      top: ${region.y}px;
+      width: ${region.width}px;
+      height: ${region.height}px;
+      border: 2px dashed #6366f1;
+      background: rgba(99, 102, 241, 0.1);
+      pointer-events: none;
+      z-index: 2147483645;
+      box-sizing: border-box;
+    `
+
+    // Add label showing element count and status
+    const label = document.createElement('div')
+    label.style.cssText = `
+      position: absolute;
+      bottom: -24px;
+      left: 0;
+      background: #6366f1;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: pointer;
+    `
+    label.textContent = `${elementCount} element${elementCount !== 1 ? 's' : ''} selected - click to clear`
+    label.title = 'Click to clear selection'
+    label.onclick = () => this.clearSelection()
+
+    indicator.appendChild(label)
+    document.body.appendChild(indicator)
+    this.selectionIndicator = indicator
+  }
+
+  private removeSelectionIndicator() {
+    this.selectionIndicator?.remove()
+    this.selectionIndicator = null
+
+    // Update button state
+    const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
+    if (selectBtn) {
+      selectBtn.classList.remove('has-selection')
+      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+    }
   }
 
   private cancelSelection() {
@@ -3963,10 +4027,11 @@ export class DevChannel extends HTMLElement {
     return this.selectionResult
   }
 
-  // Clear stored selection
+  // Clear stored selection and remove visual indicator
   clearSelection() {
     this.selectionResult = null
     this.clearHighlights()
+    this.removeSelectionIndicator()
   }
 
   private setupDrag(handle: Element) {
@@ -5768,6 +5833,9 @@ export class DevChannel extends HTMLElement {
       case 'eval':
         this.handleEvalMessage(msg)
         break
+      case 'fetch':
+        this.handleFetchMessage(msg)
+        break
       case 'recording':
         this.handleRecordingMessage(msg)
         break
@@ -6247,6 +6315,8 @@ export class DevChannel extends HTMLElement {
         const scale = payload?.scale || 1 // Scale factor (0.5 = half size)
         const maxWidth = payload?.maxWidth // Optional max width constraint
         const maxHeight = payload?.maxHeight // Optional max height constraint
+        // Chyron: burn metadata into image (default true, set false for clean screenshots)
+        const chyron = payload?.chyron !== false
         const mimeType =
           format === 'webp'
             ? 'image/webp'
@@ -6254,7 +6324,39 @@ export class DevChannel extends HTMLElement {
               ? 'image/jpeg'
               : 'image/png'
 
-        // Helper to convert/scale data URL via canvas
+        // Helper to draw chyron (burned-in metadata caption) at bottom of image
+        const drawChyron = (
+          ctx: CanvasRenderingContext2D,
+          width: number,
+          height: number,
+        ) => {
+          const chyronHeight = 24
+          const padding = 8
+          const fontSize = 12
+
+          // Semi-transparent black background
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
+          ctx.fillRect(0, height - chyronHeight, width, chyronHeight)
+
+          // White text
+          ctx.fillStyle = '#ffffff'
+          ctx.font = `${fontSize}px system-ui, -apple-system, sans-serif`
+          ctx.textBaseline = 'middle'
+
+          // Format: "Title | url | timestamp"
+          const timestamp = new Date().toLocaleTimeString()
+          const title = document.title || '(no title)'
+          const url = location.href
+          
+          // Truncate URL if needed to fit
+          const maxUrlLen = Math.floor((width - padding * 2) / (fontSize * 0.6)) - title.length - timestamp.length - 10
+          const truncatedUrl = url.length > maxUrlLen ? url.slice(0, maxUrlLen - 3) + '...' : url
+          
+          const text = `${title} | ${truncatedUrl} | ${timestamp}`
+          ctx.fillText(text, padding, height - chyronHeight / 2)
+        }
+
+        // Helper to convert/scale data URL via canvas, optionally adding chyron
         const convertFormat = async (
           dataUrl: string,
         ): Promise<{ image: string; width: number; height: number }> => {
@@ -6279,12 +6381,10 @@ export class DevChannel extends HTMLElement {
               targetWidth = Math.round(targetWidth)
               targetHeight = Math.round(targetHeight)
 
-              // Skip canvas if no transformation needed
-              if (
-                format === 'png' &&
-                targetWidth === img.width &&
-                targetHeight === img.height
-              ) {
+              // Always use canvas if chyron is enabled
+              const needsCanvas = chyron || format !== 'png' || targetWidth !== img.width || targetHeight !== img.height
+
+              if (!needsCanvas) {
                 resolve({
                   image: dataUrl,
                   width: img.width,
@@ -6298,6 +6398,12 @@ export class DevChannel extends HTMLElement {
               canvas.height = targetHeight
               const ctx = canvas.getContext('2d')!
               ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
+              
+              // Add chyron if enabled
+              if (chyron) {
+                drawChyron(ctx, targetWidth, targetHeight)
+              }
+              
               resolve({
                 image: canvas.toDataURL(mimeType, quality),
                 width: targetWidth,
@@ -6416,6 +6522,70 @@ export class DevChannel extends HTMLElement {
       this.respond(msg.id, true, result)
     } catch (err: any) {
       this.respond(msg.id, false, null, err.message)
+    }
+  }
+
+  private async handleFetchMessage(msg: DevMessage) {
+    const { url } = msg.payload
+
+    if (!url) {
+      this.respond(msg.id, false, null, 'url is required')
+      return
+    }
+
+    try {
+      // Handle data: URLs - just parse and return
+      if (url.startsWith('data:')) {
+        const match = url.match(/^data:([^;,]+)?(?:;base64)?,(.*)$/)
+        if (!match) {
+          this.respond(msg.id, false, null, 'Invalid data URL format')
+          return
+        }
+        const mimeType = match[1] || 'text/plain'
+        const isBase64 = url.includes(';base64,')
+        const data = match[2]
+        
+        // If already base64, return as-is; otherwise encode
+        const base64 = isBase64 ? data : btoa(decodeURIComponent(data))
+        const size = isBase64 ? Math.ceil(data.length * 0.75) : data.length
+        
+        this.respond(msg.id, true, { mimeType, base64, size, url })
+        return
+      }
+
+      // Fetch the URL from the tab's context
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        this.respond(msg.id, false, null, `Fetch failed: ${response.status} ${response.statusText}`)
+        return
+      }
+
+      // Get the content as blob
+      const blob = await response.blob()
+      const mimeType = blob.type || response.headers.get('content-type') || 'application/octet-stream'
+      
+      // Convert to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string
+          // Extract base64 part from data URL
+          const base64Part = dataUrl.split(',')[1] || ''
+          resolve(base64Part)
+        }
+        reader.onerror = () => reject(new Error('Failed to read blob'))
+        reader.readAsDataURL(blob)
+      })
+
+      this.respond(msg.id, true, {
+        mimeType,
+        base64,
+        size: blob.size,
+        url,
+      })
+    } catch (err: any) {
+      this.respond(msg.id, false, null, err.message || 'Fetch failed')
     }
   }
 
@@ -7623,7 +7793,10 @@ export class DevChannel extends HTMLElement {
       })
     } else if (action === 'result') {
       if (this.selectionResult) {
-        this.respond(msg.id, true, this.selectionResult)
+        const result = this.selectionResult
+        // Clear selection after agent retrieves it (they got what they needed)
+        this.clearSelection()
+        this.respond(msg.id, true, result)
       } else {
         this.respond(msg.id, false, null, 'No selection available')
       }
@@ -8474,8 +8647,29 @@ if (typeof window !== 'undefined') {
   }
 
   // Expose haltija utilities on window for console access
-  ;(window as any).haltija = (window as any).haltija || {}
-  Object.assign((window as any).haltija, {
+  // IMPORTANT: Preserve any existing properties (e.g., Electron's capturePage/captureElement)
+  // contextBridge.exposeInMainWorld creates a frozen object, so we need to copy its properties
+  const existingHaltija = (window as any).haltija || {}
+  const preservedProps: Record<string, any> = {}
+  
+  // Copy existing properties (especially Electron's capture functions)
+  for (const key of Object.keys(existingHaltija)) {
+    try {
+      preservedProps[key] = existingHaltija[key]
+    } catch (e) {
+      // contextBridge objects may have non-enumerable or getter-only props
+    }
+  }
+  // Also try known Electron props that might not enumerate
+  if (typeof existingHaltija.capturePage === 'function') {
+    preservedProps.capturePage = existingHaltija.capturePage
+  }
+  if (typeof existingHaltija.captureElement === 'function') {
+    preservedProps.captureElement = existingHaltija.captureElement
+  }
+  
+  ;(window as any).haltija = {
+    ...preservedProps,
     /** Get current stats */
     stats: () => getFormattedStats(),
 
@@ -8509,5 +8703,5 @@ if (typeof window !== 'undefined') {
 
     /** Version info */
     version: VERSION,
-  })
+  }
 }

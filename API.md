@@ -1471,6 +1471,42 @@ Return values are JSON-serialized. Promises are awaited.
 
 ---
 
+### `POST /fetch`
+
+**Fetch a URL from within the tab context**
+
+Fetch a URL from within the browser tab's context. Essential for accessing blob: URLs
+which are only valid in the tab that created them.
+
+Returns the content as base64 with MIME type. Works with:
+- blob: URLs (e.g., blob:https://example.com/abc-123)
+- data: URLs (returned as-is)
+- Regular http/https URLs (fetched from tab's origin)
+
+Response: { success: true, data: { mimeType, base64, size, url } }
+
+Use this when you see a blob URL in the DOM and need to access its content.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `url` | string | The URL to fetch (blob:, data:, http:, https:) *(required)* |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **fetch-blob**: Fetch a blob URL created by the page
+  ```json
+  {"url":"blob:https://example.com/abc-123-def"}
+  ```
+- **fetch-image**: Fetch an image from the page origin
+  ```json
+  {"url":"https://example.com/image.png"}
+  ```
+
+---
+
 ### `POST /screenshot`
 
 **Capture a screenshot**
@@ -1489,10 +1525,12 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 | `scale` | number,null | Scale factor (default 1) |
 | `maxWidth` | number,null | Max width in pixels |
 | `maxHeight` | number,null | Max height in pixels |
+| `window` | string,null | Target window ID |
+| `chyron` | boolean,null | Burn page title, URL, timestamp into image (default true, set false for clean screenshot) |
 
 **Examples:**
 
-- **full-page**: Capture entire page
+- **full-page**: Capture entire page with chyron showing URL/title
   ```json
   {}
   ```
@@ -1503,6 +1541,10 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 - **thumbnail**: Small thumbnail
   ```json
   {"scale":0.5,"maxWidth":400}
+  ```
+- **clean**: Clean screenshot without burned-in metadata
+  ```json
+  {"chyron":false}
   ```
 
 ---

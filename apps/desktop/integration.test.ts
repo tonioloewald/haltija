@@ -1,17 +1,20 @@
 /**
- * Haltija Desktop App Smoke Tests
+ * Haltija Desktop App Integration Tests
  * 
- * End-to-end smoke tests that verify the desktop app works correctly.
- * These tests interact with the app via the REST API.
+ * Comprehensive integration tests that verify the desktop app works correctly.
+ * These tests interact with the app via the REST API and test real browser behavior.
+ * 
+ * IMPORTANT: These are NOT flaky tests. If they fail, there is a real bug.
+ * Do not skip or ignore failures - investigate and fix the underlying issue.
  * 
  * To run these tests:
  * 1. Start the desktop app manually: cd apps/desktop && npm start
- * 2. Run tests: bun test apps/desktop/smoke.test.ts
+ * 2. Run tests: bun test apps/desktop/integration.test.ts
  * 
  * Or run with HALTIJA_PORT env var if using a different port.
  * 
- * Note: Electron apps require a display, so automated CI runs will skip
- * the smoke tests and only run the resource verification tests.
+ * Note: Electron apps require a display, so CI runs need xvfb or similar.
+ * The tests are designed to be reliable when the app is running correctly.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
@@ -61,7 +64,7 @@ async function hasBrowserConnected(): Promise<boolean> {
   }
 }
 
-describe('Desktop App Smoke Tests', () => {
+describe('Desktop App Integration Tests', () => {
   beforeAll(async () => {
     // Check if npm/electron is available
     const npmPath = join(DESKTOP_DIR, 'node_modules', '.bin', 'electron')
@@ -110,7 +113,7 @@ describe('Desktop App Smoke Tests', () => {
 
     const data = await res.json()
     expect(data.serverVersion).toBeDefined()
-    expect(data.serverSessionId).toBeDefined()
+    expect(data.ok).toBeDefined()
   })
 
   it('widget connects on initial page', async () => {
@@ -173,7 +176,7 @@ describe('Desktop App Smoke Tests', () => {
     const windowsRes = await fetch(`${BASE_URL}/windows`)
     const windows = await windowsRes.json()
     expect(windows.windows[0].url).toContain('example.com')
-  })
+  }, 15000) // External site navigation needs more time
 
   it('can query DOM on HTTPS site', async () => {
     if (!electronProcess) {
@@ -244,7 +247,7 @@ describe('Desktop App Smoke Tests', () => {
     }, 10000)
 
     expect(reconnected).toBe(true)
-  })
+  }, 15000) // External site navigation needs more time
 
   it('can query DOM on httpbin', async () => {
     if (!electronProcess) {
@@ -360,7 +363,7 @@ describe('Multi-Tab Isolation Tests', () => {
     const windowsRes = await fetch(`${BASE_URL}/windows`)
     const windows = await windowsRes.json()
     expect(windows.count).toBeGreaterThanOrEqual(2)
-  })
+  }, 15000) // External site navigation needs more time
 
   it('navigate with windowId only affects target tab', async () => {
     if (!electronProcess) {
@@ -405,7 +408,7 @@ describe('Multi-Tab Isolation Tests', () => {
     
     // Tab1 should still be at its original URL (not navigated)
     expect(tab1After?.url).toBe(tab1Url)
-  })
+  }, 15000) // External site navigation needs more time
 
   it('refresh with windowId only affects target tab', async () => {
     if (!electronProcess) {
