@@ -7,209 +7,125 @@ Copy this prompt to give an AI agent browser control via Haltija.
 ## The Prompt
 
 ```
-# Haltija - Browser Understanding
+# Haltija - Browser Control
 
 ## What is this?
-You can see this page as a semantic structure - what's clickable, what's hidden and why, what inputs exist. Not screenshots, not HTML dumps. The page as an agent should see it.
+You have browser control via the `hj` command.
+It returns semantic structure — what's clickable, what's hidden and why, what inputs exist.
+Not screenshots, not HTML dumps. The page as an agent should see it.
 
-A server at http://localhost:8700 connects you to browser tabs.
+The server auto-starts if needed. All commands: `hj <verb> [target] [args]`
 
-## What you can see
-- **Semantic tree**: elements with flags like `interactive`, `hidden`, `hiddenReason`
-- **Ref IDs**: every element gets a stable ref (e.g. `@3`, `@42`) — use `{"ref":"@3"}` instead of selectors when possible. Refs survive DOM updates within the same page.
-- **Why things are hidden**: "display:none" vs "off-screen" vs "zero-size"
-- **Form state**: current input values, which fields are required/disabled
-- **What's actionable**: buttons, links, inputs - not noise
+## Key Concepts
 
-## What you can do
-- Click buttons, fill forms, navigate
-- Watch for changes (console errors, DOM mutations)
-- Take screenshots (webp, scaled down for efficiency)
-- Highlight elements to show the user what you mean
+- **Tree** (`hj tree`): Your eyes. A text list of elements with IDs and flags.
+- **Refs**: Every element has a numeric ID (e.g. 5, 42). Use these to target elements.
+  Refs are stable — they survive re-renders. Always prefer refs over CSS selectors.
+- **Flags**: Check these before acting:
+  [interactive] — clickable/typeable
+  [hidden:display] — invisible, don't interact
+  [disabled] — form field is disabled
+  [required] — must be filled
+- **Quoting**: Only needed for spaces: `hj type 5 "hello world"`. Simple args need no quotes.
+
+## Sample Output (`hj tree`)
+
+```
+1: body
+  2: h1 "Sign Up"
+  3: div.form-row
+    4: label "Email:"
+    5: input#email-input type=email placeholder="you@example.com" [interactive]
+  6: div.form-row
+    7: label "Password:"
+    8: input type=password [interactive]
+  9: button#btn-submit "Create Account" [interactive]
+  10: p
+    11: a href="/login" [interactive] "Already have an account?"
+  12: div [hidden:display] "Error: invalid email"
+```
+
+Reading this:
+- Refs are the numbers before `:` (e.g. 5, 9, 11)
+- `[interactive]` means you can click/type it
+- `[hidden:display]` means it exists but is invisible
+- Attributes (type, placeholder, href) shown inline
+- Text content in quotes
+
+To fill this form:
+- Type email: `hj type 5 "user@example.com"`
+- Type password: `hj type 8 s3cret`
+- Submit: `hj click 9`
+- Check if error appeared: `hj tree` (see if ref 12 lost [hidden])
 
 ## Workflow
 
-1. **Inspect**: GET /tree to see what's on the page
-2. **Plan**: find the target element's `ref` or selector, check flags.interactive is true
-3. **Act**: click/type/navigate
-4. **Verify**: GET /tree or /events or /console to confirm the result
+1. **Inspect**: `hj tree` to see what's on the page
+2. **Plan**: Find the target ref. Confirm it shows [interactive].
+3. **Act**: `hj click`/`hj type`/`hj navigate`
+4. **Verify**: `hj tree` or `hj console` to confirm the result
 
-## Quick start
+## Commands
 
-1. Check server: curl http://localhost:8700/status
-2. See the page: curl http://localhost:8700/tree
-3. Check for errors: curl http://localhost:8700/console
-4. Take screenshot: curl http://localhost:8700/screenshot
+### See the page
+  hj tree                Semantic page structure with refs and flags
+  hj tree --visible      Only visible elements
+  hj tree -d 5           Deeper tree
+  hj tree form           Subtree rooted at selector
+  hj console             Recent console logs/errors
+  hj screenshot          Capture page as image
+  hj location            Current URL and title
+  hj events              Recent semantic events
 
-## Endpoints
+### Inspect
+  hj inspect 3           Deep details on one element
+  hj query input         Quick element lookup
+  hj call 5 value        Get element property
+  hj eval document.title Run arbitrary JavaScript
 
-All endpoints work with GET (sensible defaults). Use POST to pass options.
+### Interact
+  hj click 9             Click by ref (preferred)
+  hj click "Submit"      Click by text content
+  hj click "#btn"        Click by selector (fragile)
+  hj type 5 hello        Type into element
+  hj key Enter           Press key
+  hj key s --ctrl        Keyboard shortcut
+  hj scroll 20           Scroll element into view
+  hj navigate https://...  Go to URL
 
-### See the page (all GET)
-/status              Is it working? How many tabs?
-/tree                **Semantic page structure** - flags: interactive, hidden, hiddenReason
-/console             **Recent console logs/errors** - check when things break
-/screenshot          **Capture page** - add ?scale=0.5 for smaller images
-/location            Current URL and title
-/windows             Connected browser tabs
-/events              Recent semantic events (clicks, typing, errors)
+### Show the user
+  hj highlight 5 "Here"  Draw a labeled box on their screen
+  hj unhighlight          Remove highlight
 
-### Inspect deeper (POST with selector)
-/inspect             Deep inspection of one element: POST {"selector":"#btn"}
-/query               Quick element lookup: POST {"selector":"input"}
+### Wait
+  hj wait .modal          Wait for element to appear
+  hj wait .loading 10000  Wait up to 10s
 
-### Do things (GET or POST)
-/click               Click element: POST {"ref":"@3"} or {"selector":"#btn"} or {"text":"Submit"}
-/type                Type text: POST {"ref":"@10", "text":"hello"} or /type?selector=input&text=hello
-/key                 Keyboard input: /key?key=Escape or /key?key=s&ctrlKey=true
-/scroll              Scroll to element: POST {"selector":"#section"}
-/highlight           **Show user what you mean**: POST {"selector":"#btn", "label":"Click here"}
-/navigate            Go to URL: POST {"url":"https://..."}
+### Multiple tabs
+  hj windows              List connected tabs
+  hj click 5 --window abc  Target specific tab
 
-### Escape hatches (POST)
-/eval                Run JavaScript: POST {"code":"document.title"}
-/call                Call method on element: POST {"selector":"#el", "method":"focus", "args":[]}
+## Tips
 
-## Understanding the page
-
-### Quick overview (just GET)
-```bash
-curl http://localhost:8700/tree
-```
-
-### With options (POST)
-```bash
-# Only visible elements, deeper tree
-curl -X POST http://localhost:8700/tree -d '{"visibleOnly":true, "depth":5}'
-
-# Specific section
-curl -X POST http://localhost:8700/tree -d '{"selector":"form", "depth":-1}'
-```
-
-### Get element property/call method
-```bash
-# Get input value
-curl -X POST http://localhost:8700/call -d '{"selector":"#email", "method":"value"}'
-
-# Call a method
-curl -X POST http://localhost:8700/call -d '{"selector":"dialog", "method":"showModal", "args":[]}'
-```
-
-### Custom JavaScript
-```bash
-curl -X POST http://localhost:8700/eval -d '{"code":"document.querySelectorAll(\"button\").length"}'
-```
-
-## Taking action
-
-### Click
-```bash
-# By ref (preferred - stable, from /tree output)
-curl -X POST http://localhost:8700/click -d '{"ref":"@42"}'
-
-# By text (good for generic buttons)
-curl -X POST http://localhost:8700/click -d '{"text":"Submit", "tag":"button"}'
-
-# By selector (fallback - brittle if DOM changes)
-curl -X POST http://localhost:8700/click -d '{"selector":"#submit-btn"}'
-```
-
-### Type
-```bash
-# By ref (preferred)
-curl -X POST http://localhost:8700/type -d '{"ref":"@10", "text":"user@example.com"}'
-
-# By selector
-curl -X POST http://localhost:8700/type -d '{"selector":"input[name=email]", "text":"user@example.com"}'
-```
-
-### Keyboard shortcuts
-```bash
-curl "http://localhost:8700/key?key=Escape"              # Close modal
-curl "http://localhost:8700/key?key=Enter"               # Submit form
-curl "http://localhost:8700/key?key=s&ctrlKey=true"      # Ctrl+S save
-curl "http://localhost:8700/key?key=Tab"                 # Tab to next field
-curl "http://localhost:8700/key?key=ArrowDown&repeat=3"  # Navigate list
-```
-
-### Navigate
-```bash
-curl -X POST http://localhost:8700/navigate -d '{"url":"https://example.com"}'
-```
-
-### Screenshot (GET for full page, POST for options)
-```bash
-curl http://localhost:8700/screenshot                              # Full page
-curl http://localhost:8700/screenshot?scale=0.5                    # Half size
-curl -X POST http://localhost:8700/screenshot -d '{"selector":"#chart"}'  # Element only
-```
-
-## Showing things to the user
-
-**Important:** When you find something, SHOW the user by highlighting it in their browser!
-
-```bash
-# Highlight with label
-curl -X POST http://localhost:8700/highlight -d '{"selector":"#login-btn", "label":"Click here"}'
-
-# Remove highlight  
-curl http://localhost:8700/unhighlight
-```
-
-### Wait for async UI
-```bash
-curl -X POST http://localhost:8700/wait -d '{"forElement":".modal"}'           # Wait for element
-curl -X POST http://localhost:8700/wait -d '{"forElement":".loading", "hidden":true}'  # Wait for disappear
-```
-
-## Watching for changes
-
-```bash
-curl http://localhost:8700/events    # Recent user actions
-curl http://localhost:8700/console   # Console logs/errors
-```
-
-## User selection
-
-If the user selected something in the browser:
-```bash
-curl http://localhost:8700/select/result
-```
-
-## Multiple tabs
-
-If you're not sure which tab you're controlling:
-```bash
-curl http://localhost:8700/windows   # Shows all connected tabs with IDs, URLs, titles
-```
-
-Response includes which tab is focused and hints about targeting. To target a specific tab:
-```bash
-curl http://localhost:8700/tree?window=abc123   # Query params work on any endpoint
-curl -X POST http://localhost:8700/click -d '{"selector":"#btn", "window":"abc123"}'  # Or in body
-```
+- Start with `hj tree` — look for [interactive] to find actionable elements
+- Always prefer refs over selectors — refs survive DOM changes
+- After async actions: `hj wait .spinner` then `hj tree`
+- Show the user what you found: `hj highlight 5 "This button"`
+- If a click fails: `hj console` for JS errors
+- Hidden elements can't be clicked — check [hidden] flag first
+- Some apps use clickable divs: try `hj eval "document.querySelector('#el').click()"` as fallback
+- Forms need proper events: use `hj type` (not eval) to fire input events correctly
 
 ## More info
 
-GET /api for full reference, GET /docs/list for documentation.
+`hj api` for full reference, `hj docs` for quick start.
 ```
 
 ---
 
-## Tips
+## Notes
 
-- GET /tree, /console, /screenshot work without parameters - start there
-- /tree shows flags like `interactive`, `hidden`, `hiddenReason` - look for these
-- /console shows errors - check it when things don't work
-- Use `ref` from the tree (e.g. `{"ref":"@3"}`) instead of CSS selectors when possible
-- Use /click with `text` instead of selectors for dynamic UIs
-- Use /wait after clicks that trigger async updates (modals, loaders)
-- click, type, key, scroll all support GET with query params for simple cases
-
-## Troubleshooting
-
-- **Clicked but nothing happened?** Check /console for JS errors. You may have clicked a wrapper `<div>` — try the child `<button>` or parent `<a>` instead.
-- **Can't find the element?** It might be hidden (check `flags.hidden`), off-screen (needs scroll), or inside a modal/dialog that hasn't opened yet.
-- **Element not interactive?** Some apps use clickable `<div>` instead of `<button>`. Try /eval as a fallback: `{"code":"document.querySelector('#el').click()"}`
-- **Form not submitting?** React/Vue apps often need the input event, not just setting value. Use /type which fires proper events.
-- **Layout looks wrong?** Use /screenshot for visual confirmation.
+- The sample output block is the most important part — agents learn the format by example.
+- Refs are bare numbers. The command verb determines how arguments are parsed,
+  so there's no ambiguity between `hj click 5` (ref) and `hj scroll 300` (pixels).
+- Only quote arguments that contain spaces.

@@ -299,7 +299,7 @@ export const click = endpoint({
   description: `Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
 Three ways to target elements:
-- ref: Ref ID from /tree output (e.g., @1, @42) - fastest, survives DOM changes
+- ref: Ref ID from /tree output (e.g., 1, 42) - fastest, survives DOM changes
 - selector: CSS selector (traditional)
 - text + tag: Find by text content (more reliable for dynamic UIs)
 
@@ -310,7 +310,7 @@ Options:
 Automatically fails if element is not found or is disabled. Check response.success to verify.`,
   category: 'interaction',
   input: s.object({
-    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
     selector: s.string.describe('CSS selector of element to click').optional,
     text: s.string.describe('Text content to find (alternative to selector)')
       .optional,
@@ -413,7 +413,7 @@ Options:
 - clear: Clear existing content before typing (default false)`,
   category: 'interaction',
   input: s.object({
-    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
     selector: s.string.describe(
       'CSS selector of input/textarea/contenteditable',
     ).optional,
@@ -513,7 +513,7 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
     key: s.string.describe(
       'Key to press (e.g., "Enter", "Escape", "a", "ArrowDown")',
     ),
-    ref: s.string.describe('Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency').optional,
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
     selector: s.string.describe(
       'Element to focus first (default: activeElement)',
     ).optional,
@@ -1315,6 +1315,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
     maxHeight: s.number.describe('Max height in pixels').optional,
     window: s.string.describe('Target window ID').optional,
     chyron: s.boolean.describe('Burn page title, URL, timestamp into image (default true, set false for clean screenshot)').optional,
+    delay: s.number.describe('Wait ms before capturing (e.g. 1000 to let page settle after navigation)').optional,
   }),
   examples: [
     { name: 'full-page', input: {}, description: 'Capture entire page with chyron showing URL/title' },

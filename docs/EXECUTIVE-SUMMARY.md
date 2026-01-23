@@ -150,15 +150,15 @@ A 10,000-node DOM might reduce to 200 relevant nodes for a form-filling task.
 
 ### Ref IDs: Efficient Re-targeting
 
-Every element in `/tree` output includes a ref ID (e.g., `@1`, `@42`). Agents can use these refs instead of CSS selectors for subsequent commands:
+Every element in `/tree` output includes a ref ID (e.g., `1`, `42`). Agents can use these refs instead of CSS selectors for subsequent commands:
 
 ```bash
 # First, get the tree
-curl localhost:8700/tree
-# Response includes: { "tag": "button", "ref": "@42", "text": "Submit" }
+hj tree
+# Response includes: 42: button "Submit" [interactive]
 
 # Later, click by ref - no selector matching needed
-curl -X POST localhost:8700/click -d '{"ref": "@42"}'
+hj click 42
 ```
 
 Refs survive DOM changes better than selectors (which break when classes change) and are faster to resolve (direct lookup vs. CSS matching).

@@ -669,7 +669,8 @@ registerHandler(api.screenshot, async (body, ctx) => {
     scale: body.scale,
     maxWidth: body.maxWidth,
     maxHeight: body.maxHeight,
-  }, 15000, windowId) // 15s timeout for screenshots (default is 5s)
+    delay: body.delay,
+  }, 15000 + (body.delay || 0), windowId) // 15s timeout + any delay
   
   // Add window context to response so agent knows what they captured
   const windowInfo = ctx.getWindowInfo(windowId)

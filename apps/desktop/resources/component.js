@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "0.2.3";
+  var VERSION = "1.0.0";
 
   // src/component.ts
   var VERSION2 = VERSION;
@@ -58,7 +58,7 @@
           return existing;
         }
       }
-      const ref = `@${++this.counter}`;
+      const ref = String(++this.counter);
       this.refs.set(ref, new WeakRef(el));
       this.elementToRef.set(el, ref);
       return ref;
@@ -4605,6 +4605,10 @@
         }
       } else if (action2 === "screenshot") {
         try {
+          const delay = payload2?.delay ?? 0;
+          if (delay > 0) {
+            await this.sleep(delay);
+          }
           const viewport = {
             width: window.innerWidth,
             height: window.innerHeight,
@@ -4684,24 +4688,25 @@
           };
           const haltija = window.haltija;
           if (haltija?.capturePage) {
-            let result2;
-            if (payload2?.selector) {
-              result2 = await haltija.captureElement(payload2.selector);
-            } else {
-              result2 = await haltija.capturePage();
-            }
-            if (result2?.success && result2.data) {
-              const converted = await convertFormat(result2.data);
-              this.respond(msg2.id, true, {
-                image: converted.image,
-                viewport,
-                format,
-                width: converted.width,
-                height: converted.height,
-                source: "electron"
-              });
-              return;
-            }
+            try {
+              const capturePromise = payload2?.selector ? haltija.captureElement(payload2.selector) : haltija.capturePage();
+              const result2 = await Promise.race([
+                capturePromise,
+                new Promise((resolve) => setTimeout(() => resolve(null), 1e4))
+              ]);
+              if (result2?.success && result2.data) {
+                const converted = await convertFormat(result2.data);
+                this.respond(msg2.id, true, {
+                  image: converted.image,
+                  viewport,
+                  format,
+                  width: converted.width,
+                  height: converted.height,
+                  source: "electron"
+                });
+                return;
+              }
+            } catch {}
           }
           const html2canvas = window.html2canvas;
           if (html2canvas) {
@@ -4868,7 +4873,7 @@
       }
       try {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
-        await this.sleep(100);
+        await this.sleep(300);
         const tagName = el.tagName.toLowerCase();
         const isInput = tagName === "input";
         const isTextarea = tagName === "textarea";
@@ -4879,9 +4884,9 @@
         const centerY = rect.top + rect.height / 2;
         const elementLabel = this.getElementLabel(el);
         const displayText = text.length > 20 ? text.slice(0, 20) + "..." : text;
-        this.showCursor(centerX, centerY, "⌨️");
-        this.showSubtitle(`Typing "${displayText}" in ${elementLabel}`, 3000);
-        await this.sleep(100);
+        this.showCursor(centerX, rect.bottom, "⌨️");
+        this.showSubtitle(`Typing "${displayText}" in ${elementLabel}`, 4000);
+        await this.sleep(200);
         await this.focusElement(el, focusMode, centerX, centerY);
         if (clear) {
           await this.clearElement(el, isNativeInput, isContentEditable);
@@ -4906,6 +4911,7 @@
           }
           this.pulseCursor();
           await this.typeCharacter(el, char, isNativeInput, isContentEditable);
+          this.updateCursorToCaretPosition(el, isNativeInput, isContentEditable);
           if (humanlike && delay > 0) {
             await this.sleep(delay);
             if (Math.random() < 0.05) {
@@ -4921,7 +4927,7 @@
           el.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
           el.blur();
         }
-        this.hideCursorAfter(2000);
+        this.hideCursorAfter(4000);
         this.respond(responseId, true, {
           typed: text,
           typos: typoCount,
@@ -5237,7 +5243,7 @@
         };
         const elementLabel = this.getElementLabel(el);
         this.showCursor(x, y, "\uD83D\uDC46");
-        this.showSubtitle(`Clicking ${elementLabel}`);
+        this.showSubtitle(`Clicking ${elementLabel}`, 4000);
         await this.sleep(100);
         el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
         el.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
@@ -5253,7 +5259,7 @@
         await this.sleep(10);
         el.dispatchEvent(new MouseEvent("mouseup", mouseOpts));
         el.dispatchEvent(new MouseEvent("click", mouseOpts));
-        this.hideCursorAfter(2000);
+        this.hideCursorAfter(4000);
         this.respond(responseId, true, { clicked: payload2.selector });
       } catch (err) {
         this.respond(responseId, false, null, err.message);
@@ -5325,7 +5331,11 @@
           metaKey && "Cmd"
         ].filter(Boolean).join("+");
         const keyLabel = modStr ? `${modStr}+${key}` : key;
-        this.showSubtitle(`Pressing ${keyLabel}${repeat > 1 ? ` ×${repeat}` : ""}`, 2000);
+        const targetRect = target.getBoundingClientRect();
+        const targetCenterX = targetRect.left + targetRect.width / 2;
+        const targetCenterY = targetRect.top + targetRect.height / 2;
+        this.showCursor(targetCenterX, targetCenterY, "⌨️");
+        this.showSubtitle(`Pressing ${keyLabel}${repeat > 1 ? ` ×${repeat}` : ""}`, 4000);
         for (const mod of modifiers) {
           target.dispatchEvent(new KeyboardEvent("keydown", {
             ...eventOpts,
@@ -5368,6 +5378,7 @@
             code: mod.code
           }));
         }
+        this.hideCursorAfter(4000);
         this.respond(responseId, true, {
           key,
           modifiers: { ctrlKey, shiftKey, altKey, metaKey },
@@ -5437,12 +5448,12 @@
         this.cursorOverlay.id = "haltija-cursor";
         this.cursorOverlay.dataset.haltija = "overlay";
         this.cursorOverlay.style.cssText = `
-        position: fixed;
+        position: absolute;
         z-index: 1073741824;
         pointer-events: none;
         font-size: 64px;
         line-height: 1;
-        transform: translate(-20%, -20%);
+        transform: translate(-50%, -10%);
         transition: left 0.3s ease-out, top 0.3s ease-out, opacity 0.5s ease-out, filter 0.15s ease-out;
         opacity: 0;
         filter: drop-shadow(0 0 0px transparent);
@@ -5486,8 +5497,9 @@
     showCursor(x, y, emoji = "\uD83D\uDC46", glow = false) {
       const cursor = this.ensureCursorOverlay();
       cursor.textContent = emoji;
-      cursor.style.left = `${x}px`;
-      cursor.style.top = `${y}px`;
+      cursor.style.left = `${x + window.scrollX}px`;
+      cursor.style.top = `${y + window.scrollY}px`;
+      cursor.style.transform = emoji === "⌨️" ? "translate(-50%, 0%)" : "translate(-50%, -10%)";
       cursor.style.opacity = "1";
       if (glow) {
         cursor.style.filter = emoji === "⌨️" ? "drop-shadow(0 0 12px rgba(99, 102, 241, 0.9))" : "drop-shadow(0 0 12px rgba(239, 68, 68, 0.9))";
@@ -5498,6 +5510,49 @@
         clearTimeout(this.cursorHideTimeout);
         this.cursorHideTimeout = null;
       }
+    }
+    updateCursorToCaretPosition(el, isNativeInput, isContentEditable) {
+      try {
+        let x, y;
+        if (isContentEditable) {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            const caretRect = range.getBoundingClientRect();
+            if (caretRect.width === 0 && caretRect.height > 0) {
+              x = caretRect.left;
+              y = caretRect.bottom;
+            } else {
+              const elRect = el.getBoundingClientRect();
+              x = elRect.left + elRect.width / 2;
+              y = elRect.bottom;
+            }
+          } else {
+            return;
+          }
+        } else {
+          const input = el;
+          const caretPos = input.selectionStart ?? 0;
+          const textBeforeCaret = input.value.substring(0, caretPos);
+          const mirror = document.createElement("span");
+          mirror.style.cssText = `
+          position: absolute;
+          visibility: hidden;
+          white-space: pre;
+          font: ${getComputedStyle(el).font};
+          letter-spacing: ${getComputedStyle(el).letterSpacing};
+        `;
+          mirror.textContent = textBeforeCaret || "​";
+          document.body.appendChild(mirror);
+          const elRect = el.getBoundingClientRect();
+          const mirrorWidth = mirror.getBoundingClientRect().width;
+          document.body.removeChild(mirror);
+          const paddingLeft = parseFloat(getComputedStyle(el).paddingLeft) || 0;
+          x = Math.min(elRect.left + paddingLeft + mirrorWidth, elRect.right - 4);
+          y = elRect.bottom;
+        }
+        this.showCursor(x, y, "⌨️");
+      } catch {}
     }
     pulseCursor() {
       const cursor = this.cursorOverlay;

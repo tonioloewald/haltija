@@ -1,6 +1,6 @@
 {
-  "name": "tosijs-dev",
-  "version": "0.2.3",
+  "name": "haltija",
+  "version": "1.0.0",
   "description": "Browser control for AI agents - query DOM, click, type, run JS, watch mutations",
   "type": "module",
   "main": "dist/index.js",
@@ -26,6 +26,7 @@
   "bin": {
     "tosijs-dev": "./bin/tosijs-dev.mjs",
     "haltija": "./bin/tosijs-dev.mjs",
+    "hj": "./bin/hj.mjs",
     "haltija-mcp-setup": "./bin/mcp-setup.mjs"
   },
   "files": [

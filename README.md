@@ -17,19 +17,19 @@ Unlike screenshot-based tools, Haltija works with the actual DOM. Unlike Playwri
 
 ## Quick Start
 
+### Desktop App (Recommended)
+
 ```bash
 bunx haltija
 ```
 
-Launches a lightweight Electron shell with the Haltija server embedded. Browse to any page — the widget auto-attaches and your agent can control it immediately. When you close the app, the widget detaches cleanly.
-
-For server-only mode (CI, remote, bookmarklet): `bunx haltija --server`
+Launches a dedicated browser with the Haltija server embedded. Browse to any page — the widget auto-attaches and your agent can control it immediately. No bookmarklets, no CSP issues.
 
 ### Tell your agent
 
 Paste this into your agent conversation:
 
-> Haltija is running at http://localhost:8700. Use `curl http://localhost:8700/tree` to see the page structure, `curl http://localhost:8700/click -d '{"selector":"#btn"}'` to interact, and `curl http://localhost:8700/docs` for full API reference.
+> I have the `hj` browser tool. Run `hj tree` to see the page, `hj click <id>` to interact, and `hj docs` for help.
 
 Or for Claude Code with MCP: `bunx haltija --setup-mcp`
 
@@ -39,23 +39,24 @@ Or for Claude Code with MCP: `bunx haltija --setup-mcp`
 
 ```bash
 # See the page
-curl localhost:8700/tree                    # Semantic DOM structure
-curl localhost:8700/screenshot              # Visual capture with metadata
-curl localhost:8700/console                 # Recent errors and logs
+hj tree                          # Semantic DOM structure with ref IDs
+hj screenshot                    # Visual capture with metadata
+hj console                       # Recent errors and logs
 
 # Interact
-curl localhost:8700/click?selector=%23btn   # Click (GET works for simple cases)
-curl -X POST localhost:8700/type -d '{"selector":"#email","text":"user@example.com"}'
-curl localhost:8700/key?key=Escape          # Keyboard input
+hj click 42                      # Click by ref (from tree output)
+hj type 10 user@example.com      # Type text
+hj key Escape                    # Keyboard input
+hj key s --ctrl                  # Keyboard shortcuts
 
 # Watch for changes
-curl localhost:8700/events                  # Aggregated semantic events
+hj events                        # Aggregated semantic events
 
 # Point things out (draws a visual box on the user's screen)
-curl -X POST localhost:8700/highlight -d '{"selector":".bug","label":"Problem here"}'
+hj highlight 5 "Problem here"
 ```
 
-Full API: `curl localhost:8700/docs`
+Full API: `hj docs` — or `hj api` for complete reference
 
 ---
 
@@ -93,12 +94,11 @@ The widget (auto-injected by the desktop app) connects to a local server via Web
 
 The `/tree` endpoint doesn't dump raw HTML. It produces a semantic structure with actionable flags:
 
-```json
-{ "tag": "button", "ref": "@3", "text": "Submit",
-  "flags": { "interactive": true, "disabled": true } }
+```
+3: button "Submit" [interactive] [disabled]
 ```
 
-Ref IDs (`@1`, `@42`) let agents target elements efficiently without CSS selectors. Refs are stable within a page session — they survive DOM updates and re-renders as long as the element stays in the document.
+Ref IDs (the numbers before `:`) let agents target elements efficiently without CSS selectors. Refs are stable within a page session — they survive DOM updates and re-renders as long as the element stays in the document.
 
 ### Noise-Reduced Events
 
@@ -124,7 +124,7 @@ Control multiple tabs. Session headers (`X-Haltija-Session`) give agents sticky 
 User drags to select UI elements. Selection persists visually until the agent retrieves it:
 
 ```bash
-curl localhost:8700/select/result   # Returns selectors, HTML, bounding boxes
+hj select-result                    # Returns selectors, HTML, bounding boxes
 ```
 
 ### Test Recording
@@ -143,35 +143,39 @@ Click record, use your app, get a JSON test:
 
 ---
 
-## Installation Options
+## Bring Your Own Browser (Advanced)
+
+Want to control your daily driver — Chrome, Edge, Firefox — with your existing sessions and cookies?
 
 ```bash
-# Desktop app (recommended - works on any site, no CSP issues)
-bunx haltija
-
-# Server only (for CI, bookmarklet, or remote usage)
 bunx haltija --server
-
-# With npx
-npx haltija
-
-# Install globally
-npm install -g haltija
-
-# CLI options
-haltija --https              # HTTPS mode
-haltija --port 3000          # Custom port
-haltija --headless           # For CI pipelines
-haltija --setup-mcp          # Configure Claude Desktop
 ```
 
-### Connecting without the desktop app
+Then inject the widget into any page:
 
 **Bookmarklet** — Visit `http://localhost:8700`, drag to toolbar, click on any page.
 
 **Dev snippet** — Auto-disabled in production:
 ```javascript
 /^localhost$|^127\./.test(location.hostname)&&import('http://localhost:8700/dev.js')
+```
+
+Your agent uses the same `hj` commands either way — it doesn't know or care which browser it's talking to.
+
+---
+
+## Installation
+
+```bash
+bunx haltija               # Desktop app (recommended)
+bunx haltija --server      # Server only (your browser, CI, remote)
+npm install -g haltija     # Install globally
+
+# Server options
+haltija --https            # HTTPS mode
+haltija --port 3000        # Custom port
+haltija --headless         # For CI pipelines
+haltija --setup-mcp        # Configure Claude Desktop
 ```
 
 ---
@@ -198,8 +202,9 @@ haltija --setup-mcp          # Configure Claude Desktop
 ## Documentation
 
 ```bash
-curl localhost:8700/docs      # Quick start (plain text, LLM-friendly)
-curl localhost:8700/api       # Full API reference (markdown)
+hj docs                       # Quick start (plain text, LLM-friendly)
+hj api                        # Full API reference (markdown)
+hj --help                     # CLI subcommand reference
 ```
 
 - [Full API Reference](./API.md) (auto-generated from schema)

@@ -894,6 +894,22 @@ async function startEmbeddedServer() {
 /**
  * Ensure Haltija server is available
  */
+async function killZombieServer() {
+  if (os.platform() === 'win32') return
+
+  try {
+    const { execSync } = require('child_process')
+    const pids = execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    if (pids) {
+      console.log(`[Haltija Desktop] Killing zombie process(es) on port ${HALTIJA_PORT}: ${pids.replace(/\n/g, ', ')}`)
+      execSync(`lsof -ti:${HALTIJA_PORT} | xargs kill 2>/dev/null`, { encoding: 'utf-8' })
+      await new Promise(r => setTimeout(r, 1000))
+    }
+  } catch {
+    // No processes found or kill failed — proceed
+  }
+}
+
 async function ensureServer() {
   const running = await checkServerRunning()
 
@@ -901,6 +917,9 @@ async function ensureServer() {
     console.log('[Haltija Desktop] Using existing server at', HALTIJA_SERVER)
     return true
   }
+
+  // Port might be held by a zombie — kill it before starting fresh
+  await killZombieServer()
 
   return await startEmbeddedServer()
 }

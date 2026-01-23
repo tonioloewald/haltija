@@ -287,7 +287,7 @@
     "path": "/click",
     "method": "POST",
     "summary": "Click an element",
-    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nThree ways to target elements:\n- ref: Ref ID from /tree output (e.g., @1, @42) - fastest, survives DOM changes\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nOptions:\n- autoWait: Wait for element to appear before clicking (default false). Eliminates need for separate /wait call.\n- diff: Return what changed after the click (added/removed elements, attribute changes)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
+    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nThree ways to target elements:\n- ref: Ref ID from /tree output (e.g., 1, 42) - fastest, survives DOM changes\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nOptions:\n- autoWait: Wait for element to appear before clicking (default false). Eliminates need for separate /wait call.\n- diff: Return what changed after the click (added/removed elements, attribute changes)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -296,7 +296,7 @@
             "string",
             "null"
           ],
-          "description": "Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency"
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
         },
         "selector": {
           "type": [
@@ -372,7 +372,7 @@
             "string",
             "null"
           ],
-          "description": "Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency"
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
         },
         "selector": {
           "type": [
@@ -498,7 +498,7 @@
             "string",
             "null"
           ],
-          "description": "Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency"
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
         },
         "selector": {
           "type": [
@@ -1146,6 +1146,13 @@
             "null"
           ],
           "description": "Burn page title, URL, timestamp into image (default true, set false for clean screenshot)"
+        },
+        "delay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing (e.g. 1000 to let page settle after navigation)"
         }
       },
       "required": [],

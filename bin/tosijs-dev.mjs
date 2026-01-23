@@ -64,6 +64,16 @@ Environment Variables:
   DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)
   DEV_CHANNEL_DOCS_DIR       Directory with custom docs (default: built-in only)
 
+Subcommands:
+  haltija <command> [args]         Run API commands directly (see hj --help)
+  haltija tree                     DOM tree with ref IDs
+  haltija click @42                Click element by ref
+  haltija type @10 Hello           Type text into element
+  haltija eval document.title      Run JS in browser
+  haltija status                   Server status
+
+  Use 'hj' as a short alias: hj tree, hj click @42, etc.
+
 Examples:
   haltija                          # Desktop app (or server fallback)
   haltija --app                    # Desktop app explicitly
@@ -258,6 +268,33 @@ function removeMcp() {
     console.log(red('Error:') + ` Failed to update config: ${err.message}`)
     process.exit(1)
   }
+}
+
+// ============================================
+// CLI Subcommand Detection
+// ============================================
+
+import { isSubcommand, runSubcommand } from './cli-subcommand.mjs'
+
+// Check if first positional arg is a subcommand (not a flag, not a port number)
+const firstNonFlag = args.find(a => !a.startsWith('-'))
+if (firstNonFlag && isSubcommand(firstNonFlag)) {
+  // Parse --port for subcommand mode
+  let subPort = process.env.DEV_CHANNEL_PORT || '8700'
+  const subPortIdx = args.indexOf('--port')
+  if (subPortIdx !== -1 && args[subPortIdx + 1]) {
+    subPort = args[subPortIdx + 1]
+  }
+  // Collect args after the subcommand, removing --port <n>
+  const subIdx = args.indexOf(firstNonFlag)
+  const rawSubArgs = args.slice(subIdx + 1)
+  const cleanSubArgs = []
+  for (let i = 0; i < rawSubArgs.length; i++) {
+    if (rawSubArgs[i] === '--port') { i++; continue }
+    cleanSubArgs.push(rawSubArgs[i])
+  }
+  await runSubcommand(firstNonFlag, cleanSubArgs, subPort)
+  process.exit(0)
 }
 
 // Handle MCP setup commands

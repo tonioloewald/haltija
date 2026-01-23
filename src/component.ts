@@ -68,7 +68,7 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 // ============================================
 // Ref ID System
 // ============================================
-// Assigns short tokens like @1, @2 to elements for efficient agent communication.
+// Assigns short tokens like 1, 2 to elements for efficient agent communication.
 // Uses WeakRef to allow garbage collection of detached elements.
 
 class RefRegistry {
@@ -89,7 +89,7 @@ class RefRegistry {
     }
 
     // Assign new ref
-    const ref = `@${++this.counter}`
+    const ref = String(++this.counter)
     this.refs.set(ref, new WeakRef(el))
     this.elementToRef.set(el, ref)
     return ref
@@ -6299,6 +6299,12 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'screenshot') {
       // Capture screenshot - try Electron native, then html2canvas, then viewport info only
       try {
+        // Optional delay before capturing (e.g. to let page settle after navigation)
+        const delay = payload?.delay ?? 0
+        if (delay > 0) {
+          await this.sleep(delay)
+        }
+
         const viewport = {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -6417,24 +6423,30 @@ export class DevChannel extends HTMLElement {
         // Try Electron native capture first (best quality, works on any page)
         const haltija = (window as any).haltija
         if (haltija?.capturePage) {
-          let result
-          if (payload?.selector) {
-            result = await haltija.captureElement(payload.selector)
-          } else {
-            result = await haltija.capturePage()
-          }
+          try {
+            // Wrap in timeout to prevent hanging if IPC fails
+            const capturePromise = payload?.selector
+              ? haltija.captureElement(payload.selector)
+              : haltija.capturePage()
+            const result = await Promise.race([
+              capturePromise,
+              new Promise<null>(resolve => setTimeout(() => resolve(null), 10000)),
+            ])
 
-          if (result?.success && result.data) {
-            const converted = await convertFormat(result.data)
-            this.respond(msg.id, true, {
-              image: converted.image,
-              viewport,
-              format,
-              width: converted.width,
-              height: converted.height,
-              source: 'electron',
-            })
-            return
+            if (result?.success && result.data) {
+              const converted = await convertFormat(result.data)
+              this.respond(msg.id, true, {
+                image: converted.image,
+                viewport,
+                format,
+                width: converted.width,
+                height: converted.height,
+                source: 'electron',
+              })
+              return
+            }
+          } catch {
+            // Fall through to other capture methods
           }
         }
 
@@ -6671,7 +6683,7 @@ export class DevChannel extends HTMLElement {
     try {
       // Scroll element into view
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      await this.sleep(100)
+      await this.sleep(300) // Wait for scroll to settle
 
       // Detect element type
       const tagName = el.tagName.toLowerCase()
@@ -6685,12 +6697,12 @@ export class DevChannel extends HTMLElement {
       const centerX = rect.left + rect.width / 2
       const centerY = rect.top + rect.height / 2
 
-      // Show visual cursor and subtitle
+      // Show keyboard cursor at the element initially
       const elementLabel = this.getElementLabel(el)
       const displayText = text.length > 20 ? text.slice(0, 20) + '...' : text
-      this.showCursor(centerX, centerY, '⌨️')
-      this.showSubtitle(`Typing "${displayText}" in ${elementLabel}`, 3000)
-      await this.sleep(100) // Let cursor animate into position
+      this.showCursor(centerX, rect.bottom, '⌨️')
+      this.showSubtitle(`Typing "${displayText}" in ${elementLabel}`, 4000)
+      await this.sleep(200) // Let cursor animate into position
 
       // Step 1: Focus the element
       await this.focusElement(el, focusMode, centerX, centerY)
@@ -6745,6 +6757,7 @@ export class DevChannel extends HTMLElement {
         // Type the correct character
         this.pulseCursor()
         await this.typeCharacter(el, char, isNativeInput, isContentEditable)
+        this.updateCursorToCaretPosition(el, isNativeInput, isContentEditable)
 
         if (humanlike && delay > 0) {
           await this.sleep(delay)
@@ -6767,7 +6780,7 @@ export class DevChannel extends HTMLElement {
       }
 
       // Keep cursor visible briefly, then fade
-      this.hideCursorAfter(2000)
+      this.hideCursorAfter(4000)
 
       this.respond(responseId, true, {
         typed: text,
@@ -7261,7 +7274,7 @@ export class DevChannel extends HTMLElement {
       // Show visual cursor moving to element
       const elementLabel = this.getElementLabel(el)
       this.showCursor(x, y, '👆')
-      this.showSubtitle(`Clicking ${elementLabel}`)
+      this.showSubtitle(`Clicking ${elementLabel}`, 4000)
       await this.sleep(100) // Let cursor animate into position
 
       // Full mouse lifecycle
@@ -7291,7 +7304,7 @@ export class DevChannel extends HTMLElement {
       el.dispatchEvent(new MouseEvent('click', mouseOpts))
 
       // Keep cursor visible briefly, then fade
-      this.hideCursorAfter(2000)
+      this.hideCursorAfter(4000)
 
       this.respond(responseId, true, { clicked: payload.selector })
     } catch (err: any) {
@@ -7402,9 +7415,15 @@ export class DevChannel extends HTMLElement {
         .filter(Boolean)
         .join('+')
       const keyLabel = modStr ? `${modStr}+${key}` : key
+
+      // Show cursor on the target element
+      const targetRect = target.getBoundingClientRect()
+      const targetCenterX = targetRect.left + targetRect.width / 2
+      const targetCenterY = targetRect.top + targetRect.height / 2
+      this.showCursor(targetCenterX, targetCenterY, '⌨️')
       this.showSubtitle(
         `Pressing ${keyLabel}${repeat > 1 ? ` ×${repeat}` : ''}`,
-        2000,
+        4000,
       )
 
       // Press modifier keys down (in random order)
@@ -7472,6 +7491,9 @@ export class DevChannel extends HTMLElement {
           }),
         )
       }
+
+      // Keep cursor visible then fade
+      this.hideCursorAfter(4000)
 
       this.respond(responseId, true, {
         key,
@@ -7566,12 +7588,12 @@ export class DevChannel extends HTMLElement {
       this.cursorOverlay.id = 'haltija-cursor'
       this.cursorOverlay.dataset.haltija = 'overlay' // Mark for z-index scanners to skip
       this.cursorOverlay.style.cssText = `
-        position: fixed;
+        position: absolute;
         z-index: 1073741824;
         pointer-events: none;
         font-size: 64px;
         line-height: 1;
-        transform: translate(-20%, -20%);
+        transform: translate(-50%, -10%);
         transition: left 0.3s ease-out, top 0.3s ease-out, opacity 0.5s ease-out, filter 0.15s ease-out;
         opacity: 0;
         filter: drop-shadow(0 0 0px transparent);
@@ -7630,8 +7652,12 @@ export class DevChannel extends HTMLElement {
   ) {
     const cursor = this.ensureCursorOverlay()
     cursor.textContent = emoji
-    cursor.style.left = `${x}px`
-    cursor.style.top = `${y}px`
+    // Convert viewport coords to document coords for position: absolute
+    cursor.style.left = `${x + window.scrollX}px`
+    cursor.style.top = `${y + window.scrollY}px`
+    cursor.style.transform = emoji === '⌨️'
+      ? 'translate(-50%, 0%)'
+      : 'translate(-50%, -10%)'
     cursor.style.opacity = '1'
 
     if (glow) {
@@ -7647,6 +7673,68 @@ export class DevChannel extends HTMLElement {
     if (this.cursorHideTimeout) {
       clearTimeout(this.cursorHideTimeout)
       this.cursorHideTimeout = null
+    }
+  }
+
+  /**
+   * Update the keyboard cursor to follow the text caret position
+   */
+  private updateCursorToCaretPosition(
+    el: HTMLElement,
+    isNativeInput: boolean,
+    isContentEditable: boolean,
+  ) {
+    try {
+      let x: number, y: number
+
+      if (isContentEditable) {
+        const sel = window.getSelection()
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0)
+          const caretRect = range.getBoundingClientRect()
+          if (caretRect.width === 0 && caretRect.height > 0) {
+            // Collapsed cursor — use its position
+            x = caretRect.left
+            y = caretRect.bottom
+          } else {
+            // Fallback to element bottom
+            const elRect = el.getBoundingClientRect()
+            x = elRect.left + elRect.width / 2
+            y = elRect.bottom
+          }
+        } else {
+          return // No selection, can't determine position
+        }
+      } else {
+        // Native input/textarea: measure caret using a hidden mirror div
+        const input = el as HTMLInputElement | HTMLTextAreaElement
+        const caretPos = input.selectionStart ?? 0
+        const textBeforeCaret = input.value.substring(0, caretPos)
+
+        const mirror = document.createElement('span')
+        mirror.style.cssText = `
+          position: absolute;
+          visibility: hidden;
+          white-space: pre;
+          font: ${getComputedStyle(el).font};
+          letter-spacing: ${getComputedStyle(el).letterSpacing};
+        `
+        mirror.textContent = textBeforeCaret || '\u200b'
+        document.body.appendChild(mirror)
+
+        const elRect = el.getBoundingClientRect()
+        const mirrorWidth = mirror.getBoundingClientRect().width
+        document.body.removeChild(mirror)
+
+        // For inputs, caret x is left + text width (clamped to input bounds)
+        const paddingLeft = parseFloat(getComputedStyle(el).paddingLeft) || 0
+        x = Math.min(elRect.left + paddingLeft + mirrorWidth, elRect.right - 4)
+        y = elRect.bottom
+      }
+
+      this.showCursor(x, y, '⌨️')
+    } catch {
+      // Silently fail — cursor stays where it was
     }
   }
 

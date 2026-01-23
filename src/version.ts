@@ -9,4 +9,4 @@
  * ⚠️  To change the version, update package.json and run: bun run build
  */
 
-export const VERSION = '0.2.3'
+export const VERSION = '1.0.0'

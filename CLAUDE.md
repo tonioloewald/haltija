@@ -79,10 +79,10 @@ Browser Tab              Server (Bun)           AI Agent
 
 ### Ref ID System
 
-The `/tree` endpoint assigns stable ref IDs (e.g., `@1`, `@42`) to elements. Interaction endpoints (`/click`, `/type`, `/key`) accept `ref` parameter as an alternative to `selector`:
+The `/tree` endpoint assigns stable ref IDs (e.g., `1`, `42`) to elements. Interaction endpoints (`/click`, `/type`, `/key`) accept `ref` parameter as an alternative to `selector`:
 - More efficient than CSS selectors (direct lookup vs DOM query)
 - Survives DOM updates within same page load
-- Use `ref: "@1"` instead of `selector: "#btn"` when working with tree output
+- Use `ref: "1"` instead of `selector: "#btn"` when working with tree output
 
 ### Multi-Window Support
 

@@ -1371,7 +1371,7 @@ Works with standard forms and most framework components (React, Vue, etc).
 Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.
 
 Three ways to target elements:
-- ref: Ref ID from /tree output (e.g., @1, @42) - fastest, survives DOM changes
+- ref: Ref ID from /tree output (e.g., 1, 42) - fastest, survives DOM changes
 - selector: CSS selector (traditional)
 - text + tag: Find by text content (more reliable for dynamic UIs)
 
@@ -1385,7 +1385,7 @@ Automatically fails if element is not found or is disabled. Check response.succe
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`ref\` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
 | \`selector\` | string,null | CSS selector of element to click |
 | \`text\` | string,null | Text content to find (alternative to selector) |
 | \`tag\` | string,null | Tag name when using text (default: any clickable element) |
@@ -1464,7 +1464,7 @@ Options:
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`ref\` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
 | \`selector\` | string,null | CSS selector of input/textarea/contenteditable |
 | \`text\` | string | Text to type *(required)* |
 | \`autoWait\` | boolean,null | Wait for element to appear before typing (default false) |
@@ -1526,7 +1526,7 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
 | Name | Type | Description |
 |------|------|-------------|
 | \`key\` | string | Key to press (e.g., "Enter", "Escape", "a", "ArrowDown") *(required)* |
-| \`ref\` | string,null | Ref ID from /tree output (e.g., @1, @42) - preferred for efficiency |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
 | \`selector\` | string,null | Element to focus first (default: activeElement) |
 | \`ctrlKey\` | boolean,null | Hold Ctrl/Control |
 | \`shiftKey\` | boolean,null | Hold Shift |
@@ -2497,6 +2497,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 | \`maxHeight\` | number,null | Max height in pixels |
 | \`window\` | string,null | Target window ID |
 | \`chyron\` | boolean,null | Burn page title, URL, timestamp into image (default true, set false for clean screenshot) |
+| \`delay\` | number,null | Wait ms before capturing (e.g. 1000 to let page settle after navigation) |
 
 **Examples:**
 

@@ -29,6 +29,14 @@ body {
   overflow: hidden;
 }
 
+/* Prevent select-all from grabbing shell UI */
+#tab-bar,
+#toolbar,
+.modal {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Tab bar */
 #tab-bar {
   display: flex;
@@ -199,6 +207,8 @@ body {
   color: #fff;
   font-size: 13px;
   outline: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 #url-input:focus {
