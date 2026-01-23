@@ -21,6 +21,8 @@ import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
+import { formatEvents } from './format-events.mjs'
+import { formatTestResult, formatSuiteResult } from './format-test.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -301,9 +303,15 @@ async function doRequest(url, method, body, context = {}) {
     if (contentType.includes('application/json')) {
       const json = await resp.json()
 
-      // Text format for tree (unless --json)
-      if (subcommand === 'tree' && !jsonOutput && json.success && json.data) {
+      // Text format for supported subcommands (unless --json)
+      if (!jsonOutput && subcommand === 'tree' && json.success && json.data) {
         console.log(formatTree(json.data))
+      } else if (!jsonOutput && subcommand === 'events' && (json.events || Array.isArray(json))) {
+        console.log(formatEvents(json))
+      } else if (!jsonOutput && subcommand === 'test-run' && json.test) {
+        console.log(formatTestResult(json))
+      } else if (!jsonOutput && subcommand === 'test-suite' && json.results) {
+        console.log(formatSuiteResult(json))
       } else {
         console.log(JSON.stringify(json, null, 2))
       }

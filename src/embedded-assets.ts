@@ -2317,6 +2317,9 @@ Output formats:
 | \`stepDelay\` | number,null | Milliseconds between steps (default 100) |
 | \`timeout\` | number,null | Milliseconds timeout per step (default 5000) |
 | \`stopOnFailure\` | boolean,null | Stop on first failure (default true) |
+| \`patience\` | number,null | Total failures allowed before giving up (0 = use stopOnFailure, default 0) |
+| \`patienceStreak\` | number,null | Consecutive failures to bail immediately (default 2) |
+| \`timeoutBonusMs\` | number,null | Ms added/removed from timeout on success/failure, capped at initial (default 1000) |
 
 **Examples:**
 
@@ -2351,6 +2354,9 @@ Response includes per-test results and overall summary.
 | \`stepDelay\` | number,null | Milliseconds between steps (default 100) |
 | \`timeout\` | number,null | Milliseconds timeout per step (default 5000) |
 | \`stopOnFailure\` | boolean,null | Stop on first failure (default false for suites) |
+| \`patience\` | number,null | Total failures allowed per test before giving up (0 = use stopOnFailure, default 0) |
+| \`patienceStreak\` | number,null | Consecutive failures to bail immediately (default 2) |
+| \`timeoutBonusMs\` | number,null | Ms added/removed from timeout on success/failure, capped at initial (default 1000) |
 
 **Examples:**
 

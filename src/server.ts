@@ -24,6 +24,7 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
+import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, type TerminalState } from './terminal'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -179,6 +180,11 @@ const MAX_BUFFER = 100
 // Snapshot storage (in-memory, keyed by ID)
 const snapshots = new Map<string, PageSnapshot>()
 const MAX_SNAPSHOTS = 50
+
+// Terminal state
+const terminalState = createTerminalState()
+const terminalConfig = loadConfig(process.cwd())
+const terminalClients = new Set<any>() // WebSocket clients for /ws/terminal
 
 // Recording storage (in-memory, keyed by ID)
 interface StoredRecording {
@@ -424,6 +430,17 @@ function sendToAgents(msg: DevMessage | DevResponse) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(data)
     }
+  }
+}
+
+function broadcastToTerminals(msg: Record<string, any>) {
+  const data = JSON.stringify(msg)
+  for (const ws of terminalClients) {
+    try {
+      if ((ws as any).readyState === WebSocket.OPEN) {
+        (ws as any).send(data)
+      }
+    } catch { /* ignore dead sockets */ }
   }
 }
 
@@ -1324,6 +1341,61 @@ For complete API reference with all options and response formats:
   // /scroll, /tree - now handled by api-router
   
   // /screenshot - now handled by api-router
+  
+  // ==========================================
+  // Terminal Endpoints
+  // ==========================================
+  
+  // Update a tool's status
+  if (path === '/terminal/status' && req.method === 'POST') {
+    const body = await req.json() as { tool: string; state: string }
+    if (!body.tool) {
+      return Response.json({ success: false, error: 'tool is required' }, { status: 400, headers })
+    }
+    updateStatus(terminalState, body.tool, body.state || '')
+    broadcastToTerminals({ type: 'status', line: getStatusLine(terminalState) })
+    return Response.json({ success: true }, { headers })
+  }
+  
+  // Get current status line
+  if (path === '/terminal/status' && req.method === 'GET') {
+    const line = getStatusLine(terminalState)
+    return new Response(line, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+  }
+  
+  // Push a notification
+  if (path === '/terminal/push' && req.method === 'POST') {
+    const body = await req.json() as { tool: string; text: string }
+    if (!body.tool || !body.text) {
+      return Response.json({ success: false, error: 'tool and text are required' }, { status: 400, headers })
+    }
+    pushMessage(terminalState, body.tool, body.text)
+    broadcastToTerminals({ type: 'push', tool: body.tool, text: body.text, timestamp: Date.now() })
+    return Response.json({ success: true }, { headers })
+  }
+  
+  // Get push messages since timestamp
+  if (path === '/terminal/messages' && req.method === 'GET') {
+    const since = parseInt(url.searchParams.get('since') || '0')
+    const messages = getPushMessages(terminalState, since)
+    return Response.json({ messages }, { headers })
+  }
+  
+  // Dispatch a command to a tool
+  if (path === '/terminal/command' && req.method === 'POST') {
+    if (!terminalConfig) {
+      return Response.json(
+        { success: false, error: 'No haltija.json found in project' },
+        { status: 404, headers }
+      )
+    }
+    const body = await req.json() as { command: string }
+    if (!body.command) {
+      return Response.json({ success: false, error: 'command is required' }, { status: 400, headers })
+    }
+    const output = await dispatchCommand(terminalConfig, body.command)
+    return new Response(output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+  }
   
   // ==========================================
   // Test Runner Endpoints
@@ -2422,6 +2494,11 @@ const serverConfig = {
       return upgraded ? undefined : new Response('Upgrade failed', { status: 500 })
     }
     
+    if (url.pathname === '/ws/terminal') {
+      const upgraded = server.upgrade(req, { data: { type: 'terminal' } })
+      return upgraded ? undefined : new Response('Upgrade failed', { status: 500 })
+    }
+    
     // REST API
     return handleRest(req)
   },
@@ -2440,6 +2517,11 @@ const serverConfig = {
         for (const msg of messageBuffer) {
           ws.send(JSON.stringify(msg))
         }
+      } else if (type === 'terminal') {
+        terminalClients.add(ws as unknown as WebSocket)
+        // Send current status line on connect
+        const line = getStatusLine(terminalState)
+        ws.send(JSON.stringify({ type: 'status', line }))
       }
     },
     
@@ -2554,6 +2636,8 @@ const serverConfig = {
         }
       } else if (type === 'agent') {
         agents.delete(ws as unknown as WebSocket)
+      } else if (type === 'terminal') {
+        terminalClients.delete(ws as unknown as WebSocket)
       }
     },
   },

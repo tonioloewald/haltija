@@ -172,62 +172,76 @@ const LONG_TEXT_FIXTURE = {
 }
 
 describe('formatTree', () => {
-  test('formats basic signup form', () => {
+  test('formats basic signup form with paren hierarchy', () => {
     const output = formatTree(SIGNUP_FORM_FIXTURE)
     const lines = output.split('\n')
 
-    // Check structure
-    expect(lines[0]).toBe('1: body [focused]')
-    expect(lines[1]).toBe('  2: h1 "Sign Up"')
-    expect(lines[2]).toBe('  3: div.form-row')
-    expect(lines[3]).toBe('    4: label "Email:"')
-    expect(lines[4]).toBe('    5: input#email-input type=email placeholder=you@example.com [interactive]')
-    expect(lines[5]).toBe('  6: div.form-row')
-    expect(lines[6]).toBe('    7: label "Password:"')
-    expect(lines[7]).toBe('    8: input type=password [interactive]')
-    expect(lines[8]).toBe('  9: button#btn-submit [interactive] "Create Account"')
-    expect(lines[9]).toBe('  10: p')
-    expect(lines[10]).toBe('    11: a href=/login [interactive] "Already have an account?"')
-    expect(lines[11]).toBe('  12: div [hidden:display] "Error: invalid email"')
+    // Root has children → push paren
+    expect(lines[0]).toBe('( 1 body focused')
+    // Leaf child (h1 has no children)
+    expect(lines[1]).toBe('  2 h1 "Sign Up"')
+    // Nested container with children
+    expect(lines[2]).toBe('  ( 3 div.form-row')
+    expect(lines[3]).toBe('    4 label "Email:"')
+    expect(lines[4]).toBe('    5 input#email-input type=email placeholder=you@example.com interactive')
+    expect(lines[5]).toBe('  )')
+    expect(lines[6]).toBe('  ( 6 div.form-row')
+    expect(lines[7]).toBe('    7 label "Password:"')
+    expect(lines[8]).toBe('    8 input type=password interactive')
+    expect(lines[9]).toBe('  )')
+    // Leaf button (no children)
+    expect(lines[10]).toBe('  9 button#btn-submit interactive "Create Account"')
+    // p with one child
+    expect(lines[11]).toBe('  ( 10 p')
+    expect(lines[12]).toBe('    11 a href=/login interactive "Already have an account?"')
+    expect(lines[13]).toBe('  )')
+    // Hidden leaf
+    expect(lines[14]).toBe('  12 div hidden:display "Error: invalid email"')
+    // Close root
+    expect(lines[15]).toBe(')')
+    // Footer
+    expect(lines[16]).toBe('---')
+    expect(lines[17]).toBe('hj tree --json')
   })
 
   test('formats form values and checkboxes', () => {
     const output = formatTree(COMPLEX_FORM_FIXTURE)
     const lines = output.split('\n')
 
-    // Form element with id and classes
-    expect(lines[0]).toBe('20: form#checkout.checkout-form.validated')
+    // Form element with id and classes — has children so gets paren
+    expect(lines[0]).toBe('( 20 form#checkout.checkout-form.validated')
 
-    // Input with value
+    // Input with value and flags (bare, no brackets)
     expect(lines[1]).toContain('value="John Doe"')
-    expect(lines[1]).toContain('[interactive, required]')
+    expect(lines[1]).toContain('interactive required')
 
-    // Checked checkbox
-    expect(lines[2]).toContain('[checked]')
-    expect(lines[2]).toContain('[interactive]')
+    // Checked checkbox (bare word)
+    expect(lines[2]).toContain('checked')
+    expect(lines[2]).toContain('interactive')
 
     // Unchecked checkbox
-    expect(lines[3]).toContain('[unchecked]')
+    expect(lines[3]).toContain('unchecked')
 
-    // Select with value
+    // Select with value (has children → paren)
+    expect(lines[4]).toContain('( 24 select')
     expect(lines[4]).toContain('value="express"')
 
     // Truncated children
     expect(output).toContain('(15 children)')
 
-    // Disabled button
-    expect(output).toContain('[interactive, disabled]')
+    // Disabled button (bare flags)
+    expect(output).toContain('interactive disabled')
 
     // Readonly input
-    expect(output).toContain('[interactive, readonly]')
+    expect(output).toContain('interactive readonly')
   })
 
   test('skips haltija widget node', () => {
     const output = formatTree(WITH_WIDGET_FIXTURE)
     expect(output).not.toContain('haltija-dev')
-    expect(output).not.toContain('99:')
-    expect(output).toContain('1: body')
-    expect(output).toContain('2: h1 "Hello"')
+    expect(output).not.toContain('99')
+    expect(output).toContain('( 1 body')
+    expect(output).toContain('2 h1 "Hello"')
   })
 
   test('truncates long text', () => {
@@ -235,10 +249,10 @@ describe('formatTree', () => {
     const lines = output.split('\n')
 
     // Long paragraph should be truncated
-    const pLine = lines.find(l => l.includes('31:'))
+    const pLine = lines.find(l => l.includes('31 p'))
     expect(pLine).toBeDefined()
     expect(pLine!.includes('…')).toBe(true)
-    expect(pLine!.length).toBeLessThan(200) // reasonable line length
+    expect(pLine!.length).toBeLessThan(200)
   })
 
   test('quotes attribute values with spaces', () => {
@@ -249,12 +263,14 @@ describe('formatTree', () => {
   test('handles empty/null nodes', () => {
     expect(formatTree(null)).toBe('')
     expect(formatTree(undefined)).toBe('')
-    expect(formatTree({})).toBe('?: ?')
   })
 
   test('handles node with no children or text', () => {
     const output = formatTree({ tag: 'div', ref: '1', classes: ['container'] })
-    expect(output).toBe('1: div.container')
+    // Leaf node, no parens
+    expect(output).toContain('1 div.container')
+    expect(output).toContain('---')
+    expect(output).toContain('hj tree --json')
   })
 
   test('handles deeply nested structure', () => {
@@ -268,38 +284,65 @@ describe('formatTree', () => {
       }]
     }
     const output = formatTree(deep)
-    expect(output).toContain('      4: span "Deep"')
+    // Each level pushes 2 spaces
+    expect(output).toContain('( 1 div')
+    expect(output).toContain('  ( 2 div')
+    expect(output).toContain('    ( 3 div')
+    expect(output).toContain('      4 span "Deep"')
+    expect(output).toContain('    )')
+    expect(output).toContain('  )')
+    expect(output).toContain(')')
   })
 
-  test('includes ARIA flag', () => {
+  test('includes ARIA flag as bare word', () => {
     const node = { tag: 'button', ref: '1', flags: { interactive: true, hasAria: true }, text: 'Close' }
     const output = formatTree(node)
-    expect(output).toContain('[interactive, aria]')
+    expect(output).toContain('interactive aria')
+    // No brackets
+    expect(output).not.toContain('[')
+    expect(output).not.toContain(']')
   })
 
   test('shows offscreen flag when not hidden', () => {
     const node = { tag: 'div', ref: '1', flags: { offScreen: true }, text: 'Off' }
-    expect(formatTree(node)).toContain('[offscreen]')
+    expect(formatTree(node)).toContain('offscreen')
   })
 
   test('does not show offscreen when already hidden', () => {
     const node = { tag: 'div', ref: '1', flags: { hidden: true, hiddenReason: 'display', offScreen: true }, text: 'Off' }
     const output = formatTree(node)
-    expect(output).toContain('[hidden:display]')
+    expect(output).toContain('hidden:display')
     expect(output).not.toContain('offscreen')
+  })
+
+  test('footer is always present', () => {
+    const output = formatTree({ tag: 'div', ref: '1' })
+    expect(output).toEndWith('---\nhj tree --json')
+  })
+
+  test('no colon after ref numbers', () => {
+    const output = formatTree(SIGNUP_FORM_FIXTURE)
+    // Should not have patterns like "1:" or "2:"
+    expect(output).not.toMatch(/\d+:/)
+  })
+
+  test('no bracket-wrapped flags', () => {
+    const output = formatTree(SIGNUP_FORM_FIXTURE)
+    // Should not have [interactive] or [hidden:display] patterns
+    expect(output).not.toMatch(/\[interactive\]/)
+    expect(output).not.toMatch(/\[hidden:/)
+    expect(output).not.toMatch(/\[focused\]/)
   })
 })
 
 describe('formatTree generates doc-compatible output', () => {
-  test('signup form matches agent prompt sample', () => {
+  test('signup form contains key elements', () => {
     const output = formatTree(SIGNUP_FORM_FIXTURE)
-    // This test ensures the sample in docs/agent-prompt.md stays in sync
-    // If this test fails, update the sample in the docs
-    expect(output).toContain('5: input#email-input')
-    expect(output).toContain('[interactive]')
-    expect(output).toContain('9: button#btn-submit')
+    expect(output).toContain('5 input#email-input')
+    expect(output).toContain('interactive')
+    expect(output).toContain('9 button#btn-submit')
     expect(output).toContain('"Create Account"')
-    expect(output).toContain('[hidden:display]')
+    expect(output).toContain('hidden:display')
     expect(output).toContain('"Error: invalid email"')
   })
 })

@@ -31,26 +31,34 @@ The server auto-starts if needed. All commands: `hj <verb> [target] [args]`
 ## Sample Output (`hj tree`)
 
 ```
-1: body
-  2: h1 "Sign Up"
-  3: div.form-row
-    4: label "Email:"
-    5: input#email-input type=email placeholder="you@example.com" [interactive]
-  6: div.form-row
-    7: label "Password:"
-    8: input type=password [interactive]
-  9: button#btn-submit "Create Account" [interactive]
-  10: p
-    11: a href="/login" [interactive] "Already have an account?"
-  12: div [hidden:display] "Error: invalid email"
+( 1 body
+  2 h1 "Sign Up"
+  ( 3 div.form-row
+    4 label "Email:"
+    5 input#email-input type=email placeholder=you@example.com interactive
+  )
+  ( 6 div.form-row
+    7 label "Password:"
+    8 input type=password interactive
+  )
+  9 button#btn-submit interactive "Create Account"
+  ( 10 p
+    11 a href=/login interactive "Already have an account?"
+  )
+  12 div hidden:display "Error: invalid email"
+)
+---
+hj tree --json
 ```
 
 Reading this:
-- Refs are the numbers before `:` (e.g. 5, 9, 11)
-- `[interactive]` means you can click/type it
-- `[hidden:display]` means it exists but is invisible
+- `(` = children follow (push), `)` = end children (pop)
+- Refs are the numbers (e.g. 5, 9, 11)
+- `interactive` means you can click/type it
+- `hidden:display` means it exists but is invisible
 - Attributes (type, placeholder, href) shown inline
 - Text content in quotes
+- `---` footer shows the command for JSON output
 
 To fill this form:
 - Type email: `hj type 5 "user@example.com"`

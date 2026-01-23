@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Agent Terminal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+      background: #1a1a2e;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #status-bar {
+      background: #0f0f1e;
+      padding: 6px 12px;
+      font-size: 12px;
+      border-bottom: 1px solid #2d2d4a;
+      color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #status-bar .status-item {
+      background: #252540;
+      padding: 2px 8px;
+      border-radius: 3px;
+      color: #a5b4fc;
+    }
+    #status-bar .status-item.alert {
+      color: #fbbf24;
+    }
+    #status-bar .status-item.error {
+      color: #f87171;
+    }
+    #status-bar .connected {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4ade80;
+      display: inline-block;
+    }
+    #status-bar .disconnected {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #f87171;
+      display: inline-block;
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .msg {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 2px 0;
+    }
+    .msg-system {
+      color: #64748b;
+      font-style: italic;
+    }
+    .msg-push {
+      color: #a5b4fc;
+    }
+    .msg-push .tool-name {
+      color: #6366f1;
+      font-weight: bold;
+    }
+    .msg-command {
+      color: #94a3b8;
+    }
+    .msg-command::before {
+      content: '> ';
+      color: #4ade80;
+    }
+    .msg-output {
+      color: #e2e8f0;
+      padding-left: 12px;
+      border-left: 2px solid #2d2d4a;
+    }
+    .msg-error {
+      color: #f87171;
+    }
+
+    #input-area {
+      display: flex;
+      padding: 8px 12px;
+      border-top: 1px solid #2d2d4a;
+      background: #0f0f1e;
+      gap: 8px;
+    }
+    #input {
+      flex: 1;
+      background: #252540;
+      border: 1px solid #2d2d4a;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 4px;
+      outline: none;
+    }
+    #input:focus {
+      border-color: #6366f1;
+    }
+    #input::placeholder {
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-bar">
+    <span class="disconnected" id="conn-indicator"></span>
+    <span id="status-text">connecting...</span>
+  </div>
+  <div id="messages">
+    <div class="msg msg-system">Agent terminal ready. Type a tool command (e.g., "tests run").</div>
+  </div>
+  <div id="input-area">
+    <input id="input" type="text" placeholder="tool command..." autofocus>
+  </div>
+
+  <script>
+    const PORT = new URLSearchParams(window.location.search).get('port') || '8700'
+    const BASE_URL = `http://localhost:${PORT}`
+    const WS_URL = `ws://localhost:${PORT}/ws/terminal`
+
+    const messagesEl = document.getElementById('messages')
+    const inputEl = document.getElementById('input')
+    const statusTextEl = document.getElementById('status-text')
+    const connIndicator = document.getElementById('conn-indicator')
+    let ws = null
+    let commandHistory = []
+    let historyIndex = -1
+
+    // ==========================================
+    // WebSocket Connection
+    // ==========================================
+
+    function connect() {
+      ws = new WebSocket(WS_URL)
+
+      ws.onopen = () => {
+        connIndicator.className = 'connected'
+        statusTextEl.textContent = 'connected'
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === 'status') {
+            renderStatusLine(msg.line)
+          } else if (msg.type === 'push') {
+            addMessage('push', `${msg.tool}: ${msg.text}`, msg.tool)
+            scrollToBottom()
+          }
+        } catch {}
+      }
+
+      ws.onclose = () => {
+        connIndicator.className = 'disconnected'
+        statusTextEl.textContent = 'disconnected'
+        // Reconnect after 2s
+        setTimeout(connect, 2000)
+      }
+
+      ws.onerror = () => {
+        ws.close()
+      }
+    }
+
+    // ==========================================
+    // Status Line Rendering
+    // ==========================================
+
+    function renderStatusLine(line) {
+      if (!line) {
+        statusTextEl.textContent = 'idle'
+        return
+      }
+      // Parse [tool state] items
+      const items = line.match(/\[([^\]]+)\]/g) || []
+      let html = ''
+      for (const item of items) {
+        const text = item.slice(1, -1) // remove brackets
+        let cls = 'status-item'
+        if (/fail|error/i.test(text)) cls += ' error'
+        else if (/warn|pending/i.test(text)) cls += ' alert'
+        html += `<span class="${cls}">${escapeHtml(text)}</span> `
+      }
+      statusTextEl.innerHTML = html || 'idle'
+    }
+
+    // ==========================================
+    // Command Input
+    // ==========================================
+
+    inputEl.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && inputEl.value.trim()) {
+        const command = inputEl.value.trim()
+        commandHistory.push(command)
+        historyIndex = commandHistory.length
+        inputEl.value = ''
+
+        addMessage('command', command)
+        scrollToBottom()
+
+        try {
+          const resp = await fetch(`${BASE_URL}/terminal/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command }),
+          })
+          const output = await resp.text()
+          if (output.startsWith('error:')) {
+            addMessage('error', output)
+          } else {
+            addMessage('output', output)
+          }
+        } catch (err) {
+          addMessage('error', `connection error: ${err.message}`)
+        }
+        scrollToBottom()
+      }
+
+      // History navigation
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (historyIndex > 0) {
+          historyIndex--
+          inputEl.value = commandHistory[historyIndex]
+        }
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (historyIndex < commandHistory.length - 1) {
+          historyIndex++
+          inputEl.value = commandHistory[historyIndex]
+        } else {
+          historyIndex = commandHistory.length
+          inputEl.value = ''
+        }
+      }
+    })
+
+    // ==========================================
+    // Message Display
+    // ==========================================
+
+    function addMessage(type, text, toolName) {
+      const div = document.createElement('div')
+      div.className = `msg msg-${type}`
+      if (type === 'push' && toolName) {
+        div.innerHTML = `<span class="tool-name">${escapeHtml(toolName)}</span> ${escapeHtml(text.replace(toolName + ': ', ''))}`
+      } else {
+        div.textContent = text
+      }
+      messagesEl.appendChild(div)
+
+      // Limit messages in DOM
+      while (messagesEl.children.length > 500) {
+        messagesEl.removeChild(messagesEl.firstChild)
+      }
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+
+    // ==========================================
+    // Init
+    // ==========================================
+
+    // Fetch initial status
+    fetch(`${BASE_URL}/terminal/status`)
+      .then(r => r.text())
+      .then(line => renderStatusLine(line))
+      .catch(() => {})
+
+    connect()
+  </script>
+</body>
+</html>

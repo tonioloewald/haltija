@@ -306,6 +306,11 @@ function setupMenu() {
           click: () => mainWindow?.webContents.send('menu-new-tab'),
         },
         {
+          label: 'New Terminal Tab',
+          accelerator: 'CmdOrCtrl+Shift+T',
+          click: () => mainWindow?.webContents.send('menu-new-terminal-tab'),
+        },
+        {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
           click: () => mainWindow?.webContents.send('menu-close-tab'),

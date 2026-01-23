@@ -305,8 +305,19 @@ body {
   display: none;
 }
 
-#webview-container webview.active {
+#webview-container webview.active,
+#webview-container .terminal-frame.active {
   display: flex;
+}
+
+#webview-container .terminal-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: none;
 }
 
 /* Loading indicator */

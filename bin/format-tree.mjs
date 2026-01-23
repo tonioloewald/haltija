@@ -1,37 +1,93 @@
 /**
  * Text formatter for Haltija tree output
  * 
- * Converts DomTreeNode JSON into scannable text:
- *   1: body
- *     2: h1 "Sign Up"
- *     3: div.form-row
- *       4: label "Email:"
- *       5: input#email-input type=email placeholder="you@example.com" [interactive]
+ * Push/pop paren encoding: hierarchy for agents, indentation for humans.
+ *
+ *   1 body
+ *   ( 2 div.header
+ *     3 button#submit "Submit" interactive
+ *     4 input#email interactive value="user@example.com"
+ *   )
+ *   ( 5 div.content
+ *     ( 6 ul.nav
+ *       7 li "Home"
+ *       8 li "About"
+ *     )
+ *     9 p "Welcome back"
+ *   )
+ *   ---
+ *   hj tree --json
  */
 
 const MAX_TEXT_LEN = 80
 
 /**
- * Format a DomTreeNode tree as human-readable text
+ * Format a DomTreeNode tree as agent+human readable text
  * @param {object} node - DomTreeNode from server response
- * @param {number} indent - current indentation level
- * @returns {string} formatted text output
+ * @param {number} indent - current indentation level (internal)
+ * @returns {string} formatted text output with footer
  */
 export function formatTree(node, indent = 0) {
   if (!node) return ''
 
-  // Skip the haltija widget entirely
-  if (node.tag === 'haltija-dev') return ''
-
   const lines = []
-  const prefix = ' '.repeat(indent)
+  formatNode(node, indent, lines)
 
-  // Build the line: "N: tag#id.classes attrs [flags] "text""
+  // Footer: JSON escape hatch
+  lines.push('---')
+  lines.push('hj tree --json')
+
+  return lines.join('\n')
+}
+
+/**
+ * Recursively format a node and its children
+ */
+function formatNode(node, indent, lines) {
+  if (!node) return
+
+  // Skip the haltija widget entirely
+  if (node.tag === 'haltija-dev') return
+
+  const prefix = ' '.repeat(indent)
+  const hasChildren = (node.children && node.children.length > 0) ||
+    (node.shadowChildren && node.shadowChildren.length > 0)
+
+  const line = buildLine(node)
+
+  if (hasChildren) {
+    // Push: ( before children
+    lines.push(`${prefix}( ${line}`)
+
+    // Recurse children
+    if (node.children) {
+      for (const child of node.children) {
+        formatNode(child, indent + 2, lines)
+      }
+    }
+    if (node.shadowChildren) {
+      for (const child of node.shadowChildren) {
+        if (child.classes && child.classes.includes('widget')) continue
+        formatNode(child, indent + 2, lines)
+      }
+    }
+
+    // Pop: )
+    lines.push(`${prefix})`)
+  } else {
+    // Leaf node: just the line
+    lines.push(`${prefix}${line}`)
+  }
+}
+
+/**
+ * Build a single node's description line (without prefix/indent)
+ */
+function buildLine(node) {
   const parts = []
 
-  // Ref number (bare number, no prefix)
-  const refNum = node.ref || '?'
-  parts.push(`${refNum}:`)
+  // Ref number (bare, no colon)
+  parts.push(node.ref || '?')
 
   // Tag with id and classes
   let tagPart = node.tag || '?'
@@ -59,10 +115,10 @@ export function formatTree(node, indent = 0) {
     parts.push(`value="${truncate(node.value, 30)}"`)
   }
   if (node.checked !== undefined) {
-    parts.push(node.checked ? '[checked]' : '[unchecked]')
+    parts.push(node.checked ? 'checked' : 'unchecked')
   }
 
-  // Flags in brackets
+  // Flags (bare words, no brackets)
   const flags = formatFlags(node.flags)
   if (flags) parts.push(flags)
 
@@ -76,30 +132,10 @@ export function formatTree(node, indent = 0) {
     parts.push(`(${node.childCount} children)`)
   }
 
-  lines.push(prefix + parts.join(' '))
-
-  // Recurse children
-  if (node.children) {
-    for (const child of node.children) {
-      const childText = formatTree(child, indent + 2)
-      if (childText) lines.push(childText)
-    }
-  }
-
-  // Shadow children (only if present — usually from --shadow flag)
-  if (node.shadowChildren) {
-    for (const child of node.shadowChildren) {
-      // Skip haltija widget shadow DOM
-      if (child.classes && child.classes.includes('widget')) continue
-      const childText = formatTree(child, indent + 2)
-      if (childText) lines.push(childText)
-    }
-  }
-
-  return lines.join('\n')
+  return parts.join(' ')
 }
 
-/** Format flags into bracket notation */
+/** Format flags as bare space-separated words */
 function formatFlags(flags) {
   if (!flags) return ''
   const parts = []
@@ -118,7 +154,7 @@ function formatFlags(flags) {
   if (flags.customElement) parts.push('custom')
   if (flags.hasAria) parts.push('aria')
 
-  return parts.length ? `[${parts.join(', ')}]` : ''
+  return parts.join(' ')
 }
 
 /** Truncate a string with ellipsis */

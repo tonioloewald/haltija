@@ -1,0 +1,16 @@
+{
+  "name": "haltija",
+  "tools": {
+    "tests": {
+      "run": "bun test 2>&1 | tee /tmp/hj-test-output.txt",
+      "summary": "tail -5 /tmp/hj-test-output.txt",
+      "failures": "grep -A2 'fail\\|FAIL\\|Error' /tmp/hj-test-output.txt"
+    },
+    "browser": {
+      "endpoint": "http://localhost:8700"
+    },
+    "tasks": {
+      "builtin": true
+    }
+  }
+}

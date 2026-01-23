@@ -152,6 +152,55 @@ function createTab(url, activate = true) {
   return tab
 }
 
+// Create a terminal tab (iframe-based, no webview)
+function createTerminalTab() {
+  const tabId = `tab-${++tabIdCounter}`
+
+  // Create tab element
+  const tabEl = document.createElement('div')
+  tabEl.className = 'tab'
+  tabEl.dataset.tabId = tabId
+  tabEl.innerHTML = `
+    <span class="tab-title">Terminal</span>
+    <button class="tab-close" title="Close tab">×</button>
+  `
+
+  tabEl.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('tab-close')) {
+      activateTab(tabId)
+    }
+  })
+
+  tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
+    e.stopPropagation()
+    closeTab(tabId)
+  })
+
+  tabBar.appendChild(tabEl)
+
+  // Create iframe (not webview — terminal is local, no widget injection needed)
+  const iframe = document.createElement('iframe')
+  iframe.id = tabId
+  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}`
+  iframe.className = 'terminal-frame'
+
+  webviewContainer.appendChild(iframe)
+
+  // Store tab data
+  const tab = {
+    id: tabId,
+    url: 'terminal',
+    title: 'Terminal',
+    element: tabEl,
+    webview: iframe, // reuse field for consistency with closeTab/activateTab
+    isTerminal: true,
+  }
+  tabs.push(tab)
+
+  activateTab(tabId)
+  return tab
+}
+
 // Activate a tab
 function activateTab(tabId) {
   const tab = tabs.find((t) => t.id === tabId)
@@ -814,6 +863,10 @@ if (window.haltija) {
 
   window.haltija.onMenuNewTab?.(() => {
     createTab()
+  })
+
+  window.haltija.onMenuNewTerminalTab?.(() => {
+    createTerminalTab()
   })
 
   window.haltija.onMenuCloseTab?.(() => {
