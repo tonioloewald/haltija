@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * tosijs-dev CLI (Node version)
- * 
- * Note: This is a Node-compatible wrapper. For best performance, use Bun:
- *   bunx tosijs-dev
+ * Haltija CLI
  * 
  * Usage:
- *   npx tosijs-dev              # Start HTTP server on port 8700
- *   npx tosijs-dev --https      # Start HTTPS server (auto-generates certs)
- *   npx tosijs-dev --both       # Start both HTTP and HTTPS
- *   npx tosijs-dev --headless   # Start with headless Chromium (for CI)
- *   npx tosijs-dev --setup-mcp  # Configure Claude Desktop integration
- *   npx tosijs-dev --help       # Show help
+ *   npx haltija                 # Launch desktop app (or server if electron unavailable)
+ *   npx haltija --server        # Server only (for CI, headless, bookmarklet usage)
+ *   npx haltija --app           # Explicitly launch desktop app
+ *   npx haltija --https         # Start HTTPS server (auto-generates certs)
+ *   npx haltija --headless      # Start with headless Chromium (for CI)
+ *   npx haltija --setup-mcp     # Configure Claude Desktop integration
+ *   npx haltija --help          # Show help
  */
 
-import { spawn } from 'child_process'
+import { spawn, execSync as execSyncImported } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { homedir, platform } from 'os'
 import { fileURLToPath } from 'url'
@@ -39,11 +37,16 @@ ${bold('haltija')} - Browser control for AI agents
 Usage:
   haltija [options]
 
+Modes:
+  ${dim('(default)')}       Launch desktop app if electron available, otherwise server
+  --app           Explicitly launch desktop app (Electron)
+  --server        Server only (for CI, headless, or bookmarklet usage)
+  --headless      Start with headless Chromium browser (for CI)
+
 Options:
-  --http          HTTP only on port 8700 (default)
+  --http          HTTP only on port 8700 (default protocol)
   --https         HTTPS only on port 8701 (auto-generates certs)
   --both          Both HTTP (8700) and HTTPS (8701)
-  --headless      Start headless Chromium browser (for CI)
   --headless-url <url>  URL to open in headless browser (default: none)
   --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
   --docs-dir <path>       Directory with custom docs (*.md files)
@@ -62,15 +65,12 @@ Environment Variables:
   DEV_CHANNEL_DOCS_DIR       Directory with custom docs (default: built-in only)
 
 Examples:
-  haltija                          # HTTP on 8700
-  haltija --https                  # HTTPS on 8701
-  haltija --both                   # HTTP on 8700 + HTTPS on 8701
-  haltija --headless               # Start with headless browser for CI
+  haltija                          # Desktop app (or server fallback)
+  haltija --app                    # Desktop app explicitly
+  haltija --server                 # Server only
+  haltija --server --https         # HTTPS server only
+  haltija --headless               # Headless browser for CI
   haltija --setup-mcp              # Configure Claude Desktop integration
-
-Note: For best performance, use Bun: bunx haltija
-
-Once running, curl the /docs endpoint for full API documentation.
 `)
   process.exit(0)
 }
@@ -316,10 +316,87 @@ if (docsDirIdx !== -1 && args[docsDirIdx + 1]) {
   env.DEV_CHANNEL_DOCS_DIR = args[docsDirIdx + 1]
 }
 
-// Headless mode options
+// ============================================
+// Mode Detection
+// ============================================
+
 const headlessMode = args.includes('--headless')
 const headlessUrlIdx = args.indexOf('--headless-url')
 const headlessUrl = headlessUrlIdx !== -1 ? args[headlessUrlIdx + 1] : null
+const explicitServer = args.includes('--server')
+const explicitApp = args.includes('--app')
+
+/** Detect if Electron desktop app is available */
+function detectElectron() {
+  const desktopDir = join(__dirname, '../apps/desktop')
+  if (!existsSync(desktopDir)) return null
+
+  // Check for electron in desktop app's node_modules
+  const electronBin = join(desktopDir, 'node_modules/.bin/electron')
+  if (existsSync(electronBin)) return { electronBin, desktopDir }
+
+  // Check if electron is available globally
+  try {
+    execSyncImported('electron --version', { stdio: 'ignore', timeout: 5000 })
+    return { electronBin: 'electron', desktopDir }
+  } catch {}
+
+  return null
+}
+
+/** Read version from package.json */
+function getVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'))
+    return pkg.version || '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
+/** Print startup banner */
+function printBanner(mode, port) {
+  const version = getVersion()
+  const url = `http://localhost:${port}`
+  console.log('')
+  console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+  console.log(`  ${bold('Haltija')} v${version} ${dim('—')} ${green(url)}`)
+  console.log(`  Mode: ${mode === 'app' ? 'Desktop App' : mode === 'headless' ? 'Headless' : 'Server'}`)
+  console.log('')
+  console.log(dim('  Agent setup:'))
+  console.log(`    MCP:   ${dim('bunx haltija --setup-mcp')}`)
+  console.log(`    Curl:  ${dim(`curl ${url}/tree`)}`)
+  console.log(`    Docs:  ${dim(`curl ${url}/docs`)}`)
+  console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+  console.log('')
+}
+
+/** Launch the Electron desktop app */
+function launchApp(electronInfo, port) {
+  printBanner('app', port)
+
+  const child = spawn(electronInfo.electronBin, [electronInfo.desktopDir], {
+    env: { ...env, DEV_CHANNEL_PORT: String(port) },
+    stdio: 'inherit'
+  })
+
+  child.on('error', (err) => {
+    console.error(red('Error:') + ` Failed to launch desktop app: ${err.message}`)
+    console.log(dim('Falling back to server mode...'))
+    console.log('')
+    startServer(port)
+  })
+
+  child.on('exit', code => {
+    process.exit(code || 0)
+  })
+}
+
+/** Start the server (current behavior) */
+function startServer(port) {
+  printBanner('server', port)
+  tryBun()
+}
 
 // Start headless browser after server is ready
 const startHeadlessBrowser = async (port) => {
@@ -444,4 +521,34 @@ const tryNode = () => {
   }
 }
 
-tryBun()
+// ============================================
+// Launch Mode Selection
+// ============================================
+
+const port = env.DEV_CHANNEL_PORT || '8700'
+
+if (headlessMode) {
+  // Headless mode: start server + headless browser
+  printBanner('headless', port)
+  tryBun()
+} else if (explicitServer) {
+  // Explicit server-only mode
+  startServer(port)
+} else if (explicitApp) {
+  // Explicit app mode - fail if electron not available
+  const electronInfo = detectElectron()
+  if (!electronInfo) {
+    console.error(red('Error:') + ' Desktop app not available.')
+    console.log(dim('Electron not found. Install it in apps/desktop/ or use --server mode.'))
+    process.exit(1)
+  }
+  launchApp(electronInfo, port)
+} else {
+  // Default: try app, fall back to server
+  const electronInfo = detectElectron()
+  if (electronInfo) {
+    launchApp(electronInfo, port)
+  } else {
+    startServer(port)
+  }
+}

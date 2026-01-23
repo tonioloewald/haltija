@@ -16,6 +16,7 @@ A server at http://localhost:8700 connects you to browser tabs.
 
 ## What you can see
 - **Semantic tree**: elements with flags like `interactive`, `hidden`, `hiddenReason`
+- **Ref IDs**: every element gets a stable ref (e.g. `@3`, `@42`) — use `{"ref":"@3"}` instead of selectors when possible. Refs survive DOM updates within the same page.
 - **Why things are hidden**: "display:none" vs "off-screen" vs "zero-size"
 - **Form state**: current input values, which fields are required/disabled
 - **What's actionable**: buttons, links, inputs - not noise
@@ -25,6 +26,13 @@ A server at http://localhost:8700 connects you to browser tabs.
 - Watch for changes (console errors, DOM mutations)
 - Take screenshots (webp, scaled down for efficiency)
 - Highlight elements to show the user what you mean
+
+## Workflow
+
+1. **Inspect**: GET /tree to see what's on the page
+2. **Plan**: find the target element's `ref` or selector, check flags.interactive is true
+3. **Act**: click/type/navigate
+4. **Verify**: GET /tree or /events or /console to confirm the result
 
 ## Quick start
 
@@ -51,8 +59,8 @@ All endpoints work with GET (sensible defaults). Use POST to pass options.
 /query               Quick element lookup: POST {"selector":"input"}
 
 ### Do things (GET or POST)
-/click               Click element: /click?selector=%23btn or POST {"text":"Submit"}
-/type                Type text: /type?selector=input&text=hello
+/click               Click element: POST {"ref":"@3"} or {"selector":"#btn"} or {"text":"Submit"}
+/type                Type text: POST {"ref":"@10", "text":"hello"} or /type?selector=input&text=hello
 /key                 Keyboard input: /key?key=Escape or /key?key=s&ctrlKey=true
 /scroll              Scroll to element: POST {"selector":"#section"}
 /highlight           **Show user what you mean**: POST {"selector":"#btn", "label":"Click here"}
@@ -96,15 +104,22 @@ curl -X POST http://localhost:8700/eval -d '{"code":"document.querySelectorAll(\
 
 ### Click
 ```bash
-# By selector
-curl -X POST http://localhost:8700/click -d '{"selector":"#submit-btn"}'
+# By ref (preferred - stable, from /tree output)
+curl -X POST http://localhost:8700/click -d '{"ref":"@42"}'
 
-# By text (more reliable for dynamic UIs)
+# By text (good for generic buttons)
 curl -X POST http://localhost:8700/click -d '{"text":"Submit", "tag":"button"}'
+
+# By selector (fallback - brittle if DOM changes)
+curl -X POST http://localhost:8700/click -d '{"selector":"#submit-btn"}'
 ```
 
 ### Type
 ```bash
+# By ref (preferred)
+curl -X POST http://localhost:8700/type -d '{"ref":"@10", "text":"user@example.com"}'
+
+# By selector
 curl -X POST http://localhost:8700/type -d '{"selector":"input[name=email]", "text":"user@example.com"}'
 ```
 
@@ -186,5 +201,15 @@ GET /api for full reference, GET /docs/list for documentation.
 - GET /tree, /console, /screenshot work without parameters - start there
 - /tree shows flags like `interactive`, `hidden`, `hiddenReason` - look for these
 - /console shows errors - check it when things don't work
+- Use `ref` from the tree (e.g. `{"ref":"@3"}`) instead of CSS selectors when possible
 - Use /click with `text` instead of selectors for dynamic UIs
 - Use /wait after clicks that trigger async updates (modals, loaders)
+- click, type, key, scroll all support GET with query params for simple cases
+
+## Troubleshooting
+
+- **Clicked but nothing happened?** Check /console for JS errors. You may have clicked a wrapper `<div>` — try the child `<button>` or parent `<a>` instead.
+- **Can't find the element?** It might be hidden (check `flags.hidden`), off-screen (needs scroll), or inside a modal/dialog that hasn't opened yet.
+- **Element not interactive?** Some apps use clickable `<div>` instead of `<button>`. Try /eval as a fallback: `{"code":"document.querySelector('#el').click()"}`
+- **Form not submitting?** React/Vue apps often need the input event, not just setting value. Use /type which fires proper events.
+- **Layout looks wrong?** Use /screenshot for visual confirmation.

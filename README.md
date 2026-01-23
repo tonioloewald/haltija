@@ -1,165 +1,138 @@
 # Haltija
 
-**Make any web app AI-controllable in 30 seconds.**
+**Give AI agents eyes and hands in the browser.** Make any browser tab MCP-compatible.
+
+- **See** the live DOM as a semantic tree — what's clickable, what's hidden and why, what inputs exist
+- **Do** things — click buttons, fill forms, navigate, run JavaScript
+- **Watch** what happens — console errors, DOM mutations, user actions, all as meaningful events
+
+Unlike screenshot-based tools, Haltija works with the actual DOM. Unlike Playwright, it connects to your real browser — already logged in, same cookies, same bug you're looking at.
+
+<!-- TODO: Replace with actual GIF showing: 1) bunx haltija launches app, 2) agent queries tree, 3) agent clicks something, 4) highlight shows result -->
+![Haltija in action](docs/assets/demo.gif)
+
+> *Haltija* (Finnish): a guardian spirit that watches over a place. In this case, your DOM.
+
+---
+
+## Quick Start
 
 ```bash
 bunx haltija
 ```
 
-```html
-<script src="http://localhost:8700/component.js"></script>
-```
+Launches a lightweight Electron shell with the Haltija server embedded. Browse to any page — the widget auto-attaches and your agent can control it immediately. When you close the app, the widget detaches cleanly.
 
-That's it. Your AI agent can now see the DOM, click buttons, fill forms, and watch what happens.
+For server-only mode (CI, remote, bookmarklet): `bunx haltija --server`
 
-<!-- TODO: Add 30-second demo video once public -->
+### Tell your agent
 
----
+Paste this into your agent conversation:
 
-[Documentation](docs/README.md) | [Executive Summary](docs/EXECUTIVE-SUMMARY.md) | [Roadmap](docs/ROADMAP.md)
+> Haltija is running at http://localhost:8700. Use `curl http://localhost:8700/tree` to see the page structure, `curl http://localhost:8700/click -d '{"selector":"#btn"}'` to interact, and `curl http://localhost:8700/docs` for full API reference.
 
----
-
-## What This Enables
-
-**"Fix this CSS bug"** - The agent sees your actual DOM, finds the mismatch, fixes it.
-
-**"Test the checkout flow"** - The agent clicks through your app, watches what happens, writes a test.
-
-**"Why is this broken?"** - See exactly what users see. Same browser, same state, same bug.
-
-No screenshots. No copy-pasting HTML. No Playwright scripts. The agent sees what you see.
+Or for Claude Code with MCP: `bunx haltija --setup-mcp`
 
 ---
 
 ## What Agents Can Do
 
-**See the page**
 ```bash
-curl localhost:8700/tree              # DOM structure
-curl localhost:8700/query -d '{"selector":"button"}'  # Find elements
-curl localhost:8700/inspect -d '{"selector":"#nav"}'  # Deep inspection
-```
+# See the page
+curl localhost:8700/tree                    # Semantic DOM structure
+curl localhost:8700/screenshot              # Visual capture with metadata
+curl localhost:8700/console                 # Recent errors and logs
 
-**Interact with it**
-```bash
-curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
+# Interact
+curl localhost:8700/click?selector=%23btn   # Click (GET works for simple cases)
 curl -X POST localhost:8700/type -d '{"selector":"#email","text":"user@example.com"}'
-curl -X POST localhost:8700/scroll -d '{"selector":"#pricing","easing":"ease-out"}'
-curl -X POST localhost:8700/navigate -d '{"url":"https://example.com"}'
-```
+curl localhost:8700/key?key=Escape          # Keyboard input
 
-**Watch what happens**
-```bash
-curl -X POST localhost:8700/events/watch -d '{"preset":"interactive"}'
-curl localhost:8700/events  # "user typed email, clicked Submit, got error"
-```
+# Watch for changes
+curl localhost:8700/events                  # Aggregated semantic events
 
-**Point things out to humans**
-```bash
+# Point things out (draws a visual box on the user's screen)
 curl -X POST localhost:8700/highlight -d '{"selector":".bug","label":"Problem here"}'
-curl -X POST localhost:8700/select/start  # User drags to select elements
-curl localhost:8700/select/result         # Get what they selected
-```
-
-**Run tests**
-```bash
-curl -X POST localhost:8700/test/run -d @login-test.json
 ```
 
 Full API: `curl localhost:8700/docs`
 
 ---
 
-## Why Haltija?
-
-Works on your **actual browser session** - not a separate headless instance.
+## Why Not Playwright / Puppeteer?
 
 | | Haltija | Playwright MCP |
 |---|---------|----------------|
-| **Browser** | Your real browser | Separate instance |
-| **State** | Already logged in, cookies, extensions | Clean slate, script everything |
-| **Localhost** | Just works | Port forwarding |
-| **Visibility** | Watch it happen | Background process |
-| **Setup** | `curl` | Install Playwright |
+| **Browser** | Your real browser | Separate headless instance |
+| **State** | Already logged in, cookies, extensions | Clean slate every time |
+| **Setup** | `bunx haltija` | Install Playwright, configure MCP |
+| **Protocol** | Simple REST/curl | Complex CDP |
+| **Visibility** | Watch it happen live | Background process |
 
-Same automation capabilities, but you're debugging your actual environment - the one with the bug, the weird extension, the specific login state. No reproduction steps needed.
+Haltija connects to the browser you're already using. The one with the bug, the active session, and the weird cookie state. No reproduction script required.
 
 ---
 
-## How to Use It
+## How It Works
 
-### 1. Start the server
-
-```bash
-bunx haltija
+```
+Browser Tab          Server (Bun)         AI Agent
+    │                    │                   │
+    │◄── WebSocket ─────►│◄── REST API ─────►│
+    │                    │                   │
+    └─ Widget            └─ Routes messages  └─ curl / MCP / SDK
 ```
 
-### 2. Connect your browser
-
-**Option A: Bookmarklet** - Visit `http://localhost:8700`, drag the bookmarklet to your toolbar. Click it on any page.
-
-**Option B: Dev snippet** - Add this to your app (auto-disabled in production):
-
-```javascript
-/^localhost$|^127\./.test(location.hostname)&&import('http://localhost:8700/dev.js')
-```
-
-**Option C: Desktop app** - Double-click Haltija.app. Works on any site, no CSP issues.
-
-### 3. Give your agent the prompt
-
-Copy the prompt from [docs/agent-prompt.md](docs/agent-prompt.md) into your conversation. That's it.
-
-```bash
-# Or fetch it programmatically
-curl localhost:8700/docs
-```
-
-**Why a prompt, not MCP?** In practice, copy-pasting the prompt works better than MCP integration. The agent gets full context upfront, understands the API immediately, and doesn't need tool discovery. MCP adds complexity without benefit here - Haltija's value is simplicity.
+The widget (auto-injected by the desktop app) connects to a local server via WebSocket. Agents talk to the server via REST. No special libraries, just HTTP.
 
 ---
 
 ## Key Features
 
-### Semantic Events
+### Semantic Tree with Flags
 
-Raw DOM events are noise. We aggregate them:
+The `/tree` endpoint doesn't dump raw HTML. It produces a semantic structure with actionable flags:
+
+```json
+{ "tag": "button", "ref": "@3", "text": "Submit",
+  "flags": { "interactive": true, "disabled": true } }
+```
+
+Ref IDs (`@1`, `@42`) let agents target elements efficiently without CSS selectors. Refs are stable within a page session — they survive DOM updates and re-renders as long as the element stays in the document.
+
+### Noise-Reduced Events
+
+Raw DOM events are noise. Haltija aggregates them into intent:
 
 | Raw Events | Semantic Event |
 |------------|----------------|
 | 18 keydown, 18 input | `"user typed 'hello@example.com'"` |
 | 200 scroll events | `"user scrolled to #pricing"` |
-| mouseover spam | `"user hovered on Help for 1.2s"` |
 
-**96% noise reduction** in real-world testing.
+96% noise reduction in real-world testing.
 
-### Smart Selectors
+### Screenshots with Context
 
-We prioritize what engineers actually use:
+Screenshots include a chyron (title, URL, timestamp) so agents always know what they're looking at. Disable with `chyron: false` for clean captures.
 
-1. ARIA labels: `button[aria-label="Close"]`
-2. Form labels: `input labeled "Email"`
-3. Text content: `button "Sign Up"`
+### Multi-Window & Session Affinity
 
-Not: `div.flex.mt-4 > button.btn-primary`
+Control multiple tabs. Session headers (`X-Haltija-Session`) give agents sticky window targeting — no need to specify window ID every call.
 
-### Multi-Window
+### Selection Tool
 
-Control multiple browser windows. OAuth flows, admin + customer side by side, popup testing.
+User drags to select UI elements. Selection persists visually until the agent retrieves it:
 
 ```bash
-curl localhost:8700/windows                    # List all
-curl -X POST "localhost:8700/click?window=abc123" -d '{"selector":"#ok"}'
+curl localhost:8700/select/result   # Returns selectors, HTML, bounding boxes
 ```
 
 ### Test Recording
 
-Click record, use your app, get a test:
+Click record, use your app, get a JSON test:
 
 ```json
 {
-  "name": "Login flow",
   "steps": [
     {"action": "type", "selector": "#email", "text": "user@example.com"},
     {"action": "click", "selector": "button[type=submit]"},
@@ -168,53 +141,38 @@ Click record, use your app, get a test:
 }
 ```
 
-Tests are pure JSON. The AI understands intent, not brittle selectors.
-
-### Selection Tool
-
-User points at problematic UI:
-
-```bash
-curl -X POST localhost:8700/select/start  # User drags rectangle
-curl localhost:8700/select/result         # Get selected elements
-```
-
-Returns selectors, HTML, bounding boxes - everything the agent needs to understand "this is bad."
-
 ---
 
-## Installation
+## Installation Options
 
 ```bash
-# Run directly
+# Desktop app (recommended - works on any site, no CSP issues)
 bunx haltija
 
-# Or install globally
+# Server only (for CI, bookmarklet, or remote usage)
+bunx haltija --server
+
+# With npx
+npx haltija
+
+# Install globally
 npm install -g haltija
 
 # CLI options
 haltija --https              # HTTPS mode
-haltija --both               # HTTP + HTTPS
 haltija --port 3000          # Custom port
-haltija --headless           # Playwright mode for CI
-haltija --docs-dir ./docs    # Custom reference docs
+haltija --headless           # For CI pipelines
+haltija --setup-mcp          # Configure Claude Desktop
 ```
 
-Works with Bun or Node.js.
+### Connecting without the desktop app
 
----
+**Bookmarklet** — Visit `http://localhost:8700`, drag to toolbar, click on any page.
 
-## Architecture
-
+**Dev snippet** — Auto-disabled in production:
+```javascript
+/^localhost$|^127\./.test(location.hostname)&&import('http://localhost:8700/dev.js')
 ```
-Browser Tab          Server (Bun)         AI Agent
-    │                    │                   │
-    │◄── WebSocket ─────►│◄── REST API ─────►│
-    │                    │                   │
-    └─ Widget            └─ Routes messages  └─ Any HTTP client
-```
-
-No special libraries. Just HTTP.
 
 ---
 
@@ -227,48 +185,31 @@ No special libraries. Just HTTP.
 
 ---
 
-## Known Limitations
+## Use Cases
 
-**Shadow DOM**: The `/tree` endpoint pierces shadow DOM by default. For click/type on shadow DOM elements, use `/eval`:
-
-```bash
-curl -X POST localhost:8700/eval -d '{
-  "code": "document.querySelector(\"my-component\").shadowRoot.querySelector(\".btn\").click()"
-}'
-```
-
-**React and Framework Antipatterns** (work in progress):
-- Clickable divs with `onClick` but no button semantics
-- Controlled inputs where React state doesn't sync with DOM events  
-- Contenteditable rich text editors masquerading as inputs
-- Custom select/dropdown widgets built from divs
-- Form libraries that bypass native change events
-
-Currently these may require `/eval` workarounds. We're working on automatic detection and handling so Haltija just does the right thing.
+- **AI pair programming** — Agent sees your actual app, not a description of it
+- **Automated QA** — Agent explores, finds bugs, writes repro steps
+- **Accessibility auditing** — Inspect ARIA across the whole page
+- **UX crime detection** — Detects 35+ anti-patterns automatically
+- **Support** — See exactly what customers see
 
 ---
 
-## Use Cases
+## Documentation
 
-- **AI pair programming** - Your assistant can actually see your app
-- **Automated QA** - Agent explores, finds bugs, writes repro steps
-- **Support automation** - See what customers see
-- **Accessibility testing** - Inspect ARIA across the whole page
-- **UX auditing** - Detects 35+ anti-patterns automatically
+```bash
+curl localhost:8700/docs      # Quick start (plain text, LLM-friendly)
+curl localhost:8700/api       # Full API reference (markdown)
+```
+
+- [Full API Reference](./API.md) (auto-generated from schema)
+- [Agent Prompt](docs/agent-prompt.md) — Copy-paste prompt for any AI agent
+- [Recipes](docs/recipes.md) — Common workflows
+- [CI Integration](docs/CI-INTEGRATION.md) — Using Haltija in pipelines
+- [Roadmap](docs/ROADMAP.md)
 
 ---
 
 ## License
 
-Apache 2.0 with patent grant.
-
----
-
-## Full Documentation
-
-```bash
-curl localhost:8700/docs      # Quick start guide
-curl localhost:8700/api       # Full API reference with examples
-```
-
-Or see [API.md](./API.md) for the complete reference (auto-generated from schema).
+Apache 2.0
