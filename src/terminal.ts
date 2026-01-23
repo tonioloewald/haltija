@@ -161,26 +161,50 @@ export function loadConfig(dir: string): HaltijaConfig | null {
 // ============================================
 
 /**
- * Dispatch a command string to the appropriate tool verb.
- * Format: "tool verb [args...]"
- *
- * Returns the command output (stdout) or an error message.
+ * List available verbs for a tool.
+ * Format: "tool > verb1 verb2 verb3"
  */
+export function listVerbs(config: HaltijaConfig, toolName: string): string | null {
+  const toolConfig = config.tools[toolName]
+  if (!toolConfig) return null
+  const verbs = Object.keys(toolConfig).filter(k => typeof toolConfig[k] === 'string')
+  if (verbs.length === 0) return `${toolName} > (no commands)`
+  return `${toolName} > ${verbs.join(' ')}`
+}
+
+/**
+ * List all tools with their verbs.
+ * One line per tool in "tool > verb1 verb2" format.
+ */
+export function listTools(config: HaltijaConfig): string {
+  const lines: string[] = []
+  for (const toolName of Object.keys(config.tools)) {
+    const line = listVerbs(config, toolName)
+    if (line) lines.push(line)
+  }
+  return lines.join('\n')
+}
+
 export async function dispatchCommand(
   config: HaltijaConfig,
   command: string,
 ): Promise<string> {
   const parts = command.trim().split(/\s+/)
   const toolName = parts[0]
-  const verb = parts[1] || 'run'
+  const verb = parts[1]
   const args = parts.slice(2)
 
-  if (!toolName) return 'error: empty command'
+  if (!toolName) return listTools(config)
 
   const toolConfig = config.tools[toolName]
   if (!toolConfig) {
     const available = Object.keys(config.tools).join(', ')
     return `error: unknown tool "${toolName}". available: ${available}`
+  }
+
+  // No verb → show available verbs (menu mode)
+  if (!verb) {
+    return listVerbs(config, toolName) || `${toolName} > (no commands)`
   }
 
   if (toolConfig.builtin) {
