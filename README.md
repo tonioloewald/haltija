@@ -210,7 +210,7 @@ hj --help                     # CLI subcommand reference
 - [Full API Reference](./API.md) (auto-generated from schema)
 - [Agent Prompt](docs/agent-prompt.md) — Copy-paste prompt for any AI agent
 - [Recipes](docs/recipes.md) — Common workflows
-- [CI Integration](docs/CI-INTEGRATION.md) — Using Haltija in pipelines
+- [CI Integration](docs/CI-INTEGRATION.md) — E2E testing with Haltija in GitHub Actions
 - [Roadmap](docs/ROADMAP.md)
 
 ---

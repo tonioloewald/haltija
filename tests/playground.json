@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "name": "Playground interactions",
+  "description": "Tests all interactive elements in the Haltija playground tab",
+  "url": "http://localhost:8700",
+  "tags": ["smoke", "playground"],
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "http://localhost:8700",
+      "description": "Load Haltija home page"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"playground\"]",
+      "description": "Switch to Playground tab",
+      "purpose": "Playground tab must be visible to interact with test elements"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": "#tab-playground" },
+      "description": "Playground tab content is visible"
+    },
+    {
+      "action": "click",
+      "selector": "#btn-primary",
+      "description": "Click Primary button",
+      "purpose": "Verify button click triggers output update"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Primary button clicked!" },
+      "description": "Output shows primary click message"
+    },
+    {
+      "action": "click",
+      "selector": "#btn-secondary",
+      "description": "Click Secondary button"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Secondary button clicked!" },
+      "description": "Output shows secondary click message"
+    },
+    {
+      "action": "click",
+      "selector": "#btn-danger",
+      "description": "Click Danger button"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Danger button clicked!" },
+      "description": "Output shows danger click message"
+    },
+    {
+      "action": "type",
+      "selector": "#text-input",
+      "text": "Hello from test",
+      "description": "Type in text input",
+      "purpose": "Verify typing triggers output update"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Text: Hello from test" },
+      "description": "Output shows typed text"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "value", "selector": "#text-input", "value": "Hello from test" },
+      "description": "Text input has correct value"
+    },
+    {
+      "action": "eval",
+      "code": "document.getElementById('select-input').value = 'b'; document.getElementById('select-input').dispatchEvent(new Event('change')); 'done'",
+      "expect": "done",
+      "description": "Select Option B from dropdown",
+      "purpose": "Verify dropdown change triggers output"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Selected: b" },
+      "description": "Output shows selected option"
+    },
+    {
+      "action": "click",
+      "selector": "#check-1",
+      "description": "Toggle checkbox 1"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Check 1: true" },
+      "description": "Output shows checkbox checked"
+    },
+    {
+      "action": "click",
+      "selector": "#check-1",
+      "description": "Uncheck checkbox 1"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Check 1: false" },
+      "description": "Output shows checkbox unchecked"
+    }
+  ]
+}

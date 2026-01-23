@@ -1,0 +1,127 @@
+name: QA Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run build
+
+      - name: Install Electron dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
+
+      - name: Launch Electron app
+        run: |
+          cd apps/desktop
+          npm install --omit=dev
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx electron . &
+          echo $! > /tmp/electron.pid
+
+      - name: Wait for server
+        run: |
+          echo "Waiting for Haltija server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8700/status > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:8700/status || (echo "Server failed to start" && exit 1)
+
+      - name: Wait for browser connection
+        run: |
+          echo "Waiting for browser widget connection..."
+          for i in $(seq 1 30); do
+            WINDOWS=$(curl -sf http://localhost:8700/windows 2>/dev/null | jq '.windows | length' 2>/dev/null || echo 0)
+            if [ "$WINDOWS" -gt 0 ]; then
+              echo "Browser connected after ${i}s ($WINDOWS window(s))"
+              break
+            fi
+            sleep 1
+          done
+          WINDOWS=$(curl -sf http://localhost:8700/windows | jq '.windows | length')
+          if [ "$WINDOWS" -eq 0 ]; then
+            echo "No browser connected"
+            exit 1
+          fi
+
+      - name: Run playground tests
+        run: |
+          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+            -H "Content-Type: application/json" \
+            -d @tests/playground.json)
+          echo "$RESULT" | jq .
+          PASSED=$(echo "$RESULT" | jq '.passed')
+          if [ "$PASSED" != "true" ]; then
+            echo "::error::Playground tests failed"
+            exit 1
+          fi
+
+      - name: Run homepage tests
+        run: |
+          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+            -H "Content-Type: application/json" \
+            -d @tests/homepage.json)
+          echo "$RESULT" | jq .
+          PASSED=$(echo "$RESULT" | jq '.passed')
+          if [ "$PASSED" != "true" ]; then
+            echo "::error::Homepage tests failed"
+            exit 1
+          fi
+
+      - name: Run xinjs SPA tests (non-blocking)
+        continue-on-error: true
+        run: |
+          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+            -H "Content-Type: application/json" \
+            --max-time 60 \
+            -d @tests/xinjs-spa.json) || true
+          echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
+          PASSED=$(echo "$RESULT" | jq '.passed' 2>/dev/null || echo "false")
+          if [ "$PASSED" != "true" ]; then
+            echo "::warning::xinjs SPA tests failed (external site, non-blocking)"
+          fi
+
+      - name: Capture failure snapshot
+        if: failure()
+        run: |
+          curl -sf -X POST http://localhost:8700/snapshot \
+            -H "Content-Type: application/json" \
+            -d '{"trigger": "ci-failure", "context": "QA test suite failed"}' \
+            > /tmp/failure-snapshot.json 2>/dev/null || true
+          curl -sf http://localhost:8700/screenshot > /tmp/failure-screenshot.json 2>/dev/null || true
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-failure-snapshots
+          path: /tmp/failure-*.json
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f /tmp/electron.pid ]; then
+            kill $(cat /tmp/electron.pid) 2>/dev/null || true
+          fi

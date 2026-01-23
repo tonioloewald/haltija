@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "xinjs SPA navigation",
+  "description": "Tests navigation and interactive components on the xinjs UI documentation site",
+  "url": "https://ui.xinjs.net",
+  "tags": ["external", "spa"],
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://ui.xinjs.net",
+      "description": "Load xinjs UI docs"
+    },
+    {
+      "action": "wait",
+      "selector": "body",
+      "duration": 2000,
+      "description": "Wait for SPA to initialize"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "title", "pattern": "xinjs" },
+      "description": "Page title contains xinjs",
+      "purpose": "Confirm the site loaded correctly"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": "nav" },
+      "description": "Navigation exists",
+      "purpose": "SPA should have a navigation element"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": "a[href]" },
+      "description": "Navigation links present"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelectorAll('nav a, nav button, [role=navigation] a').length > 0",
+      "expect": true,
+      "description": "Nav has clickable items",
+      "purpose": "SPA navigation should have interactive elements"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelectorAll('h1, h2, h3').length > 0",
+      "expect": true,
+      "description": "Page has heading structure",
+      "purpose": "Content should be structured with headings"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelectorAll('[class*=component], [class*=example], [class*=demo], pre, code').length > 0",
+      "expect": true,
+      "description": "Page has code examples or component demos"
+    }
+  ]
+}

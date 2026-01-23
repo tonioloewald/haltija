@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "Homepage navigation",
+  "description": "Tests tab switching, copy buttons, and bookmarklet on the Haltija home page",
+  "url": "http://localhost:8700",
+  "tags": ["smoke", "homepage"],
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "http://localhost:8700",
+      "description": "Load Haltija home page"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "title", "pattern": "Haltija" },
+      "description": "Page title contains Haltija"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": ".tabs" },
+      "description": "Tab bar exists"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"app\"]",
+      "description": "Click Haltija App tab"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": "#tab-app" },
+      "description": "App tab content is visible"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "hidden", "selector": "#tab-playground" },
+      "description": "Playground tab is hidden when App tab active"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"service\"]",
+      "description": "Click Haltija Service tab"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": "#tab-service" },
+      "description": "Service tab content is visible"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "hidden", "selector": "#tab-app" },
+      "description": "App tab is hidden when Service tab active"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"playground\"]",
+      "description": "Click Playground tab"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": "#tab-playground" },
+      "description": "Playground tab content is visible"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"service\"]",
+      "description": "Switch back to Service tab for copy test"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": ".copy-btn" },
+      "description": "Copy buttons exist on the page",
+      "purpose": "Code blocks should have copy buttons"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": "#bookmarklet-link" },
+      "description": "Bookmarklet link exists",
+      "purpose": "Users should be able to drag the bookmarklet to their toolbar"
+    },
+    {
+      "action": "eval",
+      "code": "document.getElementById('bookmarklet-link')?.href?.startsWith('javascript:') ?? false",
+      "expect": true,
+      "description": "Bookmarklet has javascript: href"
+    }
+  ]
+}

@@ -1437,6 +1437,27 @@
             "null"
           ],
           "description": "Stop on first failure (default true)"
+        },
+        "patience": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Total failures allowed before giving up (0 = use stopOnFailure, default 0)"
+        },
+        "patienceStreak": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Consecutive failures to bail immediately (default 2)"
+        },
+        "timeoutBonusMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ms added/removed from timeout on success/failure, capped at initial (default 1000)"
         }
       },
       "required": [
@@ -1497,6 +1518,27 @@
             "null"
           ],
           "description": "Stop on first failure (default false for suites)"
+        },
+        "patience": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Total failures allowed per test before giving up (0 = use stopOnFailure, default 0)"
+        },
+        "patienceStreak": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Consecutive failures to bail immediately (default 2)"
+        },
+        "timeoutBonusMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ms added/removed from timeout on success/failure, capped at initial (default 1000)"
         }
       },
       "required": [

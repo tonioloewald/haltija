@@ -1482,6 +1482,16 @@ For complete API reference with all options and response formats:
       stopOnFailure: body.stopOnFailure ?? true,
     }
     
+    // Elastic patience: racing-game checkpoint model
+    const patience = body.patience ?? 0  // total failures allowed (0 = classic mode)
+    const patienceStreak = body.patienceStreak ?? 2  // consecutive failures to bail
+    const timeoutBonusMs = body.timeoutBonusMs ?? 1000  // ms earned per success (capped at initial timeout)
+    const initialTimeout = options.timeout
+    let remainingPatience = patience
+    let failureCount = 0
+    let consecutiveFailures = 0
+    let currentTimeout = options.timeout
+    
     const startTime = Date.now()
     const stepResults: StepResult[] = []
     let passed = true
@@ -1493,22 +1503,40 @@ For complete API reference with all options and response formats:
       let error: string | undefined
       let context: Record<string, any> | undefined
       
+      // Check patience before starting step
+      if (patience > 0 && (remainingPatience <= 0 || consecutiveFailures >= patienceStreak)) {
+        const reason = consecutiveFailures >= patienceStreak
+          ? `${consecutiveFailures} consecutive failures`
+          : `${failureCount} total failures exceeded limit of ${patience}`
+        error = `Patience exhausted: ${reason}`
+        context = { patienceExhausted: true, failureCount, consecutiveFailures, patience, patienceStreak }
+        const snapId = await captureSnapshot('test-failure', {
+          testName: test.name, stepIndex: i, error,
+        })
+        stepResults.push({ index: i, step, passed: false, duration: 0, error, context, snapshotId: snapId })
+        passed = false
+        break
+      }
+      
       // Apply step delay
       if (step.delay || options.stepDelay) {
         await new Promise(r => setTimeout(r, step.delay || options.stepDelay))
       }
       
+      // Use elastic timeout when patience mode is active
+      const stepTimeout = patience > 0 ? currentTimeout : options.timeout
+      
       try {
         switch (step.action) {
           case 'navigate': {
-            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, options.timeout)
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'
               break
             }
             // Wait for browser to reconnect after page load (widget reloads)
-            const reconnected = await waitForBrowserReconnect(options.timeout)
+            const reconnected = await waitForBrowserReconnect(stepTimeout)
             if (!reconnected) {
               stepPassed = false
               error = 'Browser did not reconnect after navigation'
@@ -1649,7 +1677,7 @@ For complete API reference with all options and response formats:
               // Wait for selector to appear
               const waitStart = Date.now()
               let found = false
-              while (Date.now() - waitStart < options.timeout) {
+              while (Date.now() - waitStart < stepTimeout) {
                 const response = await requestFromBrowser('dom', 'query', { selector: step.selector })
                 if (response.success && response.data) {
                   found = true
@@ -1666,7 +1694,7 @@ For complete API reference with all options and response formats:
               const waitStart = Date.now()
               let matched = false
               const pattern = typeof step.url === 'string' ? step.url : step.url.source
-              while (Date.now() - waitStart < options.timeout) {
+              while (Date.now() - waitStart < stepTimeout) {
                 const response = await requestFromBrowser('navigation', 'location', {})
                 if (response.success && response.data) {
                   const url = response.data.url || response.data.href
@@ -1851,7 +1879,7 @@ For complete API reference with all options and response formats:
           }
           
           case 'eval': {
-            const response = await requestFromBrowser('eval', 'exec', { code: step.code }, options.timeout)
+            const response = await requestFromBrowser('eval', 'exec', { code: step.code }, stepTimeout)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Eval failed'
@@ -1867,7 +1895,7 @@ For complete API reference with all options and response formats:
 
           case 'verify': {
             const verifyStep = step as VerifyStep
-            const timeout = verifyStep.timeout ?? 5000
+            const timeout = Math.min(verifyStep.timeout ?? 5000, stepTimeout)
             const interval = verifyStep.interval ?? 100
             const deadline = Date.now() + timeout
             let lastActual: any
@@ -1940,7 +1968,21 @@ For complete API reference with all options and response formats:
       
       if (!stepPassed) {
         passed = false
-        if (options.stopOnFailure) break
+        failureCount++
+        consecutiveFailures++
+        if (patience > 0) {
+          remainingPatience--
+          // Shrink timeout on failure (floor of 1s)
+          currentTimeout = Math.max(1000, currentTimeout - timeoutBonusMs)
+          // Patience or streak exhausted — stop after this step
+          if (remainingPatience <= 0 || consecutiveFailures >= patienceStreak) break
+        } else if (options.stopOnFailure) {
+          break
+        }
+      } else if (patience > 0) {
+        // Success: reset streak, earn timeout bonus (capped at initial)
+        consecutiveFailures = 0
+        currentTimeout = Math.min(initialTimeout, currentTimeout + timeoutBonusMs)
       }
     }
     
@@ -1966,6 +2008,16 @@ For complete API reference with all options and response formats:
         passed: stepResults.filter(s => s.passed).length,
         failed: stepResults.filter(s => !s.passed).length,
       },
+      ...(patience > 0 && {
+        patience: {
+          allowed: patience,
+          streak: patienceStreak,
+          failures: failureCount,
+          consecutiveFailures,
+          remaining: remainingPatience,
+          finalTimeoutMs: currentTimeout,
+        },
+      }),
     }
 
     // Return in requested format
@@ -2003,7 +2055,12 @@ For complete API reference with all options and response formats:
       const testResult = await handleRest(new Request(`http://localhost/test/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test, format: 'json', ...options }),
+        body: JSON.stringify({
+          test, format: 'json', ...options,
+          patience: body.patience,
+          patienceStreak: body.patienceStreak,
+          timeoutBonusMs: body.timeoutBonusMs,
+        }),
       }))
 
       const result = await testResult.json() as TestRunResult

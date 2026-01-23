@@ -23,6 +23,14 @@ export interface TestRunResult {
     passed: number
     failed: number
   }
+  patience?: {
+    allowed: number
+    streak: number
+    failures: number
+    consecutiveFailures: number
+    remaining: number
+    finalTimeoutMs: number
+  }
 }
 
 export interface SuiteRunResult {
@@ -174,6 +182,12 @@ function buildTestSummary(result: TestRunResult, test: DevChannelTest): string {
   lines.push(`| Duration | ${result.duration}ms |`)
   lines.push(`| Steps | ${result.summary.passed}/${result.summary.total} passed |`)
 
+  if (result.patience) {
+    const p = result.patience
+    lines.push(`| Patience | ${p.remaining}/${p.allowed} remaining (${p.failures} failures, streak limit ${p.streak}) |`)
+    lines.push(`| Final Timeout | ${p.finalTimeoutMs}ms |`)
+  }
+
   if (result.snapshotId) {
     lines.push(`| Snapshot | ${result.snapshotId} |`)
   }
@@ -265,6 +279,12 @@ export function formatTestHuman(result: TestRunResult, test: DevChannelTest): st
 
   lines.push('')
   lines.push(`  ${result.summary.passed}/${result.summary.total} steps passed`)
+
+  if (result.patience) {
+    const p = result.patience
+    const pColor = p.remaining > 0 ? '\x1b[33m' : '\x1b[31m'
+    lines.push(`  ${pColor}Patience:${reset} ${p.remaining}/${p.allowed} remaining, ${p.failures} failures, timeout ${p.finalTimeoutMs}ms`)
+  }
 
   return lines.join('\n')
 }

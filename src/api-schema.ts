@@ -1640,6 +1640,9 @@ Output formats:
       .optional,
     stopOnFailure: s.boolean.describe('Stop on first failure (default true)')
       .optional,
+    patience: s.number.describe('Total failures allowed before giving up (0 = use stopOnFailure, default 0)').optional,
+    patienceStreak: s.number.describe('Consecutive failures to bail immediately (default 2)').optional,
+    timeoutBonusMs: s.number.describe('Ms added/removed from timeout on success/failure, capped at initial (default 1000)').optional,
   }),
   examples: [
     {
@@ -1702,6 +1705,9 @@ Response includes per-test results and overall summary.`,
     stopOnFailure: s.boolean.describe(
       'Stop on first failure (default false for suites)',
     ).optional,
+    patience: s.number.describe('Total failures allowed per test before giving up (0 = use stopOnFailure, default 0)').optional,
+    patienceStreak: s.number.describe('Consecutive failures to bail immediately (default 2)').optional,
+    timeoutBonusMs: s.number.describe('Ms added/removed from timeout on success/failure, capped at initial (default 1000)').optional,
   }),
   examples: [
     {

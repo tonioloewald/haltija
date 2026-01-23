@@ -1,518 +1,501 @@
-# Haltija CI Integration Guide
+# E2E Testing with Haltija in CI
 
-This guide covers running Haltija in CI environments (GitHub Actions, GitLab CI, etc.) for automated browser testing.
+Run browser tests in GitHub Actions using Haltija instead of Playwright. Your tests talk to a real Electron browser via REST — same engine your users run, no headless quirks.
 
-## Overview
-
-Haltija in CI works differently than Playwright/Puppeteer:
-
-| Aspect | Playwright | Haltija |
-|--------|------------|---------|
-| Browser | Launches headless browser | Connects to running browser |
-| Setup | `npx playwright install` | Start server + launch Electron |
-| Control | Direct API calls | REST API over HTTP |
-| State | Fresh per test | Persistent (use tabs for isolation) |
-
-**Key insight**: Haltija connects to a *live* browser. In CI, we launch the Electron app (which auto-injects the widget) and control it via REST.
-
-## Architecture in CI
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  CI Runner (GitHub Actions, etc.)                           │
-│                                                             │
-│  ┌─────────────────┐     ┌─────────────────────────────┐   │
-│  │  Your Test      │     │  Haltija Desktop (Electron)  │   │
-│  │  Script         │────▶│  - Embedded server :8700     │   │
-│  │  (curl/fetch)   │     │  - Auto-injected widget      │   │
-│  └─────────────────┘     │  - CSP bypassed              │   │
-│                          └─────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+CI Runner (ubuntu-latest)
+├── xvfb (virtual display)
+├── Electron app (real Chromium + auto-injected widget)
+├── Haltija server (localhost:8700, embedded in Electron)
+└── Your tests (curl / fetch / any HTTP client)
 ```
 
-## Quick Start: GitHub Actions
+Tests are JSON files. The test runner (`POST /test/run`) executes each step in the browser and reports pass/fail with context. No test framework required — just HTTP.
+
+## Minimal GitHub Actions Workflow
 
 ```yaml
-name: E2E Tests with Haltija
+name: E2E Tests
 
 on: [push, pull_request]
 
 jobs:
-  test:
+  e2e:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
-      
-      # Install dependencies for your app
-      - name: Setup Node
-        uses: actions/setup-node@v4
+
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      # Start your app (adjust for your setup)
-      - name: Start app
-        run: npm run dev &
-        env:
-          PORT: 3000
-      
-      # Install Haltija Desktop dependencies
-      - name: Setup Haltija
+          bun-version: latest
+
+      - name: Install & build Haltija
         run: |
-          # Install Bun (needed to build)
-          curl -fsSL https://bun.sh/install | bash
-          export PATH="$HOME/.bun/bin:$PATH"
-          
-          # Clone and build Haltija
-          git clone https://github.com/tonioloewald/haltija.git /tmp/haltija
-          cd /tmp/haltija
           bun install
           bun run build
-          
-          # Build desktop app for Linux
-          cd apps/desktop
-          npm install
-          npm run build:linux
-      
-      # Start Haltija with xvfb (virtual display)
-      - name: Start Haltija
+
+      - name: Install Electron display deps
         run: |
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1920x1080x24 &
-          sleep 2
-          
-          # Launch the AppImage
-          chmod +x /tmp/haltija/apps/desktop/dist/Haltija-*-x86_64.AppImage
-          /tmp/haltija/apps/desktop/dist/Haltija-*-x86_64.AppImage --no-sandbox &
-          
-          # Wait for server to be ready
-          timeout 30 bash -c 'until curl -s http://localhost:8700/status; do sleep 1; done'
-      
-      # Run your tests
-      - name: Run E2E tests
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+            libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
+
+      - name: Launch Haltija
         run: |
-          # Navigate to your app
-          curl -X POST http://localhost:8700/navigate -d '{"url":"http://localhost:3000"}'
-          
-          # Run test script
-          ./tests/e2e.sh
+          cd apps/desktop && npm install --omit=dev
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx electron . &
+
+      - name: Wait for ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8700/status > /dev/null 2>&1 && break
+            sleep 1
+          done
+          # Wait for browser widget to connect
+          for i in $(seq 1 30); do
+            [ "$(curl -sf http://localhost:8700/windows | jq '.windows | length')" -gt 0 ] && break
+            sleep 1
+          done
+
+      - name: Run tests
+        run: |
+          curl -sf -X POST http://localhost:8700/test/run \
+            -H "Content-Type: application/json" \
+            -d @tests/my-test.json | tee result.json
+          jq -e '.passed' result.json
 ```
 
-## The Haltija Server
+## Writing Test JSON
 
-The desktop app embeds a Haltija server that starts automatically. Key points:
-
-- **Port**: 8700 (default)
-- **Protocol**: HTTP REST + WebSocket
-- **No auth**: Localhost only in CI (secure by isolation)
-
-Check it's running:
-```bash
-curl http://localhost:8700/status
-# {"ok":true,"windows":[...],"serverVersion":"0.1.9",...}
-```
-
-## Test Isolation with Tabs
-
-Unlike Playwright where each test gets a fresh browser, Haltija maintains state. Use tabs for isolation:
-
-```bash
-# Open a fresh tab for this test
-WINDOW_ID=$(curl -s -X POST http://localhost:8700/tabs/open \
-  -d '{"url":"http://localhost:3000/login"}' | jq -r '.data.windowId')
-
-# Run test in that tab
-curl -X POST "http://localhost:8700/click?window=$WINDOW_ID" \
-  -d '{"selector":"#submit"}'
-
-# Close tab when done
-curl -X POST http://localhost:8700/tabs/close \
-  -d "{\"window\":\"$WINDOW_ID\"}"
-```
-
-## Writing Tests
-
-### Shell Script (simplest)
-
-```bash
-#!/bin/bash
-# tests/login.sh
-
-set -e  # Exit on error
-
-BASE_URL="http://localhost:8700"
-APP_URL="http://localhost:3000"
-
-# Navigate to login page
-curl -s -X POST "$BASE_URL/navigate" -d "{\"url\":\"$APP_URL/login\"}"
-
-# Type credentials
-curl -s -X POST "$BASE_URL/type" \
-  -d '{"selector":"#email","text":"test@example.com"}'
-
-curl -s -X POST "$BASE_URL/type" \
-  -d '{"selector":"#password","text":"password123"}'
-
-# Click submit
-curl -s -X POST "$BASE_URL/click" -d '{"selector":"button[type=submit]"}'
-
-# Wait for redirect
-curl -s -X POST "$BASE_URL/wait" \
-  -d '{"forElement":".dashboard","timeout":5000}'
-
-# Verify we're on dashboard
-LOCATION=$(curl -s "$BASE_URL/location")
-if echo "$LOCATION" | grep -q "dashboard"; then
-  echo "✓ Login test passed"
-  exit 0
-else
-  echo "✗ Login test failed - not on dashboard"
-  exit 1
-fi
-```
-
-### JSON Test Format
-
-Haltija has a native JSON test format:
+A test is a JSON file with a name and a list of steps:
 
 ```json
 {
   "version": 1,
   "name": "Login flow",
-  "url": "http://localhost:3000/login",
+  "description": "Verify email/password login redirects to dashboard",
+  "url": "http://localhost:3000",
   "steps": [
-    {"action": "type", "selector": "#email", "text": "test@example.com"},
-    {"action": "type", "selector": "#password", "text": "password123"},
-    {"action": "click", "selector": "button[type=submit]"},
-    {"action": "wait", "forElement": ".dashboard", "timeout": 5000},
-    {"action": "assert", "assertion": {"type": "url", "pattern": "/dashboard"}}
+    {
+      "action": "navigate",
+      "url": "http://localhost:3000/login",
+      "description": "Go to login page"
+    },
+    {
+      "action": "type",
+      "selector": "#email",
+      "text": "user@example.com",
+      "description": "Enter email"
+    },
+    {
+      "action": "type",
+      "selector": "#password",
+      "text": "secret123",
+      "description": "Enter password"
+    },
+    {
+      "action": "click",
+      "selector": "button[type=submit]",
+      "description": "Submit login form",
+      "purpose": "Should redirect to dashboard on success"
+    },
+    {
+      "action": "wait",
+      "selector": ".dashboard",
+      "description": "Wait for dashboard to render"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "url", "pattern": "/dashboard" },
+      "description": "URL is now /dashboard"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": ".welcome", "text": "Welcome", "contains": true },
+      "description": "Welcome message visible"
+    }
   ]
 }
 ```
 
-Run it:
+### Step Types
+
+| Action | Required Fields | What It Does |
+|--------|----------------|--------------|
+| `navigate` | `url` | Load a URL |
+| `click` | `selector` | Click an element |
+| `type` | `selector`, `text` | Type text into an input (clears first by default) |
+| `key` | `key` | Press a key (e.g. `"Enter"`, `"Escape"`, `"Tab"`) |
+| `wait` | `selector` or `duration` | Wait for element to appear or fixed ms |
+| `assert` | `assertion` | Check a condition (fails the step if false) |
+| `eval` | `code` | Run JavaScript, optionally check return value with `expect` |
+| `verify` | `eval`, `expect` | Poll an expression until it matches (for async state) |
+
+### Assertion Types
+
+```json
+{"type": "exists", "selector": ".modal"}
+{"type": "not-exists", "selector": ".error"}
+{"type": "text", "selector": "h1", "text": "Dashboard"}
+{"type": "text", "selector": "p", "text": "welcome", "contains": true}
+{"type": "value", "selector": "#email", "value": "user@example.com"}
+{"type": "visible", "selector": "#tab-content"}
+{"type": "hidden", "selector": ".loading-spinner"}
+{"type": "url", "pattern": "/dashboard"}
+{"type": "title", "pattern": "My App"}
+{"type": "console-contains", "text": "Error", "level": "error"}
+{"type": "eval", "code": "document.cookies.length > 0", "expected": true}
+```
+
+### Step Metadata
+
+Every step supports optional metadata that improves failure messages:
+
+```json
+{
+  "action": "click",
+  "selector": "#checkout-btn",
+  "description": "Click checkout button",
+  "purpose": "Initiates payment flow — button may be disabled if cart is empty",
+  "delay": 500
+}
+```
+
+- `description`: What the step does (shown in results)
+- `purpose`: Why it matters (shown on failure — helps agents and humans understand intent)
+- `delay`: Ms to wait before executing this step
+
+## Running Tests
+
+### Single test
+
 ```bash
 curl -X POST http://localhost:8700/test/run \
   -H "Content-Type: application/json" \
   -d @tests/login.json
 ```
 
-### GitHub Actions Output Format
-
-For nice PR annotations:
-```bash
-curl -X POST http://localhost:8700/test/run \
-  -d '{"test": ..., "format": "github"}'
+Response:
+```json
+{
+  "test": "Login flow",
+  "passed": true,
+  "duration": 2340,
+  "steps": [
+    {"index": 0, "passed": true, "duration": 120, "description": "Go to login page"},
+    {"index": 1, "passed": true, "duration": 85, "description": "Enter email"},
+    ...
+  ],
+  "summary": {"total": 7, "executed": 7, "passed": 7, "failed": 0}
+}
 ```
 
-This outputs GitHub Actions annotations that show inline in PRs.
+### Test suite (multiple tests)
 
-## Platform-Specific Setup
+```bash
+curl -X POST http://localhost:8700/test/suite \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tests": [
+      '$(cat tests/login.json)',
+      '$(cat tests/checkout.json)'
+    ]
+  }'
+```
 
-### Ubuntu/Linux (GitHub Actions default)
+Or build a suite file:
+```json
+{
+  "tests": [
+    { "version": 1, "name": "Login", "url": "...", "steps": [...] },
+    { "version": 1, "name": "Checkout", "url": "...", "steps": [...] }
+  ],
+  "stopOnFailure": false
+}
+```
+
+### Runner options
+
+Pass these alongside `test` (or at suite level):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `timeout` | 5000 | Per-step timeout in ms |
+| `stepDelay` | 100 | Ms between steps |
+| `stopOnFailure` | true (run) / false (suite) | Stop on first failure |
+| `format` | `"json"` | Output: `"json"`, `"github"`, `"human"` |
+| `patience` | 0 | Total step failures allowed before bailing (0 = classic mode) |
+| `patienceStreak` | 2 | Consecutive failures to bail immediately |
+| `timeoutBonusMs` | 1000 | Ms added to step timeout on success, removed on failure (capped at initial) |
+
+## The Patience Model
+
+By default, the runner stops on the first failure (`stopOnFailure: true`). For CI where timing can be flaky, the patience model is more resilient:
+
+```bash
+curl -X POST http://localhost:8700/test/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "test": ...,
+    "patience": 5,
+    "patienceStreak": 3,
+    "timeout": 8000,
+    "timeoutBonusMs": 2000
+  }'
+```
+
+How it works:
+- **`patience: 5`** — up to 5 steps can fail before the test bails
+- **`patienceStreak: 3`** — 3 failures *in a row* bails immediately (something is broken, not flaky)
+- **`timeout: 8000`** — initial per-step timeout
+- **`timeoutBonusMs: 2000`** — each success adds 2s to the timeout (rewarding a responsive app), each failure removes 2s (giving up faster on a stuck app). Never exceeds the initial timeout.
+
+The result includes patience stats:
+```json
+{
+  "passed": false,
+  "patience": {
+    "allowed": 5,
+    "streak": 3,
+    "failures": 3,
+    "consecutiveFailures": 3,
+    "remaining": 2,
+    "finalTimeoutMs": 4000
+  }
+}
+```
+
+This is useful for long test suites against apps with variable load times — the runner adapts instead of using fixed waits everywhere.
+
+## Output Formats
+
+### `format: "json"` (default)
+
+Structured data for programmatic use. Parse with `jq` in shell scripts or consume directly from code.
+
+### `format: "github"`
+
+Produces GitHub Actions annotations that show inline on PRs:
+
+```bash
+RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+  -H "Content-Type: application/json" \
+  -d '{"test": ..., "format": "github"}')
+
+# Annotations go to stdout (GitHub picks them up)
+echo "$RESULT" | sed -n '1,/---SUMMARY---/p' | head -n -2
+
+# Summary goes to step summary
+echo "$RESULT" | sed -n '/---SUMMARY---/,$p' | tail -n +2 >> $GITHUB_STEP_SUMMARY
+```
+
+### `format: "human"`
+
+Colored terminal output with pass/fail symbols. Good for local development.
+
+## Testing Your Own App
+
+To test an app that isn't the Haltija home page, navigate to it first:
+
+```json
+{
+  "version": 1,
+  "name": "My app checkout",
+  "url": "http://localhost:3000",
+  "steps": [
+    {"action": "navigate", "url": "http://localhost:3000/shop"},
+    {"action": "click", "selector": ".product:first-child .add-to-cart"},
+    {"action": "click", "selector": "#cart-icon"},
+    {"action": "assert", "assertion": {"type": "text", "selector": ".cart-count", "text": "1"}}
+  ]
+}
+```
+
+In CI, start your app before Haltija:
 
 ```yaml
-- name: Install display dependencies
+- name: Start app
   run: |
-    sudo apt-get update
-    sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
-      libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-      libxfixes3 libxrandr2 libgbm1 libasound2
+    npm run build
+    npm start &
+    # Wait for app
+    for i in $(seq 1 30); do
+      curl -sf http://localhost:3000 > /dev/null 2>&1 && break
+      sleep 1
+    done
 
-- name: Start virtual display
+- name: Launch Haltija
   run: |
-    Xvfb :99 -screen 0 1920x1080x24 &
-    echo "DISPLAY=:99" >> $GITHUB_ENV
+    cd apps/desktop && npm install --omit=dev
+    xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx electron . &
+
+- name: Wait for Haltija
+  run: |
+    for i in $(seq 1 30); do
+      curl -sf http://localhost:8700/status > /dev/null 2>&1 && break
+      sleep 1
+    done
+    for i in $(seq 1 15); do
+      [ "$(curl -sf http://localhost:8700/windows | jq '.windows | length')" -gt 0 ] && break
+      sleep 1
+    done
+
+- name: Run tests
+  run: |
+    curl -sf -X POST http://localhost:8700/test/run \
+      -H "Content-Type: application/json" \
+      -d @tests/checkout.json | tee result.json
+    jq -e '.passed' result.json
+```
+
+## Debugging Failures
+
+### Screenshot on failure
+
+```yaml
+- name: Capture failure state
+  if: failure()
+  run: |
+    curl -sf http://localhost:8700/screenshot > /tmp/failure-screenshot.json
+    curl -sf http://localhost:8700/console > /tmp/console-logs.json
+    curl -sf -X POST http://localhost:8700/snapshot \
+      -H "Content-Type: application/json" \
+      -d '{"trigger": "ci-failure"}' > /tmp/failure-snapshot.json
+
+- name: Upload artifacts
+  if: failure()
+  uses: actions/upload-artifact@v4
+  with:
+    name: failure-debug
+    path: /tmp/failure-*.json
+    retention-days: 7
+```
+
+### What's in the snapshot?
+
+The `/snapshot` endpoint captures DOM tree, console output, and viewport state — everything you need to understand what the browser was showing when the test failed. Download the artifact and inspect it locally, or pass it to an agent for analysis.
+
+### Console logs
+
+```bash
+# Check for errors during test run
+curl -sf http://localhost:8700/console | jq '.entries[] | select(.level == "error")'
+```
+
+### DOM tree at point of failure
+
+```bash
+# See what's on the page right now
+curl -sf -X POST http://localhost:8700/tree \
+  -H "Content-Type: application/json" \
+  -d '{"depth": 3}'
+```
+
+## Tab Isolation
+
+Each test navigates to its own URL, but if you need parallel isolation, use tabs:
+
+```bash
+# Open a fresh tab
+WINDOW=$(curl -sf -X POST http://localhost:8700/tabs/open \
+  -H "Content-Type: application/json" \
+  -d '{"url": "http://localhost:3000"}' | jq -r '.data.windowId')
+
+# Run commands in that tab
+curl -sf -X POST "http://localhost:8700/click?window=$WINDOW" \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#submit"}'
+
+# Close when done
+curl -sf -X POST http://localhost:8700/tabs/close \
+  -H "Content-Type: application/json" \
+  -d "{\"window\": \"$WINDOW\"}"
+```
+
+## Platform Notes
+
+### Linux (GitHub Actions default)
+
+Requires `xvfb` for a virtual display and Electron's shared library dependencies:
+
+```bash
+sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+  libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+  libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
+```
+
+Launch with:
+```bash
+xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx electron . &
 ```
 
 ### macOS
 
-```yaml
-jobs:
-  test:
-    runs-on: macos-latest
-    steps:
-      # No xvfb needed - macOS has a display
-      - name: Start Haltija
-        run: |
-          open /tmp/haltija/apps/desktop/dist/Haltija.app &
-          sleep 5
+No xvfb needed — macOS runners have a display:
+```bash
+npx electron . &
 ```
 
 ### Windows
 
-```yaml
-jobs:
-  test:
-    runs-on: windows-latest
-    steps:
-      - name: Start Haltija
-        run: |
-          Start-Process -FilePath "C:\path\to\Haltija.exe"
-          Start-Sleep -Seconds 5
+```powershell
+Start-Process npx -ArgumentList "electron", "." -WorkingDirectory "apps/desktop"
 ```
 
-## Pre-built Binaries (Recommended)
+## Tips
 
-Instead of building in CI, download pre-built binaries:
+- **Start simple**: One test file, a few steps. Add more once the pipeline is green.
+- **Use `purpose`** on steps that might fail — it makes the failure output actionable.
+- **Use patience for flaky environments**: `patience: 3` handles occasional CI slowness without masking real bugs.
+- **Keep step timeouts reasonable**: 5-8s for normal interactions, 15-30s for page loads or heavy operations.
+- **Navigate explicitly**: Don't rely on the Haltija home page being loaded. Start each test with a `navigate` step.
+- **Check console logs**: If a test fails unexpectedly, the browser console often has the answer.
+- **Upload artifacts always**: The snapshot is cheap and invaluable when debugging a failure you can't reproduce locally.
 
-```yaml
-- name: Download Haltija
-  run: |
-    # Download latest release
-    curl -L -o haltija.AppImage \
-      https://github.com/tonioloewald/haltija/releases/latest/download/Haltija-linux-x86_64.AppImage
-    chmod +x haltija.AppImage
-```
-
-*(Note: Release binaries coming soon - for now, build from source)*
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HALTIJA_PORT` | 8700 | Server port |
-| `DISPLAY` | - | X display (Linux, set to `:99` with xvfb) |
-
-## Debugging CI Failures
-
-### Capture screenshot on failure
+## API Quick Reference
 
 ```bash
-# In your test script
-if ! run_test; then
-  curl -s http://localhost:8700/screenshot > failure.png
-  echo "Screenshot saved to failure.png"
-  exit 1
-fi
-```
-
-### Get console logs
-
-```bash
-curl -s http://localhost:8700/console | jq '.entries[]'
-```
-
-### Capture full snapshot
-
-```bash
-curl -s -X POST http://localhost:8700/snapshot \
-  -d '{"trigger":"test-failure"}' > snapshot.json
-```
-
-### Upload artifacts
-
-```yaml
-- name: Upload failure artifacts
-  if: failure()
-  uses: actions/upload-artifact@v4
-  with:
-    name: test-failures
-    path: |
-      failure.png
-      snapshot.json
-```
-
-## Complete Example Workflow
-
-```yaml
-name: E2E Tests
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Install app dependencies
-        run: npm ci
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
-            libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-            libxfixes3 libxrandr2 libgbm1 libasound2
-      
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v1
-      
-      - name: Build Haltija
-        run: |
-          git clone --depth 1 https://github.com/tonioloewald/haltija.git /tmp/haltija
-          cd /tmp/haltija
-          bun install
-          bun run build
-          cd apps/desktop
-          npm install
-          npm run compile:server:linux
-          npm run build:linux
-      
-      - name: Start services
-        run: |
-          # Start virtual display
-          Xvfb :99 -screen 0 1920x1080x24 &
-          export DISPLAY=:99
-          
-          # Start your app
-          npm run dev &
-          
-          # Start Haltija
-          chmod +x /tmp/haltija/apps/desktop/dist/*.AppImage
-          /tmp/haltija/apps/desktop/dist/*.AppImage --no-sandbox &
-          
-          # Wait for both to be ready
-          timeout 30 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 1; done'
-          timeout 30 bash -c 'until curl -s http://localhost:8700/status | grep -q "ok"; do sleep 1; done'
-        env:
-          DISPLAY: ':99'
-      
-      - name: Run E2E tests
-        run: |
-          # Navigate to app
-          curl -X POST http://localhost:8700/navigate -d '{"url":"http://localhost:3000"}'
-          
-          # Run test suite
-          curl -X POST http://localhost:8700/test/suite \
-            -H "Content-Type: application/json" \
-            -d @tests/suite.json \
-            --output results.json
-          
-          # Check results
-          if jq -e '.summary.failed > 0' results.json > /dev/null; then
-            echo "Tests failed!"
-            jq '.results[] | select(.passed == false)' results.json
-            exit 1
-          fi
-      
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: results.json
-      
-      - name: Capture failure state
-        if: failure()
-        run: |
-          curl -s http://localhost:8700/screenshot > failure-screenshot.png
-          curl -s -X POST http://localhost:8700/snapshot -d '{"trigger":"ci-failure"}' > failure-snapshot.json
-          curl -s http://localhost:8700/console > console-logs.json
-      
-      - name: Upload failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: failure-artifacts
-          path: |
-            failure-screenshot.png
-            failure-snapshot.json
-            console-logs.json
-```
-
-## API Quick Reference for CI
-
-```bash
-# Status & connection
-GET  /status                    # Server health
-GET  /windows                   # Connected tabs
+# Health / readiness
+GET  /status                       # Server up?
+GET  /windows                      # Browser connected?
 
 # Navigation
-POST /navigate {"url":"..."}    # Go to URL
-POST /refresh                   # Reload page
-GET  /location                  # Current URL
+POST /navigate  {"url": "..."}     # Go to URL
+GET  /location                     # Current URL + title
 
 # Interaction
-POST /click {"selector":"..."}  # Click element
-POST /type {"selector":"...","text":"..."}  # Type text
-POST /key {"key":"Enter"}       # Press key
+POST /click     {"selector": "..."} 
+POST /type      {"selector": "...", "text": "..."}
+POST /key       {"key": "Enter"}
 
 # Inspection
-POST /tree {"depth":3}          # DOM structure
-POST /query {"selector":"..."}  # Find element
-POST /inspect {"selector":"..."} # Element details
-
-# Waiting
-POST /wait {"forElement":"...","timeout":5000}  # Wait for element
-POST /wait {"ms":1000}          # Simple delay
+POST /tree      {"depth": 3}       # DOM tree with ref IDs
+POST /query     {"selector": "..."} # Find element details
 
 # Testing
-POST /test/run {"test":{...}}   # Run single test
-POST /test/suite {"tests":[...]} # Run test suite
+POST /test/run  {"test": {...}}    # Run one test
+POST /test/suite {"tests": [...]}  # Run multiple tests
 
 # Debugging
-GET  /console                   # Browser console logs
-POST /screenshot                # Capture page
-POST /snapshot                  # Full debug state
+GET  /console                      # Browser console output
+POST /screenshot                   # Page capture (base64 PNG)
+POST /snapshot                     # Full debug state dump
 
-# Tab management (isolation)
-POST /tabs/open {"url":"..."}   # New tab
-POST /tabs/close {"window":"..."} # Close tab
+# Tabs
+POST /tabs/open  {"url": "..."}    # New tab
+POST /tabs/close {"window": "..."}  # Close tab
 ```
 
-## Troubleshooting
+## Real-World Examples
 
-### "No windows connected"
+See the test files in this repo:
 
-The Electron app started but hasn't loaded a page yet:
-```bash
-# Navigate to trigger widget injection
-curl -X POST http://localhost:8700/navigate -d '{"url":"about:blank"}'
-sleep 2
-curl http://localhost:8700/status
-```
-
-### "Connection refused"
-
-Server not running. Check:
-```bash
-# Is the process running?
-ps aux | grep -i haltija
-
-# Check port
-netstat -tlnp | grep 8700
-```
-
-### Electron won't start on Linux
-
-Missing dependencies. Install:
-```bash
-sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 \
-  libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-  libxfixes3 libxrandr2 libgbm1 libasound2
-```
-
-### Tests flaky
-
-Add explicit waits:
-```bash
-# Bad: assume element exists
-curl -X POST http://localhost:8700/click -d '{"selector":".modal-button"}'
-
-# Good: wait for it first
-curl -X POST http://localhost:8700/wait -d '{"forElement":".modal-button"}'
-curl -X POST http://localhost:8700/click -d '{"selector":".modal-button"}'
-```
-
-## Next Steps
-
-- **Local development**: See [Getting Started](getting-started/app.md)
-- **API Reference**: See [API.md](../API.md)
-- **Test format**: See [Test JSON schema](../API.md#run-tests)
-- **Recipes**: See [Common workflows](recipes.md)
+- [`tests/playground.json`](../tests/playground.json) — Clicks, typing, dropdowns, checkboxes
+- [`tests/homepage.json`](../tests/homepage.json) — Tab switching, element visibility, eval assertions
+- [`tests/xinjs-spa.json`](../tests/xinjs-spa.json) — External SPA navigation and structure checks
+- [`.github/workflows/test-qa.yml`](../.github/workflows/test-qa.yml) — The CI workflow that runs them
