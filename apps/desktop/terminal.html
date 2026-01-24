@@ -56,6 +56,10 @@
       background: #f87171;
       display: inline-block;
     }
+    #shell-id {
+      color: #6366f1;
+      font-weight: bold;
+    }
 
     #messages {
       flex: 1;
@@ -96,6 +100,60 @@
     .msg-error {
       color: #f87171;
     }
+    .msg-dm {
+      color: #34d399;
+    }
+    .msg-dm .from-name {
+      font-weight: bold;
+      color: #10b981;
+    }
+
+    /* Board view */
+    .board {
+      display: flex;
+      gap: 8px;
+      padding: 8px 0;
+      overflow-x: auto;
+      min-height: 80px;
+    }
+    .board-col {
+      min-width: 140px;
+      max-width: 200px;
+      background: #252540;
+      border-radius: 4px;
+      padding: 8px;
+      flex-shrink: 0;
+    }
+    .board-col-title {
+      font-size: 10px;
+      color: #6366f1;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    .board-item {
+      font-size: 12px;
+      padding: 4px 6px;
+      background: #1a1a2e;
+      border-radius: 3px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .board-item:hover {
+      background: #2d2d4a;
+    }
+    .board-item.claimed {
+      border-left-color: #4ade80;
+    }
+    .board-item .item-id {
+      color: #64748b;
+      margin-right: 4px;
+    }
 
     #input-area {
       display: flex;
@@ -126,10 +184,11 @@
 <body>
   <div id="status-bar">
     <span class="disconnected" id="conn-indicator"></span>
+    <span id="shell-id"></span>
     <span id="status-text">connecting...</span>
   </div>
   <div id="messages">
-    <div class="msg msg-system">Agent terminal ready. Type a tool command (e.g., "tests run").</div>
+    <div class="msg msg-system">Terminal ready. Type "tasks" to see the board, "who" for shells, or a tool command.</div>
   </div>
   <div id="input-area">
     <input id="input" type="text" placeholder="tool command..." autofocus>
@@ -144,7 +203,9 @@
     const inputEl = document.getElementById('input')
     const statusTextEl = document.getElementById('status-text')
     const connIndicator = document.getElementById('conn-indicator')
+    const shellIdEl = document.getElementById('shell-id')
     let ws = null
+    let shellId = null
     let commandHistory = []
     let historyIndex = -1
 
@@ -157,17 +218,49 @@
 
       ws.onopen = () => {
         connIndicator.className = 'connected'
-        statusTextEl.textContent = 'connected'
+        if (!shellId) statusTextEl.textContent = 'connected'
       }
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
-          if (msg.type === 'status') {
-            renderStatusLine(msg.line)
-          } else if (msg.type === 'push') {
-            addMessage('push', `${msg.tool}: ${msg.text}`, msg.tool)
-            scrollToBottom()
+          switch (msg.type) {
+            case 'identity':
+              shellId = msg.shellId
+              shellIdEl.textContent = shellId
+              break
+            case 'status':
+              renderStatusLine(msg.line)
+              break
+            case 'push':
+              addMessage('push', `${msg.tool}: ${msg.text}`, msg.tool)
+              scrollToBottom()
+              break
+            case 'message':
+              addMessage('dm', `${msg.from}: ${msg.text}`, msg.from)
+              scrollToBottom()
+              break
+            case 'shell-joined':
+              if (msg.shellId !== shellId) {
+                addMessage('system', `${msg.shellId} joined`)
+                scrollToBottom()
+              }
+              break
+            case 'shell-left':
+              addMessage('system', `${msg.name || msg.shellId} left`)
+              scrollToBottom()
+              break
+            case 'shell-renamed':
+              if (msg.shellId === shellId) {
+                shellIdEl.textContent = msg.name || shellId
+              }
+              addMessage('system', `${msg.shellId} → ${msg.name}`)
+              scrollToBottom()
+              break
+            case 'task-changed':
+              addMessage('system', `tasks updated by ${msg.by}`)
+              scrollToBottom()
+              break
           }
         } catch {}
       }
@@ -175,7 +268,6 @@
       ws.onclose = () => {
         connIndicator.className = 'disconnected'
         statusTextEl.textContent = 'disconnected'
-        // Reconnect after 2s
         setTimeout(connect, 2000)
       }
 
@@ -193,17 +285,55 @@
         statusTextEl.textContent = 'idle'
         return
       }
-      // Parse [tool state] items
       const items = line.match(/\[([^\]]+)\]/g) || []
       let html = ''
       for (const item of items) {
-        const text = item.slice(1, -1) // remove brackets
+        const text = item.slice(1, -1)
         let cls = 'status-item'
         if (/fail|error/i.test(text)) cls += ' error'
-        else if (/warn|pending/i.test(text)) cls += ' alert'
+        else if (/warn|blocked/i.test(text)) cls += ' alert'
         html += `<span class="${cls}">${escapeHtml(text)}</span> `
       }
       statusTextEl.innerHTML = html || 'idle'
+    }
+
+    // ==========================================
+    // Board View Rendering
+    // ==========================================
+
+    function renderBoard(boardData) {
+      const container = document.createElement('div')
+      container.className = 'board'
+
+      const columnOrder = ['icebox', 'queued', 'in_progress', 'blocked', 'review', 'done']
+      for (const col of columnOrder) {
+        const items = boardData.columns[col]
+        if (!items || items.length === 0) continue
+
+        const colEl = document.createElement('div')
+        colEl.className = 'board-col'
+
+        const titleEl = document.createElement('div')
+        titleEl.className = 'board-col-title'
+        titleEl.textContent = col.replace('_', ' ')
+        colEl.appendChild(titleEl)
+
+        for (const item of items) {
+          const itemEl = document.createElement('div')
+          itemEl.className = 'board-item' + (item.claimed ? ' claimed' : '')
+          itemEl.innerHTML = `<span class="item-id">#${item.id}</span>${escapeHtml(item.title)}`
+          itemEl.title = item.claimed ? `claimed: ${item.claimed}` : item.title
+          itemEl.addEventListener('click', () => {
+            inputEl.value = `tasks detail ${item.id}`
+            inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+          })
+          colEl.appendChild(itemEl)
+        }
+
+        container.appendChild(colEl)
+      }
+
+      return container
     }
 
     // ==========================================
@@ -224,10 +354,20 @@
           const resp = await fetch(`${BASE_URL}/terminal/command`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command }),
+            body: JSON.stringify({ command, shellId }),
           })
           const output = await resp.text()
-          if (output.startsWith('error:')) {
+
+          // Check if output is a board JSON
+          if (output.startsWith('{"type":"board"')) {
+            try {
+              const boardData = JSON.parse(output)
+              const boardEl = renderBoard(boardData)
+              messagesEl.appendChild(boardEl)
+            } catch {
+              addMessage('output', output)
+            }
+          } else if (output.startsWith('error:')) {
             addMessage('error', output)
           } else {
             addMessage('output', output)
@@ -238,7 +378,6 @@
         scrollToBottom()
       }
 
-      // History navigation
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         if (historyIndex > 0) {
@@ -262,17 +401,18 @@
     // Message Display
     // ==========================================
 
-    function addMessage(type, text, toolName) {
+    function addMessage(type, text, extra) {
       const div = document.createElement('div')
       div.className = `msg msg-${type}`
-      if (type === 'push' && toolName) {
-        div.innerHTML = `<span class="tool-name">${escapeHtml(toolName)}</span> ${escapeHtml(text.replace(toolName + ': ', ''))}`
+      if (type === 'push' && extra) {
+        div.innerHTML = `<span class="tool-name">${escapeHtml(extra)}</span> ${escapeHtml(text.replace(extra + ': ', ''))}`
+      } else if (type === 'dm' && extra) {
+        div.innerHTML = `<span class="from-name">@${escapeHtml(extra)}</span> ${escapeHtml(text.replace(extra + ': ', ''))}`
       } else {
         div.textContent = text
       }
       messagesEl.appendChild(div)
 
-      // Limit messages in DOM
       while (messagesEl.children.length > 500) {
         messagesEl.removeChild(messagesEl.firstChild)
       }
@@ -290,7 +430,6 @@
     // Init
     // ==========================================
 
-    // Fetch initial status
     fetch(`${BASE_URL}/terminal/status`)
       .then(r => r.text())
       .then(line => renderStatusLine(line))

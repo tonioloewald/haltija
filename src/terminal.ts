@@ -40,10 +40,19 @@ export interface ToolConfig {
   endpoint?: string
 }
 
+export interface ShellIdentity {
+  id: string
+  name?: string
+  connectedAt: number
+  ws: any
+}
+
 export interface TerminalState {
   statuses: Map<string, ToolStatus>
   pushBuffer: PushMessage[]
   maxPushBuffer: number
+  shells: Map<string, ShellIdentity>
+  nextShellId: number
 }
 
 // ============================================
@@ -55,7 +64,76 @@ export function createTerminalState(maxPushBuffer = 100): TerminalState {
     statuses: new Map(),
     pushBuffer: [],
     maxPushBuffer,
+    shells: new Map(),
+    nextShellId: 1,
   }
+}
+
+// ============================================
+// Shell Identity
+// ============================================
+
+/**
+ * Register a new shell connection. Returns the assigned identity.
+ */
+export function registerShell(state: TerminalState, ws: any): ShellIdentity {
+  const shell: ShellIdentity = {
+    id: `shell-${state.nextShellId++}`,
+    connectedAt: Date.now(),
+    ws,
+  }
+  state.shells.set(shell.id, shell)
+  return shell
+}
+
+/**
+ * Unregister a shell connection.
+ */
+export function unregisterShell(state: TerminalState, shellId: string): void {
+  state.shells.delete(shellId)
+}
+
+/**
+ * Set a shell's display name.
+ */
+export function setShellName(state: TerminalState, shellId: string, name: string): void {
+  const shell = state.shells.get(shellId)
+  if (shell) shell.name = name
+}
+
+/**
+ * Find a shell by name (case-insensitive).
+ */
+export function getShellByName(state: TerminalState, name: string): ShellIdentity | null {
+  const lower = name.toLowerCase()
+  for (const shell of state.shells.values()) {
+    if (shell.name?.toLowerCase() === lower) return shell
+    if (shell.id.toLowerCase() === lower) return shell
+  }
+  return null
+}
+
+/**
+ * Find a shell by its WebSocket reference.
+ */
+export function getShellByWs(state: TerminalState, ws: any): ShellIdentity | null {
+  for (const shell of state.shells.values()) {
+    if (shell.ws === ws) return shell
+  }
+  return null
+}
+
+/**
+ * List all connected shells.
+ */
+export function listShells(state: TerminalState): string {
+  if (state.shells.size === 0) return '(no shells connected)'
+  const lines: string[] = []
+  for (const shell of state.shells.values()) {
+    const name = shell.name ? ` (${shell.name})` : ''
+    lines.push(`${shell.id}${name}`)
+  }
+  return lines.join('\n')
 }
 
 /**

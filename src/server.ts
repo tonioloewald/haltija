@@ -24,7 +24,8 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
-import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, type TerminalState } from './terminal'
+import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, type TerminalState, type ShellIdentity } from './terminal'
+import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -185,6 +186,14 @@ const MAX_SNAPSHOTS = 50
 const terminalState = createTerminalState()
 const terminalConfig = loadConfig(process.cwd())
 const terminalClients = new Set<any>() // WebSocket clients for /ws/terminal
+
+// Task board (loaded on startup)
+let taskBoard: TaskBoard | null = null
+try {
+  taskBoard = loadBoard(process.cwd())
+  const summary = getBoardSummary(taskBoard)
+  if (summary !== 'empty') updateStatus(terminalState, 'tasks', summary)
+} catch { /* no task board yet — created on first tasks command */ }
 
 // Recording storage (in-memory, keyed by ID)
 interface StoredRecording {
@@ -1383,17 +1392,92 @@ For complete API reference with all options and response formats:
   
   // Dispatch a command to a tool
   if (path === '/terminal/command' && req.method === 'POST') {
+    const body = await req.json() as { command: string; shellId?: string }
+    const command = body.command?.trim()
+    if (!command && !body.shellId) {
+      return Response.json({ success: false, error: 'command is required' }, { status: 400, headers })
+    }
+
+    // Resolve shell identity
+    const shell = body.shellId ? terminalState.shells.get(body.shellId) : undefined
+    const shellName = shell?.name || shell?.id || 'unknown'
+
+    // Empty command → list all tools
+    if (!command) {
+      const output = terminalConfig ? dispatchCommand(terminalConfig, '') : 'no haltija.json found'
+      return new Response(await output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
+    // Meta-command: who
+    if (command === 'who') {
+      return new Response(listShells(terminalState), { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
+    // Meta-command: whoami [name]
+    if (command === 'whoami' || command.startsWith('whoami ')) {
+      const name = command.slice(6).trim()
+      if (name && shell) {
+        setShellName(terminalState, shell.id, name)
+        broadcastToTerminals({ type: 'shell-renamed', shellId: shell.id, name })
+        return new Response(`${shell.id} → ${name}`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      }
+      return new Response(shell ? `${shell.id}${shell.name ? ` (${shell.name})` : ''}` : 'unknown', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
+    // Meta-command: @name message
+    if (command.startsWith('@')) {
+      const spaceIdx = command.indexOf(' ', 1)
+      if (spaceIdx === -1) {
+        return new Response('error: @name message', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      }
+      const targetName = command.slice(1, spaceIdx)
+      const msgText = command.slice(spaceIdx + 1).trim()
+      const targetShell = getShellByName(terminalState, targetName)
+      if (!targetShell) {
+        return new Response(`error: shell "${targetName}" not found`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      }
+      try {
+        if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+          (targetShell.ws as any).send(JSON.stringify({
+            type: 'message',
+            from: shellName,
+            text: msgText,
+            timestamp: Date.now(),
+          }))
+        }
+      } catch { /* ignore dead socket */ }
+      return new Response(`→ ${targetName}: ${msgText}`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
+    // Builtin: tasks
+    const parts = command.split(/\s+/)
+    if (parts[0] === 'tasks') {
+      // Ensure board exists
+      if (!taskBoard) {
+        taskBoard = loadBoard(process.cwd())
+      } else {
+        reloadBoard(taskBoard)
+      }
+      const verb = parts[1]
+      const args = parts.slice(2)
+      const result = dispatchTaskCommand(taskBoard, verb, args, shellName)
+      if (result.mutated) {
+        const summary = getBoardSummary(taskBoard)
+        updateStatus(terminalState, 'tasks', summary)
+        broadcastToTerminals({ type: 'status', line: getStatusLine(terminalState) })
+        broadcastToTerminals({ type: 'task-changed', by: shellName })
+      }
+      return new Response(result.output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
+    // Normal tool dispatch
     if (!terminalConfig) {
       return Response.json(
         { success: false, error: 'No haltija.json found in project' },
         { status: 404, headers }
       )
     }
-    const body = await req.json() as { command: string }
-    if (!body.command) {
-      return Response.json({ success: false, error: 'command is required' }, { status: 400, headers })
-    }
-    const output = await dispatchCommand(terminalConfig, body.command)
+    const output = await dispatchCommand(terminalConfig, command)
     return new Response(output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
   }
   
@@ -2519,9 +2603,14 @@ const serverConfig = {
         }
       } else if (type === 'terminal') {
         terminalClients.add(ws as unknown as WebSocket)
-        // Send current status line on connect
+        // Register shell identity
+        const shell = registerShell(terminalState, ws)
+        // Send identity + current status
+        ws.send(JSON.stringify({ type: 'identity', shellId: shell.id }))
         const line = getStatusLine(terminalState)
         ws.send(JSON.stringify({ type: 'status', line }))
+        // Broadcast join to other terminals
+        broadcastToTerminals({ type: 'shell-joined', shellId: shell.id })
       }
     },
     
@@ -2638,6 +2727,11 @@ const serverConfig = {
         agents.delete(ws as unknown as WebSocket)
       } else if (type === 'terminal') {
         terminalClients.delete(ws as unknown as WebSocket)
+        const shell = getShellByWs(terminalState, ws)
+        if (shell) {
+          unregisterShell(terminalState, shell.id)
+          broadcastToTerminals({ type: 'shell-left', shellId: shell.id, name: shell.name })
+        }
       }
     },
   },
