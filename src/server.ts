@@ -182,6 +182,13 @@ const MAX_BUFFER = 100
 const snapshots = new Map<string, PageSnapshot>()
 const MAX_SNAPSHOTS = 50
 
+// Default agent names — diverse, short, friendly
+const DEFAULT_AGENT_NAMES = [
+  'Claude', 'Aria', 'Kenji', 'Priya', 'Soren',
+  'Amara', 'Ravi', 'Linnea', 'Dayo', 'Mika',
+  'Zara', 'Oran', 'Yuki', 'Ines', 'Kofi',
+]
+
 // Terminal state
 const terminalState = createTerminalState()
 const terminalConfig = loadConfig(process.cwd())
@@ -1390,6 +1397,26 @@ For complete API reference with all options and response formats:
     return Response.json({ messages }, { headers })
   }
   
+  // Agent init — register a shell via REST (no WebSocket needed)
+  if (path === '/terminal/init' && req.method === 'POST') {
+    const body = await req.json() as { name?: string }
+    const shell = registerShell(terminalState, null) // no ws for REST-only agents
+    // Assign name: explicit > config names list > shell ID
+    const agentNames = (terminalConfig as any)?.agent?.names || DEFAULT_AGENT_NAMES
+    const agentIndex = terminalState.nextShellId - 2 // -2 because nextShellId already incremented
+    const name = body.name || agentNames[agentIndex % agentNames.length]
+    setShellName(terminalState, shell.id, name)
+    broadcastToTerminals({ type: 'shell-joined', shellId: shell.id, name })
+    const statusLine = getStatusLine(terminalState)
+    const boardSummary = taskBoard ? getBoardSummary(taskBoard) : 'empty'
+    return Response.json({
+      shellId: shell.id,
+      name,
+      status: statusLine,
+      board: boardSummary,
+    }, { headers })
+  }
+
   // Dispatch a command to a tool
   if (path === '/terminal/command' && req.method === 'POST') {
     const body = await req.json() as { command: string; shellId?: string }
@@ -1402,15 +1429,22 @@ For complete API reference with all options and response formats:
     const shell = body.shellId ? terminalState.shells.get(body.shellId) : undefined
     const shellName = shell?.name || shell?.id || 'unknown'
 
+    // Helper: append status footer to response
+    function respond(output: string): Response {
+      const statusLine = getStatusLine(terminalState)
+      const footer = statusLine ? `\n---\n${statusLine} ${shellName}` : ''
+      return new Response(output + footer, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    }
+
     // Empty command → list all tools
     if (!command) {
-      const output = terminalConfig ? dispatchCommand(terminalConfig, '') : 'no haltija.json found'
-      return new Response(await output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      const output = terminalConfig ? await dispatchCommand(terminalConfig, '') : 'no haltija.json found'
+      return respond(output)
     }
 
     // Meta-command: who
     if (command === 'who') {
-      return new Response(listShells(terminalState), { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      return respond(listShells(terminalState))
     }
 
     // Meta-command: whoami [name]
@@ -1419,22 +1453,22 @@ For complete API reference with all options and response formats:
       if (name && shell) {
         setShellName(terminalState, shell.id, name)
         broadcastToTerminals({ type: 'shell-renamed', shellId: shell.id, name })
-        return new Response(`${shell.id} → ${name}`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+        return respond(`${shell.id} → ${name}`)
       }
-      return new Response(shell ? `${shell.id}${shell.name ? ` (${shell.name})` : ''}` : 'unknown', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      return respond(shell ? `${shell.id}${shell.name ? ` (${shell.name})` : ''}` : 'unknown')
     }
 
     // Meta-command: @name message
     if (command.startsWith('@')) {
       const spaceIdx = command.indexOf(' ', 1)
       if (spaceIdx === -1) {
-        return new Response('error: @name message', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+        return respond('error: @name message')
       }
       const targetName = command.slice(1, spaceIdx)
       const msgText = command.slice(spaceIdx + 1).trim()
       const targetShell = getShellByName(terminalState, targetName)
       if (!targetShell) {
-        return new Response(`error: shell "${targetName}" not found`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+        return respond(`error: shell "${targetName}" not found`)
       }
       try {
         if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
@@ -1446,7 +1480,7 @@ For complete API reference with all options and response formats:
           }))
         }
       } catch { /* ignore dead socket */ }
-      return new Response(`→ ${targetName}: ${msgText}`, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      return respond(`→ ${targetName}: ${msgText}`)
     }
 
     // Builtin: tasks
@@ -1467,18 +1501,15 @@ For complete API reference with all options and response formats:
         broadcastToTerminals({ type: 'status', line: getStatusLine(terminalState) })
         broadcastToTerminals({ type: 'task-changed', by: shellName })
       }
-      return new Response(result.output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      return respond(result.output)
     }
 
     // Normal tool dispatch
     if (!terminalConfig) {
-      return Response.json(
-        { success: false, error: 'No haltija.json found in project' },
-        { status: 404, headers }
-      )
+      return respond('error: no haltija.json found in project')
     }
     const output = await dispatchCommand(terminalConfig, command)
-    return new Response(output, { headers: { ...headers, 'Content-Type': 'text/plain' } })
+    return respond(output)
   }
   
   // ==========================================

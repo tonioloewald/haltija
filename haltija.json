@@ -1,5 +1,9 @@
 {
   "name": "haltija",
+  "agent": {
+    "provider": "claude",
+    "names": ["Claude", "Aria", "Kenji", "Priya", "Soren"]
+  },
   "tools": {
     "tests": {
       "run": "bun test 2>&1 | tee /tmp/hj-test-output.txt",

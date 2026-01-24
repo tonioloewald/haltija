@@ -53,7 +53,8 @@ body {
 
 /* Only disable drag on clickable elements, not containers */
 .tab,
-#new-tab {
+#new-tab,
+#new-terminal {
   -webkit-app-region: no-drag;
 }
 
@@ -142,6 +143,28 @@ body {
 #new-tab:hover {
   background: #2a2a4a;
   color: #fff;
+}
+
+#new-terminal {
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6366f1;
+  font-size: 12px;
+  font-weight: bold;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#new-terminal:hover {
+  background: #2a2a4a;
+  color: #a5b4fc;
 }
 
 /* Toolbar */

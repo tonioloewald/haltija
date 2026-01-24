@@ -188,14 +188,16 @@
     <span id="status-text">connecting...</span>
   </div>
   <div id="messages">
-    <div class="msg msg-system">Terminal ready. Type "tasks" to see the board, "who" for shells, or a tool command.</div>
+    <div class="msg msg-system" id="welcome-msg"></div>
   </div>
   <div id="input-area">
     <input id="input" type="text" placeholder="tool command..." autofocus>
   </div>
 
   <script>
-    const PORT = new URLSearchParams(window.location.search).get('port') || '8700'
+    const params = new URLSearchParams(window.location.search)
+    const PORT = params.get('port') || '8700'
+    const MODE = params.get('mode') || 'human'
     const BASE_URL = `http://localhost:${PORT}`
     const WS_URL = `ws://localhost:${PORT}/ws/terminal`
 
@@ -228,6 +230,14 @@
             case 'identity':
               shellId = msg.shellId
               shellIdEl.textContent = shellId
+              // Auto-name based on mode
+              if (MODE === 'agent') {
+                fetch(`${BASE_URL}/terminal/command`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ command: `whoami agent`, shellId }),
+                })
+              }
               break
             case 'status':
               renderStatusLine(msg.line)
@@ -429,6 +439,29 @@
     // ==========================================
     // Init
     // ==========================================
+
+    // Set welcome message based on mode
+    const welcomeEl = document.getElementById('welcome-msg')
+    if (MODE === 'agent') {
+      welcomeEl.textContent = 'Agent terminal. Awaiting commands.'
+      document.title = 'Agent Terminal'
+    } else {
+      welcomeEl.textContent = 'Terminal ready. Type "tasks" for the board, "who" for shells, or a tool command.'
+      document.title = 'Terminal'
+    }
+
+    // Listen for rename from parent (address bar)
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'rename' && event.data.name && shellId) {
+        fetch(`${BASE_URL}/terminal/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: `whoami ${event.data.name}`, shellId }),
+        }).then(() => {
+          shellIdEl.textContent = event.data.name
+        })
+      }
+    })
 
     fetch(`${BASE_URL}/terminal/status`)
       .then(r => r.text())

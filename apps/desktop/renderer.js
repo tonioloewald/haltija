@@ -142,10 +142,12 @@ function createTab(url, activate = true) {
     { once: true },
   )
 
-  // Fallback navigation
+  // Fallback navigation (webview only, did-attach sometimes doesn't fire)
+  const fallbackTabId = tabId
   setTimeout(() => {
-    if (webview.getURL() === 'about:blank' || !webview.getURL()) {
-      navigate(tabUrl, tabId)
+    const t = tabs.find(tt => tt.id === fallbackTabId)
+    if (t && !t.isTerminal && (webview.getURL() === 'about:blank' || !webview.getURL())) {
+      navigate(tabUrl, fallbackTabId)
     }
   }, 500)
 
@@ -153,15 +155,17 @@ function createTab(url, activate = true) {
 }
 
 // Create a terminal tab (iframe-based, no webview)
-function createTerminalTab() {
+// mode: 'human' or 'agent'
+function createTerminalTab(mode = 'human') {
   const tabId = `tab-${++tabIdCounter}`
+  const label = mode === 'agent' ? 'Agent' : 'Terminal'
 
   // Create tab element
   const tabEl = document.createElement('div')
   tabEl.className = 'tab'
   tabEl.dataset.tabId = tabId
   tabEl.innerHTML = `
-    <span class="tab-title">Terminal</span>
+    <span class="tab-title">${label}</span>
     <button class="tab-close" title="Close tab">×</button>
   `
 
@@ -181,7 +185,7 @@ function createTerminalTab() {
   // Create iframe (not webview — terminal is local, no widget injection needed)
   const iframe = document.createElement('iframe')
   iframe.id = tabId
-  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}`
+  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}&mode=${mode}`
   iframe.className = 'terminal-frame'
 
   webviewContainer.appendChild(iframe)
@@ -190,7 +194,7 @@ function createTerminalTab() {
   const tab = {
     id: tabId,
     url: 'terminal',
-    title: 'Terminal',
+    title: label,
     element: tabEl,
     webview: iframe, // reuse field for consistency with closeTab/activateTab
     isTerminal: true,
@@ -199,6 +203,20 @@ function createTerminalTab() {
 
   activateTab(tabId)
   return tab
+}
+
+// Rename a terminal tab (updates shell name on server + tab title)
+function renameTerminalTab(tab, name) {
+  if (!name) return
+  tab.shellName = name
+  tab.title = name
+  tab.element.querySelector('.tab-title').textContent = name
+  document.title = `${name} - Haltija`
+  // Send whoami to server via the terminal iframe
+  const iframe = tab.webview
+  if (iframe && iframe.contentWindow) {
+    iframe.contentWindow.postMessage({ type: 'rename', name }, '*')
+  }
 }
 
 // Activate a tab
@@ -218,7 +236,13 @@ function activateTab(tabId) {
   activeTabId = tabId
 
   // Update URL bar and title
-  urlInput.value = tab.url || ''
+  if (tab.isTerminal || tab.url === 'terminal') {
+    urlInput.value = tab.shellName || ''
+    urlInput.placeholder = 'name this shell...'
+  } else {
+    urlInput.value = tab.url || ''
+    urlInput.placeholder = 'Enter URL...'
+  }
   document.title = tab.title ? `${tab.title} - Haltija` : 'Haltija'
 
   // Update nav buttons
@@ -319,7 +343,7 @@ function navigate(url, tabId = activeTabId) {
 
   tab.webview.src = tab.url
 
-  if (tabId === activeTabId) {
+  if (tabId === activeTabId && !tab.isTerminal) {
     urlInput.value = tab.url
   }
 }
@@ -407,7 +431,7 @@ function setupWebviewEvents(tab) {
 
   webview.addEventListener('did-navigate', (e) => {
     tab.url = e.url
-    if (tab.id === activeTabId) {
+    if (tab.id === activeTabId && !tab.isTerminal) {
       urlInput.value = e.url
       updateNavButtons()
     }
@@ -415,7 +439,7 @@ function setupWebviewEvents(tab) {
 
   webview.addEventListener('did-navigate-in-page', (e) => {
     tab.url = e.url
-    if (tab.id === activeTabId) {
+    if (tab.id === activeTabId && !tab.isTerminal) {
       urlInput.value = e.url
       updateNavButtons()
     }
@@ -658,16 +682,33 @@ function applySettings() {
 
 // New tab button
 newTabButton.addEventListener('click', () => createTab())
+const newTerminalBtn = document.getElementById('new-terminal')
+newTerminalBtn.addEventListener('click', () => createTerminalTab('human'))
+newTerminalBtn.addEventListener('contextmenu', (e) => {
+  e.preventDefault()
+  createTerminalTab('agent')
+})
 
 // Address bar
 urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    navigate(urlInput.value)
+    const tab = tabs.find(t => t.id === activeTabId)
+    if (tab && tab.isTerminal) {
+      renameTerminalTab(tab, urlInput.value.trim())
+      urlInput.blur()
+    } else {
+      navigate(urlInput.value)
+    }
   }
 })
 
 goButton.addEventListener('click', () => {
-  navigate(urlInput.value)
+  const tab = tabs.find(t => t.id === activeTabId)
+  if (tab && tab.isTerminal) {
+    renameTerminalTab(tab, urlInput.value.trim())
+  } else {
+    navigate(urlInput.value)
+  }
 })
 
 // Navigation buttons
