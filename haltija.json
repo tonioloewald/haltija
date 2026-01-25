@@ -2,16 +2,15 @@
   "name": "haltija",
   "agent": {
     "provider": "claude",
-    "names": ["Claude", "Aria", "Kenji", "Priya", "Soren"]
+    "command": "claude -p",
+    "names": ["Claude", "Aria", "Kenji", "Priya", "Soren"],
+    "systemPrompt": "You are in Haltija with a LIVE BROWSER. You have MCP tools (mcp__haltija__*) to control it directly.\n\nSTART HERE: Use mcp__haltija__tree to see the page, mcp__haltija__navigate to go somewhere.\n\nKey tools: tree, navigate, click, type, screenshot, events, console\n\nThis is a real browser, not web scraping. Use your haltija MCP tools, not WebFetch."
   },
   "tools": {
     "tests": {
       "run": "bun test 2>&1 | tee /tmp/hj-test-output.txt",
       "summary": "tail -5 /tmp/hj-test-output.txt",
       "failures": "grep -A2 'fail\\|FAIL\\|Error' /tmp/hj-test-output.txt"
-    },
-    "browser": {
-      "endpoint": "http://localhost:8700"
     },
     "tasks": {
       "builtin": true

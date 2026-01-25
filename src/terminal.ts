@@ -45,6 +45,7 @@ export interface ShellIdentity {
   name?: string
   connectedAt: number
   ws: any
+  cwd: string  // working directory for shell commands
 }
 
 export interface TerminalState {
@@ -56,17 +57,41 @@ export interface TerminalState {
 }
 
 // ============================================
+// Status Line Items (Single Source of Truth)
+// ============================================
+
+/** Status line items with their default states */
+export const STATUS_ITEMS = {
+  tests: { default: 'idle' },
+  hj: { default: 'no browser' },
+  todos: { default: 'empty' },
+} as const
+
+export type StatusItemKey = keyof typeof STATUS_ITEMS
+
+// ============================================
 // State Management
 // ============================================
 
 export function createTerminalState(maxPushBuffer = 100): TerminalState {
-  return {
+  const state: TerminalState = {
     statuses: new Map(),
     pushBuffer: [],
     maxPushBuffer,
     shells: new Map(),
     nextShellId: 1,
   }
+  
+  // Initialize with default statuses
+  for (const [key, config] of Object.entries(STATUS_ITEMS)) {
+    state.statuses.set(key, {
+      tool: key,
+      state: config.default,
+      updatedAt: Date.now(),
+    })
+  }
+  
+  return state
 }
 
 // ============================================
@@ -75,12 +100,14 @@ export function createTerminalState(maxPushBuffer = 100): TerminalState {
 
 /**
  * Register a new shell connection. Returns the assigned identity.
+ * Default working directory is user's home directory.
  */
-export function registerShell(state: TerminalState, ws: any): ShellIdentity {
+export function registerShell(state: TerminalState, ws: any, defaultCwd?: string): ShellIdentity {
   const shell: ShellIdentity = {
     id: `shell-${state.nextShellId++}`,
     connectedAt: Date.now(),
     ws,
+    cwd: defaultCwd || process.env.HOME || process.cwd(),
   }
   state.shells.set(shell.id, shell)
   return shell
@@ -99,6 +126,21 @@ export function unregisterShell(state: TerminalState, shellId: string): void {
 export function setShellName(state: TerminalState, shellId: string, name: string): void {
   const shell = state.shells.get(shellId)
   if (shell) shell.name = name
+}
+
+/**
+ * Set a shell's working directory.
+ */
+export function setShellCwd(state: TerminalState, shellId: string, cwd: string): void {
+  const shell = state.shells.get(shellId)
+  if (shell) shell.cwd = cwd
+}
+
+/**
+ * Get a shell's working directory.
+ */
+export function getShellCwd(state: TerminalState, shellId: string): string {
+  return state.shells.get(shellId)?.cwd || process.env.HOME || process.cwd()
 }
 
 /**
@@ -235,6 +277,54 @@ export function loadConfig(dir: string): HaltijaConfig | null {
 }
 
 // ============================================
+// Command Cache (Memoization)
+// ============================================
+
+export interface CommandCache {
+  entries: Map<string, { output: string; timestamp: number }>
+  ttlMs: number
+}
+
+/** Words that indicate a mutating command (skip cache) */
+const MUTATING_KEYWORDS = ['rm', 'mv', 'cp', 'write', 'delete', 'remove', 'kill', 'mkdir', 'touch', 'chmod', 'chown']
+
+export function createCommandCache(ttlMs = 30000): CommandCache {
+  return { entries: new Map(), ttlMs }
+}
+
+/**
+ * Check if a command result is cached and still valid.
+ */
+export function getCachedResult(cache: CommandCache, command: string): string | null {
+  const entry = cache.entries.get(command)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > cache.ttlMs) {
+    cache.entries.delete(command)
+    return null
+  }
+  return entry.output
+}
+
+/**
+ * Store a command result in cache (only if the command looks read-only).
+ */
+export function cacheResult(cache: CommandCache, command: string, output: string): void {
+  // Skip caching for commands that look mutating
+  const lower = command.toLowerCase()
+  for (const kw of MUTATING_KEYWORDS) {
+    if (lower.includes(kw)) return
+  }
+  cache.entries.set(command, { output, timestamp: Date.now() })
+}
+
+/**
+ * Clear all cached entries.
+ */
+export function clearCache(cache: CommandCache): void {
+  cache.entries.clear()
+}
+
+// ============================================
 // Command Dispatch
 // ============================================
 
@@ -301,8 +391,17 @@ export async function dispatchCommand(
 
 /**
  * Execute a shell command and return its output.
+ * Used internally for tool dispatch.
  */
 function executeShell(command: string, args: string[] = []): Promise<string> {
+  return executeShellInDir(command, args, process.cwd())
+}
+
+/**
+ * Execute a shell command in a specific directory.
+ * Exported for use by terminal shell fallback.
+ */
+export function executeShellInDir(command: string, args: string[] = [], cwd: string = process.cwd()): Promise<string> {
   return new Promise((resolve) => {
     const fullCommand = args.length > 0
       ? `${command} ${args.join(' ')}`
@@ -310,6 +409,7 @@ function executeShell(command: string, args: string[] = []): Promise<string> {
 
     const child = spawn('sh', ['-c', fullCommand], {
       timeout: 30000,
+      cwd,
       env: { ...process.env },
     })
 

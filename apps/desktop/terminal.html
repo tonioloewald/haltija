@@ -5,22 +5,44 @@
   <title>Agent Terminal</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    /* Shared base colors */
+    :root {
+      --bg-base: #1a1a2e;
+      --bg-dark: #0f0f1e;
+      --bg-surface: #252540;
+      --border: #2d2d4a;
+    }
+    
+    /* Human terminal: blue accent */
+    body.mode-human {
+      --accent: #6366f1;
+      --accent-light: #a5b4fc;
+    }
+    
+    /* Agent terminal: green accent */
+    body.mode-agent {
+      --accent: #22c55e;
+      --accent-light: #86efac;
+    }
+    
     body {
       font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-      background: #1a1a2e;
+      background: var(--bg-base);
       color: #e2e8f0;
       display: flex;
       flex-direction: column;
       height: 100vh;
       font-size: 13px;
       line-height: 1.5;
+      border-top: 2px solid var(--accent);
     }
 
     #status-bar {
-      background: #0f0f1e;
+      background: var(--bg-dark, #0f0f1e);
       padding: 6px 12px;
       font-size: 12px;
-      border-bottom: 1px solid #2d2d4a;
+      border-bottom: 1px solid var(--border, #2d2d4a);
       color: #94a3b8;
       white-space: nowrap;
       overflow: hidden;
@@ -31,10 +53,10 @@
       gap: 8px;
     }
     #status-bar .status-item {
-      background: #252540;
+      background: var(--bg-surface, #252540);
       padding: 2px 8px;
       border-radius: 3px;
-      color: #a5b4fc;
+      color: var(--accent-light, #a5b4fc);
     }
     #status-bar .status-item.alert {
       color: #fbbf24;
@@ -46,7 +68,7 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #4ade80;
+      background: var(--accent, #4ade80);
       display: inline-block;
     }
     #status-bar .disconnected {
@@ -57,7 +79,7 @@
       display: inline-block;
     }
     #shell-id {
-      color: #6366f1;
+      color: var(--accent, #6366f1);
       font-weight: bold;
     }
 
@@ -155,29 +177,147 @@
       margin-right: 4px;
     }
 
+    /* Tool call cards */
+    .tool-card {
+      background: #1e1e3a;
+      border: 1px solid #3d3d5c;
+      border-radius: 6px;
+      margin: 4px 0;
+      overflow: hidden;
+    }
+    .tool-card-header {
+      padding: 6px 10px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #a5b4fc;
+      font-size: 12px;
+    }
+    .tool-card-header:hover {
+      background: #252540;
+    }
+    .tool-card-header .tool-name {
+      font-weight: bold;
+    }
+    .tool-card-header .tool-chevron {
+      transition: transform 0.15s;
+      font-size: 10px;
+      color: #64748b;
+    }
+    .tool-card.expanded .tool-chevron {
+      transform: rotate(90deg);
+    }
+    .tool-card-body {
+      display: block;
+      padding: 8px 10px;
+      border-top: 1px solid #3d3d5c;
+      font-size: 11px;
+      max-height: 5lh;  /* ~5 lines by default */
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #94a3b8;
+    }
+    .tool-card.expanded .tool-card-body {
+      max-height: min(80vh, 600px);
+    }
+    .tool-card-body:empty {
+      display: none;
+    }
+    .tool-card-label {
+      color: #64748b;
+      font-size: 10px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    /* Agent prompt (user message in agent mode) */
+    .msg-prompt {
+      color: #e2e8f0;
+      background: var(--bg-surface, #252540);
+      padding: 6px 10px;
+      border-radius: 6px;
+      border-left: 3px solid var(--accent, #6366f1);
+    }
+
+    /* Agent thinking indicator */
+    .thinking-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #64748b;
+      font-size: 12px;
+      padding: 4px 0;
+    }
+    .thinking-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent, #6366f1);
+      animation: thinking-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes thinking-pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* Agent cost/duration summary */
+    .msg-summary {
+      color: #64748b;
+      font-size: 11px;
+      padding: 2px 0;
+      border-top: 1px solid #2d2d4a;
+      margin-top: 4px;
+    }
+
     #input-area {
       display: flex;
       padding: 8px 12px;
-      border-top: 1px solid #2d2d4a;
-      background: #0f0f1e;
+      border-top: 1px solid var(--border, #2d2d4a);
+      background: var(--bg-dark, #0f0f1e);
       gap: 8px;
     }
     #input {
       flex: 1;
-      background: #252540;
-      border: 1px solid #2d2d4a;
+      background: var(--bg-surface, #252540);
+      border: 1px solid var(--border, #2d2d4a);
       color: #e2e8f0;
-      padding: 6px 10px;
+      padding: 8px 10px;
       font-family: inherit;
       font-size: 13px;
       border-radius: 4px;
       outline: none;
+      resize: vertical;
+      min-height: 60px;
+      max-height: 200px;
+      overflow-y: auto;
+      line-height: 1.5;
+      field-sizing: content;
     }
     #input:focus {
-      border-color: #6366f1;
+      border-color: var(--accent, #6366f1);
     }
     #input::placeholder {
       color: #475569;
+    }
+    #stop-btn {
+      display: none;
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #stop-btn:hover {
+      background: #b91c1c;
+    }
+    #stop-btn.visible {
+      display: block;
     }
   </style>
 </head>
@@ -191,13 +331,15 @@
     <div class="msg msg-system" id="welcome-msg"></div>
   </div>
   <div id="input-area">
-    <input id="input" type="text" placeholder="tool command..." autofocus>
+    <textarea id="input" rows="1" placeholder="tool command..." autofocus></textarea>
+    <button id="stop-btn">Stop</button>
   </div>
 
   <script>
     const params = new URLSearchParams(window.location.search)
     const PORT = params.get('port') || '8700'
     const MODE = params.get('mode') || 'human'
+    const INITIAL_CWD = params.get('cwd') || ''
     const BASE_URL = `http://localhost:${PORT}`
     const WS_URL = `ws://localhost:${PORT}/ws/terminal`
 
@@ -206,10 +348,13 @@
     const statusTextEl = document.getElementById('status-text')
     const connIndicator = document.getElementById('conn-indicator')
     const shellIdEl = document.getElementById('shell-id')
+    const stopBtn = document.getElementById('stop-btn')
     let ws = null
     let shellId = null
     let commandHistory = []
     let historyIndex = -1
+    let isAgentThinking = false
+    let pendingPrompt = null  // Message to send when agent finishes
 
     // ==========================================
     // WebSocket Connection
@@ -230,6 +375,19 @@
             case 'identity':
               shellId = msg.shellId
               shellIdEl.textContent = shellId
+              // Set initial cwd if provided via URL param
+              if (INITIAL_CWD) {
+                fetch(`${BASE_URL}/terminal/command`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ command: `cd ${INITIAL_CWD}`, shellId }),
+                })
+              }
+              // Notify parent of initial cwd
+              const initialCwd = INITIAL_CWD || msg.cwd
+              if (initialCwd) {
+                window.parent.postMessage({ type: 'terminal-cwd', cwd: initialCwd, shellId }, '*')
+              }
               // Auto-name based on mode
               if (MODE === 'agent') {
                 fetch(`${BASE_URL}/terminal/command`, {
@@ -238,6 +396,10 @@
                   body: JSON.stringify({ command: `whoami agent`, shellId }),
                 })
               }
+              break
+            case 'cwd-changed':
+              // Notify parent of cwd change
+              window.parent.postMessage({ type: 'terminal-cwd', cwd: msg.cwd, shellId }, '*')
               break
             case 'status':
               renderStatusLine(msg.line)
@@ -263,6 +425,8 @@
             case 'shell-renamed':
               if (msg.shellId === shellId) {
                 shellIdEl.textContent = msg.name || shellId
+                // Notify parent so it can update tab title (for agent tabs)
+                window.parent.postMessage({ type: 'shell-renamed', shellId, name: msg.name }, '*')
               }
               addMessage('system', `${msg.shellId} → ${msg.name}`)
               scrollToBottom()
@@ -270,6 +434,70 @@
             case 'task-changed':
               addMessage('system', `tasks updated by ${msg.by}`)
               scrollToBottom()
+              break
+            case 'agent-text':
+              if (msg.shellId === shellId) {
+                hideThinking()
+                addMessage('output', msg.text)
+                scrollToBottom()
+              }
+              break
+            case 'agent-tool':
+              if (msg.shellId === shellId) {
+                hideThinking()
+                renderToolCard(msg.tool, msg.input, msg.id)
+              }
+              break
+            case 'agent-tool-result':
+              if (msg.shellId === shellId) {
+                addToolResult(msg.id, msg.output)
+                scrollToBottom()
+              }
+              break
+            case 'agent-done':
+              if (msg.shellId === shellId) {
+                hideThinking()
+                setAgentThinking(false)
+                if (msg.cost || msg.duration) {
+                  const parts = []
+                  if (msg.duration) parts.push(`${(msg.duration / 1000).toFixed(1)}s`)
+                  if (msg.cost) parts.push(`$${msg.cost.toFixed(4)}`)
+                  addMessage('summary', parts.join(' | '))
+                }
+                scrollToBottom()
+                // Send pending prompt if any
+                if (pendingPrompt) {
+                  const prompt = pendingPrompt
+                  pendingPrompt = null
+                  sendAgentPrompt(prompt)
+                }
+              }
+              break
+            case 'agent-error':
+              if (msg.shellId === shellId) {
+                hideThinking()
+                setAgentThinking(false)
+                setAgentError()
+                addMessage('error', msg.error)
+                scrollToBottom()
+                // Send pending prompt if any
+                if (pendingPrompt) {
+                  const prompt = pendingPrompt
+                  pendingPrompt = null
+                  sendAgentPrompt(prompt)
+                }
+              }
+              break
+            case 'agent-status':
+              if (msg.shellId === shellId) {
+                if (msg.status === 'thinking') {
+                  showThinking()
+                  setAgentThinking(true)
+                } else {
+                  hideThinking()
+                  setAgentThinking(false)
+                }
+              }
               break
           }
         } catch {}
@@ -351,61 +579,280 @@
     // ==========================================
 
     inputEl.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter' && inputEl.value.trim()) {
+      // Human terminal: Enter sends, Shift+Enter inserts newline
+      // Agent terminal: 
+      //   - Shift+Enter or Cmd+Enter always sends
+      //   - Enter at end of text, on empty line, with content above = submit
+      //   - Otherwise Enter inserts newline (even on blank lines in middle)
+      let isSubmit = false
+      
+      if (e.key === 'Enter') {
+        if (MODE === 'agent') {
+          if (e.shiftKey || e.metaKey) {
+            // Explicit submit
+            isSubmit = true
+          } else {
+            const text = inputEl.value
+            const cursorPos = inputEl.selectionStart
+            
+            // Only consider submit if cursor is at the very end
+            if (cursorPos === text.length && text.trim() !== '') {
+              const lines = text.split('\n')
+              const lastLine = lines[lines.length - 1]
+              
+              // Submit if last line is empty/whitespace and there's real content
+              if (lastLine.trim() === '') {
+                isSubmit = true
+              }
+            }
+            // Otherwise, default behavior inserts newline
+          }
+        } else {
+          // Human mode: Enter sends unless Shift held
+          isSubmit = !e.shiftKey
+        }
+      }
+
+      if (isSubmit && inputEl.value.trim()) {
+        e.preventDefault()
         const command = inputEl.value.trim()
         commandHistory.push(command)
         historyIndex = commandHistory.length
         inputEl.value = ''
 
-        addMessage('command', command)
-        scrollToBottom()
-
-        try {
-          const resp = await fetch(`${BASE_URL}/terminal/command`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command, shellId }),
-          })
-          const output = await resp.text()
-
-          // Check if output is a board JSON
-          if (output.startsWith('{"type":"board"')) {
-            try {
-              const boardData = JSON.parse(output)
-              const boardEl = renderBoard(boardData)
-              messagesEl.appendChild(boardEl)
-            } catch {
-              addMessage('output', output)
-            }
-          } else if (output.startsWith('error:')) {
-            addMessage('error', output)
-          } else {
-            addMessage('output', output)
-          }
-        } catch (err) {
-          addMessage('error', `connection error: ${err.message}`)
+        if (MODE === 'agent') {
+          await sendAgentPrompt(command)
+        } else {
+          await sendCommand(command)
         }
-        scrollToBottom()
+        return
       }
 
+      // ArrowUp/Down for history (only when on first/last line)
       if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        if (historyIndex > 0) {
+        const cursorLine = inputEl.value.substring(0, inputEl.selectionStart).split('\n').length
+        if (cursorLine === 1 && historyIndex > 0) {
+          e.preventDefault()
           historyIndex--
           inputEl.value = commandHistory[historyIndex]
         }
       }
       if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        if (historyIndex < commandHistory.length - 1) {
-          historyIndex++
-          inputEl.value = commandHistory[historyIndex]
-        } else {
-          historyIndex = commandHistory.length
-          inputEl.value = ''
+        const lines = inputEl.value.split('\n')
+        const cursorLine = inputEl.value.substring(0, inputEl.selectionStart).split('\n').length
+        if (cursorLine === lines.length) {
+          e.preventDefault()
+          if (historyIndex < commandHistory.length - 1) {
+            historyIndex++
+            inputEl.value = commandHistory[historyIndex]
+          } else {
+            historyIndex = commandHistory.length
+            inputEl.value = ''
+          }
         }
       }
     })
+
+    async function sendCommand(command) {
+      addMessage('command', command)
+      scrollToBottom()
+
+      try {
+        const resp = await fetch(`${BASE_URL}/terminal/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command, shellId }),
+        })
+        let output = await resp.text()
+
+        // Extract and display status footer if present
+        // Format: "...\n---\n[tests idle] [hj localhost] [todos empty] shellname"
+        const footerMatch = output.match(/\n---\n(.+)$/)
+        if (footerMatch) {
+          output = output.slice(0, footerMatch.index)
+          const footerLine = footerMatch[1]
+          // Extract bracketed items for status bar
+          const statusParts = footerLine.match(/\[[^\]]+\]/g)
+          if (statusParts) {
+            renderStatusLine(statusParts.join(' '))
+          }
+        }
+
+        // Check if output is a board JSON
+        if (output.startsWith('{"type":"board"')) {
+          try {
+            const boardData = JSON.parse(output)
+            const boardEl = renderBoard(boardData)
+            messagesEl.appendChild(boardEl)
+          } catch {
+            addMessage('output', output)
+          }
+        } else if (output.startsWith('error:')) {
+          addMessage('error', output)
+        } else {
+          addMessage('output', output)
+        }
+      } catch (err) {
+        addMessage('error', `connection error: ${err.message}`)
+      }
+      scrollToBottom()
+    }
+
+    // ==========================================
+    // Agent Mode
+    // ==========================================
+
+    let thinkingEl = null
+
+    function setAgentThinking(thinking) {
+      isAgentThinking = thinking
+      if (thinking) {
+        stopBtn.classList.add('visible')
+      } else {
+        stopBtn.classList.remove('visible')
+      }
+      // Notify parent for tab status indicator
+      window.parent.postMessage({ type: 'agent-status', status: thinking ? 'thinking' : 'ready' }, '*')
+    }
+    
+    function setAgentError() {
+      window.parent.postMessage({ type: 'agent-status', status: 'error' }, '*')
+    }
+
+    // Stop button handler
+    stopBtn.addEventListener('click', async () => {
+      try {
+        await fetch(`${BASE_URL}/terminal/agent-stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shellId }),
+        })
+      } catch (err) {
+        addMessage('error', `stop failed: ${err.message}`)
+      }
+    })
+
+    async function sendAgentPrompt(prompt) {
+      // If agent is busy, queue this prompt for later
+      if (isAgentThinking) {
+        pendingPrompt = prompt
+        addMessage('system', '(queued, will send when current task finishes)')
+        return
+      }
+
+      // Show user prompt
+      addMessage('prompt', prompt)
+      showThinking()
+      setAgentThinking(true)
+      scrollToBottom()
+
+      try {
+        const resp = await fetch(`${BASE_URL}/terminal/agent-prompt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, shellId }),
+        })
+        if (!resp.ok) {
+          const errText = await resp.text()
+          hideThinking()
+          setAgentThinking(false)
+          addMessage('error', errText || `HTTP ${resp.status}`)
+        }
+        // Response is just acknowledgment — actual output comes via WebSocket
+      } catch (err) {
+        hideThinking()
+        setAgentThinking(false)
+        addMessage('error', `connection error: ${err.message}`)
+      }
+      scrollToBottom()
+    }
+
+    function showThinking() {
+      hideThinking()
+      thinkingEl = document.createElement('div')
+      thinkingEl.className = 'thinking-indicator'
+      thinkingEl.innerHTML = '<span class="thinking-dot"></span> thinking...'
+      messagesEl.appendChild(thinkingEl)
+      scrollToBottom()
+    }
+
+    function hideThinking() {
+      if (thinkingEl && thinkingEl.parentNode) {
+        thinkingEl.parentNode.removeChild(thinkingEl)
+      }
+      thinkingEl = null
+    }
+
+    // Track pending tool calls for matching results
+    const pendingTools = new Map() // id → card element
+
+    function renderToolCard(tool, input, id) {
+      const card = document.createElement('div')
+      card.className = 'tool-card'
+      card.dataset.toolId = id
+
+      const header = document.createElement('div')
+      header.className = 'tool-card-header'
+      header.innerHTML = `<span><span class="tool-name">${escapeHtml(tool)}</span> ${escapeHtml(summarizeInput(tool, input))}</span><span class="tool-chevron">▶</span>`
+      header.addEventListener('click', () => {
+        card.classList.toggle('expanded')
+      })
+
+      const body = document.createElement('div')
+      body.className = 'tool-card-body'
+      const inputLabel = document.createElement('div')
+      inputLabel.className = 'tool-card-label'
+      inputLabel.textContent = 'input'
+      body.appendChild(inputLabel)
+      const inputPre = document.createElement('pre')
+      inputPre.style.cssText = 'margin: 0 0 6px 0; white-space: pre-wrap;'
+      inputPre.textContent = input
+      body.appendChild(inputPre)
+
+      card.appendChild(header)
+      card.appendChild(body)
+
+      messagesEl.appendChild(card)
+      pendingTools.set(id, card)
+      scrollToBottom()
+    }
+
+    function addToolResult(id, output) {
+      const card = pendingTools.get(id)
+      if (card) {
+        const body = card.querySelector('.tool-card-body')
+        const outputLabel = document.createElement('div')
+        outputLabel.className = 'tool-card-label'
+        outputLabel.textContent = 'output'
+        body.appendChild(outputLabel)
+        const outputPre = document.createElement('pre')
+        outputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
+        // Truncate long outputs
+        const lines = output.split('\n')
+        if (lines.length > 20) {
+          outputPre.textContent = lines.slice(0, 20).join('\n') + `\n... (${lines.length} lines total)`
+        } else {
+          outputPre.textContent = output
+        }
+        body.appendChild(outputPre)
+        pendingTools.delete(id)
+      }
+    }
+
+    function summarizeInput(tool, input) {
+      // Show a short summary based on tool type
+      try {
+        const parsed = JSON.parse(input)
+        if (parsed.file_path) return parsed.file_path
+        if (parsed.command) return parsed.command.slice(0, 60)
+        if (parsed.pattern) return parsed.pattern
+        if (parsed.selector) return parsed.selector
+        if (parsed.query) return parsed.query
+      } catch {}
+      // Fallback: first line, truncated
+      const first = input.split('\n')[0]
+      return first.length > 50 ? first.slice(0, 50) + '...' : first
+    }
 
     // ==========================================
     // Message Display
@@ -418,6 +865,10 @@
         div.innerHTML = `<span class="tool-name">${escapeHtml(extra)}</span> ${escapeHtml(text.replace(extra + ': ', ''))}`
       } else if (type === 'dm' && extra) {
         div.innerHTML = `<span class="from-name">@${escapeHtml(extra)}</span> ${escapeHtml(text.replace(extra + ': ', ''))}`
+      } else if (type === 'prompt') {
+        div.textContent = text
+      } else if (type === 'summary') {
+        div.textContent = text
       } else {
         div.textContent = text
       }
@@ -440,11 +891,15 @@
     // Init
     // ==========================================
 
-    // Set welcome message based on mode
+    // Apply mode-specific styling
+    document.body.classList.add(`mode-${MODE}`)
+
+    // Set welcome message and placeholder based on mode
     const welcomeEl = document.getElementById('welcome-msg')
     if (MODE === 'agent') {
-      welcomeEl.textContent = 'Agent terminal. Awaiting commands.'
-      document.title = 'Agent Terminal'
+      welcomeEl.textContent = 'Agent shell. Ask anything — Claude will respond with full tool access. Shift+Enter to send.'
+      document.title = 'Agent Shell'
+      inputEl.placeholder = 'Ask Claude... (Shift+Enter to send)'
     } else {
       welcomeEl.textContent = 'Terminal ready. Type "tasks" for the board, "who" for shells, or a tool command.'
       document.title = 'Terminal'

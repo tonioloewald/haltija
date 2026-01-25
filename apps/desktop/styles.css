@@ -54,7 +54,8 @@ body {
 /* Only disable drag on clickable elements, not containers */
 .tab,
 #new-tab,
-#new-terminal {
+#new-terminal,
+#new-agent {
   -webkit-app-region: no-drag;
 }
 
@@ -96,6 +97,60 @@ body {
   background: #16213e;
   color: #fff;
   border-color: #444;
+}
+
+/* Terminal tabs - blue tint */
+.tab.terminal {
+  border-top: 2px solid #6366f1;
+}
+
+.tab.terminal.active {
+  background: #1a1a3e;
+  border-color: #6366f1;
+}
+
+/* Agent tabs - green tint */
+.tab.agent {
+  border-top: 2px solid #22c55e;
+}
+
+.tab.agent.active {
+  background: #1a2e1a;
+  border-color: #22c55e;
+}
+
+/* Agent status indicator (the * prefix) */
+.tab.agent .agent-status {
+  display: inline-block;
+  font-weight: bold;
+}
+
+.tab.agent.thinking .agent-status {
+  animation: spin 1s linear infinite;
+  color: #22c55e;
+}
+
+.tab.agent.ready .agent-status {
+  animation: blink-green 1s ease-in-out infinite;
+}
+
+.tab.agent.error .agent-status {
+  animation: blink-red 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes blink-green {
+  0%, 100% { color: #22c55e; }
+  50% { color: #86efac; }
+}
+
+@keyframes blink-red {
+  0%, 100% { color: #ef4444; }
+  50% { color: #fca5a5; }
 }
 
 .tab-title {
@@ -167,6 +222,28 @@ body {
   color: #a5b4fc;
 }
 
+#new-agent {
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #4ade80;
+  font-size: 14px;
+  font-weight: bold;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#new-agent:hover {
+  background: #2a2a4a;
+  color: #86efac;
+}
+
 /* Toolbar */
 #toolbar {
   display: flex;
@@ -177,6 +254,17 @@ body {
   border-bottom: 1px solid #333;
   height: 44px;
   flex-shrink: 0;
+}
+
+/* Toolbar tint for terminal/agent tabs */
+#toolbar.terminal {
+  background: #161e3e;
+  border-top: 2px solid #6366f1;
+}
+
+#toolbar.agent {
+  background: #162e16;
+  border-top: 2px solid #22c55e;
 }
 
 /* Navigation buttons */

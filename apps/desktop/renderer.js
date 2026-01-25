@@ -4,7 +4,7 @@
 
 // Settings (loaded from localStorage)
 const DEFAULT_SETTINGS = {
-  serverMode: 'auto', // 'auto' | 'builtin' | 'external'
+  serverMode: 'builtin', // 'builtin' | 'external' | 'auto'
   serverUrl: 'http://localhost:8700',
   confirmNewTabs: false,
 }
@@ -40,6 +40,7 @@ function getServerUrl() {
 // Elements
 const tabBar = document.getElementById('tabs')
 const newTabButton = document.getElementById('new-tab')
+const toolbar = document.getElementById('toolbar')
 const urlInput = document.getElementById('url-input')
 const goButton = document.getElementById('go')
 const backButton = document.getElementById('back')
@@ -62,6 +63,7 @@ let activeTabId = null
 let tabIdCounter = 0
 let pendingNewTabUrl = null
 let pendingNewTabResolve = null
+let lastCwd = localStorage.getItem('haltija-lastCwd') || null  // Persisted across restarts
 
 // Default URL
 function getDefaultUrl() {
@@ -158,14 +160,22 @@ function createTab(url, activate = true) {
 // mode: 'human' or 'agent'
 function createTerminalTab(mode = 'human') {
   const tabId = `tab-${++tabIdCounter}`
-  const label = mode === 'agent' ? 'Agent' : 'Terminal'
+  const isAgent = mode === 'agent'
+  const prefix = isAgent ? '<span class="agent-status">*</span>' : '>'
+
+  // Determine initial cwd: use active terminal's cwd, or lastCwd from localStorage
+  const activeTab = getActiveTab()
+  const initialCwd = (activeTab?.isTerminal && activeTab?.cwd) || lastCwd || ''
+  
+  // For agent tabs, use a default name; for human, show 'shell' until cwd is known
+  const label = isAgent ? 'agent' : 'shell'
 
   // Create tab element
   const tabEl = document.createElement('div')
-  tabEl.className = 'tab'
+  tabEl.className = `tab ${isAgent ? 'agent ready' : 'terminal'}`
   tabEl.dataset.tabId = tabId
   tabEl.innerHTML = `
-    <span class="tab-title">${label}</span>
+    <span class="tab-title">${prefix} ${label}</span>
     <button class="tab-close" title="Close tab">×</button>
   `
 
@@ -185,7 +195,8 @@ function createTerminalTab(mode = 'human') {
   // Create iframe (not webview — terminal is local, no widget injection needed)
   const iframe = document.createElement('iframe')
   iframe.id = tabId
-  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}&mode=${mode}`
+  const cwdParam = initialCwd ? `&cwd=${encodeURIComponent(initialCwd)}` : ''
+  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}&mode=${mode}${cwdParam}`
   iframe.className = 'terminal-frame'
 
   webviewContainer.appendChild(iframe)
@@ -198,6 +209,7 @@ function createTerminalTab(mode = 'human') {
     element: tabEl,
     webview: iframe, // reuse field for consistency with closeTab/activateTab
     isTerminal: true,
+    terminalMode: mode,  // 'human' or 'agent'
   }
   tabs.push(tab)
 
@@ -210,8 +222,9 @@ function renameTerminalTab(tab, name) {
   if (!name) return
   tab.shellName = name
   tab.title = name
-  tab.element.querySelector('.tab-title').textContent = name
-  document.title = `${name} - Haltija`
+  const prefix = tab.terminalMode === 'agent' ? '*' : '>'
+  tab.element.querySelector('.tab-title').textContent = `${prefix} ${name}`
+  document.title = name
   // Send whoami to server via the terminal iframe
   const iframe = tab.webview
   if (iframe && iframe.contentWindow) {
@@ -235,15 +248,21 @@ function activateTab(tabId) {
   tab.webview.classList.add('active')
   activeTabId = tabId
 
-  // Update URL bar and title
+  // Update URL bar, Go button, toolbar, and title based on tab type
+  toolbar.classList.remove('terminal', 'agent')
   if (tab.isTerminal || tab.url === 'terminal') {
-    urlInput.value = tab.shellName || ''
-    urlInput.placeholder = 'name this shell...'
+    urlInput.value = tab.cwd || '~'
+    urlInput.placeholder = 'working directory'
+    goButton.textContent = 'Pick folder…'
+    goButton.title = 'Pick folder…'
+    toolbar.classList.add(tab.terminalMode === 'agent' ? 'agent' : 'terminal')
   } else {
     urlInput.value = tab.url || ''
     urlInput.placeholder = 'Enter URL...'
+    goButton.textContent = 'Go'
+    goButton.title = 'Go'
   }
-  document.title = tab.title ? `${tab.title} - Haltija` : 'Haltija'
+  document.title = tab.title || 'Haltija'
 
   // Update nav buttons
   updateNavButtons()
@@ -466,7 +485,7 @@ function setupWebviewEvents(tab) {
     tab.title = e.title || 'New Tab'
     tab.element.querySelector('.tab-title').textContent = tab.title
     if (tab.id === activeTabId) {
-      document.title = tab.title ? `${tab.title} - Haltija` : 'Haltija'
+      document.title = tab.title || 'Haltija'
     }
   })
 
@@ -684,17 +703,16 @@ function applySettings() {
 newTabButton.addEventListener('click', () => createTab())
 const newTerminalBtn = document.getElementById('new-terminal')
 newTerminalBtn.addEventListener('click', () => createTerminalTab('human'))
-newTerminalBtn.addEventListener('contextmenu', (e) => {
-  e.preventDefault()
-  createTerminalTab('agent')
-})
+const newAgentBtn = document.getElementById('new-agent')
+newAgentBtn.addEventListener('click', () => createTerminalTab('agent'))
 
 // Address bar
 urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const tab = tabs.find(t => t.id === activeTabId)
     if (tab && tab.isTerminal) {
-      renameTerminalTab(tab, urlInput.value.trim())
+      // cd to the entered path
+      changeTerminalDirectory(tab, urlInput.value.trim())
       urlInput.blur()
     } else {
       navigate(urlInput.value)
@@ -705,11 +723,50 @@ urlInput.addEventListener('keydown', (e) => {
 goButton.addEventListener('click', () => {
   const tab = tabs.find(t => t.id === activeTabId)
   if (tab && tab.isTerminal) {
-    renameTerminalTab(tab, urlInput.value.trim())
+    // Open folder picker for terminal tabs
+    openFolderPicker(tab)
   } else {
     navigate(urlInput.value)
   }
 })
+
+// Change terminal working directory via cd command
+async function changeTerminalDirectory(tab, path) {
+  if (!path) return
+  try {
+    const resp = await fetch(`${getServerUrl()}/terminal/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: `cd ${path}`, shellId: tab.shellId }),
+    })
+    const result = await resp.text()
+    // If successful, the cwd-changed message will update the URL bar
+    if (result.startsWith('cd:')) {
+      // Error - show notification
+      showNotification(result, 3000)
+    }
+  } catch (err) {
+    showNotification(`Error: ${err.message}`, 3000)
+  }
+}
+
+// Open native folder picker and cd to selected folder
+async function openFolderPicker(tab) {
+  if (window.haltija?.showOpenDialog) {
+    const result = await window.haltija.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: tab.cwd || undefined,
+    })
+    if (result && !result.canceled && result.filePaths?.[0]) {
+      const picked = result.filePaths[0]
+      lastCwd = picked
+      localStorage.setItem('haltija-lastCwd', picked)
+      changeTerminalDirectory(tab, picked)
+    }
+  } else {
+    showNotification('Folder picker not available', 2000)
+  }
+}
 
 // Navigation buttons
 backButton.addEventListener('click', () => {
@@ -954,3 +1011,62 @@ if (window.haltija) {
     urlInput.select()
   })
 }
+
+// Listen for messages from terminal iframes (cwd changes)
+window.addEventListener('message', (event) => {
+  if (event.data?.type === 'terminal-cwd') {
+    const { cwd, shellId } = event.data
+    // Find the terminal tab that sent this message
+    const tab = tabs.find(t => t.isTerminal && t.webview?.contentWindow === event.source)
+    if (tab) {
+      tab.cwd = cwd
+      tab.shellId = shellId  // Track shellId for sending commands
+
+      
+      // Only update tab title for human terminals (show directory name)
+      // Agent tabs keep their agent name
+      if (tab.terminalMode !== 'agent') {
+        const dirName = cwd.replace(/\/$/, '').split('/').pop() || cwd
+        tab.title = dirName
+        tab.element.querySelector('.tab-title').innerHTML = `> ${dirName}`
+      }
+      
+      // Update URL bar if this tab is active
+      if (tab.id === activeTabId) {
+        urlInput.value = cwd
+        const displayTitle = tab.terminalMode === 'agent' ? tab.title : cwd.replace(/\/$/, '').split('/').pop()
+        document.title = displayTitle
+      }
+    }
+  }
+  // Shell renamed (update agent tab title)
+  if (event.data?.type === 'shell-renamed') {
+    const { shellId, name } = event.data
+    // Match by shellId or by event source (in case shellId not yet set on tab)
+    const tab = tabs.find(t => t.isTerminal && (t.shellId === shellId || t.webview?.contentWindow === event.source))
+    if (tab && tab.terminalMode === 'agent' && name) {
+      tab.shellId = shellId  // Ensure shellId is set
+      tab.title = name
+      tab.element.querySelector('.tab-title').innerHTML = `<span class="agent-status">*</span> ${name}`
+      if (tab.id === activeTabId) {
+        document.title = name
+      }
+    }
+  }
+  
+  // Agent status updates
+  if (event.data?.type === 'agent-status') {
+    const { status } = event.data
+    const tab = tabs.find(t => t.isTerminal && t.terminalMode === 'agent' && t.webview?.contentWindow === event.source)
+    if (tab) {
+      tab.element.classList.remove('thinking', 'ready', 'error')
+      if (status === 'thinking') {
+        tab.element.classList.add('thinking')
+      } else if (status === 'error') {
+        tab.element.classList.add('error')
+      } else {
+        tab.element.classList.add('ready')
+      }
+    }
+  }
+})

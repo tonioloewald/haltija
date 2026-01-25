@@ -95,12 +95,12 @@ export const ARG_MAPS = {
   form: (args) => parseTargetArgs(args),
 }
 
-/** Parse a target argument — number ref or selector */
+/** Parse a target argument — @ref number or selector */
 export function parseTargetArgs(args) {
   if (!args.length || !args[0]) return {}
   const target = args[0]
-  // Number → ref
-  if (/^\d+$/.test(target)) return { ref: target }
+  // @42 or plain 42 → ref
+  if (/^@?\d+$/.test(target)) return { ref: target.replace('@', '') }
   // Everything else is a selector
   return { selector: target }
 }
@@ -334,11 +334,67 @@ async function doRequest(url, method, body, context = {}) {
   }
 }
 
-/** Check if a string looks like a subcommand (not a flag, not a port number) */
+/** Known valid subcommands */
+export const KNOWN_COMMANDS = new Set([
+  'tree', 'query', 'inspect', 'inspectAll', 'find',
+  'click', 'type', 'key', 'drag', 'scroll', 'call',
+  'navigate', 'refresh', 'location',
+  'events', 'events-watch', 'events-unwatch', 'console',
+  'mutations-watch', 'mutations-unwatch', 'mutations-status',
+  'eval', 'fetch',
+  'screenshot', 'snapshot', 'highlight', 'unhighlight',
+  'select-start', 'select-result', 'select-cancel', 'select-clear',
+  'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
+  'recording-start', 'recording-stop', 'recording-generate', 'recordings',
+  'test-run', 'test-validate',
+  'status', 'version', 'docs', 'api', 'stats'
+])
+
+/** Common typos/aliases mapped to correct commands */
+const COMMAND_ALIASES = {
+  'open': 'navigate',
+  'goto': 'navigate',
+  'go': 'navigate',
+  'url': 'navigate',
+  'load': 'navigate',
+  'get': 'tree',
+  'dom': 'tree',
+  'page': 'tree',
+  'input': 'type',
+  'write': 'type',
+  'enter': 'key',
+  'press': 'key',
+  'run': 'eval',
+  'js': 'eval',
+  'exec': 'eval',
+  'shot': 'screenshot',
+  'capture': 'screenshot',
+  'ls': 'tree',
+  'list': 'tree',
+  'show': 'tree',
+  'help': '--help',
+}
+
+/** Check if a string is a valid subcommand */
 export function isSubcommand(arg) {
   if (!arg || arg.startsWith('-')) return false
   if (/^\d+$/.test(arg)) return false  // Legacy port number
-  return true
+  return KNOWN_COMMANDS.has(arg)
+}
+
+/** Get suggestion for unknown command */
+export function getSuggestion(cmd) {
+  // Check aliases first
+  if (COMMAND_ALIASES[cmd]) {
+    return COMMAND_ALIASES[cmd]
+  }
+  // Simple prefix match
+  for (const known of KNOWN_COMMANDS) {
+    if (known.startsWith(cmd) || cmd.startsWith(known.slice(0, 3))) {
+      return known
+    }
+  }
+  return null
 }
 
 /** List available subcommands for --help */

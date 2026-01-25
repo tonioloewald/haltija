@@ -32,6 +32,23 @@ process.stderr.on('error', () => {})
 const HALTIJA_PORT = parseInt(process.env.HALTIJA_PORT || '8700')
 const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
+// ============================================
+// Preferences
+// ============================================
+// TODO: Sync these with renderer via IPC, persist to disk
+// For now, these are compile-time defaults
+
+const DEFAULT_PREFS = {
+  // Server startup behavior:
+  // 'builtin'  - Always kill existing server and start fresh (default)
+  // 'external' - Never start server, expect one running externally
+  // 'auto'     - Use existing if found, else start embedded
+  serverMode: 'builtin',
+}
+
+// Active prefs (will be overwritten by persisted prefs when IPC is wired up)
+const prefs = { ...DEFAULT_PREFS }
+
 let mainWindow = null
 let embeddedServer = null
 
@@ -757,6 +774,11 @@ function setupScreenCapture() {
       return { success: false, error: err.message }
     }
   })
+
+  // Native folder picker dialog
+  ipcMain.handle('show-open-dialog', async (event, options) => {
+    return dialog.showOpenDialog(mainWindow, options)
+  })
 }
 
 /**
@@ -918,15 +940,35 @@ async function killZombieServer() {
 async function ensureServer() {
   const running = await checkServerRunning()
 
-  if (running) {
-    console.log('[Haltija Desktop] Using existing server at', HALTIJA_SERVER)
-    return true
+  switch (prefs.serverMode) {
+    case 'external':
+      // Never start embedded server, expect external
+      if (running) {
+        console.log('[Haltija Desktop] Using external server at', HALTIJA_SERVER)
+        return true
+      }
+      console.log('[Haltija Desktop] No external server found at', HALTIJA_SERVER)
+      return false
+
+    case 'auto':
+      // Use existing if found, else start embedded
+      if (running) {
+        console.log('[Haltija Desktop] Using existing server at', HALTIJA_SERVER)
+        return true
+      }
+      console.log('[Haltija Desktop] No server found, starting embedded')
+      return await startEmbeddedServer()
+
+    case 'builtin':
+    default:
+      // Always kill existing and start fresh
+      if (running) {
+        console.log('[Haltija Desktop] Killing existing server for fresh start')
+        await killZombieServer()
+      }
+      console.log('[Haltija Desktop] Starting embedded server')
+      return await startEmbeddedServer()
   }
-
-  // Port might be held by a zombie — kill it before starting fresh
-  await killZombieServer()
-
-  return await startEmbeddedServer()
 }
 
 // App lifecycle

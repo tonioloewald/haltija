@@ -10,7 +10,7 @@
  *   hj status            # Server status
  */
 
-import { runSubcommand, isSubcommand, listSubcommands } from './cli-subcommand.mjs'
+import { runSubcommand, isSubcommand, getSuggestion, listSubcommands } from './cli-subcommand.mjs'
 
 const args = process.argv.slice(2)
 
@@ -40,9 +40,20 @@ const subcommand = args[0]
 const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all args
 
 if (!isSubcommand(subcommand)) {
-  console.error(`Unknown command: ${subcommand}`)
-  console.error('Run `hj --help` for available commands.')
+  const suggestion = getSuggestion(subcommand)
+  if (suggestion === '--help') {
+    console.log(listSubcommands())
+    process.exit(0)
+  }
+  
+  let msg = `Unknown command: '${subcommand}'`
+  if (suggestion) {
+    msg += ` — did you mean '${suggestion}'?`
+  }
+  console.error(msg)
+  console.error(`\nExamples: hj tree, hj navigate <url>, hj click @42`)
+  console.error(`Run 'hj' for docs.`)
   process.exit(1)
+} else {
+  runSubcommand(subcommand, subArgs, port)
 }
-
-runSubcommand(subcommand, subArgs, port)

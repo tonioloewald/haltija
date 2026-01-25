@@ -48,9 +48,9 @@ describe('parseTargetArgs', () => {
     expect(parseTargetArgs(['999'])).toEqual({ ref: '999' })
   })
 
-  test('treats @N as a selector (no @ prefix support)', () => {
-    expect(parseTargetArgs(['@42'])).toEqual({ selector: '@42' })
-    expect(parseTargetArgs(['@1'])).toEqual({ selector: '@1' })
+  test('treats @N as a ref (strips @ prefix)', () => {
+    expect(parseTargetArgs(['@42'])).toEqual({ ref: '42' })
+    expect(parseTargetArgs(['@1'])).toEqual({ ref: '1' })
   })
 
   test('parses CSS selectors', () => {

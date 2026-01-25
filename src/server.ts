@@ -24,8 +24,9 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
-import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, type TerminalState, type ShellIdentity } from './terminal'
+import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
+import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, type AgentConfig, type AgentEvent } from './agent-shell'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -193,14 +194,34 @@ const DEFAULT_AGENT_NAMES = [
 const terminalState = createTerminalState()
 const terminalConfig = loadConfig(process.cwd())
 const terminalClients = new Set<any>() // WebSocket clients for /ws/terminal
+const commandCache = createCommandCache(30000) // 30s TTL
 
 // Task board (loaded on startup)
 let taskBoard: TaskBoard | null = null
 try {
   taskBoard = loadBoard(process.cwd())
   const summary = getBoardSummary(taskBoard)
-  if (summary !== 'empty') updateStatus(terminalState, 'tasks', summary)
+  if (summary !== 'empty') updateStatus(terminalState, 'todos', summary)
 } catch { /* no task board yet — created on first tasks command */ }
+
+// Helper: Update hj (browser) status for terminals
+function updateHjStatus() {
+  const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
+  let hjStatus: string
+  if (focusedWindow) {
+    try {
+      hjStatus = new URL(focusedWindow.url).hostname || 'localhost'
+    } catch {
+      hjStatus = 'connected'
+    }
+  } else if (windows.size > 0) {
+    hjStatus = `${windows.size} tabs`
+  } else {
+    hjStatus = STATUS_ITEMS.hj.default
+  }
+  updateStatus(terminalState, 'hj', hjStatus)
+  broadcastToTerminals({ type: 'status', line: getStatusLine(terminalState) })
+}
 
 // Recording storage (in-memory, keyed by ID)
 interface StoredRecording {
@@ -1417,6 +1438,81 @@ For complete API reference with all options and response formats:
     }, { headers })
   }
 
+  // Agent prompt — send a prompt to a Claude subprocess
+  if (path === '/terminal/agent-prompt' && req.method === 'POST') {
+    const body = await req.json() as { shellId: string; prompt: string }
+    if (!body.prompt?.trim()) {
+      return new Response('error: prompt is required', { status: 400, headers })
+    }
+    if (!body.shellId) {
+      return new Response('error: shellId is required', { status: 400, headers })
+    }
+
+    const shell = terminalState.shells.get(body.shellId)
+    if (!shell) {
+      return new Response('error: shell not found', { status: 404, headers })
+    }
+
+    // Create agent session if needed
+    let session = getAgentSession(body.shellId)
+    if (!session) {
+      session = createAgentSession(body.shellId, shell.name || shell.id)
+    }
+
+    // Get agent config from haltija.json
+    const agentConfig: AgentConfig = (terminalConfig as any)?.agent || {}
+
+    // Event handler: forward events to the shell's WebSocket
+    const onEvent = (event: AgentEvent) => {
+      if (shell.ws && (shell.ws as any).readyState === WebSocket.OPEN) {
+        try {
+          (shell.ws as any).send(JSON.stringify(event))
+        } catch { /* ignore dead socket */ }
+      }
+    }
+
+    // Use shell's cwd as the agent's working directory (scoped like Zed)
+    const agentCwd = shell.cwd || process.env.HOME || process.cwd()
+
+    // Build compact UI state line to prepend to prompt
+    const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
+    const browserStatus = focusedWindow 
+      ? `hj ${new URL(focusedWindow.url).hostname}`
+      : `hj (${STATUS_ITEMS.hj.default})`
+    const testStatus = terminalState.statuses.get('tests')?.state || STATUS_ITEMS.tests.default
+    const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.todos.default
+    
+    const uiState = `tests ${testStatus} | ${browserStatus} | todos ${taskStatus}
+
+`
+    const fullPrompt = uiState + body.prompt.trim()
+
+    // Spawn agent asynchronously — don't await
+    runAgentPrompt(body.shellId, fullPrompt, agentConfig, agentCwd, onEvent, agentConfig.systemPrompt)
+
+    return new Response('ok', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+  }
+
+  // Agent transcript — get full transcript for a shell
+  if (path === '/terminal/agent-transcript' && req.method === 'GET') {
+    const shellId = url.searchParams.get('shellId')
+    if (!shellId) {
+      return Response.json({ error: 'shellId required' }, { status: 400, headers })
+    }
+    const transcript = getTranscript(shellId)
+    return Response.json({ transcript }, { headers })
+  }
+
+  // Agent kill/stop — stop a running agent
+  if ((path === '/terminal/agent-kill' || path === '/terminal/agent-stop') && req.method === 'POST') {
+    const body = await req.json() as { shellId: string }
+    if (!body.shellId) {
+      return new Response('error: shellId required', { status: 400, headers })
+    }
+    const killed = killAgent(body.shellId)
+    return new Response(killed ? 'stopped' : 'no running agent', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+  }
+
   // Dispatch a command to a tool
   if (path === '/terminal/command' && req.method === 'POST') {
     const body = await req.json() as { command: string; shellId?: string }
@@ -1483,32 +1579,111 @@ For complete API reference with all options and response formats:
       return respond(`→ ${targetName}: ${msgText}`)
     }
 
-    // Builtin: tasks
+    // Builtin: todos (alias: tasks) - todo list / memory aid
     const parts = command.split(/\s+/)
-    if (parts[0] === 'tasks') {
+    if (parts[0] === 'todos' || parts[0] === 'tasks') {
       // Ensure board exists
       if (!taskBoard) {
         taskBoard = loadBoard(process.cwd())
       } else {
         reloadBoard(taskBoard)
       }
-      const verb = parts[1]
-      const args = parts.slice(2)
+      let verb = parts[1]
+      let args = parts.slice(2)
+      
+      // Default: list top 5 priority items
+      if (!verb) {
+        verb = 'top'
+        args = ['5']
+      }
+      
       const result = dispatchTaskCommand(taskBoard, verb, args, shellName)
       if (result.mutated) {
         const summary = getBoardSummary(taskBoard)
-        updateStatus(terminalState, 'tasks', summary)
+        updateStatus(terminalState, 'todos', summary)
         broadcastToTerminals({ type: 'status', line: getStatusLine(terminalState) })
         broadcastToTerminals({ type: 'task-changed', by: shellName })
       }
       return respond(result.output)
     }
 
-    // Normal tool dispatch
-    if (!terminalConfig) {
-      return respond('error: no haltija.json found in project')
+    // Get shell's working directory
+    const shellCwd = shell?.cwd || process.env.HOME || process.cwd()
+
+    // Meta-command: cd [path]
+    if (command === 'cd' || command.startsWith('cd ')) {
+      const targetPath = command.slice(2).trim() || process.env.HOME || '/'
+      const { resolve } = await import('path')
+      const { existsSync, statSync } = await import('fs')
+      
+      // Resolve relative to current cwd
+      const newCwd = targetPath.startsWith('/') || targetPath.startsWith('~')
+        ? targetPath.replace(/^~/, process.env.HOME || '')
+        : resolve(shellCwd, targetPath)
+      
+      if (!existsSync(newCwd)) {
+        return respond(`cd: no such directory: ${targetPath}`)
+      }
+      if (!statSync(newCwd).isDirectory()) {
+        return respond(`cd: not a directory: ${targetPath}`)
+      }
+      
+      if (shell) {
+        shell.cwd = newCwd
+        // Notify the terminal of cwd change
+        try {
+          if ((shell.ws as any).readyState === WebSocket.OPEN) {
+            (shell.ws as any).send(JSON.stringify({ type: 'cwd-changed', cwd: newCwd }))
+          }
+        } catch { /* ignore */ }
+      }
+      return respond(newCwd)
     }
-    const output = await dispatchCommand(terminalConfig, command)
+
+    // Meta-command: pwd
+    if (command === 'pwd') {
+      return respond(shellCwd)
+    }
+
+    // Meta-command: help [topic] (also: man)
+    if (command === 'help' || command.startsWith('help ') || command === 'man' || command.startsWith('man ')) {
+      const isMan = command.startsWith('man')
+      const topic = command.slice(isMan ? 3 : 4).trim()
+      if (!topic) {
+        // List available tools
+        const tools = terminalConfig?.tools ? Object.keys(terminalConfig.tools) : []
+        const builtins = ['who', 'whoami', 'cd', 'pwd', 'tasks', 'help']
+        return respond(`Builtins: ${builtins.join(', ')}\nTools: ${tools.length ? tools.join(', ') : '(none)'}\n\nType 'help <topic>' for details.`)
+      }
+      // Try <topic> --help, then <topic> help
+      const { executeShellInDir } = await import('./terminal')
+      let output = await executeShellInDir(`${topic} --help`, [], shellCwd)
+      if (output.includes('not found') || output.includes('Unknown') || output.includes('error')) {
+        output = await executeShellInDir(`${topic} help`, [], shellCwd)
+      }
+      return respond(output)
+    }
+
+    // Try tool dispatch first (if config exists)
+    if (terminalConfig) {
+      const toolParts = command.split(/\s+/)
+      const toolName = toolParts[0]
+      
+      // Check if it's a known tool
+      if (terminalConfig.tools[toolName]) {
+        const cached = getCachedResult(commandCache, command)
+        if (cached !== null) {
+          return respond(cached)
+        }
+        const output = await dispatchCommand(terminalConfig, command)
+        cacheResult(commandCache, command, output)
+        return respond(output)
+      }
+    }
+
+    // Fallback: execute as shell command in shell's cwd
+    const { executeShellInDir } = await import('./terminal')
+    const output = await executeShellInDir(command, [], shellCwd)
     return respond(output)
   }
   
@@ -2636,8 +2811,8 @@ const serverConfig = {
         terminalClients.add(ws as unknown as WebSocket)
         // Register shell identity
         const shell = registerShell(terminalState, ws)
-        // Send identity + current status
-        ws.send(JSON.stringify({ type: 'identity', shellId: shell.id }))
+        // Send identity + current status + cwd
+        ws.send(JSON.stringify({ type: 'identity', shellId: shell.id, cwd: shell.cwd }))
         const line = getStatusLine(terminalState)
         ws.send(JSON.stringify({ type: 'status', line }))
         // Broadcast join to other terminals
@@ -2688,6 +2863,9 @@ const serverConfig = {
               }
               
               console.log(`${LOG_PREFIX} Window connected: ${windowId} (${url})`)
+              
+              // Update hj status for terminals
+              updateHjStatus()
             }
             
             // Check if widget has the correct server session ID
@@ -2751,6 +2929,8 @@ const serverConfig = {
               // Focus next available window
               focusedWindowId = windows.size > 0 ? windows.keys().next().value : null
             }
+            // Update hj status for terminals
+            updateHjStatus()
             break
           }
         }
@@ -2767,6 +2947,37 @@ const serverConfig = {
     },
   },
 }
+
+// Ensure hj command is available globally (symlink to /usr/local/bin)
+try {
+  const hjSource = join(import.meta.dir, '..', 'bin', 'hj.mjs')
+  const hjTarget = '/usr/local/bin/hj'
+  const { existsSync, symlinkSync, unlinkSync, readlinkSync } = await import('fs')
+  
+  if (existsSync(hjSource)) {
+    // Check if symlink exists and points to correct location
+    let needsUpdate = true
+    if (existsSync(hjTarget)) {
+      try {
+        const currentTarget = readlinkSync(hjTarget)
+        if (currentTarget === hjSource) {
+          needsUpdate = false
+        }
+      } catch { /* not a symlink or can't read */ }
+    }
+    
+    if (needsUpdate) {
+      try {
+        if (existsSync(hjTarget)) unlinkSync(hjTarget)
+        symlinkSync(hjSource, hjTarget)
+        console.log(`  Linked: hj → ${hjSource}`)
+      } catch (e: any) {
+        // Likely permission error - that's ok, user can do it manually
+        if (e.code !== 'EACCES') console.error(`  Note: Could not create hj symlink: ${e.message}`)
+      }
+    }
+  }
+} catch { /* ignore symlink errors */ }
 
 // Start servers based on mode
 let httpServer: ReturnType<typeof Bun.serve> | null = null
