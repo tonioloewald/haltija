@@ -438,8 +438,11 @@
             case 'agent-text':
               if (msg.shellId === shellId) {
                 hideThinking()
-                addMessage('output', msg.text)
-                scrollToBottom()
+                // Skip empty or whitespace-only text
+                if (msg.text?.trim()) {
+                  addMessage('output', msg.text)
+                  scrollToBottom()
+                }
               }
               break
             case 'agent-tool':

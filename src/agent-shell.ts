@@ -323,7 +323,7 @@ export function parseStreamLine(shellId: string, line: string): AgentEvent[] {
       const message = parsed.message
       if (message?.content && Array.isArray(message.content)) {
         for (const block of message.content) {
-          if (block.type === 'text' && block.text) {
+          if (block.type === 'text' && block.text?.trim()) {
             events.push({ type: 'agent-text', shellId, text: block.text })
           } else if (block.type === 'tool_use') {
             const inputStr = typeof block.input === 'string'
