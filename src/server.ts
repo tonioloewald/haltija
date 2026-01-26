@@ -1418,6 +1418,23 @@ For complete API reference with all options and response formats:
     return Response.json({ messages }, { headers })
   }
   
+  // Check if hj CLI is globally available
+  if (path === '/terminal/hj-status' && req.method === 'GET') {
+    try {
+      execSync('which hj', { stdio: 'pipe' })
+      return Response.json({ installed: true }, { headers })
+    } catch {
+      // hj not in PATH - provide install command
+      const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+      const installCmd = `sudo ln -sf "${hjSource}" /usr/local/bin/hj`
+      return Response.json({ 
+        installed: false, 
+        installCommand: installCmd,
+        message: 'The hj CLI is not globally available. Install it to enable browser control for agents.'
+      }, { headers })
+    }
+  }
+
   // Agent init — register a shell via REST (no WebSocket needed)
   if (path === '/terminal/init' && req.method === 'POST') {
     const body = await req.json() as { name?: string }

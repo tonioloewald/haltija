@@ -274,23 +274,9 @@ export function buildAgentCommand(config: AgentConfig, prompt: string, cwd?: str
     args.push('--add-dir', cwd)
   }
   
-  // Connect to Haltija MCP server for browser control tools
-  // This gives the agent direct access to hj commands as MCP tools
-  // Use __dirname to find the MCP server relative to this module (works in bundled dist too)
-  const mcpServerPath = join(__dirname, '..', 'apps', 'mcp', 'build', 'index.js')
-  const mcpConfig = JSON.stringify({
-    mcpServers: {
-      haltija: {
-        command: 'node',
-        args: [mcpServerPath],
-      }
-    }
-  })
-  args.push('--mcp-config', mcpConfig)
-  
-  // Allow MCP tools plus basic read tools
-  // The haltija MCP server provides all the browser control tools
-  const allowedTools = config.allowedTools || 'Read,Grep,Glob,mcp__haltija__*'
+  // Allow standard tools - the agent can use 'hj' CLI via Bash for browser control
+  // hj is added to PATH in the spawn env below
+  const allowedTools = config.allowedTools || 'Bash,Read,Grep,Glob,Edit,Write,Task,WebFetch,WebSearch'
   args.push('--allowedTools', allowedTools)
   
   // dontAsk mode + restricted allowedTools = execute permitted tools without prompting
@@ -450,7 +436,8 @@ export function runAgentPrompt(
 
   return new Promise<void>((resolve) => {
     // Add haltija bin to PATH so agent can use 'hj' command
-    const haltijaBin = join(process.cwd(), 'bin')
+    // Use __dirname to find bin relative to this module (works in bundled dist too)
+    const haltijaBin = join(__dirname, '..', 'bin')
     const env = {
       ...process.env,
       PATH: `${haltijaBin}:${process.env.PATH || ''}`,

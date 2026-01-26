@@ -675,3 +675,103 @@ body {
 .restore-no:hover {
   color: #fff;
 }
+
+/* hj CLI install prompt */
+.hj-install-prompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1a1a2e;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  padding: 20px;
+  z-index: 10000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-width: 500px;
+  width: 90%;
+}
+
+.hj-install-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hj-install-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hj-install-icon {
+  font-size: 20px;
+}
+
+.hj-install-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.hj-install-message {
+  color: #94a3b8;
+  font-size: 13px;
+  margin: 0;
+}
+
+.hj-install-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0a0a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.hj-install-command code {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.hj-copy-btn {
+  padding: 6px 12px;
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hj-copy-btn:hover {
+  background: #4f46e5;
+}
+
+.hj-install-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.hj-install-later {
+  padding: 8px 16px;
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hj-install-later:hover {
+  background: #252540;
+  color: #fff;
+}

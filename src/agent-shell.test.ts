@@ -74,16 +74,15 @@ describe('agent-shell', () => {
   })
 
   describe('buildAgentCommand', () => {
-    test('default config builds claude -p command with safety flags and MCP config', () => {
+    test('default config builds claude -p command with standard tools', () => {
       const config: AgentConfig = {}
       const args = buildAgentCommand(config, 'hello world')
-      // Should include MCP config and mcp__haltija__* tools
+      // Should include standard tools (agent uses hj CLI via Bash for browser control)
       expect(args).toContain('claude')
       expect(args).toContain('-p')
       expect(args).toContain('hello world')
-      expect(args).toContain('--mcp-config')
       expect(args).toContain('--allowedTools')
-      expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read,Grep,Glob,mcp__haltija__*')
+      expect(args[args.indexOf('--allowedTools') + 1]).toBe('Bash,Read,Grep,Glob,Edit,Write,Task,WebFetch,WebSearch')
       expect(args).toContain('--output-format')
       expect(args).toContain('stream-json')
     })

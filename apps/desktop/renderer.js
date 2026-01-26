@@ -158,10 +158,15 @@ function createTab(url, activate = true) {
 
 // Create a terminal tab (iframe-based, no webview)
 // mode: 'human' or 'agent'
-function createTerminalTab(mode = 'human') {
+async function createTerminalTab(mode = 'human') {
   const tabId = `tab-${++tabIdCounter}`
   const isAgent = mode === 'agent'
   const prefix = isAgent ? '<span class="agent-status">*</span>' : '>'
+
+  // For agent tabs, check if hj CLI is installed
+  if (isAgent) {
+    await checkHjInstalled()
+  }
 
   // Determine initial cwd: use active terminal's cwd, or lastCwd from localStorage
   const activeTab = getActiveTab()
@@ -1209,3 +1214,66 @@ async function restoreSession(filename) {
 
 // Check for saved sessions after a brief delay (let server start)
 setTimeout(checkForSavedSessions, 2000)
+
+// ==========================================
+// hj CLI Installation Check
+// ==========================================
+
+let hjCheckDone = false
+
+/**
+ * Check if hj CLI is globally installed. If not, prompt user to install.
+ * Only prompts once per session.
+ */
+async function checkHjInstalled() {
+  if (hjCheckDone) return
+  hjCheckDone = true
+  
+  try {
+    const response = await fetch(`${getServerUrl()}/terminal/hj-status`)
+    if (!response.ok) return
+    
+    const { installed, installCommand, message } = await response.json()
+    if (installed) return
+    
+    // Show install prompt
+    showHjInstallPrompt(installCommand, message)
+  } catch (err) {
+    console.log('[Haltija Desktop] Could not check hj status:', err.message)
+  }
+}
+
+/**
+ * Show a prompt to install the hj CLI
+ */
+function showHjInstallPrompt(installCommand, message) {
+  const prompt = document.createElement('div')
+  prompt.className = 'hj-install-prompt'
+  prompt.innerHTML = `
+    <div class="hj-install-content">
+      <div class="hj-install-header">
+        <span class="hj-install-icon">⚠️</span>
+        <span class="hj-install-title">hj CLI not installed</span>
+      </div>
+      <p class="hj-install-message">${message}</p>
+      <div class="hj-install-command">
+        <code>${installCommand}</code>
+        <button class="hj-copy-btn" title="Copy command">Copy</button>
+      </div>
+      <div class="hj-install-actions">
+        <button class="hj-install-later">Later</button>
+      </div>
+    </div>
+  `
+  
+  prompt.querySelector('.hj-copy-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(installCommand)
+    showNotification('Command copied! Paste in Terminal and enter your password.', 5000)
+  })
+  
+  prompt.querySelector('.hj-install-later').addEventListener('click', () => {
+    prompt.remove()
+  })
+  
+  document.body.appendChild(prompt)
+}
