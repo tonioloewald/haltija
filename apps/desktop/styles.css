@@ -615,3 +615,63 @@ body {
   word-break: break-all;
   color: #6366f1;
 }
+
+/* Session restore prompt */
+.restore-prompt {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a2e1a;
+  border: 1px solid #22c55e;
+  border-radius: 8px;
+  padding: 12px 16px;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: toast-in 0.2s ease-out;
+}
+
+.restore-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.restore-icon {
+  color: #22c55e;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.restore-text {
+  color: #fff;
+  font-size: 13px;
+}
+
+.restore-yes {
+  padding: 6px 12px;
+  background: #22c55e;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.restore-yes:hover {
+  background: #16a34a;
+}
+
+.restore-no {
+  padding: 4px 8px;
+  background: transparent;
+  color: #888;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.restore-no:hover {
+  color: #fff;
+}

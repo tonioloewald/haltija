@@ -26,7 +26,7 @@ import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
-import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, type AgentConfig, type AgentEvent } from './agent-shell'
+import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, type AgentConfig, type AgentEvent } from './agent-shell'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -1501,6 +1501,44 @@ For complete API reference with all options and response formats:
     }
     const transcript = getTranscript(shellId)
     return Response.json({ transcript }, { headers })
+  }
+
+  // List saved transcripts for the working directory
+  if (path === '/terminal/transcripts' && req.method === 'GET') {
+    const transcripts = await listTranscripts(workingDir)
+    return Response.json({ transcripts }, { headers })
+  }
+
+  // Load a saved transcript by filename
+  if (path === '/terminal/transcript/load' && req.method === 'GET') {
+    const filename = url.searchParams.get('filename')
+    if (!filename) {
+      return Response.json({ error: 'filename required' }, { status: 400, headers })
+    }
+    const transcript = await loadTranscript(workingDir, filename)
+    if (!transcript) {
+      return Response.json({ error: 'transcript not found' }, { status: 404, headers })
+    }
+    return Response.json(transcript, { headers })
+  }
+
+  // Restore a session from a saved transcript
+  if (path === '/terminal/transcript/restore' && req.method === 'POST') {
+    const body = await req.json() as { filename: string; shellId: string }
+    if (!body.filename || !body.shellId) {
+      return Response.json({ error: 'filename and shellId required' }, { status: 400, headers })
+    }
+    const transcriptFile = await loadTranscript(workingDir, body.filename)
+    if (!transcriptFile) {
+      return Response.json({ error: 'transcript not found' }, { status: 404, headers })
+    }
+    const session = restoreSession(body.shellId, transcriptFile)
+    return Response.json({ 
+      shellId: session.id, 
+      name: session.name, 
+      entryCount: session.transcript.length,
+      createdAt: session.createdAt 
+    }, { headers })
   }
 
   // Agent kill/stop — stop a running agent

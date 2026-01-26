@@ -7,6 +7,8 @@
 
 import { spawn, type ChildProcess } from 'child_process'
 import { join } from 'path'
+import { mkdir, writeFile, readFile, readdir } from 'fs/promises'
+import { existsSync } from 'fs'
 
 // ============================================
 // Types
@@ -28,6 +30,8 @@ export interface AgentSession {
   transcript: TranscriptEntry[]
   sessionId?: string      // claude session ID for --continue
   promptQueue: string[]   // queued prompts when agent is busy
+  cwd?: string            // working directory (for transcript persistence)
+  createdAt: number       // session creation timestamp
 }
 
 export interface TranscriptEntry {
@@ -55,13 +59,16 @@ export type AgentEvent =
 
 const sessions = new Map<string, AgentSession>()
 
-export function createAgentSession(shellId: string, name: string): AgentSession {
+export function createAgentSession(shellId: string, name: string, cwd?: string): AgentSession {
   const session: AgentSession = {
     id: shellId,
     name,
     process: null,
     status: 'idle',
     transcript: [],
+    promptQueue: [],
+    cwd,
+    createdAt: Date.now(),
   }
   sessions.set(shellId, session)
   return session
@@ -81,6 +88,166 @@ export function removeAgentSession(shellId: string): void {
 
 export function getTranscript(shellId: string): TranscriptEntry[] {
   return sessions.get(shellId)?.transcript || []
+}
+
+// ============================================
+// Transcript Persistence
+// ============================================
+
+const TRANSCRIPT_DIR = '.haltija/transcripts'
+
+/** Get the transcript directory for a working directory */
+function getTranscriptDir(cwd: string): string {
+  return join(cwd, TRANSCRIPT_DIR)
+}
+
+/** Generate a filename for a transcript */
+function getTranscriptFilename(session: AgentSession): string {
+  const date = new Date(session.createdAt)
+  const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const safeName = session.name.replace(/[^a-zA-Z0-9-_]/g, '_')
+  return `${timestamp}_${safeName}_${session.id}.json`
+}
+
+/** Transcript file format */
+interface TranscriptFile {
+  version: 1
+  shellId: string
+  name: string
+  createdAt: number
+  updatedAt: number
+  cwd: string
+  transcript: TranscriptEntry[]
+}
+
+/**
+ * Save a session's transcript to disk.
+ * Called automatically after user prompts and agent completion.
+ */
+export async function saveTranscript(shellId: string): Promise<void> {
+  const session = sessions.get(shellId)
+  if (!session || !session.cwd || session.transcript.length === 0) {
+    return
+  }
+
+  const transcriptDir = getTranscriptDir(session.cwd)
+  
+  try {
+    // Ensure directory exists
+    if (!existsSync(transcriptDir)) {
+      await mkdir(transcriptDir, { recursive: true })
+    }
+
+    const filename = getTranscriptFilename(session)
+    const filepath = join(transcriptDir, filename)
+
+    const data: TranscriptFile = {
+      version: 1,
+      shellId: session.id,
+      name: session.name,
+      createdAt: session.createdAt,
+      updatedAt: Date.now(),
+      cwd: session.cwd,
+      transcript: session.transcript,
+    }
+
+    await writeFile(filepath, JSON.stringify(data, null, 2))
+  } catch (err) {
+    // Silent failure — persistence is best-effort
+    console.error(`[agent-shell] Failed to save transcript: ${err}`)
+  }
+}
+
+/**
+ * List saved transcripts for a working directory.
+ */
+export async function listTranscripts(cwd: string): Promise<Array<{
+  filename: string
+  shellId: string
+  name: string
+  createdAt: number
+  updatedAt: number
+  entryCount: number
+}>> {
+  const transcriptDir = getTranscriptDir(cwd)
+  
+  if (!existsSync(transcriptDir)) {
+    return []
+  }
+
+  try {
+    const files = await readdir(transcriptDir)
+    const transcripts: Array<{
+      filename: string
+      shellId: string
+      name: string
+      createdAt: number
+      updatedAt: number
+      entryCount: number
+    }> = []
+
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      
+      try {
+        const content = await readFile(join(transcriptDir, file), 'utf-8')
+        const data = JSON.parse(content) as TranscriptFile
+        transcripts.push({
+          filename: file,
+          shellId: data.shellId,
+          name: data.name,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          entryCount: data.transcript.length,
+        })
+      } catch {
+        // Skip malformed files
+      }
+    }
+
+    // Sort by most recent first
+    transcripts.sort((a, b) => b.updatedAt - a.updatedAt)
+    return transcripts
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Load a transcript from disk by filename.
+ */
+export async function loadTranscript(cwd: string, filename: string): Promise<TranscriptFile | null> {
+  const filepath = join(getTranscriptDir(cwd), filename)
+  
+  if (!existsSync(filepath)) {
+    return null
+  }
+
+  try {
+    const content = await readFile(filepath, 'utf-8')
+    return JSON.parse(content) as TranscriptFile
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Restore a session from a saved transcript.
+ * Creates a new session with the loaded transcript history.
+ */
+export function restoreSession(shellId: string, transcriptFile: TranscriptFile): AgentSession {
+  const session: AgentSession = {
+    id: shellId,
+    name: transcriptFile.name,
+    process: null,
+    status: 'idle',
+    transcript: transcriptFile.transcript,
+    promptQueue: [],
+    cwd: transcriptFile.cwd,
+    createdAt: transcriptFile.createdAt,
+  }
+  sessions.set(shellId, session)
+  return session
 }
 
 // ============================================
@@ -252,12 +419,20 @@ export function runAgentPrompt(
     return Promise.resolve()
   }
 
+  // Store cwd for transcript persistence
+  if (cwd && !session.cwd) {
+    session.cwd = cwd
+  }
+
   // Add user message to transcript
   session.transcript.push({
     type: 'user',
     content: prompt,
     timestamp: Date.now(),
   })
+
+  // Auto-save transcript after user prompt
+  saveTranscript(shellId).catch(() => {})
 
   session.status = 'thinking'
   onEvent({ type: 'agent-status', shellId, status: 'thinking' })
@@ -355,6 +530,10 @@ export function runAgentPrompt(
         session.status = 'idle'
       }
       onEvent({ type: 'agent-status', shellId, status: session.status })
+      
+      // Auto-save transcript after agent completes
+      saveTranscript(shellId).catch(() => {})
+      
       resolve()
     })
 

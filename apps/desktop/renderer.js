@@ -1070,3 +1070,142 @@ window.addEventListener('message', (event) => {
     }
   }
 })
+
+// ==========================================
+// Session Restore
+// ==========================================
+
+/**
+ * Check for saved agent transcripts and offer to restore them.
+ * Called on app startup after a brief delay to ensure server is ready.
+ */
+async function checkForSavedSessions() {
+  try {
+    const response = await fetch(`${getServerUrl()}/terminal/transcripts`)
+    if (!response.ok) return
+    
+    const { transcripts } = await response.json()
+    if (!transcripts || transcripts.length === 0) return
+    
+    // Find transcripts from the last 24 hours
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
+    const recentTranscripts = transcripts.filter(t => t.updatedAt > oneDayAgo)
+    
+    if (recentTranscripts.length === 0) return
+    
+    // Show restore notification for most recent session
+    const latest = recentTranscripts[0]
+    const timeAgo = formatTimeAgo(latest.updatedAt)
+    
+    showRestorePrompt(latest, timeAgo)
+  } catch (err) {
+    // Server may not be ready yet, or no transcripts — silent failure
+    console.log('[Haltija Desktop] No sessions to restore:', err.message)
+  }
+}
+
+/**
+ * Format a timestamp as relative time (e.g., "5 minutes ago")
+ */
+function formatTimeAgo(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000)
+  
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`
+  return `${Math.floor(seconds / 86400)} days ago`
+}
+
+/**
+ * Show a restore prompt for a saved session
+ */
+function showRestorePrompt(transcript, timeAgo) {
+  const prompt = document.createElement('div')
+  prompt.className = 'restore-prompt'
+  prompt.innerHTML = `
+    <div class="restore-content">
+      <span class="restore-icon">*</span>
+      <span class="restore-text">Restore "${transcript.name}" session? (${transcript.entryCount} messages, ${timeAgo})</span>
+      <button class="restore-yes" title="Restore session">Restore</button>
+      <button class="restore-no" title="Dismiss">×</button>
+    </div>
+  `
+  
+  prompt.querySelector('.restore-yes').addEventListener('click', async () => {
+    prompt.remove()
+    await restoreSession(transcript.filename)
+  })
+  
+  prompt.querySelector('.restore-no').addEventListener('click', () => {
+    prompt.remove()
+  })
+  
+  // Auto-dismiss after 15 seconds
+  setTimeout(() => {
+    if (prompt.parentNode) {
+      prompt.style.animation = 'toast-out 0.2s ease-in forwards'
+      setTimeout(() => prompt.remove(), 200)
+    }
+  }, 15000)
+  
+  document.body.appendChild(prompt)
+}
+
+/**
+ * Restore a session from a saved transcript file
+ */
+async function restoreSession(filename) {
+  try {
+    // Create an agent tab first
+    const tab = createTerminalTab('agent')
+    
+    // Wait for the terminal iframe to initialize and get its shellId
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // Get the shellId from the tab (set via message from terminal.html)
+    if (!tab.shellId) {
+      // Listen for the shellId to be set
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout waiting for shellId')), 5000)
+        const checkShellId = setInterval(() => {
+          if (tab.shellId) {
+            clearInterval(checkShellId)
+            clearTimeout(timeout)
+            resolve()
+          }
+        }, 100)
+      })
+    }
+    
+    // Restore the session on the server
+    const response = await fetch(`${getServerUrl()}/terminal/transcript/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, shellId: tab.shellId })
+    })
+    
+    if (!response.ok) {
+      throw new Error('Failed to restore session')
+    }
+    
+    const result = await response.json()
+    
+    // Update tab with restored session info
+    tab.title = result.name
+    tab.element.querySelector('.tab-title').innerHTML = `<span class="agent-status">*</span> ${result.name}`
+    
+    // Tell the terminal iframe to load the restored transcript
+    tab.webview.contentWindow.postMessage({ 
+      type: 'load-transcript',
+      shellId: tab.shellId
+    }, '*')
+    
+    showNotification(`Restored session "${result.name}" (${result.entryCount} messages)`)
+  } catch (err) {
+    console.error('[Haltija Desktop] Failed to restore session:', err)
+    showNotification('Failed to restore session', 3000)
+  }
+}
+
+// Check for saved sessions after a brief delay (let server start)
+setTimeout(checkForSavedSessions, 2000)

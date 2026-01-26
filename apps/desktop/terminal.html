@@ -905,7 +905,7 @@
       document.title = 'Terminal'
     }
 
-    // Listen for rename from parent (address bar)
+    // Listen for messages from parent (address bar, restore, etc.)
     window.addEventListener('message', (event) => {
       if (event.data?.type === 'rename' && event.data.name && shellId) {
         fetch(`${BASE_URL}/terminal/command`, {
@@ -916,7 +916,91 @@
           shellIdEl.textContent = event.data.name
         })
       }
+      
+      // Load a restored transcript
+      if (event.data?.type === 'load-transcript' && event.data.shellId) {
+        loadRestoredTranscript(event.data.shellId)
+      }
     })
+    
+    // Load and display a restored transcript from the server
+    async function loadRestoredTranscript(targetShellId) {
+      try {
+        const response = await fetch(`${BASE_URL}/terminal/agent-transcript?shellId=${targetShellId}`)
+        if (!response.ok) return
+        
+        const { transcript } = await response.json()
+        if (!transcript || transcript.length === 0) return
+        
+        // Clear existing messages
+        messagesEl.innerHTML = ''
+        
+        // Add a system message indicating this is a restored session
+        addMessage('system', '--- Restored session ---')
+        
+        // Render each transcript entry
+        for (const entry of transcript) {
+          switch (entry.type) {
+            case 'user':
+              addMessage('prompt', entry.content)
+              break
+            case 'assistant':
+              addMessage('output', entry.content)
+              break
+            case 'tool_call':
+              // Create a tool card
+              const toolCard = document.createElement('div')
+              toolCard.className = 'tool-card'
+              toolCard.innerHTML = `
+                <div class="tool-header">
+                  <span class="tool-name">${entry.toolName || 'tool'}</span>
+                  <span class="tool-status">completed</span>
+                </div>
+                <div class="tool-body">
+                  <div class="tool-input">
+                    <span class="tool-label">Input:</span>
+                    <pre>${escapeHtml(entry.toolInput || '').slice(0, 500)}</pre>
+                  </div>
+                </div>
+              `
+              toolCard.dataset.toolId = entry.toolId
+              messagesEl.appendChild(toolCard)
+              break
+            case 'tool_result':
+              // Find matching tool card and add output
+              const card = messagesEl.querySelector(`.tool-card[data-tool-id="${entry.toolId}"]`)
+              if (card) {
+                const body = card.querySelector('.tool-body')
+                const output = document.createElement('div')
+                output.className = 'tool-output'
+                output.innerHTML = `
+                  <span class="tool-label">Output:</span>
+                  <pre>${escapeHtml(entry.toolOutput || '').slice(0, 2000)}</pre>
+                `
+                body.appendChild(output)
+              }
+              break
+            case 'system':
+              addMessage('system', entry.content)
+              break
+          }
+        }
+        
+        // Scroll to bottom
+        messagesEl.scrollTop = messagesEl.scrollHeight
+        
+        addMessage('system', '--- End of restored session ---')
+      } catch (err) {
+        addMessage('error', `Failed to load transcript: ${err.message}`)
+      }
+    }
+    
+    // Helper to escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
+    }
 
     fetch(`${BASE_URL}/terminal/status`)
       .then(r => r.text())
