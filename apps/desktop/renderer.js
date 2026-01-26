@@ -56,6 +56,9 @@ const newTabDialog = document.getElementById('new-tab-dialog')
 const newTabUrlEl = document.getElementById('new-tab-url')
 const allowNewTabBtn = document.getElementById('allow-new-tab')
 const denyNewTabBtn = document.getElementById('deny-new-tab')
+const agentStatusBar = document.getElementById('agent-status-bar')
+const agentStatusItems = document.getElementById('agent-status-items')
+const agentSelect = document.getElementById('agent-select')
 
 // Tab management
 let tabs = []
@@ -1327,3 +1330,173 @@ function showHjInstallPrompt(installCommand, message) {
   
   document.body.appendChild(prompt)
 }
+
+// ============================================
+// Agent Status Bar - Shows what agents see
+// ============================================
+
+let agentStatusWs = null
+let currentStatusLine = ''
+let connectedShells = new Map() // shellId -> { name, isAgent }
+
+/**
+ * Connect to the terminal WebSocket to receive status updates
+ */
+function connectAgentStatusWs() {
+  if (agentStatusWs && agentStatusWs.readyState === WebSocket.OPEN) return
+  
+  const wsUrl = `ws://localhost:${window.haltija?.port || 8700}/ws/terminal`
+  agentStatusWs = new WebSocket(wsUrl)
+  
+  agentStatusWs.onopen = () => {
+    console.log('[Agent Status] Connected to terminal WebSocket')
+  }
+  
+  agentStatusWs.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      handleAgentStatusMessage(msg)
+    } catch (err) {
+      // Ignore non-JSON messages
+    }
+  }
+  
+  agentStatusWs.onclose = () => {
+    console.log('[Agent Status] WebSocket closed, reconnecting in 3s...')
+    setTimeout(connectAgentStatusWs, 3000)
+  }
+  
+  agentStatusWs.onerror = (err) => {
+    console.log('[Agent Status] WebSocket error:', err)
+  }
+}
+
+/**
+ * Handle messages from the terminal WebSocket
+ */
+function handleAgentStatusMessage(msg) {
+  switch (msg.type) {
+    case 'status':
+      currentStatusLine = msg.line || ''
+      renderAgentStatusBar(currentStatusLine)
+      break
+    
+    case 'shell-joined':
+      connectedShells.set(msg.shellId, { name: msg.name, isAgent: msg.name?.includes('agent') })
+      updateAgentSelector()
+      break
+    
+    case 'shell-left':
+      connectedShells.delete(msg.shellId)
+      updateAgentSelector()
+      break
+    
+    case 'shell-renamed':
+      if (connectedShells.has(msg.shellId)) {
+        connectedShells.get(msg.shellId).name = msg.name
+        updateAgentSelector()
+      }
+      break
+  }
+}
+
+/**
+ * Parse and render the status line in the GUI
+ * Format: "hj > localhost:8700 'title' | todos 2 active | messages none"
+ */
+function renderAgentStatusBar(line) {
+  if (!line) {
+    agentStatusBar.classList.add('hidden')
+    return
+  }
+  
+  agentStatusBar.classList.remove('hidden')
+  
+  // Split by | and render each segment
+  const segments = line.split(' | ')
+  let html = ''
+  
+  for (const segment of segments) {
+    const trimmed = segment.trim()
+    if (!trimmed) continue
+    
+    // Parse "key value" or "key > value" patterns
+    let label = ''
+    let value = trimmed
+    
+    // Handle "hj > localhost:8700 'title'" format
+    const arrowMatch = trimmed.match(/^(\w+)\s*>\s*(.+)$/)
+    if (arrowMatch) {
+      label = arrowMatch[1]
+      value = arrowMatch[2]
+    } else {
+      // Handle "todos 2 active" format - first word is label
+      const spaceIdx = trimmed.indexOf(' ')
+      if (spaceIdx > 0) {
+        label = trimmed.substring(0, spaceIdx)
+        value = trimmed.substring(spaceIdx + 1)
+      }
+    }
+    
+    // Determine color class based on content
+    let cls = 'status-segment'
+    if (/fail|error|no browser/i.test(trimmed)) cls += ' error'
+    else if (/warn|blocked|pending/i.test(trimmed)) cls += ' alert'
+    else if (/ready|connected|pass|active/i.test(trimmed)) cls += ' ok'
+    
+    html += `<div class="${cls}">`
+    if (label) {
+      html += `<span class="label">${escapeHtml(label)}:</span>`
+    }
+    html += `<span class="value">${escapeHtml(value)}</span>`
+    html += `</div>`
+  }
+  
+  agentStatusItems.innerHTML = html
+}
+
+/**
+ * Update the agent selector dropdown
+ */
+function updateAgentSelector() {
+  const agents = Array.from(connectedShells.entries())
+    .filter(([_, info]) => info.isAgent)
+  
+  if (agents.length === 0) {
+    agentSelect.innerHTML = '<option value="">No agents</option>'
+  } else {
+    agentSelect.innerHTML = agents.map(([id, info]) => 
+      `<option value="${id}">${escapeHtml(info.name || id)}</option>`
+    ).join('')
+  }
+}
+
+/**
+ * Escape HTML for safe rendering
+ */
+function escapeHtml(str) {
+  if (!str) return ''
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+// Fetch initial status and connect WebSocket
+async function initAgentStatusBar() {
+  try {
+    const response = await fetch(`${getServerUrl()}/terminal/status`)
+    if (response.ok) {
+      const line = await response.text()
+      renderAgentStatusBar(line)
+    }
+  } catch (err) {
+    console.log('[Agent Status] Could not fetch initial status:', err.message)
+  }
+  
+  connectAgentStatusWs()
+}
+
+// Initialize agent status bar after a short delay (let server start)
+setTimeout(initAgentStatusBar, 1000)
