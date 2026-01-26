@@ -265,6 +265,11 @@ function activateTab(tabId) {
     goButton.title = 'Pick folder…'
     toolbar.classList.add(tab.terminalMode === 'agent' ? 'agent' : 'terminal')
     
+    // Show status bar for terminal tabs
+    if (currentStatusLine) {
+      agentStatusBar.classList.remove('hidden')
+    }
+    
     // If this is an agent tab, notify server it's now the active agent
     if (tab.terminalMode === 'agent' && tab.shellId) {
       fetch(`${getServerUrl()}/terminal/agent-focus`, {
@@ -278,6 +283,9 @@ function activateTab(tabId) {
     urlInput.placeholder = 'Enter URL...'
     goButton.textContent = 'Go'
     goButton.title = 'Go'
+    
+    // Hide status bar for browser tabs
+    agentStatusBar.classList.add('hidden')
   }
   document.title = tab.title || 'Haltija'
 
