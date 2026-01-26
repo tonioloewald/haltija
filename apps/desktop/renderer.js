@@ -1444,7 +1444,7 @@ function renderAgentStatusBar(line) {
     else if (/warn|blocked|pending/i.test(trimmed)) cls += ' alert'
     else if (/ready|connected|pass|active/i.test(trimmed)) cls += ' ok'
     
-    html += `<div class="${cls}">`
+    html += `<div class="${cls}" data-segment="${escapeHtml(label || 'status')}">`
     if (label) {
       html += `<span class="label">${escapeHtml(label)}:</span>`
     }
@@ -1453,6 +1453,108 @@ function renderAgentStatusBar(line) {
   }
   
   agentStatusItems.innerHTML = html
+  
+  // Add click handlers to segments
+  agentStatusItems.querySelectorAll('.status-segment').forEach(seg => {
+    seg.addEventListener('click', (e) => {
+      const segmentName = seg.dataset.segment
+      handleStatusSegmentClick(segmentName, e.target)
+    })
+  })
+}
+
+/**
+ * Handle clicks on status bar segments
+ */
+function handleStatusSegmentClick(segmentName, target) {
+  switch (segmentName) {
+    case 'todos':
+      showTodosPanel(target)
+      break
+    case 'hj':
+      // Could show connection details or browser info
+      break
+    case 'messages':
+      // Could show message queue
+      break
+    default:
+      console.log('[Agent Status] Clicked segment:', segmentName)
+  }
+}
+
+/**
+ * Show the todos panel as a floating window
+ */
+async function showTodosPanel(target) {
+  // Create content for the panel
+  const content = document.createElement('div')
+  content.className = 'todos-panel-content'
+  content.innerHTML = '<div class="loading">Loading tasks...</div>'
+  
+  const panel = createFloatPanel({
+    target,
+    content,
+    title: 'Tasks',
+    position: 's'
+  })
+  
+  if (!panel) return // Panel was toggled off
+  
+  // Load tasks
+  try {
+    const resp = await fetch(`${getServerUrl()}/terminal/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: 'tasks', command: 'board' })
+    })
+    const result = await resp.json()
+    
+    if (result.boardJson?.items) {
+      renderTodosPanel(content, result.boardJson.items)
+    } else {
+      content.innerHTML = '<div class="empty">No tasks</div>'
+    }
+  } catch (err) {
+    content.innerHTML = `<div class="error">Failed to load tasks: ${escapeHtml(err.message)}</div>`
+  }
+}
+
+/**
+ * Render tasks in a simple list view (for now)
+ */
+function renderTodosPanel(container, items) {
+  const columns = ['in_progress', 'blocked', 'queued', 'review']
+  const columnNames = {
+    in_progress: '🔄 In Progress',
+    blocked: '🚧 Blocked', 
+    queued: '📋 Queued',
+    review: '👀 Review'
+  }
+  
+  let html = '<div class="todos-list">'
+  
+  for (const col of columns) {
+    const colItems = items.filter(i => i.column === col)
+    if (colItems.length === 0) continue
+    
+    html += `<div class="todos-column">
+      <div class="todos-column-header">${columnNames[col]} (${colItems.length})</div>`
+    
+    for (const item of colItems) {
+      html += `<div class="todo-item" data-id="${item.id}">
+        <span class="todo-title">${escapeHtml(item.title)}</span>
+      </div>`
+    }
+    
+    html += '</div>'
+  }
+  
+  if (html === '<div class="todos-list">') {
+    html += '<div class="empty">No active tasks</div>'
+  }
+  
+  html += '</div>'
+  container.innerHTML = html
 }
 
 /**
@@ -1500,3 +1602,148 @@ async function initAgentStatusBar() {
 
 // Initialize agent status bar after a short delay (let server start)
 setTimeout(initAgentStatusBar, 1000)
+
+// ============================================
+// Float Panel - Draggable floating UI panels
+// (Borrowed from tosijs-ui xin-float/trackDrag)
+// ============================================
+
+/**
+ * Track a drag operation from mousedown/touchstart
+ */
+function trackDrag(event, callback, cursor = 'move') {
+  const isTouchEvent = event.type.startsWith('touch')
+
+  if (!isTouchEvent) {
+    const origX = event.clientX
+    const origY = event.clientY
+
+    // Create overlay to capture all mouse events during drag
+    const tracker = document.createElement('div')
+    tracker.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;cursor:' + cursor
+    document.body.appendChild(tracker)
+
+    const onMove = (e) => {
+      const dx = e.clientX - origX
+      const dy = e.clientY - origY
+      if (callback(dx, dy, e) === true) {
+        tracker.removeEventListener('mousemove', onMove)
+        tracker.removeEventListener('mouseup', onMove)
+        tracker.remove()
+      }
+    }
+
+    tracker.addEventListener('mousemove', onMove, { passive: true })
+    tracker.addEventListener('mouseup', onMove, { passive: true })
+  } else if (event.touches) {
+    const touch = event.touches[0]
+    const touchId = touch.identifier
+    const origX = touch.clientX
+    const origY = touch.clientY
+    const target = event.target
+
+    const onTouch = (e) => {
+      const t = [...e.touches].find(t => t.identifier === touchId)
+      const dx = t ? t.clientX - origX : 0
+      const dy = t ? t.clientY - origY : 0
+      if (callback(dx, dy, e) === true || !t) {
+        target.removeEventListener('touchmove', onTouch)
+        target.removeEventListener('touchend', onTouch)
+        target.removeEventListener('touchcancel', onTouch)
+      }
+    }
+
+    target.addEventListener('touchmove', onTouch)
+    target.addEventListener('touchend', onTouch, { passive: true })
+    target.addEventListener('touchcancel', onTouch, { passive: true })
+  }
+}
+
+/**
+ * Find highest z-index in document
+ */
+function findHighestZ() {
+  return [...document.querySelectorAll('body *')]
+    .map(el => parseFloat(getComputedStyle(el).zIndex))
+    .filter(z => !isNaN(z))
+    .reduce((max, z) => Math.max(max, z), 0)
+}
+
+/**
+ * Create a floating panel positioned near a target element
+ */
+function createFloatPanel({ target, content, title = '', position = 's', onClose }) {
+  // Remove existing panel with same title
+  const existing = document.querySelector(`.float-panel[data-title="${title}"]`)
+  if (existing) {
+    existing.remove()
+    return null
+  }
+
+  const panel = document.createElement('div')
+  panel.className = 'float-panel'
+  panel.dataset.title = title
+  panel.style.zIndex = findHighestZ() + 1
+
+  panel.innerHTML = `
+    <div class="float-header">
+      <span class="float-title">${escapeHtml(title)}</span>
+      <button class="float-close" title="Close">×</button>
+    </div>
+    <div class="float-content"></div>
+  `
+
+  panel.querySelector('.float-content').appendChild(content)
+
+  // Make header draggable
+  const header = panel.querySelector('.float-header')
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.float-close')) return
+    panel.style.zIndex = findHighestZ() + 1
+    const x = panel.offsetLeft
+    const y = panel.offsetTop
+    trackDrag(e, (dx, dy, evt) => {
+      panel.style.left = `${x + dx}px`
+      panel.style.top = `${y + dy}px`
+      panel.style.right = 'auto'
+      panel.style.bottom = 'auto'
+      return evt.type === 'mouseup'
+    })
+  })
+
+  // Close button
+  panel.querySelector('.float-close').addEventListener('click', () => {
+    panel.remove()
+    onClose?.()
+  })
+
+  document.body.appendChild(panel)
+
+  // Position near target
+  if (target) {
+    const rect = target.getBoundingClientRect()
+    const panelRect = panel.getBoundingClientRect()
+    
+    let left, top
+    switch (position) {
+      case 'n': // above
+        left = rect.left + rect.width / 2 - panelRect.width / 2
+        top = rect.top - panelRect.height - 8
+        break
+      case 's': // below (default)
+      default:
+        left = rect.left + rect.width / 2 - panelRect.width / 2
+        top = rect.bottom + 8
+        break
+    }
+    
+    // Keep on screen
+    left = Math.max(8, Math.min(left, window.innerWidth - panelRect.width - 8))
+    top = Math.max(8, Math.min(top, window.innerHeight - panelRect.height - 8))
+    
+    panel.style.left = `${left}px`
+    panel.style.top = `${top}px`
+  }
+
+  return panel
+}
