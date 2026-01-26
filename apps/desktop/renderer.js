@@ -908,6 +908,25 @@ window.haltija.closeTab = (windowId) => {
   return false
 }
 
+window.haltija.openAgentTab = async () => {
+  // Create a new agent tab and return its info once initialized
+  const tab = await createTerminalTab('agent')
+  // Wait for the agent to initialize and get its shellId
+  return new Promise((resolve) => {
+    const checkShellId = setInterval(() => {
+      if (tab.shellId) {
+        clearInterval(checkShellId)
+        resolve({ shellId: tab.shellId, name: tab.label || 'agent' })
+      }
+    }, 100)
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      clearInterval(checkShellId)
+      resolve({ shellId: tab.shellId || null, name: tab.label || 'agent' })
+    }, 5000)
+  })
+}
+
 window.haltija.focusTab = (windowId) => {
   // Find tab by windowId and activate it
   // TODO: implement proper windowId to tab mapping
@@ -1023,6 +1042,46 @@ if (window.haltija) {
   window.haltija.onMenuFocusUrl?.(() => {
     urlInput.focus()
     urlInput.select()
+  })
+
+  // Handle agent tab creation requests from widget (via main process)
+  window.haltija.onCreateAgentTab?.(async (data) => {
+    console.log('[Haltija Desktop] Creating agent tab for widget, requestId:', data.requestId)
+    try {
+      const tab = await createTerminalTab('agent')
+      
+      // Wait for shellId to be set (terminal sends message when ready)
+      const result = await new Promise((resolve) => {
+        const checkReady = setInterval(() => {
+          if (tab.shellId) {
+            clearInterval(checkReady)
+            resolve({ 
+              requestId: data.requestId,
+              shellId: tab.shellId, 
+              name: tab.label || 'agent' 
+            })
+          }
+        }, 100)
+        
+        // Timeout after 8 seconds
+        setTimeout(() => {
+          clearInterval(checkReady)
+          resolve({ 
+            requestId: data.requestId,
+            shellId: tab.shellId || null, 
+            name: tab.label || 'agent',
+            error: tab.shellId ? null : 'Timeout waiting for agent init'
+          })
+        }, 8000)
+      })
+      
+      window.haltija.agentTabCreated(result)
+    } catch (err) {
+      window.haltija.agentTabCreated({ 
+        requestId: data.requestId, 
+        error: err.message 
+      })
+    }
   })
 }
 

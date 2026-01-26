@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('haltija', {
   
   // Native dialogs
   showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+  
+  // Agent tab creation (from widget via main process)
+  onCreateAgentTab: (callback) => ipcRenderer.on('create-agent-tab', (event, data) => callback(data)),
+  agentTabCreated: (response) => ipcRenderer.send('agent-tab-created', response),
 })
 
 console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))

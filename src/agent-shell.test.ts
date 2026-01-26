@@ -175,8 +175,9 @@ describe('agent-shell', () => {
     })
 
     test('tool result message returns tool-result event', () => {
+      // Note: Claude CLI sends tool results with type: 'user', not 'tool'
       const line = JSON.stringify({
-        type: 'tool',
+        type: 'user',
         message: {
           content: [{
             type: 'tool_result',
@@ -194,8 +195,9 @@ describe('agent-shell', () => {
     })
 
     test('tool result with array content joins text', () => {
+      // Note: Claude CLI sends tool results with type: 'user', not 'tool'
       const line = JSON.stringify({
-        type: 'tool',
+        type: 'user',
         message: {
           content: [{
             type: 'tool_result',

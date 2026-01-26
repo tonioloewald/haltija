@@ -431,6 +431,107 @@ function getSelector(el: Element): string {
   return parts.join(' > ')
 }
 
+// Patterns that indicate unstable/dynamic IDs
+const UNSTABLE_ID_PATTERNS = [
+  /^mui-\d+/,           // MUI dynamic IDs: mui-12345
+  /^react-select-\d+/,  // React Select
+  /^rc-\d+/,            // Ant Design
+  /^headlessui-/,       // HeadlessUI
+  /-\d{4,}$/,           // Anything ending in 4+ digits
+  /^:r[a-z0-9]+:/,      // React 18 useId pattern
+  /^\d+$/,              // Pure numeric IDs
+]
+
+/**
+ * Check if an ID looks like it's dynamically generated
+ */
+function isUnstableId(id: string): boolean {
+  return UNSTABLE_ID_PATTERNS.some(pattern => pattern.test(id))
+}
+
+/**
+ * Get a stable selector for an element, preferring:
+ * 1. data-testid, data-cy, data-test attributes
+ * 2. Stable IDs (not dynamically generated)
+ * 3. ARIA labels
+ * 4. Unique text content for buttons/links
+ * 5. Role + accessible name
+ * 6. Fall back to structural selector
+ */
+function getStableSelector(el: Element): string {
+  const htmlEl = el as HTMLElement
+  
+  // 1. Test IDs are explicitly for automation - best choice
+  const testId = el.getAttribute('data-testid') || 
+                 el.getAttribute('data-cy') || 
+                 el.getAttribute('data-test') ||
+                 el.getAttribute('data-test-id')
+  if (testId) {
+    return `[data-testid="${testId}"]`
+  }
+  
+  // 2. Stable ID (not dynamically generated)
+  if (el.id && !isUnstableId(el.id)) {
+    return `#${el.id}`
+  }
+  
+  // 3. ARIA label - good for accessibility and stability
+  const ariaLabel = el.getAttribute('aria-label')
+  if (ariaLabel && ariaLabel.length < 50) {
+    const tag = el.tagName.toLowerCase()
+    // Verify it's unique
+    const matches = document.querySelectorAll(`${tag}[aria-label="${CSS.escape(ariaLabel)}"]`)
+    if (matches.length === 1) {
+      return `${tag}[aria-label="${ariaLabel}"]`
+    }
+  }
+  
+  // 4. For buttons/links, use text content if unique
+  const tag = el.tagName.toLowerCase()
+  if (['button', 'a'].includes(tag) || el.getAttribute('role') === 'button') {
+    const text = htmlEl.innerText?.trim()
+    if (text && text.length < 30 && !text.includes('\n')) {
+      // Check if this text is unique among similar elements
+      const selector = tag === 'a' ? 'a' : 'button, [role="button"]'
+      const allSimilar = document.querySelectorAll(selector)
+      const matchingText = Array.from(allSimilar).filter(
+        e => (e as HTMLElement).innerText?.trim() === text
+      )
+      if (matchingText.length === 1) {
+        return `${tag}:has-text("${text}")`
+      }
+    }
+  }
+  
+  // 5. Input elements - use name, placeholder, or associated label
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+    const name = el.getAttribute('name')
+    if (name && !isUnstableId(name)) {
+      return `${tag}[name="${name}"]`
+    }
+    
+    const placeholder = el.getAttribute('placeholder')
+    if (placeholder && placeholder.length < 40) {
+      const matches = document.querySelectorAll(`${tag}[placeholder="${CSS.escape(placeholder)}"]`)
+      if (matches.length === 1) {
+        return `${tag}[placeholder="${placeholder}"]`
+      }
+    }
+  }
+  
+  // 6. Role + name combination
+  const role = el.getAttribute('role')
+  if (role && ariaLabel) {
+    const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`)
+    if (matches.length === 1) {
+      return `[role="${role}"][aria-label="${ariaLabel}"]`
+    }
+  }
+  
+  // 7. Fall back to structural selector (original behavior)
+  return getSelector(el)
+}
+
 // Extract element info for serialization
 function extractElement(el: Element): DomElement {
   const rect = el.getBoundingClientRect()
@@ -2116,6 +2217,7 @@ export class DevChannel extends HTMLElement {
   private selectionResult: {
     region: { x: number; y: number; width: number; height: number }
     elements: Array<{
+      ref: string  // Ref ID for efficient agent targeting
       selector: string
       tagName: string
       text: string
@@ -3363,23 +3465,10 @@ export class DevChannel extends HTMLElement {
         jsonArea.value = JSON.stringify(test, null, 2)
       }
       
-      // Check if any agents are available and update button state
+      // Agent button is always enabled - picker shows "New agent" option if none exist
       if (agentBtn) {
-        try {
-          const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
-          const response = await fetch(`${serverUrl}/terminal/agents`)
-          const { agents } = await response.json()
-          if (agents && agents.length > 0) {
-            agentBtn.disabled = false
-            agentBtn.title = `Send to ${agents.find((a: any) => a.isLastActive)?.name || agents[0].name}`
-          } else {
-            agentBtn.disabled = true
-            agentBtn.title = 'No agents available - open an agent tab first'
-          }
-        } catch {
-          agentBtn.disabled = true
-          agentBtn.title = 'Could not check for agents'
-        }
+        agentBtn.disabled = false
+        agentBtn.title = 'Send to agent'
       }
     }
   }
@@ -3616,20 +3705,8 @@ export class DevChannel extends HTMLElement {
     const successMsg = this.shadowRoot?.querySelector('.success-msg')
     const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
     
-    // Require a description
-    const description = nameInput?.value?.trim()
-    if (!description) {
-      if (successMsg) {
-        successMsg.textContent = '⚠️ Enter a description first'
-        successMsg.style.color = '#f59e0b'
-        setTimeout(() => {
-          successMsg.textContent = ''
-          successMsg.style.color = ''
-        }, 3000)
-      }
-      nameInput?.focus()
-      return
-    }
+    // Description is optional - user will edit the prompt anyway
+    const description = nameInput?.value?.trim() || ''
     
     if (!this.lastRecordingId) {
       if (successMsg) successMsg.textContent = '⚠️ No recording available'
@@ -3638,7 +3715,7 @@ export class DevChannel extends HTMLElement {
     
     // Show agent picker dropdown anchored to the button
     if (agentBtn) {
-      // Store description for use when agent is selected
+      // Store description for use when agent is selected (can be empty)
       ;(this as any)._pendingRecordingDescription = description
       this.showAgentPicker(agentBtn, 'recording')
     }
@@ -3958,8 +4035,15 @@ export class DevChannel extends HTMLElement {
     const allElements = document.body.querySelectorAll('*')
 
     for (const el of allElements) {
-      // Skip our own elements
+      // Skip our own widget elements
       if (el.closest(TAG_NAME)) continue
+      
+      // Skip Haltija highlight/selection overlays (injected directly into body)
+      const id = el.id || ''
+      if (id.startsWith('haltija-')) continue
+      
+      // Skip our highlight preview elements (have specific inline styles)
+      if (el instanceof HTMLElement && el.style.zIndex === '2147483646') continue
 
       const elRect = el.getBoundingClientRect()
 
@@ -4000,7 +4084,7 @@ export class DevChannel extends HTMLElement {
     const elements = this.getElementsInRect(this.selectionRect)
     const savedRegion = { ...this.selectionRect }
 
-    // Build result
+    // Build result with refs for efficient agent interaction
     this.selectionResult = {
       region: savedRegion,
       elements: elements.map((el) => {
@@ -4009,7 +4093,11 @@ export class DevChannel extends HTMLElement {
         for (const attr of el.attributes) {
           attrs[attr.name] = attr.value
         }
+        // Assign a ref ID for this element so agents can target it efficiently
+        const ref = refRegistry.assign(el)
+        stats.refsAssigned++
         return {
+          ref,
           selector: getSelector(el),
           tagName: el.tagName.toLowerCase(),
           text: (el.textContent || '').trim().slice(0, 200),
@@ -4204,7 +4292,7 @@ export class DevChannel extends HTMLElement {
     this.agentPickerEl?.remove()
     this.agentPickerEl = null
 
-    // Fetch available agents
+    // Fetch available agents (fresh each time)
     const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
     let agents: Array<{ id: string; name: string; status: string; isLastActive: boolean }> = []
     
@@ -4214,32 +4302,6 @@ export class DevChannel extends HTMLElement {
       agents = data.agents || []
     } catch (err) {
       console.error(`${LOG_PREFIX} Failed to fetch agents:`, err)
-    }
-
-    if (agents.length === 0) {
-      // Show error tooltip
-      const tooltip = document.createElement('div')
-      tooltip.style.cssText = `
-        position: fixed;
-        background: #1f2937;
-        color: #f87171;
-        font-size: 11px;
-        font-family: system-ui, -apple-system, sans-serif;
-        padding: 8px 12px;
-        border-radius: 4px;
-        border: 1px solid #374151;
-        z-index: 2147483647;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      `
-      tooltip.textContent = 'No agents available - open an agent tab first'
-      
-      const rect = anchor.getBoundingClientRect()
-      tooltip.style.left = `${rect.left}px`
-      tooltip.style.top = `${rect.bottom + 4}px`
-      
-      document.body.appendChild(tooltip)
-      setTimeout(() => tooltip.remove(), 2000)
-      return
     }
 
     // Create dropdown
@@ -4260,8 +4322,8 @@ export class DevChannel extends HTMLElement {
     picker.style.left = `${rect.left}px`
     picker.style.top = `${rect.bottom + 4}px`
 
-    // Add agent options
-    for (const agent of agents) {
+    // Helper to create an option row
+    const createOption = (content: HTMLElement | string, onClick: () => void, style?: string) => {
       const option = document.createElement('div')
       option.style.cssText = `
         padding: 8px 12px;
@@ -4270,9 +4332,23 @@ export class DevChannel extends HTMLElement {
         display: flex;
         align-items: center;
         gap: 8px;
+        ${style || ''}
       `
       option.onmouseenter = () => option.style.background = '#374151'
       option.onmouseleave = () => option.style.background = 'transparent'
+      if (typeof content === 'string') {
+        option.textContent = content
+      } else {
+        option.appendChild(content)
+      }
+      option.onclick = onClick
+      return option
+    }
+
+    // Add existing agent options
+    for (const agent of agents) {
+      const row = document.createElement('div')
+      row.style.cssText = 'display: flex; align-items: center; gap: 8px; width: 100%;'
       
       // Status indicator
       const statusDot = document.createElement('span')
@@ -4280,13 +4356,16 @@ export class DevChannel extends HTMLElement {
         width: 8px;
         height: 8px;
         border-radius: 50%;
+        flex-shrink: 0;
         background: ${agent.status === 'thinking' ? '#fbbf24' : '#22c55e'};
       `
+      row.appendChild(statusDot)
       
       // Name
       const nameSpan = document.createElement('span')
       nameSpan.textContent = agent.name
       nameSpan.style.flex = '1'
+      row.appendChild(nameSpan)
       
       // Last active indicator
       if (agent.isLastActive) {
@@ -4299,15 +4378,10 @@ export class DevChannel extends HTMLElement {
           border-radius: 2px;
         `
         activeTag.textContent = 'active'
-        option.appendChild(statusDot)
-        option.appendChild(nameSpan)
-        option.appendChild(activeTag)
-      } else {
-        option.appendChild(statusDot)
-        option.appendChild(nameSpan)
+        row.appendChild(activeTag)
       }
 
-      option.onclick = () => {
+      const option = createOption(row, () => {
         picker.remove()
         this.agentPickerEl = null
         if (type === 'selection') {
@@ -4315,10 +4389,73 @@ export class DevChannel extends HTMLElement {
         } else if (type === 'recording') {
           this.sendRecordingToAgent(agent.id, agent.name)
         }
-      }
-
+      })
       picker.appendChild(option)
     }
+
+    // Add separator if there are existing agents
+    if (agents.length > 0) {
+      const separator = document.createElement('div')
+      separator.style.cssText = 'border-top: 1px solid #374151; margin: 4px 0;'
+      picker.appendChild(separator)
+    }
+
+    // Add "New agent" option
+    const newAgentRow = document.createElement('div')
+    newAgentRow.style.cssText = 'display: flex; align-items: center; gap: 8px; width: 100%;'
+    const plusIcon = document.createElement('span')
+    plusIcon.textContent = '+'
+    plusIcon.style.cssText = 'width: 8px; text-align: center; color: #6366f1; font-weight: bold;'
+    newAgentRow.appendChild(plusIcon)
+    const newAgentText = document.createElement('span')
+    newAgentText.textContent = 'New agent'
+    newAgentText.style.cssText = 'flex: 1; color: #a5b4fc;'
+    newAgentRow.appendChild(newAgentText)
+
+    const newAgentOption = createOption(newAgentRow, async () => {
+      picker.remove()
+      this.agentPickerEl = null
+      
+      // Check if we're in Electron with the API available
+      const haltija = (window as any).haltija
+      if (haltija?.openAgentTab) {
+        // Create new agent tab and wait for it
+        newAgentText.textContent = 'Creating...'
+        const result = await haltija.openAgentTab()
+        if (result?.shellId) {
+          // Small delay to ensure agent session is registered
+          await new Promise(r => setTimeout(r, 300))
+          if (type === 'selection') {
+            this.sendSelectionToAgent(result.shellId, result.name || 'agent')
+          } else if (type === 'recording') {
+            this.sendRecordingToAgent(result.shellId, result.name || 'agent')
+          }
+        } else {
+          console.error(`${LOG_PREFIX} Failed to create agent tab`)
+        }
+      } else {
+        // Not in Electron - show instructions
+        const tooltip = document.createElement('div')
+        tooltip.style.cssText = `
+          position: fixed;
+          background: #1f2937;
+          color: #fbbf24;
+          font-size: 11px;
+          font-family: system-ui, -apple-system, sans-serif;
+          padding: 8px 12px;
+          border-radius: 4px;
+          border: 1px solid #374151;
+          z-index: 2147483647;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `
+        tooltip.textContent = 'Open an agent tab (>*) in the Haltija app first'
+        tooltip.style.left = `${rect.left}px`
+        tooltip.style.top = `${rect.bottom + 4}px`
+        document.body.appendChild(tooltip)
+        setTimeout(() => tooltip.remove(), 3000)
+      }
+    })
+    picker.appendChild(newAgentOption)
 
     // Close on click outside
     const closeHandler = (e: MouseEvent) => {
@@ -4335,6 +4472,7 @@ export class DevChannel extends HTMLElement {
   }
 
   // Send current selection to a specific agent
+  // Format: concise for humans, (ref:N) for agent targeting
   private async sendSelectionToAgent(agentId: string, agentName: string) {
     if (!this.selectionResult) {
       console.warn(`${LOG_PREFIX} No selection to send`)
@@ -4343,15 +4481,21 @@ export class DevChannel extends HTMLElement {
 
     const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
     
-    // Format selection as message
+    // Format selection as message with refs for agent use
     const elements = this.selectionResult.elements
-    const elementSummary = elements.slice(0, 10).map((el, i) => {
-      const text = el.text ? ` "${el.text.slice(0, 30)}"` : ''
-      return `${i + 1}. <${el.tagName}>${text} → ${el.selector}`
+    const maxElements = 15
+    const shown = elements.slice(0, maxElements)
+    
+    const elementSummary = shown.map((el, i) => {
+      const ref = el.ref ? `(ref:${el.ref})` : ''
+      const text = el.text ? `"${el.text.slice(0, 30)}${el.text.length > 30 ? '...' : ''}"` : ''
+      // Build description: prefer text content, fall back to tag name
+      const desc = text || `<${el.tagName}>`
+      return `  ${i + 1}. ${ref} ${desc} → ${el.selector}`
     }).join('\n')
     
-    const moreText = elements.length > 10 ? `\n... and ${elements.length - 10} more` : ''
-    const messageText = `Selected ${elements.length} element(s) on "${document.title}" (${window.location.href}):\n\n${elementSummary}${moreText}`
+    const moreText = elements.length > maxElements ? `\n  ... +${elements.length - maxElements} more` : ''
+    const messageText = `Selection from "${document.title}" (${window.location.href}):\n\n${elementSummary}${moreText}`
 
     try {
       const response = await fetch(`${serverUrl}/selection/send`, {
@@ -4376,19 +4520,12 @@ export class DevChannel extends HTMLElement {
   }
 
   // Send recording to a specific agent (called from agent picker)
+  // Description is optional - user will edit the prompt anyway
   private async sendRecordingToAgent(agentId: string, agentName: string) {
     const description = (this as any)._pendingRecordingDescription || ''
     delete (this as any)._pendingRecordingDescription
     
-    if (!description) {
-      const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement
-      if (successMsg) {
-        successMsg.textContent = '⚠️ Enter a description first'
-        successMsg.style.color = '#f59e0b'
-      }
-      return
-    }
-    
+    // Proceed even without description - formatting module handles default
     await this.doSendRecordingToAgent(agentId, agentName, description)
   }
 
@@ -4624,24 +4761,32 @@ export class DevChannel extends HTMLElement {
     const tag = el.tagName.toLowerCase()
     const htmlEl = el as HTMLElement
 
-    // 1. ID (if not auto-generated looking)
-    if (el.id && !el.id.match(/^(ember|react|vue|ng-|:r|:R|\d)/)) {
+    // 1. data-testid (designed for testing - most stable)
+    const testId =
+      el.getAttribute('data-testid') || el.getAttribute('data-test-id')
+    if (testId) {
+      return `[data-testid="${testId}"]`
+    }
+
+    // 2. ID (if not auto-generated looking)
+    // Uses isUnstableId for comprehensive pattern matching (MUI, React Select, etc.)
+    if (el.id && !isUnstableId(el.id)) {
       return `#${el.id}`
     }
 
-    // 2. ARIA label - exactly what screen readers announce
+    // 3. ARIA label - exactly what screen readers announce
     const ariaLabel = el.getAttribute('aria-label')
     if (ariaLabel) {
       return `${tag}[aria-label="${ariaLabel.slice(0, 40)}"]`
     }
 
-    // 3. Title attribute - tooltip text
+    // 4. Title attribute - tooltip text
     const title = el.getAttribute('title')
     if (title) {
       return `${tag}[title="${title.slice(0, 40)}"]`
     }
 
-    // 4. For form elements: associated label
+    // 5. For form elements: associated label
     if (el.matches('input, select, textarea')) {
       const input = el as HTMLInputElement
       // Explicit label via for attribute
@@ -4677,16 +4822,9 @@ export class DevChannel extends HTMLElement {
       }
     }
 
-    // 5. data-testid (designed for testing)
-    const testId =
-      el.getAttribute('data-testid') || el.getAttribute('data-test-id')
-    if (testId) {
-      return `[data-testid="${testId}"]`
-    }
-
-    // 6. Form element name attribute
+    // 6. Form element name attribute (if stable)
     const name = el.getAttribute('name')
-    if (name && el.matches('input, select, textarea, button')) {
+    if (name && !isUnstableId(name) && el.matches('input, select, textarea, button')) {
       return `${tag}[name="${name}"]`
     }
 

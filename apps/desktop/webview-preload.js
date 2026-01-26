@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('haltija', {
     console.log('[Haltija] captureElement called:', selector)
     return ipcRenderer.invoke('capture-element', selector)
   },
+  // Create a new agent tab and return its info
+  openAgentTab: () => {
+    console.log('[Haltija] openAgentTab called')
+    return ipcRenderer.invoke('open-agent-tab')
+  },
 })
 
 console.log('[Haltija] Webview preload complete, window.haltija exposed')

@@ -408,7 +408,7 @@
     let commandHistory = []
     let historyIndex = -1
     let isAgentThinking = false
-    let pendingPrompt = null  // Message to send when agent finishes
+    let pendingPrompts = []  // Queue of prompts to send when agent finishes
 
     // ==========================================
     // WebSocket Connection
@@ -533,12 +533,8 @@
                   addMessage('summary', parts.join(' | '))
                 }
                 scrollToBottom()
-                // Send pending prompt if any
-                if (pendingPrompt) {
-                  const prompt = pendingPrompt
-                  pendingPrompt = null
-                  sendAgentPrompt(prompt)
-                }
+                // Send next pending prompt if any
+                processNextPendingPrompt()
               }
               break
             case 'agent-error':
@@ -548,12 +544,8 @@
                 setAgentError()
                 addMessage('error', msg.error)
                 scrollToBottom()
-                // Send pending prompt if any
-                if (pendingPrompt) {
-                  const prompt = pendingPrompt
-                  pendingPrompt = null
-                  sendAgentPrompt(prompt)
-                }
+                // Send next pending prompt if any
+                processNextPendingPrompt()
               }
               break
             case 'agent-status':
@@ -568,20 +560,30 @@
               }
               break
             case 'agent-message-queued':
-              // Show notification that a message was queued
-              addMessage('system', `📨 Message from ${msg.from} queued (${msg.count} pending)`)
+              // Paste the message into the input field for user to review/edit/send
+              if (msg.text && MODE === 'agent') {
+                // Prefix with source info if from browser or other shell
+                const prefix = msg.from && msg.from !== 'user' ? `[from ${msg.from}] ` : ''
+                const fullText = prefix + msg.text
+                
+                // If input is empty, just set it; otherwise append with newline
+                if (inputEl.value.trim()) {
+                  inputEl.value = inputEl.value + '\n' + fullText
+                } else {
+                  inputEl.value = fullText
+                }
+                inputEl.focus()
+                // Show a subtle notification
+                addMessage('system', `Message from ${msg.from} pasted to input`)
+              } else {
+                addMessage('system', `Message from ${msg.from} queued (${msg.count} pending)`)
+              }
               scrollToBottom()
               break
             case 'agent-auto-resume':
-              // Auto-resume agent to process injected messages
-              if (!isAgentThinking && MODE === 'agent') {
-                // Small delay to ensure interrupt completes
-                setTimeout(() => {
-                  if (!isAgentThinking) {
-                    sendAgentPrompt(`(Process the message from ${msg.from})`)
-                  }
-                }, 100)
-              }
+              // Only auto-send if there's content in the input and agent is idle
+              // This gives user a chance to review/edit the pasted message
+              // Skip auto-resume - user will send when ready
               break
           }
         } catch {}
@@ -663,41 +665,10 @@
     // ==========================================
 
     inputEl.addEventListener('keydown', async (e) => {
-      // Human terminal: Enter sends, Shift+Enter inserts newline
-      // Agent terminal: 
-      //   - Shift+Enter or Cmd+Enter always sends
-      //   - Enter at end of text, on empty line, with content above = submit
-      //   - Otherwise Enter inserts newline (even on blank lines in middle)
-      let isSubmit = false
+      // Simple and consistent: Enter sends, Shift+Enter inserts newline
+      // Works the same in both human and agent modes
       
-      if (e.key === 'Enter') {
-        if (MODE === 'agent') {
-          if (e.shiftKey || e.metaKey) {
-            // Explicit submit
-            isSubmit = true
-          } else {
-            const text = inputEl.value
-            const cursorPos = inputEl.selectionStart
-            
-            // Only consider submit if cursor is at the very end
-            if (cursorPos === text.length && text.trim() !== '') {
-              const lines = text.split('\n')
-              const lastLine = lines[lines.length - 1]
-              
-              // Submit if last line is empty/whitespace and there's real content
-              if (lastLine.trim() === '') {
-                isSubmit = true
-              }
-            }
-            // Otherwise, default behavior inserts newline
-          }
-        } else {
-          // Human mode: Enter sends unless Shift held
-          isSubmit = !e.shiftKey
-        }
-      }
-
-      if (isSubmit && inputEl.value.trim()) {
+      if (e.key === 'Enter' && !e.shiftKey && inputEl.value.trim()) {
         e.preventDefault()
         const command = inputEl.value.trim()
         commandHistory.push(command)
@@ -831,7 +802,11 @@
       const lines = []
       for (const msg of messagesEl.children) {
         if (msg.classList.contains('msg-system')) {
-          // Skip system messages like "connected"
+          // Include important system messages (queued, interrupted) but skip noise like "connected"
+          const text = msg.textContent || ''
+          if (text.includes('queued') || text.includes('interrupt') || text.includes('stopped')) {
+            lines.push(`[${text}]`)
+          }
           continue
         } else if (msg.classList.contains('msg-prompt')) {
           lines.push(msg.textContent)
@@ -851,8 +826,8 @@
     async function sendAgentPrompt(prompt) {
       // If agent is busy, queue this prompt for later
       if (isAgentThinking) {
-        pendingPrompt = prompt
-        addMessage('system', '(queued, will send when current task finishes)')
+        pendingPrompts.push(prompt)
+        addMessage('system', `(queued #${pendingPrompts.length}, will send when current task finishes)`)
         return
       }
 
@@ -881,6 +856,14 @@
         addMessage('error', `connection error: ${err.message}`)
       }
       scrollToBottom()
+    }
+    
+    // Process the next prompt in the queue
+    function processNextPendingPrompt() {
+      if (pendingPrompts.length > 0) {
+        const prompt = pendingPrompts.shift()
+        sendAgentPrompt(prompt)
+      }
     }
 
     function showThinking() {

@@ -809,6 +809,41 @@ function setupScreenCapture() {
   ipcMain.handle('show-open-dialog', async (event, options) => {
     return dialog.showOpenDialog(mainWindow, options)
   })
+
+  // Create a new agent tab (called from widget in webview)
+  ipcMain.handle('open-agent-tab', async (event) => {
+    if (!mainWindow) return { error: 'No window' }
+
+    try {
+      // Send message to renderer to create agent tab, wait for response
+      const result = await new Promise((resolve) => {
+        // Generate unique request ID
+        const requestId = `agent-tab-${Date.now()}`
+        
+        // Listen for response from renderer
+        const responseHandler = (event, response) => {
+          if (response.requestId === requestId) {
+            ipcMain.removeListener('agent-tab-created', responseHandler)
+            resolve(response)
+          }
+        }
+        ipcMain.on('agent-tab-created', responseHandler)
+        
+        // Tell renderer to create the tab
+        mainWindow.webContents.send('create-agent-tab', { requestId })
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          ipcMain.removeListener('agent-tab-created', responseHandler)
+          resolve({ error: 'Timeout waiting for agent tab' })
+        }, 10000)
+      })
+
+      return result
+    } catch (err) {
+      return { error: err.message }
+    }
+  })
 }
 
 /**

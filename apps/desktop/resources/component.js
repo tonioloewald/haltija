@@ -261,6 +261,70 @@
     }
     return parts.join(" > ");
   }
+  var UNSTABLE_ID_PATTERNS = [
+    /^mui-\d+/,
+    /^react-select-\d+/,
+    /^rc-\d+/,
+    /^headlessui-/,
+    /-\d{4,}$/,
+    /^:r[a-z0-9]+:/,
+    /^\d+$/
+  ];
+  function isUnstableId(id) {
+    return UNSTABLE_ID_PATTERNS.some((pattern) => pattern.test(id));
+  }
+  function getStableSelector(el) {
+    const htmlEl = el;
+    const testId = el.getAttribute("data-testid") || el.getAttribute("data-cy") || el.getAttribute("data-test") || el.getAttribute("data-test-id");
+    if (testId) {
+      return `[data-testid="${testId}"]`;
+    }
+    if (el.id && !isUnstableId(el.id)) {
+      return `#${el.id}`;
+    }
+    const ariaLabel = el.getAttribute("aria-label");
+    if (ariaLabel && ariaLabel.length < 50) {
+      const tag2 = el.tagName.toLowerCase();
+      const matches = document.querySelectorAll(`${tag2}[aria-label="${CSS.escape(ariaLabel)}"]`);
+      if (matches.length === 1) {
+        return `${tag2}[aria-label="${ariaLabel}"]`;
+      }
+    }
+    const tag = el.tagName.toLowerCase();
+    if (["button", "a"].includes(tag) || el.getAttribute("role") === "button") {
+      const text = htmlEl.innerText?.trim();
+      if (text && text.length < 30 && !text.includes(`
+`)) {
+        const selector = tag === "a" ? "a" : 'button, [role="button"]';
+        const allSimilar = document.querySelectorAll(selector);
+        const matchingText = Array.from(allSimilar).filter((e) => e.innerText?.trim() === text);
+        if (matchingText.length === 1) {
+          return `${tag}:has-text("${text}")`;
+        }
+      }
+    }
+    if (tag === "input" || tag === "textarea" || tag === "select") {
+      const name = el.getAttribute("name");
+      if (name && !isUnstableId(name)) {
+        return `${tag}[name="${name}"]`;
+      }
+      const placeholder = el.getAttribute("placeholder");
+      if (placeholder && placeholder.length < 40) {
+        const matches = document.querySelectorAll(`${tag}[placeholder="${CSS.escape(placeholder)}"]`);
+        if (matches.length === 1) {
+          return `${tag}[placeholder="${placeholder}"]`;
+        }
+      }
+    }
+    const role = el.getAttribute("role");
+    if (role && ariaLabel) {
+      const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`);
+      if (matches.length === 1) {
+        return `[role="${role}"][aria-label="${ariaLabel}"]`;
+      }
+    }
+    return getSelector(el);
+  }
   function extractElement(el) {
     const rect = el.getBoundingClientRect();
     const attrs = {};
@@ -2472,21 +2536,8 @@
           jsonArea.value = JSON.stringify(test, null, 2);
         };
         if (agentBtn) {
-          try {
-            const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
-            const response = await fetch(`${serverUrl2}/terminal/agents`);
-            const { agents } = await response.json();
-            if (agents && agents.length > 0) {
-              agentBtn.disabled = false;
-              agentBtn.title = `Send to ${agents.find((a) => a.isLastActive)?.name || agents[0].name}`;
-            } else {
-              agentBtn.disabled = true;
-              agentBtn.title = "No agents available - open an agent tab first";
-            }
-          } catch {
-            agentBtn.disabled = true;
-            agentBtn.title = "Could not check for agents";
-          }
+          agentBtn.disabled = false;
+          agentBtn.title = "Send to agent";
         }
       }
     }
@@ -2662,19 +2713,7 @@
       const nameInput = this.shadowRoot?.querySelector(".test-name");
       const successMsg = this.shadowRoot?.querySelector(".success-msg");
       const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]');
-      const description = nameInput?.value?.trim();
-      if (!description) {
-        if (successMsg) {
-          successMsg.textContent = "⚠️ Enter a description first";
-          successMsg.style.color = "#f59e0b";
-          setTimeout(() => {
-            successMsg.textContent = "";
-            successMsg.style.color = "";
-          }, 3000);
-        }
-        nameInput?.focus();
-        return;
-      }
+      const description = nameInput?.value?.trim() || "";
       if (!this.lastRecordingId) {
         if (successMsg)
           successMsg.textContent = "⚠️ No recording available";
@@ -2920,6 +2959,11 @@
       for (const el of allElements) {
         if (el.closest(TAG_NAME))
           continue;
+        const id = el.id || "";
+        if (id.startsWith("haltija-"))
+          continue;
+        if (el instanceof HTMLElement && el.style.zIndex === "2147483646")
+          continue;
         const elRect = el.getBoundingClientRect();
         if (elRect.width === 0 || elRect.height === 0)
           continue;
@@ -2952,7 +2996,10 @@
           for (const attr of el.attributes) {
             attrs[attr.name] = attr.value;
           }
+          const ref = refRegistry.assign(el);
+          stats.refsAssigned++;
           return {
+            ref,
             selector: getSelector(el),
             tagName: el.tagName.toLowerCase(),
             text: (el.textContent || "").trim().slice(0, 200),
@@ -3111,28 +3158,6 @@
       } catch (err) {
         console.error(`${LOG_PREFIX} Failed to fetch agents:`, err);
       }
-      if (agents.length === 0) {
-        const tooltip = document.createElement("div");
-        tooltip.style.cssText = `
-        position: fixed;
-        background: #1f2937;
-        color: #f87171;
-        font-size: 11px;
-        font-family: system-ui, -apple-system, sans-serif;
-        padding: 8px 12px;
-        border-radius: 4px;
-        border: 1px solid #374151;
-        z-index: 2147483647;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      `;
-        tooltip.textContent = "No agents available - open an agent tab first";
-        const rect2 = anchor.getBoundingClientRect();
-        tooltip.style.left = `${rect2.left}px`;
-        tooltip.style.top = `${rect2.bottom + 4}px`;
-        document.body.appendChild(tooltip);
-        setTimeout(() => tooltip.remove(), 2000);
-        return;
-      }
       const picker = document.createElement("div");
       picker.style.cssText = `
       position: fixed;
@@ -3148,7 +3173,7 @@
       const rect = anchor.getBoundingClientRect();
       picker.style.left = `${rect.left}px`;
       picker.style.top = `${rect.bottom + 4}px`;
-      for (const agent of agents) {
+      const createOption = (content, onClick, style) => {
         const option = document.createElement("div");
         option.style.cssText = `
         padding: 8px 12px;
@@ -3157,19 +3182,34 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        ${style || ""}
       `;
         option.onmouseenter = () => option.style.background = "#374151";
         option.onmouseleave = () => option.style.background = "transparent";
+        if (typeof content === "string") {
+          option.textContent = content;
+        } else {
+          option.appendChild(content);
+        }
+        option.onclick = onClick;
+        return option;
+      };
+      for (const agent of agents) {
+        const row = document.createElement("div");
+        row.style.cssText = "display: flex; align-items: center; gap: 8px; width: 100%;";
         const statusDot = document.createElement("span");
         statusDot.style.cssText = `
         width: 8px;
         height: 8px;
         border-radius: 50%;
+        flex-shrink: 0;
         background: ${agent.status === "thinking" ? "#fbbf24" : "#22c55e"};
       `;
+        row.appendChild(statusDot);
         const nameSpan = document.createElement("span");
         nameSpan.textContent = agent.name;
         nameSpan.style.flex = "1";
+        row.appendChild(nameSpan);
         if (agent.isLastActive) {
           const activeTag = document.createElement("span");
           activeTag.style.cssText = `
@@ -3180,14 +3220,9 @@
           border-radius: 2px;
         `;
           activeTag.textContent = "active";
-          option.appendChild(statusDot);
-          option.appendChild(nameSpan);
-          option.appendChild(activeTag);
-        } else {
-          option.appendChild(statusDot);
-          option.appendChild(nameSpan);
+          row.appendChild(activeTag);
         }
-        option.onclick = () => {
+        const option = createOption(row, () => {
           picker.remove();
           this.agentPickerEl = null;
           if (type === "selection") {
@@ -3195,9 +3230,63 @@
           } else if (type === "recording") {
             this.sendRecordingToAgent(agent.id, agent.name);
           }
-        };
+        });
         picker.appendChild(option);
       }
+      if (agents.length > 0) {
+        const separator = document.createElement("div");
+        separator.style.cssText = "border-top: 1px solid #374151; margin: 4px 0;";
+        picker.appendChild(separator);
+      }
+      const newAgentRow = document.createElement("div");
+      newAgentRow.style.cssText = "display: flex; align-items: center; gap: 8px; width: 100%;";
+      const plusIcon = document.createElement("span");
+      plusIcon.textContent = "+";
+      plusIcon.style.cssText = "width: 8px; text-align: center; color: #6366f1; font-weight: bold;";
+      newAgentRow.appendChild(plusIcon);
+      const newAgentText = document.createElement("span");
+      newAgentText.textContent = "New agent";
+      newAgentText.style.cssText = "flex: 1; color: #a5b4fc;";
+      newAgentRow.appendChild(newAgentText);
+      const newAgentOption = createOption(newAgentRow, async () => {
+        picker.remove();
+        this.agentPickerEl = null;
+        const haltija = window.haltija;
+        if (haltija?.openAgentTab) {
+          newAgentText.textContent = "Creating...";
+          const result2 = await haltija.openAgentTab();
+          if (result2?.shellId) {
+            await new Promise((r) => setTimeout(r, 300));
+            if (type === "selection") {
+              this.sendSelectionToAgent(result2.shellId, result2.name || "agent");
+            } else if (type === "recording") {
+              this.sendRecordingToAgent(result2.shellId, result2.name || "agent");
+            }
+          } else {
+            console.error(`${LOG_PREFIX} Failed to create agent tab`);
+          }
+        } else {
+          const tooltip = document.createElement("div");
+          tooltip.style.cssText = `
+          position: fixed;
+          background: #1f2937;
+          color: #fbbf24;
+          font-size: 11px;
+          font-family: system-ui, -apple-system, sans-serif;
+          padding: 8px 12px;
+          border-radius: 4px;
+          border: 1px solid #374151;
+          z-index: 2147483647;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+          tooltip.textContent = "Open an agent tab (>*) in the Haltija app first";
+          tooltip.style.left = `${rect.left}px`;
+          tooltip.style.top = `${rect.bottom + 4}px`;
+          document.body.appendChild(tooltip);
+          setTimeout(() => tooltip.remove(), 3000);
+        }
+      });
+      picker.appendChild(newAgentOption);
       const closeHandler = (e) => {
         if (!picker.contains(e.target) && e.target !== anchor) {
           picker.remove();
@@ -3216,14 +3305,18 @@
       }
       const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
       const elements = this.selectionResult.elements;
-      const elementSummary = elements.slice(0, 10).map((el, i) => {
-        const text = el.text ? ` "${el.text.slice(0, 30)}"` : "";
-        return `${i + 1}. <${el.tagName}>${text} → ${el.selector}`;
+      const maxElements = 15;
+      const shown = elements.slice(0, maxElements);
+      const elementSummary = shown.map((el, i) => {
+        const ref = el.ref ? `(ref:${el.ref})` : "";
+        const text = el.text ? `"${el.text.slice(0, 30)}${el.text.length > 30 ? "..." : ""}"` : "";
+        const desc = text || `<${el.tagName}>`;
+        return `  ${i + 1}. ${ref} ${desc} → ${el.selector}`;
       }).join(`
 `);
-      const moreText = elements.length > 10 ? `
-... and ${elements.length - 10} more` : "";
-      const messageText = `Selected ${elements.length} element(s) on "${document.title}" (${window.location.href}):
+      const moreText = elements.length > maxElements ? `
+  ... +${elements.length - maxElements} more` : "";
+      const messageText = `Selection from "${document.title}" (${window.location.href}):
 
 ${elementSummary}${moreText}`;
       try {
@@ -3248,14 +3341,6 @@ ${elementSummary}${moreText}`;
     async sendRecordingToAgent(agentId, agentName) {
       const description = this._pendingRecordingDescription || "";
       delete this._pendingRecordingDescription;
-      if (!description) {
-        const successMsg = this.shadowRoot?.querySelector(".success-msg");
-        if (successMsg) {
-          successMsg.textContent = "⚠️ Enter a description first";
-          successMsg.style.color = "#f59e0b";
-        }
-        return;
-      }
       await this.doSendRecordingToAgent(agentId, agentName, description);
     }
     setupDrag(handle) {
@@ -3421,7 +3506,11 @@ ${elementSummary}${moreText}`;
     getBestSelector(el) {
       const tag = el.tagName.toLowerCase();
       const htmlEl = el;
-      if (el.id && !el.id.match(/^(ember|react|vue|ng-|:r|:R|\d)/)) {
+      const testId = el.getAttribute("data-testid") || el.getAttribute("data-test-id");
+      if (testId) {
+        return `[data-testid="${testId}"]`;
+      }
+      if (el.id && !isUnstableId(el.id)) {
         return `#${el.id}`;
       }
       const ariaLabel = el.getAttribute("aria-label");
@@ -3459,12 +3548,8 @@ ${elementSummary}${moreText}`;
           return `${tag}[placeholder="${input.placeholder.slice(0, 30)}"]`;
         }
       }
-      const testId = el.getAttribute("data-testid") || el.getAttribute("data-test-id");
-      if (testId) {
-        return `[data-testid="${testId}"]`;
-      }
       const name = el.getAttribute("name");
-      if (name && el.matches("input, select, textarea, button")) {
+      if (name && !isUnstableId(name) && el.matches("input, select, textarea, button")) {
         return `${tag}[name="${name}"]`;
       }
       const role = el.getAttribute("role");

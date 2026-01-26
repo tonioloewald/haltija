@@ -324,6 +324,7 @@ export function restoreSession(shellId: string, transcriptFile: TranscriptFile):
     status: 'idle',
     transcript: [], // Fresh transcript
     promptQueue: [],
+    messageQueue: [],
     cwd: transcriptFile.cwd,
     createdAt: Date.now(),
   }
@@ -635,7 +636,9 @@ export function runAgentPrompt(
 export function killAgent(shellId: string): boolean {
   const session = sessions.get(shellId)
   if (session?.process) {
-    session.process.kill('SIGTERM')
+    // Use SIGINT (Ctrl+C) first - this is what Claude CLI expects for graceful interrupt
+    // If process doesn't exit, SIGTERM will be sent by the OS
+    session.process.kill('SIGINT')
     session.status = 'idle'
     session.process = null
     return true
@@ -667,7 +670,7 @@ export function sendAgentMessage(
   
   if (session.status === 'thinking' && session.process) {
     // Interrupt the agent - message will be injected when it restarts
-    session.process.kill('SIGTERM')
+    session.process.kill('SIGINT')
     session.status = 'idle'
     session.process = null
     return 'queued'

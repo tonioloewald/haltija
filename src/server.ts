@@ -27,6 +27,7 @@ import type { HandlerContext } from './api-handlers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
+import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -1482,11 +1483,25 @@ For complete API reference with all options and response formats:
   if (path === '/terminal/init' && req.method === 'POST') {
     const body = await req.json() as { name?: string }
     const shell = registerShell(terminalState, null) // no ws for REST-only agents
-    // Assign name: explicit > config names list > shell ID
+    
+    // Assign name: explicit > next available from config names list > shell ID
     const agentNames = (terminalConfig as any)?.agent?.names || DEFAULT_AGENT_NAMES
-    const agentIndex = terminalState.nextShellId - 2 // -2 because nextShellId already incremented
-    const name = body.name || agentNames[agentIndex % agentNames.length]
+    let name = body.name
+    if (!name) {
+      // Find next available name (not already taken by shell or agent session)
+      const existingAgentSessions = listAgentSessions()
+      const takenNames = new Set([
+        ...Array.from(terminalState.shells.values()).map(s => s.name).filter(Boolean),
+        ...existingAgentSessions.map(a => a.name),
+      ])
+      name = agentNames.find((n: string) => !takenNames.has(n)) || `agent-${shell.id}`
+    }
+    
     setShellName(terminalState, shell.id, name)
+    
+    // Create agent session so it appears in /terminal/agents
+    createAgentSession(shell.id, name, shell.cwd)
+    
     broadcastToTerminals({ type: 'shell-joined', shellId: shell.id, name })
     const statusLine = getStatusLine(terminalState)
     const boardSummary = taskBoard ? getBoardSummary(taskBoard) : 'empty'
@@ -1677,13 +1692,21 @@ For complete API reference with all options and response formats:
     if (command === 'whoami' || command.startsWith('whoami ')) {
       let name = command.slice(6).trim()
       if (name && shell) {
-        // Special case: "whoami agent" triggers name rotation
+        // Special case: "whoami agent" triggers name rotation and creates agent session
         if (name === 'agent') {
           const agentNames = (terminalConfig as any)?.agent?.names || DEFAULT_AGENT_NAMES
-          // Count existing agents to pick next name
-          const existingAgents = Array.from(terminalState.shells.values())
-            .filter(s => agentNames.includes(s.name || ''))
-          name = agentNames[existingAgents.length % agentNames.length]
+          // Find next available name (not already taken by shell or agent session)
+          const existingAgentSessions = listAgentSessions()
+          const takenNames = new Set([
+            ...Array.from(terminalState.shells.values()).map(s => s.name).filter(Boolean),
+            ...existingAgentSessions.map(a => a.name),
+          ])
+          name = agentNames.find((n: string) => !takenNames.has(n)) || `agent-${shell.id}`
+          
+          // Create agent session so it appears in /terminal/agents
+          if (!getAgentSession(shell.id)) {
+            createAgentSession(shell.id, name, shell.cwd)
+          }
         }
         setShellName(terminalState, shell.id, name)
         broadcastToTerminals({ type: 'shell-renamed', shellId: shell.id, name })
@@ -1717,7 +1740,7 @@ For complete API reference with all options and response formats:
       return respond(`→ ${targetName}: ${msgText}`)
     }
     
-    // Meta-command: send:name message (inject into agent's stream)
+    // Meta-command: send:name message (paste into agent's input field)
     if (command.startsWith('send:')) {
       const spaceIdx = command.indexOf(' ')
       if (spaceIdx === -1) {
@@ -1732,49 +1755,23 @@ For complete API reference with all options and response formats:
         return respond(`error: agent "${targetName}" not found`)
       }
       
-      // Get browser context for the message
-      const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
-      let context: string | undefined
-      if (focusedWindow) {
-        try {
-          const urlObj = new URL(focusedWindow.url)
-          const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
-          context = `browser ${urlObj.host}${title}`
-        } catch {}
-      }
-      
-      const result = sendAgentMessage(targetShell.id, shellName, msgText, context)
-      
-      if (result === 'not_found') {
-        return respond(`error: no agent session for "${targetName}"`)
-      }
-      
-      // Notify the agent's terminal UI about the pending message
+      // Send directly to the agent's terminal UI for pasting into input field
+      // (Don't queue server-side - let user review and send)
       try {
         if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
-          const msgCount = getAgentMessageCount(targetShell.id)
           (targetShell.ws as any).send(JSON.stringify({
             type: 'agent-message-queued',
             from: shellName,
             text: msgText,
-            count: msgCount,
+            count: 0, // Not queued server-side
           }))
-          
-          // If agent was interrupted or idle, tell UI to auto-resume with message context
-          if (result === 'queued' || result === 'sent') {
-            (targetShell.ws as any).send(JSON.stringify({
-              type: 'agent-auto-resume',
-              reason: 'message',
-              from: shellName,
-            }))
-          }
+          return respond(`→ ${targetName}: message sent to input`)
+        } else {
+          return respond(`error: agent "${targetName}" not connected`)
         }
-      } catch { /* ignore dead socket */ }
-      
-      if (result === 'queued') {
-        return respond(`⚡ ${targetName}: interrupted, message queued`)
+      } catch {
+        return respond(`error: failed to send to "${targetName}"`)
       }
-      return respond(`→ ${targetName}: message queued (${getAgentMessageCount(targetShell.id)} pending)`)
     }
 
     // Builtin: todos (alias: tasks) - todo list / memory aid
@@ -2792,15 +2789,10 @@ For complete API reference with all options and response formats:
   }
   
   // Send a recording to an agent
-  // POST /recording/:id/send { description: "What this recording shows", agentId?: "shell-id", agentName?: "Claude" }
+  // POST /recording/:id/send { description?: "What this recording shows", agentId?: "shell-id", agentName?: "Claude" }
   if (path.match(/^\/recording\/[^/]+\/send$/) && req.method === 'POST') {
     const recordingId = path.slice('/recording/'.length, -'/send'.length)
     const body = await req.json() as { description?: string; agentId?: string; agentName?: string }
-    
-    // Require a description
-    if (!body.description?.trim()) {
-      return Response.json({ error: 'Description is required - explain what you want the agent to do with this recording' }, { status: 400, headers })
-    }
     
     const recording = recordings.get(recordingId)
     if (!recording) {
@@ -2823,53 +2815,35 @@ For complete API reference with all options and response formats:
       return Response.json({ error: 'Agent shell not found' }, { status: 404, headers })
     }
     
-    // Format the recording as a human-readable message
-    const eventSummary = recording.events.map((e: any, i: number) => {
-      if (e.type === 'click') return `${i + 1}. clicked ${e.selector || e.target || 'element'}`
-      if (e.type === 'type' || e.type === 'input') return `${i + 1}. typed "${(e.text || e.value || '').slice(0, 30)}" in ${e.selector || e.target || 'input'}`
-      if (e.type === 'navigation' || e.type === 'navigate') return `${i + 1}. navigated to ${e.url || e.to || 'page'}`
-      if (e.type === 'scroll') return `${i + 1}. scrolled`
-      return `${i + 1}. ${e.type}`
-    }).join('\n')
-    
-    const messageText = `${body.description.trim()}\n\nRecorded actions on "${recording.title}" (${recording.url}):\n\n${eventSummary}`
-    
-    const result = sendAgentMessage(
-      targetShell.id,
-      'browser',
-      messageText,
-      `recording from ${new URL(recording.url).host}`
+    // Format using shared module (indented for humans, refs for agents)
+    const messageText = formatRecordingMessage(
+      recording.events as SemanticEvent[],
+      recording.title || 'Untitled',
+      recording.url,
+      body.description
     )
     
-    if (result === 'not_found') {
-      return Response.json({ error: 'Agent session not found' }, { status: 404, headers })
-    }
-    
-    // Notify the agent's terminal UI and trigger auto-resume
+    // Send directly to the agent's terminal UI for pasting (don't queue server-side)
     try {
       if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
         (targetShell.ws as any).send(JSON.stringify({
           type: 'agent-message-queued',
           from: 'browser',
-          text: `Recording "${recording.title}" (${recording.events.length} events)`,
-          count: getAgentMessageCount(targetShell.id),
+          text: messageText,
+          count: 0, // Not queued server-side
         }))
         
-        // Trigger auto-resume so agent processes the recording
-        (targetShell.ws as any).send(JSON.stringify({
-          type: 'agent-auto-resume',
-          reason: 'recording',
-          from: 'browser',
-        }))
+        return Response.json({ 
+          sent: true, 
+          agentName: targetShell.name || targetShell.id,
+          eventCount: recording.events.length,
+        }, { headers })
+      } else {
+        return Response.json({ error: 'Agent not connected' }, { status: 503, headers })
       }
-    } catch { /* ignore */ }
-    
-    return Response.json({ 
-      sent: true, 
-      agentName: targetShell.name || targetShell.id,
-      eventCount: recording.events.length,
-      interrupted: result === 'queued'
-    }, { headers })
+    } catch {
+      return Response.json({ error: 'Failed to send to agent' }, { status: 500, headers })
+    }
   }
   
   // /select/start, /select/cancel, /select/clear - now handled by api-router
@@ -2900,35 +2874,26 @@ For complete API reference with all options and response formats:
       return Response.json({ error: 'Agent not found' }, { status: 404, headers })
     }
     
-    const result = sendAgentMessage(body.agentId, 'browser', body.message, body.context)
-    
-    if (result === 'not_found') {
-      return Response.json({ error: 'Agent session not found' }, { status: 404, headers })
-    }
-    
-    // Notify and auto-resume
+    // Send directly to the agent's terminal UI for pasting (don't queue server-side)
     try {
       if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
         (targetShell.ws as any).send(JSON.stringify({
           type: 'agent-message-queued',
           from: 'browser',
-          text: 'Selection received',
-          count: getAgentMessageCount(body.agentId),
+          text: body.message, // Send the full message content
+          count: 0, // Not queued server-side
         }))
         
-        (targetShell.ws as any).send(JSON.stringify({
-          type: 'agent-auto-resume',
-          reason: 'selection',
-          from: 'browser',
-        }))
+        return Response.json({ 
+          sent: true, 
+          agentName: targetShell.name || targetShell.id,
+        }, { headers })
+      } else {
+        return Response.json({ error: 'Agent not connected' }, { status: 503, headers })
       }
-    } catch { /* ignore */ }
-    
-    return Response.json({ 
-      sent: true, 
-      agentName: targetShell.name || targetShell.id,
-      interrupted: result === 'queued'
-    }, { headers })
+    } catch {
+      return Response.json({ error: 'Failed to send to agent' }, { status: 500, headers })
+    }
   }
   
   // ==========================================
