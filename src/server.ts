@@ -3455,26 +3455,86 @@ const serverConfig = {
   },
 }
 
+// Helper: Kill process using a port (returns true if killed something)
+function killProcessOnPort(port: number): boolean {
+  try {
+    // Use lsof to find PID using the port
+    const output = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    if (output) {
+      const pids = output.split('\n').filter(Boolean)
+      for (const pid of pids) {
+        try {
+          execSync(`kill ${pid} 2>/dev/null`)
+          console.log(`  [port] Killed existing process ${pid} on port ${port}`)
+        } catch {
+          // Process may have already exited
+        }
+      }
+      // Give it a moment to release the port
+      Bun.sleepSync(100)
+      return true
+    }
+  } catch {
+    // No process found or lsof not available
+  }
+  return false
+}
+
 // Start servers based on mode
 let httpServer: ReturnType<typeof Bun.serve> | null = null
 let httpsServer: ReturnType<typeof Bun.serve> | null = null
 
 if (USE_HTTP) {
-  httpServer = Bun.serve({
-    port: PORT,
-    ...serverConfig,
-  })
+  try {
+    httpServer = Bun.serve({
+      port: PORT,
+      ...serverConfig,
+    })
+  } catch (err: unknown) {
+    // Port in use - try to kill existing process and retry
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
+      if (killProcessOnPort(PORT)) {
+        httpServer = Bun.serve({
+          port: PORT,
+          ...serverConfig,
+        })
+      } else {
+        throw err
+      }
+    } else {
+      throw err
+    }
+  }
 }
 
 if (USE_HTTPS) {
-  httpsServer = Bun.serve({
-    port: HTTPS_PORT,
-    tls: {
-      cert: readFileSync(certPath),
-      key: readFileSync(keyPath),
-    },
-    ...serverConfig,
-  })
+  try {
+    httpsServer = Bun.serve({
+      port: HTTPS_PORT,
+      tls: {
+        cert: readFileSync(certPath),
+        key: readFileSync(keyPath),
+      },
+      ...serverConfig,
+    })
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
+      if (killProcessOnPort(HTTPS_PORT)) {
+        httpsServer = Bun.serve({
+          port: HTTPS_PORT,
+          tls: {
+            cert: readFileSync(certPath),
+            key: readFileSync(keyPath),
+          },
+          ...serverConfig,
+        })
+      } else {
+        throw err
+      }
+    } else {
+      throw err
+    }
+  }
 }
 
 // Build URLs for display
