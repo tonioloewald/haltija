@@ -1,6 +1,6 @@
 {
   "name": "haltija-desktop",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Haltija Desktop - God Mode Browser for AI Agents",
   "homepage": "https://github.com/tonioloewald/haltija",
   "author": {
@@ -18,9 +18,9 @@
     "compile:server:win": "cd ../.. && bun build --compile --target=bun-windows-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64.exe",
     "compile:server:linux": "cd ../.. && bun build --compile --target=bun-linux-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-linux-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64",
     "build": "electron-builder",
-    "build:mac": "npm run icons && npm run compile:server && electron-builder --mac",
-    "build:win": "npm run compile:server:win && electron-builder --win",
-    "build:linux": "npm run compile:server:linux && electron-builder --linux"
+    "build:mac": "npm run sync-version && npm run icons && npm run compile:server && electron-builder --mac",
+    "build:win": "npm run sync-version && npm run compile:server:win && electron-builder --win",
+    "build:linux": "npm run sync-version && npm run compile:server:linux && electron-builder --linux"
   },
   "license": "Apache-2.0",
   "devDependencies": {
