@@ -3035,37 +3035,6 @@ const serverConfig = {
   },
 }
 
-// Ensure hj command is available globally (symlink to /usr/local/bin)
-try {
-  const hjSource = join(import.meta.dir, '..', 'bin', 'hj.mjs')
-  const hjTarget = '/usr/local/bin/hj'
-  const { existsSync, symlinkSync, unlinkSync, readlinkSync } = await import('fs')
-  
-  if (existsSync(hjSource)) {
-    // Check if symlink exists and points to correct location
-    let needsUpdate = true
-    if (existsSync(hjTarget)) {
-      try {
-        const currentTarget = readlinkSync(hjTarget)
-        if (currentTarget === hjSource) {
-          needsUpdate = false
-        }
-      } catch { /* not a symlink or can't read */ }
-    }
-    
-    if (needsUpdate) {
-      try {
-        if (existsSync(hjTarget)) unlinkSync(hjTarget)
-        symlinkSync(hjSource, hjTarget)
-        console.log(`  Linked: hj → ${hjSource}`)
-      } catch (e: any) {
-        // Likely permission error - that's ok, user can do it manually
-        if (e.code !== 'EACCES') console.error(`  Note: Could not create hj symlink: ${e.message}`)
-      }
-    }
-  }
-} catch { /* ignore symlink errors */ }
-
 // Start servers based on mode
 let httpServer: ReturnType<typeof Bun.serve> | null = null
 let httpsServer: ReturnType<typeof Bun.serve> | null = null
