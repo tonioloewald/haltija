@@ -105,25 +105,27 @@ body {
   margin-bottom: 0;
 }
 
-/* Terminal tabs - blue tint */
+/* Terminal tabs - blue tint (subtle when inactive) */
 .tab.terminal {
-  border-top: 2px solid #6366f1;
+  border-top: 2px solid #3a3a5a;
 }
 
 .tab.terminal.active {
   background: #1a1a3e;
   border-color: #6366f1;
+  border-top-color: #6366f1;
   border-bottom: 4px solid #1a1a3e;
 }
 
-/* Agent tabs - green tint */
+/* Agent tabs - green tint (subtle when inactive) */
 .tab.agent {
-  border-top: 2px solid #22c55e;
+  border-top: 2px solid #2a4a2a;
 }
 
 .tab.agent.active {
   background: #1a2e1a;
   border-color: #22c55e;
+  border-top-color: #22c55e;
   border-bottom: 4px solid #1a2e1a;
 }
 

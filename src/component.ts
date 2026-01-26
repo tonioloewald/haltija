@@ -2003,6 +2003,7 @@ export class DevChannel extends HTMLElement {
   private isRecording = false
   private recordingStartTime = 0
   private recordingEvents: SemanticEvent[] = []
+  private lastRecordingId: string | null = null
 
   // Pending requests waiting for response
   private pending = new Map<
@@ -2864,6 +2865,7 @@ export class DevChannel extends HTMLElement {
           <div class="test-modal-footer">
             <button class="btn-cancel" data-action="close-modal">Cancel</button>
             <span class="success-msg"></span>
+            <button class="btn-secondary" data-action="send-to-agent" title="Send recording to agent">🤖 Agent ▾</button>
             <button class="btn-secondary" data-action="download-test">💾 Save</button>
             <button class="btn-primary" data-action="copy-test">📋 Copy</button>
           </div>
@@ -2892,6 +2894,7 @@ export class DevChannel extends HTMLElement {
         if (action === 'close-modal') this.closeTestModal()
         if (action === 'copy-test') this.copyTest()
         if (action === 'download-test') this.downloadTest()
+        if (action === 'send-to-agent') this.sendToAgent()
       })
     })
 
@@ -3278,8 +3281,9 @@ export class DevChannel extends HTMLElement {
       (e) => e.timestamp >= this.recordingStartTime,
     )
 
-    // Generate a recording ID
+    // Generate a recording ID and store it for sendToAgent
     const recordingId = `rec_${this.recordingStartTime}_${Math.random().toString(36).slice(2, 8)}`
+    this.lastRecordingId = recordingId
 
     // Emit recording:stopped semantic event with the recording data
     this.emitSemanticEvent({
@@ -3325,7 +3329,7 @@ export class DevChannel extends HTMLElement {
     })
   }
 
-  private generateAndShowTest() {
+  private async generateAndShowTest() {
     const test = this.eventsToTest(this.recordingEvents, {
       name: '', // Start with empty name
       url: window.location.href,
@@ -3340,6 +3344,7 @@ export class DevChannel extends HTMLElement {
       '.test-json',
     ) as HTMLTextAreaElement
     const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
 
     if (modal && nameInput && jsonArea) {
       nameInput.value = '' // Empty, user must enter name
@@ -3356,6 +3361,25 @@ export class DevChannel extends HTMLElement {
       nameInput.oninput = () => {
         test.name = nameInput.value
         jsonArea.value = JSON.stringify(test, null, 2)
+      }
+      
+      // Check if any agents are available and update button state
+      if (agentBtn) {
+        try {
+          const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
+          const response = await fetch(`${serverUrl}/terminal/agents`)
+          const { agents } = await response.json()
+          if (agents && agents.length > 0) {
+            agentBtn.disabled = false
+            agentBtn.title = `Send to ${agents.find((a: any) => a.isLastActive)?.name || agents[0].name}`
+          } else {
+            agentBtn.disabled = true
+            agentBtn.title = 'No agents available - open an agent tab first'
+          }
+        } catch {
+          agentBtn.disabled = true
+          agentBtn.title = 'Could not check for agents'
+        }
       }
     }
   }
@@ -3584,6 +3608,97 @@ export class DevChannel extends HTMLElement {
     const modal = this.shadowRoot?.querySelector('.test-modal')
     if (modal) {
       modal.classList.remove('open')
+    }
+  }
+
+  private async sendToAgent() {
+    const nameInput = this.shadowRoot?.querySelector('.test-name') as HTMLInputElement
+    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
+    
+    // Require a description
+    const description = nameInput?.value?.trim()
+    if (!description) {
+      if (successMsg) {
+        successMsg.textContent = '⚠️ Enter a description first'
+        successMsg.style.color = '#f59e0b'
+        setTimeout(() => {
+          successMsg.textContent = ''
+          successMsg.style.color = ''
+        }, 3000)
+      }
+      nameInput?.focus()
+      return
+    }
+    
+    if (!this.lastRecordingId) {
+      if (successMsg) successMsg.textContent = '⚠️ No recording available'
+      return
+    }
+    
+    // Show agent picker dropdown anchored to the button
+    if (agentBtn) {
+      // Store description for use when agent is selected
+      ;(this as any)._pendingRecordingDescription = description
+      this.showAgentPicker(agentBtn, 'recording')
+    }
+  }
+
+  // Actually send recording after agent is selected from picker
+  private async doSendRecordingToAgent(agentId: string, agentName: string, description: string) {
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement
+    const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
+    
+    if (!this.lastRecordingId) {
+      if (successMsg) successMsg.textContent = '⚠️ No recording available'
+      return
+    }
+    
+    // Disable button while sending
+    if (agentBtn) {
+      agentBtn.disabled = true
+      agentBtn.textContent = '...'
+    }
+    
+    try {
+      const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
+      const response = await fetch(`${serverUrl}/recording/${this.lastRecordingId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, agentId }),
+      })
+      
+      const result = await response.json()
+      
+      if (result.error) {
+        if (successMsg) {
+          successMsg.textContent = `⚠️ ${result.error}`
+          successMsg.style.color = '#f59e0b'
+        }
+      } else {
+        if (successMsg) {
+          successMsg.textContent = `✓ Sent to ${agentName}${result.interrupted ? ' (interrupted)' : ''}`
+          successMsg.style.color = '#22c55e'
+        }
+        // Close modal after short delay
+        setTimeout(() => this.closeTestModal(), 1500)
+      }
+    } catch (err) {
+      if (successMsg) {
+        successMsg.textContent = `⚠️ Failed to send`
+        successMsg.style.color = '#ef4444'
+      }
+    } finally {
+      if (agentBtn) {
+        agentBtn.disabled = false
+        agentBtn.textContent = '🤖 Agent ▾'
+      }
+      setTimeout(() => {
+        if (successMsg) {
+          successMsg.textContent = ''
+          successMsg.style.color = ''
+        }
+      }, 3000)
     }
   }
 
@@ -3962,27 +4077,73 @@ export class DevChannel extends HTMLElement {
       box-sizing: border-box;
     `
 
-    // Add label showing element count and status
+    // Container for buttons
+    const buttonBar = document.createElement('div')
+    buttonBar.style.cssText = `
+      position: absolute;
+      bottom: -28px;
+      left: 0;
+      display: flex;
+      gap: 4px;
+      pointer-events: auto;
+    `
+
+    // Label showing element count
     const label = document.createElement('div')
     label.style.cssText = `
-      position: absolute;
-      bottom: -24px;
-      left: 0;
       background: #6366f1;
       color: white;
       font-size: 11px;
       font-family: system-ui, -apple-system, sans-serif;
-      padding: 2px 8px;
+      padding: 4px 8px;
       border-radius: 3px;
       white-space: nowrap;
-      pointer-events: auto;
       cursor: pointer;
     `
-    label.textContent = `${elementCount} element${elementCount !== 1 ? 's' : ''} selected - click to clear`
+    label.textContent = `${elementCount} element${elementCount !== 1 ? 's' : ''} selected`
     label.title = 'Click to clear selection'
     label.onclick = () => this.clearSelection()
 
-    indicator.appendChild(label)
+    // Send to agent button (shows dropdown of available agents)
+    const sendBtn = document.createElement('div')
+    sendBtn.style.cssText = `
+      background: #22c55e;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 4px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      cursor: pointer;
+      position: relative;
+    `
+    sendBtn.textContent = '🤖 Send ▾'
+    sendBtn.title = 'Send selection to agent'
+    sendBtn.onclick = (e) => {
+      e.stopPropagation()
+      this.showAgentPicker(sendBtn, 'selection')
+    }
+
+    // Clear button
+    const clearBtn = document.createElement('div')
+    clearBtn.style.cssText = `
+      background: #64748b;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 4px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      cursor: pointer;
+    `
+    clearBtn.textContent = '✕'
+    clearBtn.title = 'Clear selection'
+    clearBtn.onclick = () => this.clearSelection()
+
+    buttonBar.appendChild(label)
+    buttonBar.appendChild(sendBtn)
+    buttonBar.appendChild(clearBtn)
+    indicator.appendChild(buttonBar)
     document.body.appendChild(indicator)
     this.selectionIndicator = indicator
   }
@@ -4032,6 +4193,203 @@ export class DevChannel extends HTMLElement {
     this.selectionResult = null
     this.clearHighlights()
     this.removeSelectionIndicator()
+  }
+
+  // Current agent picker dropdown element
+  private agentPickerEl: HTMLElement | null = null
+
+  // Show agent picker dropdown
+  private async showAgentPicker(anchor: HTMLElement, type: 'selection' | 'recording') {
+    // Remove any existing picker
+    this.agentPickerEl?.remove()
+    this.agentPickerEl = null
+
+    // Fetch available agents
+    const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
+    let agents: Array<{ id: string; name: string; status: string; isLastActive: boolean }> = []
+    
+    try {
+      const response = await fetch(`${serverUrl}/terminal/agents`)
+      const data = await response.json()
+      agents = data.agents || []
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Failed to fetch agents:`, err)
+    }
+
+    if (agents.length === 0) {
+      // Show error tooltip
+      const tooltip = document.createElement('div')
+      tooltip.style.cssText = `
+        position: fixed;
+        background: #1f2937;
+        color: #f87171;
+        font-size: 11px;
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid #374151;
+        z-index: 2147483647;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      `
+      tooltip.textContent = 'No agents available - open an agent tab first'
+      
+      const rect = anchor.getBoundingClientRect()
+      tooltip.style.left = `${rect.left}px`
+      tooltip.style.top = `${rect.bottom + 4}px`
+      
+      document.body.appendChild(tooltip)
+      setTimeout(() => tooltip.remove(), 2000)
+      return
+    }
+
+    // Create dropdown
+    const picker = document.createElement('div')
+    picker.style.cssText = `
+      position: fixed;
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 4px;
+      z-index: 2147483647;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      min-width: 150px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+    `
+
+    const rect = anchor.getBoundingClientRect()
+    picker.style.left = `${rect.left}px`
+    picker.style.top = `${rect.bottom + 4}px`
+
+    // Add agent options
+    for (const agent of agents) {
+      const option = document.createElement('div')
+      option.style.cssText = `
+        padding: 8px 12px;
+        cursor: pointer;
+        color: #e5e7eb;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      `
+      option.onmouseenter = () => option.style.background = '#374151'
+      option.onmouseleave = () => option.style.background = 'transparent'
+      
+      // Status indicator
+      const statusDot = document.createElement('span')
+      statusDot.style.cssText = `
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: ${agent.status === 'thinking' ? '#fbbf24' : '#22c55e'};
+      `
+      
+      // Name
+      const nameSpan = document.createElement('span')
+      nameSpan.textContent = agent.name
+      nameSpan.style.flex = '1'
+      
+      // Last active indicator
+      if (agent.isLastActive) {
+        const activeTag = document.createElement('span')
+        activeTag.style.cssText = `
+          font-size: 9px;
+          background: #6366f1;
+          color: white;
+          padding: 1px 4px;
+          border-radius: 2px;
+        `
+        activeTag.textContent = 'active'
+        option.appendChild(statusDot)
+        option.appendChild(nameSpan)
+        option.appendChild(activeTag)
+      } else {
+        option.appendChild(statusDot)
+        option.appendChild(nameSpan)
+      }
+
+      option.onclick = () => {
+        picker.remove()
+        this.agentPickerEl = null
+        if (type === 'selection') {
+          this.sendSelectionToAgent(agent.id, agent.name)
+        } else if (type === 'recording') {
+          this.sendRecordingToAgent(agent.id, agent.name)
+        }
+      }
+
+      picker.appendChild(option)
+    }
+
+    // Close on click outside
+    const closeHandler = (e: MouseEvent) => {
+      if (!picker.contains(e.target as Node) && e.target !== anchor) {
+        picker.remove()
+        this.agentPickerEl = null
+        document.removeEventListener('click', closeHandler)
+      }
+    }
+    setTimeout(() => document.addEventListener('click', closeHandler), 0)
+
+    document.body.appendChild(picker)
+    this.agentPickerEl = picker
+  }
+
+  // Send current selection to a specific agent
+  private async sendSelectionToAgent(agentId: string, agentName: string) {
+    if (!this.selectionResult) {
+      console.warn(`${LOG_PREFIX} No selection to send`)
+      return
+    }
+
+    const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
+    
+    // Format selection as message
+    const elements = this.selectionResult.elements
+    const elementSummary = elements.slice(0, 10).map((el, i) => {
+      const text = el.text ? ` "${el.text.slice(0, 30)}"` : ''
+      return `${i + 1}. <${el.tagName}>${text} → ${el.selector}`
+    }).join('\n')
+    
+    const moreText = elements.length > 10 ? `\n... and ${elements.length - 10} more` : ''
+    const messageText = `Selected ${elements.length} element(s) on "${document.title}" (${window.location.href}):\n\n${elementSummary}${moreText}`
+
+    try {
+      const response = await fetch(`${serverUrl}/selection/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId,
+          message: messageText,
+          context: `selection from ${window.location.host}`,
+        }),
+      })
+      
+      const result = await response.json()
+      if (result.sent) {
+        // Clear selection after successful send
+        this.clearSelection()
+        console.log(`${LOG_PREFIX} Selection sent to ${agentName}`)
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Failed to send selection:`, err)
+    }
+  }
+
+  // Send recording to a specific agent (called from agent picker)
+  private async sendRecordingToAgent(agentId: string, agentName: string) {
+    const description = (this as any)._pendingRecordingDescription || ''
+    delete (this as any)._pendingRecordingDescription
+    
+    if (!description) {
+      const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement
+      if (successMsg) {
+        successMsg.textContent = '⚠️ Enter a description first'
+        successMsg.style.color = '#f59e0b'
+      }
+      return
+    }
+    
+    await this.doSendRecordingToAgent(agentId, agentName, description)
   }
 
   private setupDrag(handle: Element) {

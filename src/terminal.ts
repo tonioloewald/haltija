@@ -62,9 +62,9 @@ export interface TerminalState {
 
 /** Status line items with their default states */
 export const STATUS_ITEMS = {
-  tests: { default: 'idle' },
   hj: { default: 'no browser' },
   todos: { default: 'empty' },
+  messages: { default: 'none' },
 } as const
 
 export type StatusItemKey = keyof typeof STATUS_ITEMS
@@ -198,17 +198,26 @@ export function removeStatus(state: TerminalState, tool: string): void {
 
 /**
  * Get the status line as a compact string.
- * Format: [tool1 state] [tool2 state] [tool3 state]
+ * Format: hj > localhost:8700 "title" | todos empty | messages none
  */
 export function getStatusLine(state: TerminalState): string {
   if (state.statuses.size === 0) return ''
   const parts: string[] = []
+  
+  // hj status gets special formatting
+  const hjStatus = state.statuses.get('hj')
+  if (hjStatus?.state) {
+    parts.push(`hj > ${hjStatus.state}`)
+  }
+  
+  // Other items use simple "name state" format
   for (const status of state.statuses.values()) {
+    if (status.tool === 'hj') continue // already handled
     if (status.state) {
-      parts.push(`[${status.tool} ${status.state}]`)
+      parts.push(`${status.tool} ${status.state}`)
     }
   }
-  return parts.join(' ')
+  return parts.join(' | ')
 }
 
 // ============================================

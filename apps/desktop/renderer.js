@@ -261,6 +261,15 @@ function activateTab(tabId) {
     goButton.textContent = 'Pick folder…'
     goButton.title = 'Pick folder…'
     toolbar.classList.add(tab.terminalMode === 'agent' ? 'agent' : 'terminal')
+    
+    // If this is an agent tab, notify server it's now the active agent
+    if (tab.terminalMode === 'agent' && tab.shellId) {
+      fetch(`${getServerUrl()}/terminal/agent-focus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shellId: tab.shellId }),
+      }).catch(() => {}) // Ignore errors
+    }
   } else {
     urlInput.value = tab.url || ''
     urlInput.placeholder = 'Enter URL...'
@@ -1082,31 +1091,11 @@ window.addEventListener('message', (event) => {
 
 /**
  * Check for saved agent transcripts and offer to restore them.
- * Called on app startup after a brief delay to ensure server is ready.
+ * DISABLED - restore feature is broken, causing HTML dumps
  */
 async function checkForSavedSessions() {
-  try {
-    const response = await fetch(`${getServerUrl()}/terminal/transcripts`)
-    if (!response.ok) return
-    
-    const { transcripts } = await response.json()
-    if (!transcripts || transcripts.length === 0) return
-    
-    // Find transcripts from the last 24 hours
-    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
-    const recentTranscripts = transcripts.filter(t => t.updatedAt > oneDayAgo)
-    
-    if (recentTranscripts.length === 0) return
-    
-    // Show restore notification for most recent session
-    const latest = recentTranscripts[0]
-    const timeAgo = formatTimeAgo(latest.updatedAt)
-    
-    showRestorePrompt(latest, timeAgo)
-  } catch (err) {
-    // Server may not be ready yet, or no transcripts — silent failure
-    console.log('[Haltija Desktop] No sessions to restore:', err.message)
-  }
+  // Restore disabled until we fix the underlying issues
+  return
 }
 
 /**
@@ -1157,19 +1146,20 @@ function showRestorePrompt(transcript, timeAgo) {
 }
 
 /**
- * Restore a session from a saved transcript file
+ * Restore a session from a saved transcript file.
+ * Creates a fresh agent tab with the same name; condensed context
+ * from the old session is prepended to the first prompt.
  */
 async function restoreSession(filename) {
   try {
     // Create an agent tab first
-    const tab = createTerminalTab('agent')
+    const tab = await createTerminalTab('agent')
     
     // Wait for the terminal iframe to initialize and get its shellId
     await new Promise(resolve => setTimeout(resolve, 500))
     
     // Get the shellId from the tab (set via message from terminal.html)
     if (!tab.shellId) {
-      // Listen for the shellId to be set
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Timeout waiting for shellId')), 5000)
         const checkShellId = setInterval(() => {
@@ -1182,7 +1172,7 @@ async function restoreSession(filename) {
       })
     }
     
-    // Restore the session on the server
+    // Restore the session on the server (creates fresh session with condensed context)
     const response = await fetch(`${getServerUrl()}/terminal/transcript/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1195,17 +1185,11 @@ async function restoreSession(filename) {
     
     const result = await response.json()
     
-    // Update tab with restored session info
+    // Update tab with restored session name
     tab.title = result.name
     tab.element.querySelector('.tab-title').innerHTML = `<span class="agent-status">*</span> ${result.name}`
     
-    // Tell the terminal iframe to load the restored transcript
-    tab.webview.contentWindow.postMessage({ 
-      type: 'load-transcript',
-      shellId: tab.shellId
-    }, '*')
-    
-    showNotification(`Restored session "${result.name}" (${result.entryCount} messages)`)
+    showNotification(`Restored "${result.name}" — context will be included with your first message`)
   } catch (err) {
     console.error('[Haltija Desktop] Failed to restore session:', err)
     showNotification('Failed to restore session', 3000)

@@ -1358,6 +1358,7 @@
     isRecording = false;
     recordingStartTime = 0;
     recordingEvents = [];
+    lastRecordingId = null;
     pending = new Map;
     semanticEventsEnabled = false;
     semanticEventBuffer = [];
@@ -2107,6 +2108,7 @@
           <div class="test-modal-footer">
             <button class="btn-cancel" data-action="close-modal">Cancel</button>
             <span class="success-msg"></span>
+            <button class="btn-secondary" data-action="send-to-agent" title="Send recording to agent">\uD83E\uDD16 Agent ▾</button>
             <button class="btn-secondary" data-action="download-test">\uD83D\uDCBE Save</button>
             <button class="btn-primary" data-action="copy-test">\uD83D\uDCCB Copy</button>
           </div>
@@ -2141,6 +2143,8 @@
             this.copyTest();
           if (action2 === "download-test")
             this.downloadTest();
+          if (action2 === "send-to-agent")
+            this.sendToAgent();
         });
       });
       const indicators = shadow.querySelector(".indicators");
@@ -2410,6 +2414,7 @@
       const stopTime = Date.now();
       this.recordingEvents = this.semanticEventBuffer.filter((e) => e.timestamp >= this.recordingStartTime);
       const recordingId = `rec_${this.recordingStartTime}_${Math.random().toString(36).slice(2, 8)}`;
+      this.lastRecordingId = recordingId;
       this.emitSemanticEvent({
         type: "recording:stopped",
         timestamp: stopTime,
@@ -2444,7 +2449,7 @@
         events: this.recordingEvents
       });
     }
-    generateAndShowTest() {
+    async generateAndShowTest() {
       const test = this.eventsToTest(this.recordingEvents, {
         name: "",
         url: window.location.href,
@@ -2454,6 +2459,7 @@
       const nameInput = this.shadowRoot?.querySelector(".test-name");
       const jsonArea = this.shadowRoot?.querySelector(".test-json");
       const successMsg = this.shadowRoot?.querySelector(".success-msg");
+      const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]');
       if (modal && nameInput && jsonArea) {
         nameInput.value = "";
         jsonArea.value = JSON.stringify(test, null, 2);
@@ -2465,6 +2471,23 @@
           test.name = nameInput.value;
           jsonArea.value = JSON.stringify(test, null, 2);
         };
+        if (agentBtn) {
+          try {
+            const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
+            const response = await fetch(`${serverUrl2}/terminal/agents`);
+            const { agents } = await response.json();
+            if (agents && agents.length > 0) {
+              agentBtn.disabled = false;
+              agentBtn.title = `Send to ${agents.find((a) => a.isLastActive)?.name || agents[0].name}`;
+            } else {
+              agentBtn.disabled = true;
+              agentBtn.title = "No agents available - open an agent tab first";
+            }
+          } catch {
+            agentBtn.disabled = true;
+            agentBtn.title = "Could not check for agents";
+          }
+        }
       }
     }
     cleanDescription(text, maxLen = 30) {
@@ -2633,6 +2656,83 @@
       const modal = this.shadowRoot?.querySelector(".test-modal");
       if (modal) {
         modal.classList.remove("open");
+      }
+    }
+    async sendToAgent() {
+      const nameInput = this.shadowRoot?.querySelector(".test-name");
+      const successMsg = this.shadowRoot?.querySelector(".success-msg");
+      const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]');
+      const description = nameInput?.value?.trim();
+      if (!description) {
+        if (successMsg) {
+          successMsg.textContent = "⚠️ Enter a description first";
+          successMsg.style.color = "#f59e0b";
+          setTimeout(() => {
+            successMsg.textContent = "";
+            successMsg.style.color = "";
+          }, 3000);
+        }
+        nameInput?.focus();
+        return;
+      }
+      if (!this.lastRecordingId) {
+        if (successMsg)
+          successMsg.textContent = "⚠️ No recording available";
+        return;
+      }
+      if (agentBtn) {
+        this._pendingRecordingDescription = description;
+        this.showAgentPicker(agentBtn, "recording");
+      }
+    }
+    async doSendRecordingToAgent(agentId, agentName, description) {
+      const successMsg = this.shadowRoot?.querySelector(".success-msg");
+      const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]');
+      if (!this.lastRecordingId) {
+        if (successMsg)
+          successMsg.textContent = "⚠️ No recording available";
+        return;
+      }
+      if (agentBtn) {
+        agentBtn.disabled = true;
+        agentBtn.textContent = "...";
+      }
+      try {
+        const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
+        const response = await fetch(`${serverUrl2}/recording/${this.lastRecordingId}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description, agentId })
+        });
+        const result2 = await response.json();
+        if (result2.error) {
+          if (successMsg) {
+            successMsg.textContent = `⚠️ ${result2.error}`;
+            successMsg.style.color = "#f59e0b";
+          }
+        } else {
+          if (successMsg) {
+            successMsg.textContent = `✓ Sent to ${agentName}${result2.interrupted ? " (interrupted)" : ""}`;
+            successMsg.style.color = "#22c55e";
+          }
+          setTimeout(() => this.closeTestModal(), 1500);
+        }
+      } catch (err) {
+        if (successMsg) {
+          successMsg.textContent = `⚠️ Failed to send`;
+          successMsg.style.color = "#ef4444";
+        }
+      } finally {
+        if (agentBtn) {
+          agentBtn.disabled = false;
+          agentBtn.textContent = "\uD83E\uDD16 Agent ▾";
+        }
+        setTimeout(() => {
+          if (successMsg) {
+            successMsg.textContent = "";
+            successMsg.style.color = "";
+          }
+        }, 3000);
       }
     }
     copyTest() {
@@ -2901,25 +3001,65 @@
       z-index: 2147483645;
       box-sizing: border-box;
     `;
+      const buttonBar = document.createElement("div");
+      buttonBar.style.cssText = `
+      position: absolute;
+      bottom: -28px;
+      left: 0;
+      display: flex;
+      gap: 4px;
+      pointer-events: auto;
+    `;
       const label = document.createElement("div");
       label.style.cssText = `
-      position: absolute;
-      bottom: -24px;
-      left: 0;
       background: #6366f1;
       color: white;
       font-size: 11px;
       font-family: system-ui, -apple-system, sans-serif;
-      padding: 2px 8px;
+      padding: 4px 8px;
       border-radius: 3px;
       white-space: nowrap;
-      pointer-events: auto;
       cursor: pointer;
     `;
-      label.textContent = `${elementCount} element${elementCount !== 1 ? "s" : ""} selected - click to clear`;
+      label.textContent = `${elementCount} element${elementCount !== 1 ? "s" : ""} selected`;
       label.title = "Click to clear selection";
       label.onclick = () => this.clearSelection();
-      indicator.appendChild(label);
+      const sendBtn = document.createElement("div");
+      sendBtn.style.cssText = `
+      background: #22c55e;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 4px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      cursor: pointer;
+      position: relative;
+    `;
+      sendBtn.textContent = "\uD83E\uDD16 Send ▾";
+      sendBtn.title = "Send selection to agent";
+      sendBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.showAgentPicker(sendBtn, "selection");
+      };
+      const clearBtn = document.createElement("div");
+      clearBtn.style.cssText = `
+      background: #64748b;
+      color: white;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 4px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+      cursor: pointer;
+    `;
+      clearBtn.textContent = "✕";
+      clearBtn.title = "Clear selection";
+      clearBtn.onclick = () => this.clearSelection();
+      buttonBar.appendChild(label);
+      buttonBar.appendChild(sendBtn);
+      buttonBar.appendChild(clearBtn);
+      indicator.appendChild(buttonBar);
       document.body.appendChild(indicator);
       this.selectionIndicator = indicator;
     }
@@ -2957,6 +3097,166 @@
       this.selectionResult = null;
       this.clearHighlights();
       this.removeSelectionIndicator();
+    }
+    agentPickerEl = null;
+    async showAgentPicker(anchor, type) {
+      this.agentPickerEl?.remove();
+      this.agentPickerEl = null;
+      const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
+      let agents = [];
+      try {
+        const response = await fetch(`${serverUrl2}/terminal/agents`);
+        const data = await response.json();
+        agents = data.agents || [];
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to fetch agents:`, err);
+      }
+      if (agents.length === 0) {
+        const tooltip = document.createElement("div");
+        tooltip.style.cssText = `
+        position: fixed;
+        background: #1f2937;
+        color: #f87171;
+        font-size: 11px;
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid #374151;
+        z-index: 2147483647;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      `;
+        tooltip.textContent = "No agents available - open an agent tab first";
+        const rect2 = anchor.getBoundingClientRect();
+        tooltip.style.left = `${rect2.left}px`;
+        tooltip.style.top = `${rect2.bottom + 4}px`;
+        document.body.appendChild(tooltip);
+        setTimeout(() => tooltip.remove(), 2000);
+        return;
+      }
+      const picker = document.createElement("div");
+      picker.style.cssText = `
+      position: fixed;
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 4px;
+      z-index: 2147483647;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      min-width: 150px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+    `;
+      const rect = anchor.getBoundingClientRect();
+      picker.style.left = `${rect.left}px`;
+      picker.style.top = `${rect.bottom + 4}px`;
+      for (const agent of agents) {
+        const option = document.createElement("div");
+        option.style.cssText = `
+        padding: 8px 12px;
+        cursor: pointer;
+        color: #e5e7eb;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      `;
+        option.onmouseenter = () => option.style.background = "#374151";
+        option.onmouseleave = () => option.style.background = "transparent";
+        const statusDot = document.createElement("span");
+        statusDot.style.cssText = `
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: ${agent.status === "thinking" ? "#fbbf24" : "#22c55e"};
+      `;
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = agent.name;
+        nameSpan.style.flex = "1";
+        if (agent.isLastActive) {
+          const activeTag = document.createElement("span");
+          activeTag.style.cssText = `
+          font-size: 9px;
+          background: #6366f1;
+          color: white;
+          padding: 1px 4px;
+          border-radius: 2px;
+        `;
+          activeTag.textContent = "active";
+          option.appendChild(statusDot);
+          option.appendChild(nameSpan);
+          option.appendChild(activeTag);
+        } else {
+          option.appendChild(statusDot);
+          option.appendChild(nameSpan);
+        }
+        option.onclick = () => {
+          picker.remove();
+          this.agentPickerEl = null;
+          if (type === "selection") {
+            this.sendSelectionToAgent(agent.id, agent.name);
+          } else if (type === "recording") {
+            this.sendRecordingToAgent(agent.id, agent.name);
+          }
+        };
+        picker.appendChild(option);
+      }
+      const closeHandler = (e) => {
+        if (!picker.contains(e.target) && e.target !== anchor) {
+          picker.remove();
+          this.agentPickerEl = null;
+          document.removeEventListener("click", closeHandler);
+        }
+      };
+      setTimeout(() => document.addEventListener("click", closeHandler), 0);
+      document.body.appendChild(picker);
+      this.agentPickerEl = picker;
+    }
+    async sendSelectionToAgent(agentId, agentName) {
+      if (!this.selectionResult) {
+        console.warn(`${LOG_PREFIX} No selection to send`);
+        return;
+      }
+      const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
+      const elements = this.selectionResult.elements;
+      const elementSummary = elements.slice(0, 10).map((el, i) => {
+        const text = el.text ? ` "${el.text.slice(0, 30)}"` : "";
+        return `${i + 1}. <${el.tagName}>${text} → ${el.selector}`;
+      }).join(`
+`);
+      const moreText = elements.length > 10 ? `
+... and ${elements.length - 10} more` : "";
+      const messageText = `Selected ${elements.length} element(s) on "${document.title}" (${window.location.href}):
+
+${elementSummary}${moreText}`;
+      try {
+        const response = await fetch(`${serverUrl2}/selection/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agentId,
+            message: messageText,
+            context: `selection from ${window.location.host}`
+          })
+        });
+        const result2 = await response.json();
+        if (result2.sent) {
+          this.clearSelection();
+          console.log(`${LOG_PREFIX} Selection sent to ${agentName}`);
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to send selection:`, err);
+      }
+    }
+    async sendRecordingToAgent(agentId, agentName) {
+      const description = this._pendingRecordingDescription || "";
+      delete this._pendingRecordingDescription;
+      if (!description) {
+        const successMsg = this.shadowRoot?.querySelector(".success-msg");
+        if (successMsg) {
+          successMsg.textContent = "⚠️ Enter a description first";
+          successMsg.style.color = "#f59e0b";
+        }
+        return;
+      }
+      await this.doSendRecordingToAgent(agentId, agentName, description);
     }
     setupDrag(handle) {
       let startX = 0, startY = 0, startLeft = 0, startBottom = 0;

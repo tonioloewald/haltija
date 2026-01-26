@@ -95,6 +95,7 @@
       white-space: pre-wrap;
       word-break: break-word;
       padding: 2px 0;
+      flex-shrink: 0;
     }
     .msg-system {
       color: #64748b;
@@ -184,6 +185,7 @@
       border-radius: 6px;
       margin: 4px 0;
       overflow: hidden;
+      flex-shrink: 0;
     }
     .tool-card-header {
       padding: 8px 10px;
@@ -193,32 +195,40 @@
       align-items: flex-start;
       gap: 8px;
       font-size: 12px;
+      min-height: 32px;
     }
     .tool-card-header:hover {
       background: #252540;
     }
     .tool-card-header .tool-name {
-      color: #a5b4fc;
-      font-weight: 600;
+      color: #64748b;
+      font-size: 10px;
+      text-transform: uppercase;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .tool-card-header .tool-summary {
-      color: #94a3b8;
+      color: #e2e8f0;
       font-family: ui-monospace, monospace;
-      font-size: 11px;
+      font-size: 12px;
+      font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       flex: 1;
     }
     .tool-card-header .tool-chevron {
-      transition: transform 0.15s;
-      font-size: 10px;
+      font-weight: bold;
       color: #64748b;
-      flex-shrink: 0;
+      margin-right: 4px;
     }
-    .tool-card.expanded .tool-chevron {
-      transform: rotate(90deg);
+    .tool-card.running .tool-chevron {
+      color: var(--accent-light, #a5b4fc);
+      animation: pulse-chevron 0.8s ease-in-out infinite;
+    }
+    @keyframes pulse-chevron {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
     }
     .tool-card-body {
       display: none;
@@ -246,16 +256,18 @@
       padding-top: 8px;
       border-top: 1px dashed #3d3d5c;
     }
-    /* Running indicator */
-    .tool-card.running .tool-name::after {
-      content: '...';
-      animation: ellipsis 1.5s infinite;
+    /* Output preview - always visible */
+    .tool-output-preview {
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #94a3b8;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-top: 1px solid #3d3d5c;
+      background: #1a1a2e;
     }
-    @keyframes ellipsis {
-      0%, 20% { content: '.'; }
-      40% { content: '..'; }
-      60%, 100% { content: '...'; }
-    }
+
+
 
     /* Agent prompt (user message in agent mode) */
     .msg-prompt {
@@ -344,6 +356,20 @@
     #stop-btn.visible {
       display: block;
     }
+    #copy-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--accent-light, #a5b4fc);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    #copy-btn:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -351,6 +377,8 @@
     <span class="disconnected" id="conn-indicator"></span>
     <span id="shell-id"></span>
     <span id="status-text">connecting...</span>
+    <span style="flex:1"></span>
+    <button id="copy-btn" title="Copy transcript">Copy</button>
   </div>
   <div id="messages">
     <div class="msg msg-system" id="welcome-msg"></div>
@@ -374,6 +402,7 @@
     const connIndicator = document.getElementById('conn-indicator')
     const shellIdEl = document.getElementById('shell-id')
     const stopBtn = document.getElementById('stop-btn')
+    const copyBtn = document.getElementById('copy-btn')
     let ws = null
     let shellId = null
     let commandHistory = []
@@ -465,7 +494,17 @@
                 hideThinking()
                 // Skip empty or whitespace-only text
                 if (msg.text?.trim()) {
-                  addMessage('output', msg.text)
+                  // Sanitize and limit large outputs (especially HTML dumps)
+                  let text = msg.text
+                  // Detect HTML responses and collapse them
+                  if (text.includes('<!doctype') || text.includes('<!DOCTYPE') || text.includes('<html')) {
+                    text = '[HTML page received - likely an error response]\n' + text.slice(0, 200) + '...'
+                  }
+                  // Truncate very long outputs
+                  else if (text.length > 5000) {
+                    text = text.slice(0, 5000) + `\n... (truncated, ${text.length} chars total)`
+                  }
+                  addMessage('output', text)
                   scrollToBottom()
                 }
               }
@@ -477,6 +516,7 @@
               }
               break
             case 'agent-tool-result':
+              console.log('[ws] agent-tool-result:', { id: msg.id, output: msg.output?.slice?.(0, 100) })
               if (msg.shellId === shellId) {
                 addToolResult(msg.id, msg.output)
                 scrollToBottom()
@@ -525,6 +565,22 @@
                   hideThinking()
                   setAgentThinking(false)
                 }
+              }
+              break
+            case 'agent-message-queued':
+              // Show notification that a message was queued
+              addMessage('system', `📨 Message from ${msg.from} queued (${msg.count} pending)`)
+              scrollToBottom()
+              break
+            case 'agent-auto-resume':
+              // Auto-resume agent to process injected messages
+              if (!isAgentThinking && MODE === 'agent') {
+                // Small delay to ensure interrupt completes
+                setTimeout(() => {
+                  if (!isAgentThinking) {
+                    sendAgentPrompt(`(Process the message from ${msg.from})`)
+                  }
+                }, 100)
               }
               break
           }
@@ -760,6 +816,38 @@
       }
     })
 
+    // Copy transcript button handler
+    copyBtn.addEventListener('click', () => {
+      const text = extractConversationText()
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = 'Copied'
+        setTimeout(() => { copyBtn.textContent = 'Copy' }, 1500)
+      }).catch(err => {
+        addMessage('error', `copy failed: ${err.message}`)
+      })
+    })
+
+    function extractConversationText() {
+      const lines = []
+      for (const msg of messagesEl.children) {
+        if (msg.classList.contains('msg-system')) {
+          // Skip system messages like "connected"
+          continue
+        } else if (msg.classList.contains('msg-prompt')) {
+          lines.push(msg.textContent)
+        } else if (msg.classList.contains('msg-output')) {
+          lines.push(msg.textContent)
+        } else if (msg.classList.contains('msg-summary')) {
+          lines.push(msg.textContent)
+        } else if (msg.classList.contains('tool-card')) {
+          const toolName = msg.querySelector('.tool-name')?.textContent || 'tool'
+          const summary = msg.querySelector('.tool-summary')?.textContent || ''
+          lines.push(`${toolName}\n${summary}\n▶`)
+        }
+      }
+      return lines.join('\n')
+    }
+
     async function sendAgentPrompt(prompt) {
       // If agent is busy, queue this prompt for later
       if (isAgentThinking) {
@@ -814,46 +902,88 @@
     // Track pending tool calls for matching results
     const pendingTools = new Map() // id → card element
 
+    // Format tool name for display (handle MCP tools)
+    function formatToolName(tool) {
+      // MCP tools: mcp__acp__Read → Read (acp)
+      if (tool.startsWith('mcp__')) {
+        const parts = tool.split('__')
+        const server = parts[1] || ''
+        const name = parts[2] || tool
+        return { name, server }
+      }
+      return { name: tool, server: '' }
+    }
+
     function renderToolCard(tool, input, id) {
-      const card = document.createElement('div')
-      card.className = 'tool-card running'
-      card.dataset.toolId = id
+      try {
+        // DEBUG: Log what we received
+        console.log('[tool-card] render:', { tool, input: input?.slice?.(0, 100), id })
+        
+        const card = document.createElement('div')
+        card.className = 'tool-card running'
+        card.dataset.toolId = id || `unknown-${Date.now()}`
 
-      const header = document.createElement('div')
-      header.className = 'tool-card-header'
-      const summary = summarizeInput(tool, input)
-      header.innerHTML = `
-        <span class="tool-name">${escapeHtml(tool)}</span>
-        <span class="tool-summary">${escapeHtml(summary)}</span>
-        <span class="tool-chevron">▶</span>
-      `
-      header.addEventListener('click', () => {
-        card.classList.toggle('expanded')
-      })
+        const header = document.createElement('div')
+        header.className = 'tool-card-header'
+        
+        // Handle missing data gracefully
+        const toolName = tool || 'unknown'
+        const toolInput = input || ''
+        const toolId = id || 'no-id'
+        
+        const summary = summarizeInput(toolName, toolInput)
+        const { name, server } = formatToolName(toolName)
+        const serverTag = server ? ` <span style="opacity:0.5;font-size:10px">(${server})</span>` : ''
+        
+        // If no tool name, show debug info
+        const displayName = toolName === 'unknown' ? `DEBUG: ${JSON.stringify({tool, id})}` : name
+        
+        header.innerHTML = `
+          <span class="tool-name"><span class="tool-chevron">&gt;</span> ${escapeHtml(displayName)}${serverTag}</span>
+          <span class="tool-summary">${escapeHtml(summary || '(no input)')}</span>
+        `
+        header.addEventListener('click', () => {
+          card.classList.toggle('expanded')
+        })
 
-      const body = document.createElement('div')
-      body.className = 'tool-card-body'
-      const inputLabel = document.createElement('div')
-      inputLabel.className = 'tool-card-label'
-      inputLabel.textContent = 'input'
-      body.appendChild(inputLabel)
-      const inputPre = document.createElement('pre')
-      inputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
-      inputPre.textContent = input
-      body.appendChild(inputPre)
+        const body = document.createElement('div')
+        body.className = 'tool-card-body'
+        const inputLabel = document.createElement('div')
+        inputLabel.className = 'tool-card-label'
+        inputLabel.textContent = 'input'
+        body.appendChild(inputLabel)
+        const inputPre = document.createElement('pre')
+        inputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
+        inputPre.textContent = toolInput
+        body.appendChild(inputPre)
 
-      card.appendChild(header)
-      card.appendChild(body)
+        card.appendChild(header)
+        card.appendChild(body)
 
-      messagesEl.appendChild(card)
-      pendingTools.set(id, card)
-      scrollToBottom()
+        messagesEl.appendChild(card)
+        pendingTools.set(id, card)
+        scrollToBottom()
+      } catch (err) {
+        console.error('[tool-card] render error:', err, { tool, input, id })
+        addMessage('error', `Tool card error: ${err.message}`)
+      }
     }
 
     function addToolResult(id, output) {
+      console.log('[addToolResult]', { id, hasCard: pendingTools.has(id), output: output?.slice?.(0, 50) })
       const card = pendingTools.get(id)
       if (card) {
         card.classList.remove('running')
+        
+        // Show brief output preview directly visible (not hidden)
+        const outputPreview = document.createElement('div')
+        outputPreview.className = 'tool-output-preview'
+        const lines = (output || '').split('\n')
+        const previewText = lines.slice(0, 3).join('\n')
+        outputPreview.textContent = previewText + (lines.length > 3 ? `\n... (${lines.length} lines)` : '')
+        card.appendChild(outputPreview)
+        
+        // Add full output to expandable body
         const body = card.querySelector('.tool-card-body')
         const outputDiv = document.createElement('div')
         outputDiv.className = 'tool-card-output'
@@ -863,32 +993,61 @@
         outputDiv.appendChild(outputLabel)
         const outputPre = document.createElement('pre')
         outputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
-        // Truncate long outputs
-        const lines = output.split('\n')
         if (lines.length > 20) {
           outputPre.textContent = lines.slice(0, 20).join('\n') + `\n... (${lines.length} lines total)`
         } else {
-          outputPre.textContent = output
+          outputPre.textContent = output || ''
         }
         outputDiv.appendChild(outputPre)
         body.appendChild(outputDiv)
         pendingTools.delete(id)
+      } else {
+        console.warn('[addToolResult] No card found for id:', id, 'pending ids:', Array.from(pendingTools.keys()))
       }
     }
 
     function summarizeInput(tool, input) {
       // Show a short summary based on tool type
+      if (!input || input.trim() === '') return '(no input)'
+      
       try {
         const parsed = JSON.parse(input)
+        // File operations
         if (parsed.file_path) return parsed.file_path
-        if (parsed.command) return parsed.command.slice(0, 60)
-        if (parsed.pattern) return parsed.pattern
+        // Bash commands
+        if (parsed.command) return parsed.command.slice(0, 80)
+        // Search operations
+        if (parsed.pattern) return `"${parsed.pattern}"${parsed.path ? ` in ${parsed.path}` : ''}`
+        // Browser operations
         if (parsed.selector) return parsed.selector
+        if (parsed.url) return parsed.url.slice(0, 60)
+        // Web search
         if (parsed.query) return parsed.query
+        // Edit operations - show old_string snippet
+        if (parsed.old_string) return `"${parsed.old_string.slice(0, 40)}..." → ...`
+        // Write operations - show content preview
+        if (parsed.content && typeof parsed.content === 'string') {
+          return parsed.content.split('\n')[0].slice(0, 50) + '...'
+        }
+        // Task/Agent operations
+        if (parsed.prompt) return parsed.prompt.slice(0, 60)
+        if (parsed.description) return parsed.description.slice(0, 60)
+        // Todos
+        if (parsed.todos && Array.isArray(parsed.todos)) {
+          return `${parsed.todos.length} item(s)`
+        }
+        // Generic: show first key-value
+        const keys = Object.keys(parsed)
+        if (keys.length > 0) {
+          const firstKey = keys[0]
+          const val = parsed[firstKey]
+          if (typeof val === 'string') return `${firstKey}: ${val.slice(0, 40)}`
+          if (typeof val === 'number' || typeof val === 'boolean') return `${firstKey}: ${val}`
+        }
       } catch {}
       // Fallback: first line, truncated
-      const first = input.split('\n')[0]
-      return first.length > 50 ? first.slice(0, 50) + '...' : first
+      const first = (input || '').split('\n')[0]
+      return first.length > 50 ? first.slice(0, 50) + '...' : (first || '(empty)')
     }
 
     // ==========================================
@@ -921,7 +1080,8 @@
     }
 
     function escapeHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      if (str == null) return ''
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
 
     // ==========================================
@@ -954,90 +1114,7 @@
         })
       }
       
-      // Load a restored transcript
-      if (event.data?.type === 'load-transcript' && event.data.shellId) {
-        loadRestoredTranscript(event.data.shellId)
-      }
     })
-    
-    // Load and display a restored transcript from the server
-    async function loadRestoredTranscript(targetShellId) {
-      try {
-        const response = await fetch(`${BASE_URL}/terminal/agent-transcript?shellId=${targetShellId}`)
-        if (!response.ok) return
-        
-        const { transcript } = await response.json()
-        if (!transcript || transcript.length === 0) return
-        
-        // Clear existing messages
-        messagesEl.innerHTML = ''
-        
-        // Add a system message indicating this is a restored session
-        addMessage('system', '--- Restored session ---')
-        
-        // Render each transcript entry
-        for (const entry of transcript) {
-          switch (entry.type) {
-            case 'user':
-              addMessage('prompt', entry.content)
-              break
-            case 'assistant':
-              addMessage('output', entry.content)
-              break
-            case 'tool_call':
-              // Create a tool card
-              const toolCard = document.createElement('div')
-              toolCard.className = 'tool-card'
-              toolCard.innerHTML = `
-                <div class="tool-header">
-                  <span class="tool-name">${entry.toolName || 'tool'}</span>
-                  <span class="tool-status">completed</span>
-                </div>
-                <div class="tool-body">
-                  <div class="tool-input">
-                    <span class="tool-label">Input:</span>
-                    <pre>${escapeHtml(entry.toolInput || '').slice(0, 500)}</pre>
-                  </div>
-                </div>
-              `
-              toolCard.dataset.toolId = entry.toolId
-              messagesEl.appendChild(toolCard)
-              break
-            case 'tool_result':
-              // Find matching tool card and add output
-              const card = messagesEl.querySelector(`.tool-card[data-tool-id="${entry.toolId}"]`)
-              if (card) {
-                const body = card.querySelector('.tool-body')
-                const output = document.createElement('div')
-                output.className = 'tool-output'
-                output.innerHTML = `
-                  <span class="tool-label">Output:</span>
-                  <pre>${escapeHtml(entry.toolOutput || '').slice(0, 2000)}</pre>
-                `
-                body.appendChild(output)
-              }
-              break
-            case 'system':
-              addMessage('system', entry.content)
-              break
-          }
-        }
-        
-        // Scroll to bottom
-        messagesEl.scrollTop = messagesEl.scrollHeight
-        
-        addMessage('system', '--- End of restored session ---')
-      } catch (err) {
-        addMessage('error', `Failed to load transcript: ${err.message}`)
-      }
-    }
-    
-    // Helper to escape HTML
-    function escapeHtml(text) {
-      const div = document.createElement('div')
-      div.textContent = text
-      return div.innerHTML
-    }
 
     fetch(`${BASE_URL}/terminal/status`)
       .then(r => r.text())

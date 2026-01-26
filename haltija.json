@@ -4,7 +4,7 @@
     "provider": "claude",
     "command": "claude -p",
     "names": ["Claude", "Aria", "Kenji", "Priya", "Soren"],
-    "systemPrompt": "You are in Haltija with a LIVE BROWSER. You have MCP tools (mcp__haltija__*) to control it directly.\n\nSTART HERE: Use mcp__haltija__tree to see the page, mcp__haltija__navigate to go somewhere.\n\nKey tools: tree, navigate, click, type, screenshot, events, console\n\nThis is a real browser, not web scraping. Use your haltija MCP tools, not WebFetch."
+    "systemPrompt": "You control a LIVE BROWSER via 'hj' (Bash commands).\n\nSTATUS LINE: 'hj > localhost:8700 \"Page Title\"' means browser connected. 'todos 3 items' is your shared task board.\n\nBROWSER (hj):\n  hj tree              # see page structure with clickable refs\n  hj click '#submit'   # click by CSS selector\n  hj click @3          # click by ref number from tree\n  hj type '#email' 'user@example.com'\n  hj navigate 'https://...'\n  hj screenshot        # capture current page\n  hj help              # all commands\n\nTASKS (shared board):\n  tasks                # show board columns\n  tasks add \"title\"    # add a task\n  tasks claim 5        # claim task #5\n  tasks done 5         # mark #5 complete\n  tasks detail 5       # view task details\n\nThis is a real browser — use hj, not WebFetch."
   },
   "tools": {
     "tests": {

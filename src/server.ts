@@ -26,8 +26,8 @@ import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
-import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, type AgentConfig, type AgentEvent } from './agent-shell'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync } from 'fs'
+import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -210,7 +210,10 @@ function updateHjStatus() {
   let hjStatus: string
   if (focusedWindow) {
     try {
-      hjStatus = new URL(focusedWindow.url).hostname || 'localhost'
+      const urlObj = new URL(focusedWindow.url)
+      const host = urlObj.host || 'localhost'
+      const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
+      hjStatus = `${host}${title}`
     } catch {
       hjStatus = 'connected'
     }
@@ -1457,10 +1460,21 @@ For complete API reference with all options and response formats:
       // hj not in PATH
     }
     
+    // Check if symlink exists but isn't in PATH
+    const symlinkExists = existsSync(hjTarget)
+    if (symlinkExists) {
+      return Response.json({ 
+        installed: false, 
+        notInPath: true,
+        installCommand: `export PATH="$HOME/.local/bin:$PATH"`,
+        message: 'hj is installed but ~/.local/bin is not in your PATH. Add it to your shell profile (~/.zshrc or ~/.bashrc).'
+      }, { headers })
+    }
+    
     return Response.json({ 
       installed: false, 
       installCommand: installCmd,
-      message: 'The hj CLI is not installed. Install it to enable browser control for agents.'
+      message: 'Auto-install of hj failed. Run this command manually to enable browser control for agents.'
     }, { headers })
   }
 
@@ -1521,17 +1535,31 @@ For complete API reference with all options and response formats:
     const agentCwd = shell.cwd || process.env.HOME || process.cwd()
 
     // Build compact UI state line to prepend to prompt
+    // Format: hj > host "title" | todos status | messages count
     const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
-    const browserStatus = focusedWindow 
-      ? `hj ${new URL(focusedWindow.url).hostname}`
-      : `hj (${STATUS_ITEMS.hj.default})`
-    const testStatus = terminalState.statuses.get('tests')?.state || STATUS_ITEMS.tests.default
+    let browserStatus: string
+    if (focusedWindow) {
+      try {
+        const urlObj = new URL(focusedWindow.url)
+        const host = urlObj.host || 'localhost'
+        const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
+        browserStatus = `hj > ${host}${title}`
+      } catch {
+        browserStatus = 'hj > connected'
+      }
+    } else {
+      browserStatus = `hj > ${STATUS_ITEMS.hj.default}`
+    }
     const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.todos.default
+    const messageCount = getAgentMessageCount(body.shellId)
+    const messageStatus = messageCount > 0 ? `${messageCount} new` : 'none'
     
-    const uiState = `tests ${testStatus} | ${browserStatus} | todos ${taskStatus}
+    const uiState = `${browserStatus} | todos ${taskStatus} | messages ${messageStatus}
 
 `
-    const fullPrompt = uiState + body.prompt.trim()
+    // Inject any pending messages before the user's prompt
+    const pendingMessages = consumeAgentMessages(body.shellId)
+    const fullPrompt = uiState + pendingMessages + body.prompt.trim()
 
     // Spawn agent asynchronously — don't await
     runAgentPrompt(body.shellId, fullPrompt, agentConfig, agentCwd, onEvent, agentConfig.systemPrompt)
@@ -1599,6 +1627,21 @@ For complete API reference with all options and response formats:
     const killed = killAgent(body.shellId)
     return new Response(killed ? 'stopped' : 'no running agent', { headers: { ...headers, 'Content-Type': 'text/plain' } })
   }
+  
+  // List active agents — for browser widget to know where to send recordings
+  if (path === '/terminal/agents' && req.method === 'GET') {
+    const agents = listAgentSessions()
+    return Response.json({ agents }, { headers })
+  }
+  
+  // Mark agent as last active — called when agent tab is focused
+  if (path === '/terminal/agent-focus' && req.method === 'POST') {
+    const body = await req.json() as { shellId: string }
+    if (body.shellId) {
+      setLastActiveAgent(body.shellId)
+    }
+    return Response.json({ ok: true }, { headers })
+  }
 
   // Dispatch a command to a tool
   if (path === '/terminal/command' && req.method === 'POST') {
@@ -1632,8 +1675,16 @@ For complete API reference with all options and response formats:
 
     // Meta-command: whoami [name]
     if (command === 'whoami' || command.startsWith('whoami ')) {
-      const name = command.slice(6).trim()
+      let name = command.slice(6).trim()
       if (name && shell) {
+        // Special case: "whoami agent" triggers name rotation
+        if (name === 'agent') {
+          const agentNames = (terminalConfig as any)?.agent?.names || DEFAULT_AGENT_NAMES
+          // Count existing agents to pick next name
+          const existingAgents = Array.from(terminalState.shells.values())
+            .filter(s => agentNames.includes(s.name || ''))
+          name = agentNames[existingAgents.length % agentNames.length]
+        }
         setShellName(terminalState, shell.id, name)
         broadcastToTerminals({ type: 'shell-renamed', shellId: shell.id, name })
         return respond(`${shell.id} → ${name}`)
@@ -1641,7 +1692,7 @@ For complete API reference with all options and response formats:
       return respond(shell ? `${shell.id}${shell.name ? ` (${shell.name})` : ''}` : 'unknown')
     }
 
-    // Meta-command: @name message
+    // Meta-command: @name message (DM to shell)
     if (command.startsWith('@')) {
       const spaceIdx = command.indexOf(' ', 1)
       if (spaceIdx === -1) {
@@ -1664,6 +1715,66 @@ For complete API reference with all options and response formats:
         }
       } catch { /* ignore dead socket */ }
       return respond(`→ ${targetName}: ${msgText}`)
+    }
+    
+    // Meta-command: send:name message (inject into agent's stream)
+    if (command.startsWith('send:')) {
+      const spaceIdx = command.indexOf(' ')
+      if (spaceIdx === -1) {
+        return respond('error: send:agent-name message body')
+      }
+      const targetName = command.slice(5, spaceIdx)
+      const msgText = command.slice(spaceIdx + 1).trim()
+      
+      // Find the agent's shell by name
+      const targetShell = getShellByName(terminalState, targetName)
+      if (!targetShell) {
+        return respond(`error: agent "${targetName}" not found`)
+      }
+      
+      // Get browser context for the message
+      const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
+      let context: string | undefined
+      if (focusedWindow) {
+        try {
+          const urlObj = new URL(focusedWindow.url)
+          const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
+          context = `browser ${urlObj.host}${title}`
+        } catch {}
+      }
+      
+      const result = sendAgentMessage(targetShell.id, shellName, msgText, context)
+      
+      if (result === 'not_found') {
+        return respond(`error: no agent session for "${targetName}"`)
+      }
+      
+      // Notify the agent's terminal UI about the pending message
+      try {
+        if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+          const msgCount = getAgentMessageCount(targetShell.id)
+          (targetShell.ws as any).send(JSON.stringify({
+            type: 'agent-message-queued',
+            from: shellName,
+            text: msgText,
+            count: msgCount,
+          }))
+          
+          // If agent was interrupted or idle, tell UI to auto-resume with message context
+          if (result === 'queued' || result === 'sent') {
+            (targetShell.ws as any).send(JSON.stringify({
+              type: 'agent-auto-resume',
+              reason: 'message',
+              from: shellName,
+            }))
+          }
+        }
+      } catch { /* ignore dead socket */ }
+      
+      if (result === 'queued') {
+        return respond(`⚡ ${targetName}: interrupted, message queued`)
+      }
+      return respond(`→ ${targetName}: message queued (${getAgentMessageCount(targetShell.id)} pending)`)
     }
 
     // Builtin: todos (alias: tasks) - todo list / memory aid
@@ -2680,6 +2791,87 @@ For complete API reference with all options and response formats:
     return Response.json({ deleted }, { headers })
   }
   
+  // Send a recording to an agent
+  // POST /recording/:id/send { description: "What this recording shows", agentId?: "shell-id", agentName?: "Claude" }
+  if (path.match(/^\/recording\/[^/]+\/send$/) && req.method === 'POST') {
+    const recordingId = path.slice('/recording/'.length, -'/send'.length)
+    const body = await req.json() as { description?: string; agentId?: string; agentName?: string }
+    
+    // Require a description
+    if (!body.description?.trim()) {
+      return Response.json({ error: 'Description is required - explain what you want the agent to do with this recording' }, { status: 400, headers })
+    }
+    
+    const recording = recordings.get(recordingId)
+    if (!recording) {
+      return Response.json({ error: 'Recording not found' }, { status: 404, headers })
+    }
+    
+    // Find target agent - use provided id, name, last active, or first available
+    let targetSession = body.agentId 
+      ? getAgentSession(body.agentId)
+      : body.agentName 
+        ? getAgentSession(getShellByName(terminalState, body.agentName)?.id || '')
+        : getLastActiveAgent()
+    
+    if (!targetSession) {
+      return Response.json({ error: 'No agent available - open an agent tab first' }, { status: 404, headers })
+    }
+    
+    const targetShell = terminalState.shells.get(targetSession.id)
+    if (!targetShell) {
+      return Response.json({ error: 'Agent shell not found' }, { status: 404, headers })
+    }
+    
+    // Format the recording as a human-readable message
+    const eventSummary = recording.events.map((e: any, i: number) => {
+      if (e.type === 'click') return `${i + 1}. clicked ${e.selector || e.target || 'element'}`
+      if (e.type === 'type' || e.type === 'input') return `${i + 1}. typed "${(e.text || e.value || '').slice(0, 30)}" in ${e.selector || e.target || 'input'}`
+      if (e.type === 'navigation' || e.type === 'navigate') return `${i + 1}. navigated to ${e.url || e.to || 'page'}`
+      if (e.type === 'scroll') return `${i + 1}. scrolled`
+      return `${i + 1}. ${e.type}`
+    }).join('\n')
+    
+    const messageText = `${body.description.trim()}\n\nRecorded actions on "${recording.title}" (${recording.url}):\n\n${eventSummary}`
+    
+    const result = sendAgentMessage(
+      targetShell.id,
+      'browser',
+      messageText,
+      `recording from ${new URL(recording.url).host}`
+    )
+    
+    if (result === 'not_found') {
+      return Response.json({ error: 'Agent session not found' }, { status: 404, headers })
+    }
+    
+    // Notify the agent's terminal UI and trigger auto-resume
+    try {
+      if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-message-queued',
+          from: 'browser',
+          text: `Recording "${recording.title}" (${recording.events.length} events)`,
+          count: getAgentMessageCount(targetShell.id),
+        }))
+        
+        // Trigger auto-resume so agent processes the recording
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-auto-resume',
+          reason: 'recording',
+          from: 'browser',
+        }))
+      }
+    } catch { /* ignore */ }
+    
+    return Response.json({ 
+      sent: true, 
+      agentName: targetShell.name || targetShell.id,
+      eventCount: recording.events.length,
+      interrupted: result === 'queued'
+    }, { headers })
+  }
+  
   // /select/start, /select/cancel, /select/clear - now handled by api-router
   
   // GET /select/status - Check if selection is active or has result
@@ -2692,6 +2884,51 @@ For complete API reference with all options and response formats:
   if (path === '/select/result' && req.method === 'GET') {
     const response = await requestFromBrowser('selection', 'result', {})
     return Response.json(response, { headers })
+  }
+  
+  // POST /selection/send - Send selection to an agent
+  if (path === '/selection/send' && req.method === 'POST') {
+    const body = await req.json() as { agentId: string; message: string; context?: string }
+    
+    if (!body.agentId || !body.message) {
+      return Response.json({ error: 'agentId and message required' }, { status: 400, headers })
+    }
+    
+    // Find the agent's shell
+    const targetShell = terminalState.shells.get(body.agentId)
+    if (!targetShell) {
+      return Response.json({ error: 'Agent not found' }, { status: 404, headers })
+    }
+    
+    const result = sendAgentMessage(body.agentId, 'browser', body.message, body.context)
+    
+    if (result === 'not_found') {
+      return Response.json({ error: 'Agent session not found' }, { status: 404, headers })
+    }
+    
+    // Notify and auto-resume
+    try {
+      if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-message-queued',
+          from: 'browser',
+          text: 'Selection received',
+          count: getAgentMessageCount(body.agentId),
+        }))
+        
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-auto-resume',
+          reason: 'selection',
+          from: 'browser',
+        }))
+      }
+    } catch { /* ignore */ }
+    
+    return Response.json({ 
+      sent: true, 
+      agentName: targetShell.name || targetShell.id,
+      interrupted: result === 'queued'
+    }, { headers })
   }
   
   // ==========================================
@@ -2857,6 +3094,7 @@ For complete API reference with all options and response formats:
 
 // Shared server config
 const serverConfig = {
+  idleTimeout: 30, // 30 seconds for slow operations like screenshots
   fetch(req: Request, server: any) {
     const url = new URL(req.url)
     
@@ -3061,6 +3299,58 @@ if (USE_HTTPS) {
 const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
 const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
+
+// Auto-install hj CLI symlink to ~/.local/bin (no sudo needed)
+;(async () => {
+  const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+  const localBin = join(homedir(), '.local', 'bin')
+  const hjTarget = join(localBin, 'hj')
+  
+  try {
+    // Check if source exists
+    if (!existsSync(hjSource)) {
+      console.log(`  [hj] Source not found: ${hjSource}`)
+      return
+    }
+    
+    // Create ~/.local/bin if needed
+    if (!existsSync(localBin)) {
+      mkdirSync(localBin, { recursive: true })
+    }
+    
+    // Check if symlink already points to our hj.mjs
+    let needsInstall = true
+    if (existsSync(hjTarget)) {
+      try {
+        const resolved = realpathSync(hjTarget)
+        const expectedResolved = realpathSync(hjSource)
+        if (resolved === expectedResolved) {
+          needsInstall = false
+        }
+      } catch {
+        // Broken symlink or can't resolve - reinstall
+      }
+    }
+    
+    if (needsInstall) {
+      // Create or update symlink
+      if (existsSync(hjTarget)) {
+        unlinkSync(hjTarget)
+      }
+      symlinkSync(hjSource, hjTarget)
+      console.log(`  [hj] Installed: ${hjTarget} -> ${hjSource}`)
+      
+      // Check if ~/.local/bin is in PATH
+      const pathDirs = (process.env.PATH || '').split(':')
+      if (!pathDirs.includes(localBin)) {
+        console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`  [hj] Auto-install skipped: ${msg}`)
+  }
+})()
 
 console.log(`
 ================================================================================

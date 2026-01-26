@@ -27,6 +27,13 @@ export interface AgentConfig {
   allowedTools?: string   // comma-separated tool whitelist (default: safe read-only tools)
 }
 
+export interface AgentMessage {
+  from: string            // sender name (e.g., "user", "browser", shell name)
+  text: string
+  timestamp: number
+  context?: string        // optional context (e.g., "browser tab X localhost:8700 \"Page Title\"")
+}
+
 export interface AgentSession {
   id: string              // matches shellId
   name: string
@@ -35,8 +42,10 @@ export interface AgentSession {
   transcript: TranscriptEntry[]
   sessionId?: string      // claude session ID for --continue
   promptQueue: string[]   // queued prompts when agent is busy
+  messageQueue: AgentMessage[]  // messages to inject into next prompt
   cwd?: string            // working directory (for transcript persistence)
   createdAt: number       // session creation timestamp
+  restoredContext?: string // condensed context from restored session (used once)
 }
 
 export interface TranscriptEntry {
@@ -72,6 +81,7 @@ export function createAgentSession(shellId: string, name: string, cwd?: string):
     status: 'idle',
     transcript: [],
     promptQueue: [],
+    messageQueue: [],
     cwd,
     createdAt: Date.now(),
   }
@@ -81,6 +91,36 @@ export function createAgentSession(shellId: string, name: string, cwd?: string):
 
 export function getAgentSession(shellId: string): AgentSession | undefined {
   return sessions.get(shellId)
+}
+
+/** Track the most recently active agent */
+let lastActiveAgentId: string | null = null
+
+export function setLastActiveAgent(shellId: string): void {
+  if (sessions.has(shellId)) {
+    lastActiveAgentId = shellId
+  }
+}
+
+export function getLastActiveAgent(): AgentSession | undefined {
+  if (lastActiveAgentId && sessions.has(lastActiveAgentId)) {
+    return sessions.get(lastActiveAgentId)
+  }
+  // Fallback to first available agent
+  for (const session of sessions.values()) {
+    return session
+  }
+  return undefined
+}
+
+/** List all active agent sessions */
+export function listAgentSessions(): Array<{ id: string; name: string; status: string; isLastActive: boolean }> {
+  return Array.from(sessions.values()).map(s => ({
+    id: s.id,
+    name: s.name,
+    status: s.status,
+    isLastActive: s.id === lastActiveAgentId,
+  }))
 }
 
 export function removeAgentSession(shellId: string): void {
@@ -237,19 +277,55 @@ export async function loadTranscript(cwd: string, filename: string): Promise<Tra
 }
 
 /**
+ * Condense a transcript into a brief context summary for restoration.
+ * Returns a short summary suitable for prepending to the first prompt.
+ */
+function condenseTranscript(transcript: TranscriptEntry[]): string {
+  if (transcript.length === 0) return ''
+  
+  const lines: string[] = []
+  
+  // Get first user message (the original task)
+  const firstUser = transcript.find(e => e.type === 'user')
+  if (firstUser) {
+    lines.push(`Original task: ${firstUser.content.slice(0, 200)}${firstUser.content.length > 200 ? '...' : ''}`)
+  }
+  
+  // Get last few exchanges (condensed)
+  const recentEntries = transcript.slice(-10)
+  const summaryParts: string[] = []
+  for (const entry of recentEntries) {
+    if (entry.type === 'user') {
+      summaryParts.push(`User: ${entry.content.slice(0, 100)}...`)
+    } else if (entry.type === 'assistant' && entry.content.trim()) {
+      summaryParts.push(`Assistant: ${entry.content.slice(0, 100)}...`)
+    } else if (entry.type === 'tool_call') {
+      summaryParts.push(`Tool: ${entry.toolName}`)
+    }
+  }
+  if (summaryParts.length > 0) {
+    lines.push(`\nRecent activity:\n${summaryParts.join('\n')}`)
+  }
+  
+  return lines.join('\n')
+}
+
+/**
  * Restore a session from a saved transcript.
- * Creates a new session with the loaded transcript history.
+ * Creates a fresh session with the same name.
+ * (Context restoration disabled - was causing issues with corrupted transcripts)
  */
 export function restoreSession(shellId: string, transcriptFile: TranscriptFile): AgentSession {
+  // Create a fresh session (no context restoration for now)
   const session: AgentSession = {
     id: shellId,
     name: transcriptFile.name,
     process: null,
     status: 'idle',
-    transcript: transcriptFile.transcript,
+    transcript: [], // Fresh transcript
     promptQueue: [],
     cwd: transcriptFile.cwd,
-    createdAt: transcriptFile.createdAt,
+    createdAt: Date.now(),
   }
   sessions.set(shellId, session)
   return session
@@ -301,11 +377,21 @@ export function parseStreamLine(shellId: string, line: string): AgentEvent[] {
   try {
     parsed = JSON.parse(trimmed)
   } catch {
-    // Non-JSON output (unlikely in stream-json mode, but handle gracefully)
+    // Non-JSON output - only show if it looks like a meaningful message
+    // Skip HTML, binary data, and other noise
+    if (trimmed.startsWith('<') || trimmed.startsWith('AT') || trimmed.length > 1000) {
+      // Likely HTML, base64, or other non-text content - skip or summarize
+      console.warn(`[agent-shell] Skipping non-JSON output: ${trimmed.slice(0, 100)}...`)
+      return []
+    }
+    // Only return actual text messages (likely CLI errors or status)
     return [{ type: 'agent-text', shellId, text: trimmed }]
   }
 
   const events: AgentEvent[] = []
+
+  // DEBUG: Log all parsed messages
+  console.log(`[agent-shell] parsed type=${parsed.type}`, JSON.stringify(parsed).slice(0, 200))
 
   switch (parsed.type) {
     case 'system':
@@ -347,8 +433,8 @@ export function parseStreamLine(shellId: string, line: string): AgentEvent[] {
       break
     }
 
-    case 'tool': {
-      // Tool result messages from claude stream-json
+    case 'user': {
+      // Tool result messages come as type: "user" with tool_result content
       const message = parsed.message
       if (message?.content && Array.isArray(message.content)) {
         for (const block of message.content) {
@@ -417,10 +503,17 @@ export function runAgentPrompt(
     session.cwd = cwd
   }
 
+  // Prepend restored context to first prompt (if any)
+  let finalPrompt = prompt
+  if (session.restoredContext) {
+    finalPrompt = `[RESTORED SESSION CONTEXT]\n${session.restoredContext}\n[END RESTORED CONTEXT]\n\n${prompt}`
+    session.restoredContext = undefined // Use only once
+  }
+
   // Add user message to transcript
   session.transcript.push({
     type: 'user',
-    content: prompt,
+    content: finalPrompt,
     timestamp: Date.now(),
   })
 
@@ -430,7 +523,7 @@ export function runAgentPrompt(
   session.status = 'thinking'
   onEvent({ type: 'agent-status', shellId, status: 'thinking' })
 
-  const args = buildAgentCommand(config, prompt, cwd, systemPrompt)
+  const args = buildAgentCommand(config, finalPrompt, cwd, systemPrompt)
   const cmd = args[0]
   const cmdArgs = args.slice(1)
 
@@ -548,4 +641,62 @@ export function killAgent(shellId: string): boolean {
     return true
   }
   return false
+}
+
+/**
+ * Send a message to an agent. If idle, triggers prompt. If busy, queues and interrupts.
+ * Returns: 'sent' (idle, sent immediately), 'queued' (busy, will interrupt), 'not_found'
+ */
+export function sendAgentMessage(
+  shellId: string,
+  from: string,
+  text: string,
+  context?: string
+): 'sent' | 'queued' | 'not_found' {
+  const session = sessions.get(shellId)
+  if (!session) return 'not_found'
+  
+  const message: AgentMessage = {
+    from,
+    text,
+    timestamp: Date.now(),
+    context,
+  }
+  
+  session.messageQueue.push(message)
+  
+  if (session.status === 'thinking' && session.process) {
+    // Interrupt the agent - message will be injected when it restarts
+    session.process.kill('SIGTERM')
+    session.status = 'idle'
+    session.process = null
+    return 'queued'
+  }
+  
+  return 'sent'
+}
+
+/**
+ * Get pending message count for an agent.
+ */
+export function getAgentMessageCount(shellId: string): number {
+  const session = sessions.get(shellId)
+  return session?.messageQueue.length ?? 0
+}
+
+/**
+ * Format and consume pending messages for injection into prompt.
+ * Returns formatted string to prepend, or empty string if no messages.
+ */
+export function consumeAgentMessages(shellId: string): string {
+  const session = sessions.get(shellId)
+  if (!session || session.messageQueue.length === 0) return ''
+  
+  const messages = session.messageQueue.splice(0) // drain queue
+  const formatted = messages.map(m => {
+    const ctx = m.context ? ` (${m.context})` : ''
+    return `[hj message from ${m.from}${ctx}]: ${m.text}`
+  }).join('\n')
+  
+  return formatted + '\n\n'
 }
