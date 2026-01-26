@@ -36,14 +36,17 @@ await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts --outdir=dist -
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 
 // 5. Generate MCP endpoints JSON from api-schema (single source of truth)
+// Filter out internal endpoints - they're not exposed to MCP clients
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
-const mcpEndpoints = ALL_ENDPOINTS.map(ep => ({
-  path: ep.path,
-  method: ep.method,
-  summary: ep.summary,
-  description: ep.description,
-  inputSchema: getInputSchema(ep),
-}))
+const mcpEndpoints = ALL_ENDPOINTS
+  .filter(ep => (ep as any).visibility !== 'internal')
+  .map(ep => ({
+    path: ep.path,
+    method: ep.method,
+    summary: ep.summary,
+    description: ep.description,
+    inputSchema: getInputSchema(ep),
+  }))
 writeFileSync('apps/mcp/src/endpoints.json', JSON.stringify(mcpEndpoints, null, 2))
 
 // 6. Generate API.md from api-schema (single source of truth)
@@ -74,8 +77,12 @@ function generateApiMd(): string {
   ]
 
   // Group endpoints by category - ordered by "what you need first"
+  // Filter out internal endpoints (visibility: 'internal')
   const byCategory = new Map<string, typeof ALL_ENDPOINTS>()
   for (const ep of ALL_ENDPOINTS) {
+    // Skip internal endpoints - they're not part of the public API
+    if ((ep as any).visibility === 'internal') continue
+    
     const cat = (ep as any).category || 'other'
     if (!byCategory.has(cat)) byCategory.set(cat, [])
     byCategory.get(cat)!.push(ep)

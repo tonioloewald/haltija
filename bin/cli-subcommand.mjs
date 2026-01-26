@@ -54,6 +54,9 @@ export const COMPOUND_PATHS = {
   'test-run': '/test/run',
   'test-suite': '/test/suite',
   'test-validate': '/test/validate',
+  'send-message': '/send/message',
+  'send-selection': '/send/selection',
+  'send-recording': '/send/recording',
 }
 
 // GET compound endpoints
@@ -93,6 +96,23 @@ export const ARG_MAPS = {
   'events-watch': (args) => ({ preset: args[0] || 'interactive' }),
   'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
   form: (args) => parseTargetArgs(args),
+  // send <agent> <message> or send selection/recording
+  // --no-submit flag prevents auto-submit (paste only)
+  'send-message': (args) => {
+    const noSubmit = args.includes('--no-submit')
+    const filtered = args.filter(a => a !== '--no-submit')
+    return { agent: filtered[0], message: filtered.slice(1).join(' '), submit: !noSubmit }
+  },
+  'send-selection': (args) => {
+    const noSubmit = args.includes('--no-submit')
+    const filtered = args.filter(a => a !== '--no-submit')
+    return { agent: filtered[0], submit: !noSubmit }
+  },
+  'send-recording': (args) => {
+    const noSubmit = args.includes('--no-submit')
+    const filtered = args.filter(a => a !== '--no-submit')
+    return { agent: filtered[0], description: filtered.slice(1).join(' ') || undefined, submit: !noSubmit }
+  },
 }
 
 /** Parse a target argument — @ref number or selector */
@@ -248,6 +268,24 @@ export async function runSubcommand(subcommand, subArgs, port = '8700') {
     }
   }
 
+  // Special handling for 'send' command - route to appropriate endpoint
+  // hj send selection [agent]      → /send/selection
+  // hj send recording [agent]      → /send/recording  
+  // hj send <agent> <message...>   → /send/message
+  if (subcommand === 'send') {
+    const firstArg = filteredArgs[0]?.toLocaleLowerCase()
+    if (firstArg === 'selection') {
+      subcommand = 'send-selection'
+      filteredArgs.shift() // Remove 'selection'
+    } else if (firstArg === 'recording') {
+      subcommand = 'send-recording'
+      filteredArgs.shift() // Remove 'recording'
+    } else {
+      subcommand = 'send-message'
+      // Args stay as: <agent> <message...>
+    }
+  }
+
   // Resolve compound path
   const path = COMPOUND_PATHS[subcommand] || `/${subcommand}`
   const isGet = GET_ENDPOINTS.has(subcommand) || GET_COMPOUND.has(subcommand)
@@ -347,6 +385,7 @@ export const KNOWN_COMMANDS = new Set([
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
   'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate',
+  'send', 'send-message', 'send-selection', 'send-recording',
   'status', 'version', 'docs', 'api', 'stats'
 ])
 
@@ -458,6 +497,12 @@ Subcommands (replace curl with simple commands):
     recording-generate             Generate test from recording
     recordings                     List recordings
 
+  ${bold('Send to Agent')}
+    send <agent> <message>         Send message to agent (auto-submits)
+    send selection [agent]         Send browser selection to agent
+    send recording [agent]         Send last recording to agent
+    --no-submit                    Paste only, don't auto-submit
+
   ${bold('Testing')}
     test-run <json>                Run a test
     test-validate <json>           Validate test format
@@ -484,6 +529,8 @@ Subcommands (replace curl with simple commands):
     hj eval document.title         # Get page title
     hj navigate https://example.com
     hj events                      # See what happened
+    hj send claude "check this"    # Message an agent
+    hj send selection              # Send selection to agent
 `
 }
 

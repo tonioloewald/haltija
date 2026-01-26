@@ -94,10 +94,14 @@ describe('agent-shell', () => {
       expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read,Write')
     })
 
-    test('prompt with spaces is kept as single arg', () => {
+    test('uses stream-json input format for bidirectional communication', () => {
       const config: AgentConfig = {}
-      const args = buildAgentCommand(config, 'fix the bug in auth.ts')
-      expect(args[2]).toBe('fix the bug in auth.ts')
+      const args = buildAgentCommand(config, '/some/cwd')
+      // stream-json enables real-time bidirectional communication (prompts via stdin)
+      expect(args).toContain('--input-format')
+      expect(args[args.indexOf('--input-format') + 1]).toBe('stream-json')
+      expect(args).toContain('--output-format')
+      expect(args[args.indexOf('--output-format') + 1]).toBe('stream-json')
     })
   })
 

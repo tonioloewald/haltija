@@ -32,6 +32,26 @@ export interface InvalidExample {
   error: string // Expected error substring
 }
 
+/** CLI subcommand configuration - drives hj command generation */
+export interface CliConfig {
+  /** Subcommand name (e.g., 'send' for 'hj send') */
+  name: string
+  /** Aliases for the command (e.g., ['msg'] for 'hj msg') */
+  aliases?: string[]
+  /** Positional argument names in order */
+  args?: string[]
+  /** Named flags (e.g., ['--no-submit', '--json']) */
+  flags?: string[]
+  /** If true, uses GET instead of POST */
+  isGet?: boolean
+}
+
+/** Visibility controls where endpoint appears */
+export type EndpointVisibility = 
+  | 'public'      // Shown in API.md and MCP tools
+  | 'internal'    // Server-to-app communication, hidden from docs
+  | 'deprecated'  // Shown with deprecation warning
+
 export interface EndpointDef<TInput = any> {
   path: string
   method: 'GET' | 'POST'
@@ -41,6 +61,8 @@ export interface EndpointDef<TInput = any> {
   examples?: EndpointExample<TInput>[] // Valid input examples
   invalidExamples?: InvalidExample[] // Invalid inputs for testing
   category?: string // Grouping for docs (interaction, dom, events, etc.)
+  visibility?: EndpointVisibility // Default: 'public'
+  cli?: CliConfig // CLI subcommand config (omit if not CLI-accessible)
 }
 
 // Helper to create endpoint with proper typing
@@ -1873,6 +1895,122 @@ Use this to verify efficiency claims (99%+ event reduction, etc.) and debug perf
 })
 
 // ============================================
+// Agent Communication Endpoints (Internal)
+// ============================================
+// These endpoints are for CLI-to-Desktop-app communication
+// and are not part of the public browser automation API.
+
+export const sendMessage = endpoint({
+  path: '/send/message',
+  method: 'POST',
+  summary: 'Send message to agent',
+  description: `Send a plain text message to an agent running in the Desktop app.
+
+By default, auto-submits the message (hits enter). Use submit: false to paste only.
+
+The agent is identified by name (case-insensitive) or ID. If no agent specified,
+uses the last active agent.`,
+  category: 'agent',
+  visibility: 'internal',
+  cli: {
+    name: 'send',
+    args: ['agent', 'message'],
+    flags: ['--no-submit'],
+  },
+  input: s.object({
+    agent: s.string.describe('Agent name (case-insensitive)').optional,
+    agentId: s.string.describe('Agent shell ID').optional,
+    message: s.string.describe('Message text to send'),
+    submit: s.boolean.describe('Auto-submit message (default: true)').optional,
+  }),
+  examples: [
+    {
+      name: 'basic',
+      input: { agent: 'claude', message: 'Hello, how are you?' },
+      description: 'Send and auto-submit a message',
+    },
+    {
+      name: 'paste-only',
+      input: { agent: 'claude', message: 'Review this code', submit: false },
+      description: 'Paste message without submitting',
+    },
+  ],
+})
+
+export const sendSelection = endpoint({
+  path: '/send/selection',
+  method: 'POST',
+  summary: 'Send browser selection to agent',
+  description: `Send the current browser selection (from select tool) to an agent.
+
+The selection includes element refs, selectors, and text content.
+By default, auto-submits. Use submit: false to paste only.`,
+  category: 'agent',
+  visibility: 'internal',
+  cli: {
+    name: 'send-selection',
+    aliases: ['send selection'],
+    args: ['agent'],
+    flags: ['--no-submit'],
+  },
+  input: s.object({
+    agent: s.string.describe('Agent name (case-insensitive)').optional,
+    agentId: s.string.describe('Agent shell ID').optional,
+    context: s.string.describe('Additional context about the selection').optional,
+    submit: s.boolean.describe('Auto-submit message (default: true)').optional,
+  }),
+  examples: [
+    {
+      name: 'basic',
+      input: {},
+      description: 'Send selection to last active agent',
+    },
+    {
+      name: 'named',
+      input: { agent: 'claude', context: 'These buttons need styling' },
+      description: 'Send selection with context to named agent',
+    },
+  ],
+})
+
+export const sendRecording = endpoint({
+  path: '/send/recording',
+  method: 'POST',
+  summary: 'Send recording to agent',
+  description: `Send a recording (sequence of user actions) to an agent.
+
+If no recording ID specified, sends the most recent recording.
+By default, auto-submits. Use submit: false to paste only.`,
+  category: 'agent',
+  visibility: 'internal',
+  cli: {
+    name: 'send-recording',
+    aliases: ['send recording'],
+    args: ['agent'],
+    flags: ['--no-submit'],
+  },
+  input: s.object({
+    agent: s.string.describe('Agent name (case-insensitive)').optional,
+    agentId: s.string.describe('Agent shell ID').optional,
+    recordingId: s.string.describe('Recording ID (default: most recent)').optional,
+    description: s.string.describe('Description of what the recording shows').optional,
+    submit: s.boolean.describe('Auto-submit message (default: true)').optional,
+  }),
+  examples: [
+    {
+      name: 'basic',
+      input: {},
+      description: 'Send most recent recording to last active agent',
+    },
+    {
+      name: 'described',
+      input: { agent: 'claude', description: 'This shows the login bug' },
+      description: 'Send recording with description',
+    },
+  ],
+})
+
+// ============================================
 // All Endpoints Registry
 // ============================================
 
@@ -1957,6 +2095,11 @@ export const endpoints = {
   version, // deprecated
   docs, // deprecated
   api,
+  
+  // Agent Communication (internal)
+  sendMessage,
+  sendSelection,
+  sendRecording,
 } as const
 
 // Array form for iteration
@@ -1970,8 +2113,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-22T09:02:08.536Z',
-  checksum: '0b0c99f6',
+  updated: '2026-01-26T15:45:34.044Z',
+  checksum: 'af2da1cc',
 }
 
 /**

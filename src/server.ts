@@ -2905,6 +2905,214 @@ For complete API reference with all options and response formats:
     }
   }
   
+  // POST /send/message - Send a plain text message to an agent
+  // hj send <agentName> <message> → POST /send/message { agent: "name", message: "text", submit: true }
+  if (path === '/send/message' && req.method === 'POST') {
+    const body = await req.json() as { agent?: string; agentId?: string; message: string; submit?: boolean }
+    
+    if (!body.message) {
+      return Response.json({ error: 'message required' }, { status: 400, headers })
+    }
+    
+    // Default to submit: true for CLI usage
+    const shouldSubmit = body.submit !== false
+    
+    // Find target agent - by name, id, or last active
+    let targetShell: ShellIdentity | null = null
+    if (body.agent) {
+      targetShell = getShellByName(terminalState, body.agent)
+    } else if (body.agentId) {
+      targetShell = terminalState.shells.get(body.agentId) || null
+    } else {
+      // Use last active agent
+      const lastActive = getLastActiveAgent()
+      if (lastActive) {
+        targetShell = terminalState.shells.get(lastActive.id) || null
+      }
+    }
+    
+    if (!targetShell) {
+      const agents = listAgentSessions()
+      if (agents.length === 0) {
+        return Response.json({ error: 'No agents available - open an agent tab first' }, { status: 404, headers })
+      }
+      return Response.json({ 
+        error: body.agent ? `Agent "${body.agent}" not found` : 'No target agent specified',
+        available: agents.map(a => a.name || a.id),
+      }, { status: 404, headers })
+    }
+    
+    // Send directly to the agent's terminal UI
+    try {
+      if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-message-queued',
+          from: 'cli',
+          text: body.message,
+          submit: shouldSubmit,
+          count: 0,
+        }))
+        
+        return Response.json({ 
+          sent: true, 
+          agent: targetShell.name || targetShell.id,
+          submitted: shouldSubmit,
+        }, { headers })
+      } else {
+        return Response.json({ error: 'Agent not connected' }, { status: 503, headers })
+      }
+    } catch {
+      return Response.json({ error: 'Failed to send to agent' }, { status: 500, headers })
+    }
+  }
+  
+  // POST /send/selection - Send current browser selection to an agent (shorthand)
+  if (path === '/send/selection' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({})) as { agent?: string; agentId?: string; context?: string; submit?: boolean }
+    
+    // Default to submit: true for CLI usage
+    const shouldSubmit = body.submit !== false
+    
+    // Get the current selection from the browser
+    const selectionResp = await requestFromBrowser('selection', 'result', {})
+    if (!selectionResp?.selection) {
+      return Response.json({ error: 'No selection available - use the selection tool in browser first' }, { status: 400, headers })
+    }
+    
+    // Find target agent
+    let targetShell: ShellIdentity | null = null
+    if (body.agent) {
+      targetShell = getShellByName(terminalState, body.agent)
+    } else if (body.agentId) {
+      targetShell = terminalState.shells.get(body.agentId) || null
+    } else {
+      const lastActive = getLastActiveAgent()
+      if (lastActive) {
+        targetShell = terminalState.shells.get(lastActive.id) || null
+      }
+    }
+    
+    if (!targetShell) {
+      return Response.json({ error: 'No agent available' }, { status: 404, headers })
+    }
+    
+    // Format selection message
+    const { formatSelectionMessage } = await import('./agent-message-format')
+    const messageText = formatSelectionMessage(
+      selectionResp.selection,
+      selectionResp.url || '',
+      body.context
+    )
+    
+    // Send to agent
+    try {
+      if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-message-queued',
+          from: 'browser',
+          text: messageText,
+          submit: shouldSubmit,
+          count: 0,
+        }))
+        
+        return Response.json({ 
+          sent: true, 
+          agent: targetShell.name || targetShell.id,
+          elementCount: selectionResp.selection.elements?.length || 0,
+          submitted: shouldSubmit,
+        }, { headers })
+      } else {
+        return Response.json({ error: 'Agent not connected' }, { status: 503, headers })
+      }
+    } catch {
+      return Response.json({ error: 'Failed to send selection' }, { status: 500, headers })
+    }
+  }
+  
+  // POST /send/recording - Send current or specified recording to an agent
+  if (path === '/send/recording' && req.method === 'POST') {
+    const body = await req.json().catch(() => ({})) as { agent?: string; agentId?: string; recordingId?: string; description?: string; submit?: boolean }
+    
+    // Default to submit: true for CLI usage
+    const shouldSubmit = body.submit !== false
+    
+    // Find the recording - use specified ID or most recent
+    let recording: any = null
+    let recordingId = body.recordingId
+    
+    if (recordingId) {
+      recording = recordings.get(recordingId)
+    } else {
+      // Get most recent recording
+      let mostRecent: any = null
+      let mostRecentTime = 0
+      for (const [id, rec] of recordings) {
+        const startTime = (rec.events as any[])?.[0]?.timestamp || 0
+        if (startTime > mostRecentTime) {
+          mostRecent = rec
+          mostRecentTime = startTime
+          recordingId = id
+        }
+      }
+      recording = mostRecent
+    }
+    
+    if (!recording) {
+      return Response.json({ error: 'No recording available - start recording in browser first' }, { status: 400, headers })
+    }
+    
+    // Find target agent
+    let targetShell: ShellIdentity | null = null
+    if (body.agent) {
+      targetShell = getShellByName(terminalState, body.agent)
+    } else if (body.agentId) {
+      targetShell = terminalState.shells.get(body.agentId) || null
+    } else {
+      const lastActive = getLastActiveAgent()
+      if (lastActive) {
+        targetShell = terminalState.shells.get(lastActive.id) || null
+      }
+    }
+    
+    if (!targetShell) {
+      return Response.json({ error: 'No agent available' }, { status: 404, headers })
+    }
+    
+    // Format recording message
+    const { formatRecordingMessage } = await import('./agent-message-format')
+    const messageText = formatRecordingMessage(
+      recording.events as SemanticEvent[],
+      recording.title || 'Untitled',
+      recording.url,
+      body.description
+    )
+    
+    // Send to agent
+    try {
+      if ((targetShell.ws as any).readyState === WebSocket.OPEN) {
+        (targetShell.ws as any).send(JSON.stringify({
+          type: 'agent-message-queued',
+          from: 'browser',
+          text: messageText,
+          submit: shouldSubmit,
+          count: 0,
+        }))
+        
+        return Response.json({ 
+          sent: true, 
+          agent: targetShell.name || targetShell.id,
+          eventCount: recording.events.length,
+          recordingId,
+          submitted: shouldSubmit,
+        }, { headers })
+      } else {
+        return Response.json({ error: 'Agent not connected' }, { status: 503, headers })
+      }
+    } catch {
+      return Response.json({ error: 'Failed to send recording' }, { status: 500, headers })
+    }
+  }
+  
   // ==========================================
   // Window Management Endpoints
   // ==========================================

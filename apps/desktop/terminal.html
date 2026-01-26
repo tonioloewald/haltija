@@ -568,8 +568,18 @@
                   inputEl.value = fullText
                 }
                 inputEl.focus()
-                // Show a subtle notification
-                addMessage('system', `Message from ${msg.from} pasted to input`)
+                
+                // If submit flag is set, auto-submit (CLI sends use this)
+                if (msg.submit) {
+                  addMessage('system', `Message from ${msg.from} submitted`)
+                  // Use setTimeout to let the UI update first
+                  setTimeout(() => {
+                    sendInput()
+                  }, 50)
+                } else {
+                  // Show a subtle notification for paste-only
+                  addMessage('system', `Message from ${msg.from} pasted to input`)
+                }
               } else {
                 addMessage('system', `Message from ${msg.from} queued (${msg.count} pending)`)
               }

@@ -399,4 +399,87 @@ describe('COMPOUND_PATHS', () => {
     expect(COMPOUND_PATHS['recording-start']).toBe('/recording/start')
     expect(COMPOUND_PATHS['test-run']).toBe('/test/run')
   })
+  
+  test('send endpoints are mapped', () => {
+    expect(COMPOUND_PATHS['send-message']).toBe('/send/message')
+    expect(COMPOUND_PATHS['send-selection']).toBe('/send/selection')
+    expect(COMPOUND_PATHS['send-recording']).toBe('/send/recording')
+  })
+})
+
+describe('ARG_MAPS send commands', () => {
+  describe('send-message', () => {
+    test('maps agent and message', () => {
+      expect(ARG_MAPS['send-message'](['claude', 'hello', 'world'])).toEqual({
+        agent: 'claude',
+        message: 'hello world',
+        submit: true,
+      })
+    })
+    
+    test('--no-submit flag sets submit to false', () => {
+      expect(ARG_MAPS['send-message'](['claude', '--no-submit', 'check', 'this'])).toEqual({
+        agent: 'claude',
+        message: 'check this',
+        submit: false,
+      })
+    })
+    
+    test('--no-submit can be at end', () => {
+      expect(ARG_MAPS['send-message'](['claude', 'hello', '--no-submit'])).toEqual({
+        agent: 'claude',
+        message: 'hello',
+        submit: false,
+      })
+    })
+  })
+  
+  describe('send-selection', () => {
+    test('maps agent', () => {
+      expect(ARG_MAPS['send-selection'](['claude'])).toEqual({
+        agent: 'claude',
+        submit: true,
+      })
+    })
+    
+    test('no agent defaults submit to true', () => {
+      expect(ARG_MAPS['send-selection']([])).toEqual({
+        agent: undefined,
+        submit: true,
+      })
+    })
+    
+    test('--no-submit flag', () => {
+      expect(ARG_MAPS['send-selection'](['claude', '--no-submit'])).toEqual({
+        agent: 'claude',
+        submit: false,
+      })
+    })
+  })
+  
+  describe('send-recording', () => {
+    test('maps agent and description', () => {
+      expect(ARG_MAPS['send-recording'](['claude', 'this', 'shows', 'the', 'bug'])).toEqual({
+        agent: 'claude',
+        description: 'this shows the bug',
+        submit: true,
+      })
+    })
+    
+    test('no description', () => {
+      expect(ARG_MAPS['send-recording'](['claude'])).toEqual({
+        agent: 'claude',
+        description: undefined,
+        submit: true,
+      })
+    })
+    
+    test('--no-submit flag', () => {
+      expect(ARG_MAPS['send-recording'](['--no-submit', 'claude'])).toEqual({
+        agent: 'claude',
+        description: undefined,
+        submit: false,
+      })
+    })
+  })
 })
