@@ -27,7 +27,7 @@ import type { HandlerContext } from './api-handlers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, type AgentConfig, type AgentEvent } from './agent-shell'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -1420,19 +1420,48 @@ For complete API reference with all options and response formats:
   
   // Check if hj CLI is globally available
   if (path === '/terminal/hj-status' && req.method === 'GET') {
+    const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+    const localBin = join(homedir(), '.local', 'bin')
+    const hjTarget = join(localBin, 'hj')
+    
+    // Install command uses ~/.local/bin (no sudo needed)
+    const installCmd = `mkdir -p "${localBin}" && ln -sf "${hjSource}" "${hjTarget}"`
+    
     try {
-      execSync('which hj', { stdio: 'pipe' })
-      return Response.json({ installed: true }, { headers })
+      const whichResult = execSync('which hj', { stdio: 'pipe' }).toString().trim()
+      
+      // Check if it points to our hj.mjs
+      if (whichResult) {
+        try {
+          const resolved = fs.realpathSync(whichResult)
+          const expectedResolved = fs.realpathSync(hjSource)
+          
+          if (resolved === expectedResolved) {
+            return Response.json({ installed: true }, { headers })
+          } else {
+            // Installed but points elsewhere - offer to update
+            return Response.json({
+              installed: false,
+              outdated: true,
+              currentPath: whichResult,
+              installCommand: installCmd,
+              message: `hj exists at ${whichResult} but doesn't point to this Haltija installation. Update it?`
+            }, { headers })
+          }
+        } catch {
+          // Can't resolve - assume it's fine
+          return Response.json({ installed: true }, { headers })
+        }
+      }
     } catch {
-      // hj not in PATH - provide install command
-      const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
-      const installCmd = `sudo ln -sf "${hjSource}" /usr/local/bin/hj`
-      return Response.json({ 
-        installed: false, 
-        installCommand: installCmd,
-        message: 'The hj CLI is not globally available. Install it to enable browser control for agents.'
-      }, { headers })
+      // hj not in PATH
     }
+    
+    return Response.json({ 
+      installed: false, 
+      installCommand: installCmd,
+      message: 'The hj CLI is not installed. Install it to enable browser control for agents.'
+    }, { headers })
   }
 
   // Agent init — register a shell via REST (no WebSocket needed)
