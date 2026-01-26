@@ -217,6 +217,7 @@ Start your app before running tests:
 - **Use `purpose`** on steps that might fail — explains intent on failure
 - **Navigate explicitly** — don't rely on default page state
 - **Upload artifacts** — screenshots and snapshots are invaluable for debugging
+- **Port conflicts** — `bunx haltija` auto-kills any existing process on port 8700, so you can restart cleanly without manual cleanup
 
 ## REST API
 
