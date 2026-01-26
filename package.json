@@ -1,6 +1,6 @@
 {
   "name": "haltija",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Browser control for AI agents - query DOM, click, type, run JS, watch mutations",
   "type": "module",
   "main": "dist/index.js",
@@ -33,7 +33,13 @@
     "dist",
     "bin",
     "docs",
-    "haltija-icon.svg"
+    "haltija-icon.svg",
+    "apps/desktop/*.js",
+    "apps/desktop/*.html",
+    "apps/desktop/*.css",
+    "apps/desktop/package.json",
+    "apps/desktop/resources/component.js",
+    "apps/desktop/resources/icon.svg"
   ],
   "scripts": {
     "build:assets": "bun run scripts/embed-assets.ts",

@@ -6,3 +6,7 @@ certs/
 .haltija/
 .DS_Store
 .mcp.json
+
+# Desktop app build artifacts (binaries for standalone distribution)
+apps/desktop/resources/haltija-server-*
+apps/desktop/dist/

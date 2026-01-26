@@ -363,21 +363,12 @@ const headlessUrl = headlessUrlIdx !== -1 ? args[headlessUrlIdx + 1] : null
 const explicitServer = args.includes('--server')
 const explicitApp = args.includes('--app')
 
-/** Detect if Electron desktop app is available */
-function detectElectron() {
+/** Detect desktop app directory */
+function findDesktopApp() {
   const desktopDir = join(__dirname, '../apps/desktop')
-  if (!existsSync(desktopDir)) return null
-
-  // Check for electron in desktop app's node_modules
-  const electronBin = join(desktopDir, 'node_modules/.bin/electron')
-  if (existsSync(electronBin)) return { electronBin, desktopDir }
-
-  // Check if electron is available globally
-  try {
-    execSyncImported('electron --version', { stdio: 'ignore', timeout: 5000 })
-    return { electronBin: 'electron', desktopDir }
-  } catch {}
-
+  if (existsSync(desktopDir) && existsSync(join(desktopDir, 'main.js'))) {
+    return desktopDir
+  }
   return null
 }
 
@@ -408,11 +399,12 @@ function printBanner(mode, port) {
   console.log('')
 }
 
-/** Launch the Electron desktop app */
-function launchApp(electronInfo, port) {
+/** Launch the Electron desktop app using npx electron */
+function launchApp(desktopDir, port) {
   printBanner('app', port)
 
-  const child = spawn(electronInfo.electronBin, [electronInfo.desktopDir], {
+  // Use npx electron - it will cache/install electron automatically
+  const child = spawn('npx', ['electron', desktopDir], {
     env: { ...env, DEV_CHANNEL_PORT: String(port) },
     stdio: 'inherit'
   })
@@ -572,19 +564,19 @@ if (headlessMode) {
   // Explicit server-only mode
   startServer(port)
 } else if (explicitApp) {
-  // Explicit app mode - fail if electron not available
-  const electronInfo = detectElectron()
-  if (!electronInfo) {
+  // Explicit app mode - fail if desktop app not found
+  const desktopDir = findDesktopApp()
+  if (!desktopDir) {
     console.error(red('Error:') + ' Desktop app not available.')
-    console.log(dim('Electron not found. Install it in apps/desktop/ or use --server mode.'))
+    console.log(dim('apps/desktop not found in package. Try reinstalling haltija.'))
     process.exit(1)
   }
-  launchApp(electronInfo, port)
+  launchApp(desktopDir, port)
 } else {
   // Default: try app, fall back to server
-  const electronInfo = detectElectron()
-  if (electronInfo) {
-    launchApp(electronInfo, port)
+  const desktopDir = findDesktopApp()
+  if (desktopDir) {
+    launchApp(desktopDir, port)
   } else {
     startServer(port)
   }

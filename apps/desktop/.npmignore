@@ -1,0 +1,10 @@
+# Exclude from npm package - these are for standalone builds only
+node_modules/
+dist/
+resources/haltija-server-*
+resources/.haltija/
+
+# Keep these
+# *.js, *.html, *.css, package.json
+# resources/component.js
+# resources/icon.svg
