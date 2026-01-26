@@ -9,7 +9,8 @@
   },
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "cd ../.. && bun run build && cd apps/desktop && electron .",
+    "start:quick": "electron .",
     "icons": "electron scripts/generate-icons.js",
     "sync-version": "node -e \"const root = require('../../package.json'); const pkg = require('./package.json'); pkg.version = root.version; require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\\n')\"",
     "prebuild": "npm run sync-version && npm run icons && npm run compile:server",
