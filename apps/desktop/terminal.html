@@ -824,10 +824,12 @@
     }
 
     async function sendAgentPrompt(prompt) {
-      // If agent is busy, queue this prompt for later
+      // If agent is busy, show the prompt and queue it
       if (isAgentThinking) {
         pendingPrompts.push(prompt)
-        addMessage('system', `(queued #${pendingPrompts.length}, will send when current task finishes)`)
+        addMessage('prompt', prompt)  // Show what user typed
+        addMessage('system', `⏳ Agent busy — queued #${pendingPrompts.length} (will send when done, or click Stop to interrupt)`)
+        scrollToBottom()
         return
       }
 
