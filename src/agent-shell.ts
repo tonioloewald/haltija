@@ -336,10 +336,10 @@ export function restoreSession(shellId: string, transcriptFile: TranscriptFile):
 // Command Building
 // ============================================
 
-export function buildAgentCommand(config: AgentConfig, prompt: string, cwd?: string, systemPrompt?: string): string[] {
-  // Build: claude -p <prompt> [options...]
-  // The prompt must come right after -p
-  const args = ['claude', '-p', prompt]
+export function buildAgentCommand(config: AgentConfig, cwd?: string, systemPrompt?: string): string[] {
+  // Build: claude -p [options...]
+  // We use --input-format stream-json to send prompts via stdin (allows real-time interrupts)
+  const args = ['claude', '-p']
   
   // Add system prompt if provided
   if (systemPrompt) {
@@ -356,8 +356,14 @@ export function buildAgentCommand(config: AgentConfig, prompt: string, cwd?: str
   const allowedTools = config.allowedTools || 'Bash,Read,Grep,Glob,Edit,Write,Task,WebFetch,WebSearch'
   args.push('--allowedTools', allowedTools)
   
-  // dontAsk mode + restricted allowedTools = execute permitted tools without prompting
-  args.push('--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk')
+  // stream-json for both input AND output enables real-time bidirectional communication
+  // This allows us to send user messages (interrupts) while the agent is thinking
+  args.push(
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--permission-mode', 'dontAsk'
+  )
   
   return args
 }
@@ -524,7 +530,7 @@ export function runAgentPrompt(
   session.status = 'thinking'
   onEvent({ type: 'agent-status', shellId, status: 'thinking' })
 
-  const args = buildAgentCommand(config, finalPrompt, cwd, systemPrompt)
+  const args = buildAgentCommand(config, cwd, systemPrompt)
   const cmd = args[0]
   const cmdArgs = args.slice(1)
 
@@ -625,9 +631,52 @@ export function runAgentPrompt(
       resolve()
     })
 
-    // Close stdin immediately (we pass prompt via args, not stdin)
-    child.stdin?.end()
+    // Send initial prompt via stdin as stream-json format
+    // Format: {"type": "user", "message": {"role": "user", "content": "..."}}
+    const stdinMessage = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: finalPrompt,
+      },
+    })
+    child.stdin?.write(stdinMessage + '\n')
+    // Keep stdin open for potential follow-up messages (interrupts)
   })
+}
+
+/**
+ * Send a message to a running agent via stdin (real-time interrupt).
+ * Returns true if sent, false if agent not running.
+ */
+export function sendToAgent(shellId: string, message: string): boolean {
+  const session = sessions.get(shellId)
+  if (!session?.process?.stdin) {
+    return false
+  }
+  
+  // Add to transcript
+  session.transcript.push({
+    type: 'user',
+    content: message,
+    timestamp: Date.now(),
+  })
+  
+  // Send as stream-json format
+  const stdinMessage = JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: message,
+    },
+  })
+  
+  try {
+    session.process.stdin.write(stdinMessage + '\n')
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

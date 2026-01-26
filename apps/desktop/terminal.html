@@ -408,7 +408,6 @@
     let commandHistory = []
     let historyIndex = -1
     let isAgentThinking = false
-    let pendingPrompts = []  // Queue of prompts to send when agent finishes
 
     // ==========================================
     // WebSocket Connection
@@ -533,8 +532,6 @@
                   addMessage('summary', parts.join(' | '))
                 }
                 scrollToBottom()
-                // Send next pending prompt if any
-                processNextPendingPrompt()
               }
               break
             case 'agent-error':
@@ -544,8 +541,6 @@
                 setAgentError()
                 addMessage('error', msg.error)
                 scrollToBottom()
-                // Send next pending prompt if any
-                processNextPendingPrompt()
               }
               break
             case 'agent-status':
@@ -824,19 +819,14 @@
     }
 
     async function sendAgentPrompt(prompt) {
-      // If agent is busy, show the prompt and queue it
-      if (isAgentThinking) {
-        pendingPrompts.push(prompt)
-        addMessage('prompt', prompt)  // Show what user typed
-        addMessage('system', `⏳ Agent busy — queued #${pendingPrompts.length} (will send when done, or click Stop to interrupt)`)
-        scrollToBottom()
-        return
-      }
-
-      // Show user prompt
+      // Always show user prompt immediately
       addMessage('prompt', prompt)
-      showThinking()
-      setAgentThinking(true)
+      
+      // If not already thinking, show thinking indicator
+      if (!isAgentThinking) {
+        showThinking()
+        setAgentThinking(true)
+      }
       scrollToBottom()
 
       try {
@@ -858,14 +848,6 @@
         addMessage('error', `connection error: ${err.message}`)
       }
       scrollToBottom()
-    }
-    
-    // Process the next prompt in the queue
-    function processNextPendingPrompt() {
-      if (pendingPrompts.length > 0) {
-        const prompt = pendingPrompts.shift()
-        sendAgentPrompt(prompt)
-      }
     }
 
     function showThinking() {

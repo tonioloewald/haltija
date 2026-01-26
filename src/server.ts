@@ -26,7 +26,7 @@ import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
-import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
+import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync } from 'fs'
 import { join, dirname } from 'path'
@@ -1532,6 +1532,15 @@ For complete API reference with all options and response formats:
     let session = getAgentSession(body.shellId)
     if (!session) {
       session = createAgentSession(body.shellId, shell.name || shell.id)
+    }
+
+    // If agent is already thinking, send message directly to stdin (real-time interrupt)
+    if (session.status === 'thinking') {
+      const sent = sendToAgent(body.shellId, body.prompt.trim())
+      if (sent) {
+        return new Response('sent to running agent', { headers: { ...headers, 'Content-Type': 'text/plain' } })
+      }
+      // Process died or stdin closed - fall through to start new process
     }
 
     // Get agent config from haltija.json
