@@ -4846,7 +4846,16 @@ ${elementSummary}${moreText}`;
         }
         this.respond(msg2.id, true);
       } else if (action2 === "goto") {
-        location.href = payload2.url;
+        const haltija = window.haltija;
+        if (haltija?.navigate) {
+          haltija.navigate(payload2.url).then(() => this.respond(msg2.id, true)).catch((err) => this.respond(msg2.id, false, null, err.message));
+          return;
+        }
+        let url = payload2.url;
+        if (url && !url.includes("://")) {
+          url = "https://" + url;
+        }
+        location.href = url;
         this.respond(msg2.id, true);
       } else if (action2 === "location") {
         this.respond(msg2.id, true, {

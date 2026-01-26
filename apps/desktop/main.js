@@ -842,6 +842,20 @@ function setupScreenCapture() {
     return dialog.showOpenDialog(mainWindow, options)
   })
 
+  // Navigate URL with smart fallback (called from widget in webview)
+  // Routes through renderer's navigate() which has https->http fallback
+  ipcMain.handle('navigate-url', async (event, url) => {
+    if (!mainWindow) return { success: false, error: 'No window' }
+
+    try {
+      // Send to renderer which has the smart navigate function
+      mainWindow.webContents.send('navigate-url', { url })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
   // Create a new agent tab (called from widget in webview)
   ipcMain.handle('open-agent-tab', async (event) => {
     if (!mainWindow) return { error: 'No window' }

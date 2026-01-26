@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('haltija', {
   // Agent tab creation (from widget via main process)
   onCreateAgentTab: (callback) => ipcRenderer.on('create-agent-tab', (event, data) => callback(data)),
   agentTabCreated: (response) => ipcRenderer.send('agent-tab-created', response),
+  
+  // Navigation (from widget via main process) - uses renderer's smart navigate with fallback
+  onNavigateUrl: (callback) => ipcRenderer.on('navigate-url', (event, data) => callback(data)),
 })
 
 console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))

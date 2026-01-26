@@ -1397,6 +1397,10 @@ Automatically fails if element is not found or is disabled. Check response.succe
 
 **Examples:**
 
+- **by-ref**: Click by ref from /tree (fastest)
+  \`\`\`json
+  {"ref":"42"}
+  \`\`\`
 - **by-id**: Click button by ID
   \`\`\`json
   {"selector":"#submit"}

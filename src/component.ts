@@ -6598,7 +6598,20 @@ export class DevChannel extends HTMLElement {
       }
       this.respond(msg.id, true)
     } else if (action === 'goto') {
-      location.href = payload.url
+      // Use Electron's smart navigate (with https->http fallback) if available
+      const haltija = (window as any).haltija
+      if (haltija?.navigate) {
+        haltija.navigate(payload.url)
+          .then(() => this.respond(msg.id, true))
+          .catch((err: Error) => this.respond(msg.id, false, null, err.message))
+        return
+      }
+      // Fallback for non-Electron: auto-add https:// if no protocol specified
+      let url = payload.url
+      if (url && !url.includes('://')) {
+        url = 'https://' + url
+      }
+      location.href = url
       this.respond(msg.id, true)
     } else if (action === 'location') {
       this.respond(msg.id, true, {

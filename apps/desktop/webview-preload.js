@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('haltija', {
     console.log('[Haltija] captureElement called:', selector)
     return ipcRenderer.invoke('capture-element', selector)
   },
+  // Navigate with smart https->http fallback (uses renderer's navigate function)
+  navigate: (url) => {
+    console.log('[Haltija] navigate called:', url)
+    return ipcRenderer.invoke('navigate-url', url)
+  },
   // Create a new agent tab and return its info
   openAgentTab: () => {
     console.log('[Haltija] openAgentTab called')

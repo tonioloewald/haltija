@@ -1083,6 +1083,13 @@ if (window.haltija) {
       })
     }
   })
+  
+  // Handle navigation requests from widget (via main process)
+  // Uses the smart navigate() function with https->http fallback
+  window.haltija.onNavigateUrl?.((data) => {
+    console.log('[Haltija Desktop] Navigate request from widget:', data.url)
+    navigate(data.url)
+  })
 }
 
 // Listen for messages from terminal iframes (cwd changes)
