@@ -49,6 +49,7 @@ body {
   -webkit-app-region: drag;
   height: 36px;
   flex-shrink: 0;
+  z-index: 2;
 }
 
 /* Only disable drag on clickable elements, not containers */
@@ -65,6 +66,8 @@ body {
   flex: 1;
   overflow-x: auto;
   scrollbar-width: none;
+  height: 33px;
+  margin-bottom: -4px;
 }
 
 #tabs::-webkit-scrollbar {
@@ -86,6 +89,7 @@ body {
   max-width: 200px;
   min-width: 80px;
   transition: all 0.15s;
+  margin-bottom: 4px;
 }
 
 .tab:hover {
@@ -97,6 +101,8 @@ body {
   background: #16213e;
   color: #fff;
   border-color: #444;
+  border-bottom: 4px solid #16213e;
+  margin-bottom: 0;
 }
 
 /* Terminal tabs - blue tint */
@@ -107,6 +113,7 @@ body {
 .tab.terminal.active {
   background: #1a1a3e;
   border-color: #6366f1;
+  border-bottom: 4px solid #1a1a3e;
 }
 
 /* Agent tabs - green tint */
@@ -117,6 +124,7 @@ body {
 .tab.agent.active {
   background: #1a2e1a;
   border-color: #22c55e;
+  border-bottom: 4px solid #1a2e1a;
 }
 
 /* Agent status indicator (the * prefix) */

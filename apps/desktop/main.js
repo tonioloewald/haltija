@@ -383,6 +383,36 @@ function setupMenu() {
         },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+Plus',
+          click: () => {
+            if (mainWindow) {
+              const current = mainWindow.webContents.getZoomFactor()
+              mainWindow.webContents.setZoomFactor(Math.min(current + 0.1, 3.0))
+            }
+          },
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: () => {
+            if (mainWindow) {
+              const current = mainWindow.webContents.getZoomFactor()
+              mainWindow.webContents.setZoomFactor(Math.max(current - 0.1, 0.5))
+            }
+          },
+        },
+        {
+          label: 'Reset Zoom',
+          accelerator: 'CmdOrCtrl+0',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.setZoomFactor(1.0)
+            }
+          },
+        },
       ],
     },
 
