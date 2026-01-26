@@ -3,3 +3,4 @@ dist/
 *.log
 .DS_Store
 resources/haltija-server-*
+resources/hj-*

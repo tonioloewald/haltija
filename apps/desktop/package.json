@@ -14,7 +14,7 @@
     "icons": "electron scripts/generate-icons.js",
     "sync-version": "node -e \"const root = require('../../package.json'); const pkg = require('./package.json'); pkg.version = root.version; require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\\n')\"",
     "prebuild": "npm run sync-version && npm run icons && npm run compile:server",
-    "compile:server": "cd ../.. && bun run build && bun build --compile --target=bun-darwin-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64 && bun build --compile --target=bun-darwin-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && cp dist/component.js apps/desktop/resources/component.js && cp haltija-icon.svg apps/desktop/resources/icon.svg",
+    "compile:server": "cd ../.. && bun run build && bun build --compile --target=bun-darwin-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64 && bun build --compile --target=bun-darwin-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-darwin-arm64 bin/hj.mjs --outfile apps/desktop/resources/hj-arm64 && bun build --compile --target=bun-darwin-x64 bin/hj.mjs --outfile apps/desktop/resources/hj-x64 && cp dist/component.js apps/desktop/resources/component.js && cp haltija-icon.svg apps/desktop/resources/icon.svg",
     "compile:server:win": "cd ../.. && bun build --compile --target=bun-windows-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64.exe",
     "compile:server:linux": "cd ../.. && bun build --compile --target=bun-linux-x64 src/server.ts --outfile apps/desktop/resources/haltija-server-x64 && bun build --compile --target=bun-linux-arm64 src/server.ts --outfile apps/desktop/resources/haltija-server-arm64",
     "build": "electron-builder",
@@ -87,6 +87,10 @@
       {
         "from": "resources/haltija-server-${arch}",
         "to": "haltija-server-${arch}"
+      },
+      {
+        "from": "resources/hj-${arch}",
+        "to": "hj-${arch}"
       },
       {
         "from": "resources/component.js",

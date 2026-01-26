@@ -28,7 +28,7 @@ import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMes
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -1424,21 +1424,31 @@ For complete API reference with all options and response formats:
   
   // Check if hj CLI is globally available
   if (path === '/terminal/hj-status' && req.method === 'GET') {
-    const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
     const localBin = join(homedir(), '.local', 'bin')
     const hjTarget = join(localBin, 'hj')
+    const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
     
-    // Install command uses ~/.local/bin (no sudo needed)
-    const installCmd = `mkdir -p "${localBin}" && ln -sf "${hjSource}" "${hjTarget}"`
+    // For source installs, symlink to source file
+    // For compiled binary (DMG), the binary was already copied during startup
+    const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+    const installCmd = isCompiledBinary 
+      ? `echo "hj should have been installed automatically. Try restarting the app."` 
+      : `mkdir -p "${localBin}" && ln -sf "${hjSource}" "${hjTarget}"`
     
     try {
       const whichResult = execSync('which hj', { stdio: 'pipe' }).toString().trim()
       
-      // Check if it points to our hj.mjs
+      // Check if hj is available in PATH
       if (whichResult) {
+        // For compiled binary, just check that it exists and is executable
+        if (isCompiledBinary) {
+          return Response.json({ installed: true }, { headers })
+        }
+        
+        // For source installs, verify it points to our source
         try {
-          const resolved = fs.realpathSync(whichResult)
-          const expectedResolved = fs.realpathSync(hjSource)
+          const resolved = realpathSync(whichResult)
+          const expectedResolved = realpathSync(hjSource)
           
           if (resolved === expectedResolved) {
             return Response.json({ installed: true }, { headers })
@@ -1461,9 +1471,9 @@ For complete API reference with all options and response formats:
       // hj not in PATH
     }
     
-    // Check if symlink exists but isn't in PATH
-    const symlinkExists = existsSync(hjTarget)
-    if (symlinkExists) {
+    // Check if binary/symlink exists but isn't in PATH
+    const targetExists = existsSync(hjTarget)
+    if (targetExists) {
       return Response.json({ 
         installed: false, 
         notInPath: true,
@@ -1475,7 +1485,9 @@ For complete API reference with all options and response formats:
     return Response.json({ 
       installed: false, 
       installCommand: installCmd,
-      message: 'Auto-install of hj failed. Run this command manually to enable browser control for agents.'
+      message: isCompiledBinary 
+        ? 'hj CLI was not installed. Try restarting the Haltija app.'
+        : 'Auto-install of hj failed. Run this command manually to enable browser control for agents.'
     }, { headers })
   }
 
@@ -3542,50 +3554,102 @@ const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
 const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
 
-// Auto-install hj CLI symlink to ~/.local/bin (no sudo needed)
+// Auto-install hj CLI to ~/.local/bin (no sudo needed)
+// For compiled binary (DMG), copies bundled binary
+// For source install (bunx), creates symlink to source
 ;(async () => {
-  const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
   const localBin = join(homedir(), '.local', 'bin')
   const hjTarget = join(localBin, 'hj')
+  const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
   
   try {
-    // Check if source exists
-    if (!existsSync(hjSource)) {
-      console.log(`  [hj] Source not found: ${hjSource}`)
-      return
-    }
-    
     // Create ~/.local/bin if needed
     if (!existsSync(localBin)) {
       mkdirSync(localBin, { recursive: true })
     }
     
-    // Check if symlink already points to our hj.mjs
-    let needsInstall = true
-    if (existsSync(hjTarget)) {
-      try {
-        const resolved = realpathSync(hjTarget)
-        const expectedResolved = realpathSync(hjSource)
-        if (resolved === expectedResolved) {
-          needsInstall = false
-        }
-      } catch {
-        // Broken symlink or can't resolve - reinstall
-      }
-    }
-    
-    if (needsInstall) {
-      // Create or update symlink
-      if (existsSync(hjTarget)) {
-        unlinkSync(hjTarget)
-      }
-      symlinkSync(hjSource, hjTarget)
-      console.log(`  [hj] Installed: ${hjTarget} -> ${hjSource}`)
+    if (isCompiledBinary) {
+      // Running from compiled binary (DMG distribution)
+      // Look for bundled hj binary in resources directory
+      // The server binary is at /path/to/Resources/haltija-server-<arch>
+      // The hj binary should be at /path/to/Resources/hj-<arch>
+      const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
       
-      // Check if ~/.local/bin is in PATH
-      const pathDirs = (process.env.PATH || '').split(':')
-      if (!pathDirs.includes(localBin)) {
-        console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
+      // When running as compiled binary, we need to find the resources dir
+      // process.execPath points to the actual binary location
+      const resourcesDir = dirname(process.execPath)
+      const hjBundled = join(resourcesDir, `hj-${arch}`)
+      
+      if (!existsSync(hjBundled)) {
+        console.log(`  [hj] Bundled binary not found: ${hjBundled}`)
+        return
+      }
+      
+      // Check if already installed with same version (by comparing file size as quick check)
+      let needsInstall = true
+      if (existsSync(hjTarget)) {
+        try {
+          const bundledSize = Bun.file(hjBundled).size
+          const targetSize = Bun.file(hjTarget).size
+          if (bundledSize === targetSize) {
+            needsInstall = false
+          }
+        } catch {
+          // Can't compare - reinstall
+        }
+      }
+      
+      if (needsInstall) {
+        // Copy binary to ~/.local/bin
+        if (existsSync(hjTarget)) {
+          unlinkSync(hjTarget)
+        }
+        copyFileSync(hjBundled, hjTarget)
+        chmodSync(hjTarget, 0o755) // Make executable
+        console.log(`  [hj] Installed: ${hjTarget} (from bundled binary)`)
+        
+        // Check if ~/.local/bin is in PATH
+        const pathDirs = (process.env.PATH || '').split(':')
+        if (!pathDirs.includes(localBin)) {
+          console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
+        }
+      }
+    } else {
+      // Running from source (bunx or development)
+      const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+      
+      if (!existsSync(hjSource)) {
+        console.log(`  [hj] Source not found: ${hjSource}`)
+        return
+      }
+      
+      // Check if symlink already points to our hj.mjs
+      let needsInstall = true
+      if (existsSync(hjTarget)) {
+        try {
+          const resolved = realpathSync(hjTarget)
+          const expectedResolved = realpathSync(hjSource)
+          if (resolved === expectedResolved) {
+            needsInstall = false
+          }
+        } catch {
+          // Broken symlink or can't resolve - reinstall
+        }
+      }
+      
+      if (needsInstall) {
+        // Create or update symlink
+        if (existsSync(hjTarget)) {
+          unlinkSync(hjTarget)
+        }
+        symlinkSync(hjSource, hjTarget)
+        console.log(`  [hj] Installed: ${hjTarget} -> ${hjSource}`)
+        
+        // Check if ~/.local/bin is in PATH
+        const pathDirs = (process.env.PATH || '').split(':')
+        if (!pathDirs.includes(localBin)) {
+          console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
+        }
       }
     }
   } catch (err: unknown) {
