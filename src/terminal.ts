@@ -147,10 +147,10 @@ export function getShellCwd(state: TerminalState, shellId: string): string {
  * Find a shell by name (case-insensitive).
  */
 export function getShellByName(state: TerminalState, name: string): ShellIdentity | null {
-  const lower = name.toLowerCase()
+  const lower = name.toLocaleLowerCase()
   for (const shell of state.shells.values()) {
-    if (shell.name?.toLowerCase() === lower) return shell
-    if (shell.id.toLowerCase() === lower) return shell
+    if (shell.name?.toLocaleLowerCase() === lower) return shell
+    if (shell.id.toLocaleLowerCase() === lower) return shell
   }
   return null
 }
@@ -319,7 +319,7 @@ export function getCachedResult(cache: CommandCache, command: string): string | 
  */
 export function cacheResult(cache: CommandCache, command: string, output: string): void {
   // Skip caching for commands that look mutating
-  const lower = command.toLowerCase()
+  const lower = command.toLocaleLowerCase()
   for (const kw of MUTATING_KEYWORDS) {
     if (lower.includes(kw)) return
   }

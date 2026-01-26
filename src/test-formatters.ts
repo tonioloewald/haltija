@@ -334,14 +334,14 @@ export function inferSuggestion(
   step: { selector?: string; description?: string },
   pageContext: { buttonsOnPage?: string[]; inputsOnPage?: string[] }
 ): string | undefined {
-  const desc = step.description?.toLowerCase() || ''
+  const desc = step.description?.toLocaleLowerCase() || ''
   const buttons = pageContext.buttonsOnPage || []
 
   // Check for possible locale issue
   const englishWords = ['submit', 'cancel', 'ok', 'save', 'delete', 'confirm', 'next', 'back', 'continue']
   const hasEnglishInDesc = englishWords.some(w => desc.includes(w))
   const hasNonEnglishButtons = buttons.some(b => {
-    const lower = b.toLowerCase()
+    const lower = b.toLocaleLowerCase()
     return !englishWords.includes(lower) && /[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]/.test(lower)
   })
 
@@ -355,10 +355,10 @@ export function inferSuggestion(
   }
 
   // Check for similar button names (typo or rename)
-  const selectorText = step.description?.match(/["']([^"']+)["']/)?.[1]?.toLowerCase()
+  const selectorText = step.description?.match(/["']([^"']+)["']/)?.[1]?.toLocaleLowerCase()
   if (selectorText && buttons.length > 0) {
     const similar = buttons.find(b => {
-      const lower = b.toLowerCase()
+      const lower = b.toLocaleLowerCase()
       return lower.includes(selectorText.slice(0, 3)) || selectorText.includes(lower.slice(0, 3))
     })
     if (similar) {
