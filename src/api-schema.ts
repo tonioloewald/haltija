@@ -333,6 +333,11 @@ Automatically fails if element is not found or is disabled. Check response.succe
   }),
   examples: [
     {
+      name: 'by-ref',
+      input: { ref: '42' },
+      description: 'Click by ref from /tree (fastest)',
+    },
+    {
       name: 'by-id',
       input: { selector: '#submit' },
       description: 'Click button by ID',

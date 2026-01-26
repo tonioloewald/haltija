@@ -277,6 +277,23 @@ registerHandler(api.click, async (body, ctx) => {
   const autoWait = body.autoWait === true
   const timeout = body.timeout ?? 5000
   let selector = body.selector
+  const ref = body.ref
+  
+  // If ref is provided, use it directly (fastest path)
+  if (ref) {
+    const clickPayload = { ref }
+    if (wantDiff) {
+      const { result: response, diff } = await withDiff(
+        ctx,
+        windowId,
+        () => ctx.requestFromBrowser('interaction', 'click', clickPayload, 5000, windowId),
+        diffDelay
+      )
+      return Response.json({ ...response, ref, diff }, { headers: ctx.headers })
+    }
+    const response = await ctx.requestFromBrowser('interaction', 'click', clickPayload, 5000, windowId)
+    return Response.json({ ...response, ref }, { headers: ctx.headers })
+  }
   
   // If text is provided, find the element first (only visible elements)
   if (!selector && body.text) {
@@ -323,7 +340,7 @@ registerHandler(api.click, async (body, ctx) => {
   }
   
   if (!selector) {
-    return Response.json({ success: false, error: 'selector or text is required' }, { status: 400, headers: ctx.headers })
+    return Response.json({ success: false, error: 'ref, selector, or text is required' }, { status: 400, headers: ctx.headers })
   }
   
   // If autoWait is enabled, wait for element to appear
