@@ -41,6 +41,7 @@
     "build:bookmarklet": "bun run bin/build-bookmarklet.ts",
     "dev": "bun run bin/server.ts",
     "electron": "bun run build && cd apps/desktop && npx electron .",
+    "start": "bun run electron",
     "test": "bun test",
     "test:server": "bun test src/server.test.ts",
     "test:https": "bun test src/https.test.ts",
