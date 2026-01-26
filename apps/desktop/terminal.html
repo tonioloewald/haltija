@@ -186,6 +186,67 @@
       color: #64748b;
       margin-right: 4px;
     }
+    .board-item.dragging {
+      opacity: 0.5;
+    }
+    .board-col.drag-over {
+      background: #2d2d4a;
+      border: 1px dashed var(--accent, #6366f1);
+    }
+    /* Context menu */
+    .context-menu {
+      position: fixed;
+      background: var(--bg-surface, #252540);
+      border: 1px solid var(--border, #2d2d4a);
+      border-radius: 4px;
+      padding: 4px 0;
+      min-width: 120px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .context-menu-item {
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #e2e8f0;
+    }
+    .context-menu-item:hover {
+      background: var(--accent, #6366f1);
+    }
+    .context-menu-divider {
+      height: 1px;
+      background: var(--border, #2d2d4a);
+      margin: 4px 0;
+    }
+    /* Quick add input */
+    .board-add {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .board-add input {
+      flex: 1;
+      background: var(--bg-surface, #252540);
+      border: 1px solid var(--border, #2d2d4a);
+      color: #e2e8f0;
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 3px;
+      font-family: inherit;
+    }
+    .board-add input:focus {
+      outline: none;
+      border-color: var(--accent, #6366f1);
+    }
+    .board-add button {
+      background: var(--accent, #6366f1);
+      border: none;
+      color: white;
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
 
     /* Tool call cards */
     .tool-card {
@@ -644,9 +705,131 @@
     // Board View Rendering
     // ==========================================
 
+    let activeContextMenu = null
+
+    function hideContextMenu() {
+      if (activeContextMenu) {
+        activeContextMenu.remove()
+        activeContextMenu = null
+      }
+    }
+
+    document.addEventListener('click', hideContextMenu)
+    document.addEventListener('contextmenu', (e) => {
+      // Only hide if clicking outside a board item
+      if (!e.target.closest('.board-item')) {
+        hideContextMenu()
+      }
+    })
+
+    function showContextMenu(x, y, item, currentCol) {
+      hideContextMenu()
+      
+      const menu = document.createElement('div')
+      menu.className = 'context-menu'
+      
+      const actions = [
+        { label: 'Claim', cmd: `tasks claim ${item.id}`, show: currentCol !== 'done' },
+        { label: 'Done', cmd: `tasks done ${item.id}`, show: currentCol !== 'done' },
+        { label: '─', divider: true },
+        { label: '→ Queued', cmd: `tasks move ${item.id} queued`, show: currentCol !== 'queued' },
+        { label: '→ In Progress', cmd: `tasks move ${item.id} in_progress`, show: currentCol !== 'in_progress' },
+        { label: '→ Blocked', cmd: `tasks move ${item.id} blocked`, show: currentCol !== 'blocked' },
+        { label: '→ Review', cmd: `tasks move ${item.id} review`, show: currentCol !== 'review' },
+        { label: '─', divider: true },
+        { label: 'Detail', cmd: `tasks detail ${item.id}` },
+        { label: 'Trash', cmd: `tasks trash ${item.id}`, show: currentCol !== 'trash' },
+      ]
+      
+      for (const action of actions) {
+        if (action.show === false) continue
+        if (action.divider) {
+          const div = document.createElement('div')
+          div.className = 'context-menu-divider'
+          menu.appendChild(div)
+        } else {
+          const item = document.createElement('div')
+          item.className = 'context-menu-item'
+          item.textContent = action.label
+          item.addEventListener('click', (e) => {
+            e.stopPropagation()
+            hideContextMenu()
+            runCommand(action.cmd)
+          })
+          menu.appendChild(item)
+        }
+      }
+      
+      menu.style.left = `${x}px`
+      menu.style.top = `${y}px`
+      document.body.appendChild(menu)
+      
+      // Adjust if off-screen
+      const rect = menu.getBoundingClientRect()
+      if (rect.right > window.innerWidth) {
+        menu.style.left = `${window.innerWidth - rect.width - 8}px`
+      }
+      if (rect.bottom > window.innerHeight) {
+        menu.style.top = `${window.innerHeight - rect.height - 8}px`
+      }
+      
+      activeContextMenu = menu
+    }
+
+    async function runCommand(cmd) {
+      addMessage('command', cmd)
+      try {
+        const resp = await fetch(`${BASE_URL}/terminal/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd, shellId }),
+        })
+        const output = await resp.text()
+        if (output.startsWith('error:')) {
+          addMessage('error', output)
+        } else {
+          addMessage('output', output)
+        }
+      } catch (err) {
+        addMessage('error', `connection error: ${err.message}`)
+      }
+      scrollToBottom()
+    }
+
     function renderBoard(boardData) {
       const container = document.createElement('div')
       container.className = 'board'
+      
+      // Quick-add input
+      const addRow = document.createElement('div')
+      addRow.className = 'board-add'
+      const addInput = document.createElement('input')
+      addInput.type = 'text'
+      addInput.placeholder = 'Add task...'
+      const addBtn = document.createElement('button')
+      addBtn.textContent = '+'
+      addRow.appendChild(addInput)
+      addRow.appendChild(addBtn)
+      
+      const doAdd = () => {
+        const title = addInput.value.trim()
+        if (title) {
+          runCommand(`tasks add "${title}"`)
+          addInput.value = ''
+        }
+      }
+      addInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doAdd()
+      })
+      addBtn.addEventListener('click', doAdd)
+      
+      container.appendChild(addRow)
+      
+      // Columns container
+      const colsContainer = document.createElement('div')
+      colsContainer.style.display = 'flex'
+      colsContainer.style.gap = '8px'
+      colsContainer.style.overflowX = 'auto'
 
       const columnOrder = ['icebox', 'queued', 'in_progress', 'blocked', 'review', 'done']
       for (const col of columnOrder) {
@@ -655,6 +838,24 @@
 
         const colEl = document.createElement('div')
         colEl.className = 'board-col'
+        colEl.dataset.column = col
+        
+        // Drag-drop target
+        colEl.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          colEl.classList.add('drag-over')
+        })
+        colEl.addEventListener('dragleave', () => {
+          colEl.classList.remove('drag-over')
+        })
+        colEl.addEventListener('drop', (e) => {
+          e.preventDefault()
+          colEl.classList.remove('drag-over')
+          const itemId = e.dataTransfer.getData('text/plain')
+          if (itemId) {
+            runCommand(`tasks move ${itemId} ${col}`)
+          }
+        })
 
         const titleEl = document.createElement('div')
         titleEl.className = 'board-col-title'
@@ -664,17 +865,37 @@
         for (const item of items) {
           const itemEl = document.createElement('div')
           itemEl.className = 'board-item' + (item.claimed ? ' claimed' : '')
+          itemEl.draggable = true
           itemEl.innerHTML = `<span class="item-id">#${item.id}</span>${escapeHtml(item.title)}`
           itemEl.title = item.claimed ? `claimed: ${item.claimed}` : item.title
-          itemEl.addEventListener('click', () => {
-            inputEl.value = `tasks detail ${item.id}`
-            inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+          
+          // Drag start
+          itemEl.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', item.id)
+            itemEl.classList.add('dragging')
           })
+          itemEl.addEventListener('dragend', () => {
+            itemEl.classList.remove('dragging')
+          })
+          
+          // Click for detail
+          itemEl.addEventListener('click', () => {
+            runCommand(`tasks detail ${item.id}`)
+          })
+          
+          // Right-click for context menu
+          itemEl.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            showContextMenu(e.clientX, e.clientY, item, col)
+          })
+          
           colEl.appendChild(itemEl)
         }
 
-        container.appendChild(colEl)
+        colsContainer.appendChild(colEl)
       }
+      
+      container.appendChild(colsContainer)
 
       return container
     }
