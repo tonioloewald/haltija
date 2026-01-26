@@ -733,7 +733,7 @@ async function injectWidget(webContents) {
 function setupScreenCapture() {
   // Full page capture
   ipcMain.handle('capture-page', async (event) => {
-    if (!mainWindow) return null
+    if (!mainWindow) return { success: false, error: 'No window' }
 
     try {
       // Use the sender's webContents - this is the webview that made the request
@@ -744,8 +744,24 @@ function setupScreenCapture() {
         sender.getType(),
       )
 
-      // Capture the sender (which should be the webview that called this)
-      const image = await sender.capturePage()
+      // Capture with timeout to prevent hanging
+      const captureWithTimeout = (timeoutMs = 5000) => {
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error(`Screenshot capture timed out after ${timeoutMs}ms`))
+          }, timeoutMs)
+          
+          sender.capturePage().then((image) => {
+            clearTimeout(timeout)
+            resolve(image)
+          }).catch((err) => {
+            clearTimeout(timeout)
+            reject(err)
+          })
+        })
+      }
+
+      const image = await captureWithTimeout(5000)
       return {
         success: true,
         data: image.toDataURL(),
@@ -791,8 +807,24 @@ function setupScreenCapture() {
         return { success: false, error: `Element not found: ${selector}` }
       }
 
-      // Capture with specific rect
-      const image = await sender.capturePage(bounds)
+      // Capture with timeout to prevent hanging
+      const captureWithTimeout = (rect, timeoutMs = 5000) => {
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error(`Element capture timed out after ${timeoutMs}ms`))
+          }, timeoutMs)
+          
+          sender.capturePage(rect).then((image) => {
+            clearTimeout(timeout)
+            resolve(image)
+          }).catch((err) => {
+            clearTimeout(timeout)
+            reject(err)
+          })
+        })
+      }
+
+      const image = await captureWithTimeout(bounds, 5000)
       return {
         success: true,
         data: image.toDataURL(),
