@@ -5075,10 +5075,8 @@ ${elementSummary}${moreText}`;
           if (haltija?.capturePage) {
             try {
               const capturePromise = payload2?.selector ? haltija.captureElement(payload2.selector) : haltija.capturePage();
-              const result2 = await Promise.race([
-                capturePromise,
-                new Promise((resolve) => setTimeout(() => resolve(null), 1e4))
-              ]);
+              const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ success: false, error: "Screenshot capture timed out after 10s" }), 1e4));
+              const result2 = await Promise.race([capturePromise, timeoutPromise]);
               if (result2?.success && result2.data) {
                 const converted = await convertFormat(result2.data);
                 this.respond(msg2.id, true, {
@@ -5090,8 +5088,14 @@ ${elementSummary}${moreText}`;
                   source: "electron"
                 });
                 return;
+              } else if (result2 && !result2.success) {
+                this.respond(msg2.id, false, null, result2.error || "Electron capture failed");
+                return;
               }
-            } catch {}
+            } catch (err) {
+              this.respond(msg2.id, false, null, `Screenshot error: ${err.message}`);
+              return;
+            }
           }
           const html2canvas = window.html2canvas;
           if (html2canvas) {

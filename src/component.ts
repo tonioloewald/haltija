@@ -6924,10 +6924,12 @@ export class DevChannel extends HTMLElement {
             const capturePromise = payload?.selector
               ? haltija.captureElement(payload.selector)
               : haltija.capturePage()
-            const result = await Promise.race([
-              capturePromise,
-              new Promise<null>(resolve => setTimeout(() => resolve(null), 10000)),
-            ])
+            
+            const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => 
+              setTimeout(() => resolve({ success: false, error: 'Screenshot capture timed out after 10s' }), 10000)
+            )
+            
+            const result = await Promise.race([capturePromise, timeoutPromise])
 
             if (result?.success && result.data) {
               const converted = await convertFormat(result.data)
@@ -6940,9 +6942,15 @@ export class DevChannel extends HTMLElement {
                 source: 'electron',
               })
               return
+            } else if (result && !result.success) {
+              // Electron capture failed with error - report it
+              this.respond(msg.id, false, null, result.error || 'Electron capture failed')
+              return
             }
-          } catch {
-            // Fall through to other capture methods
+          } catch (err: any) {
+            // Report the actual error instead of falling through silently
+            this.respond(msg.id, false, null, `Screenshot error: ${err.message}`)
+            return
           }
         }
 
