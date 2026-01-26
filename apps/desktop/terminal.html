@@ -186,50 +186,75 @@
       overflow: hidden;
     }
     .tool-card-header {
-      padding: 6px 10px;
+      padding: 8px 10px;
       cursor: pointer;
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      color: #a5b4fc;
+      align-items: flex-start;
+      gap: 8px;
       font-size: 12px;
     }
     .tool-card-header:hover {
       background: #252540;
     }
     .tool-card-header .tool-name {
-      font-weight: bold;
+      color: #a5b4fc;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .tool-card-header .tool-summary {
+      color: #94a3b8;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
     }
     .tool-card-header .tool-chevron {
       transition: transform 0.15s;
       font-size: 10px;
       color: #64748b;
+      flex-shrink: 0;
     }
     .tool-card.expanded .tool-chevron {
       transform: rotate(90deg);
     }
     .tool-card-body {
-      display: block;
+      display: none;
       padding: 8px 10px;
       border-top: 1px solid #3d3d5c;
       font-size: 11px;
-      max-height: 5lh;  /* ~5 lines by default */
+      max-height: min(40vh, 300px);
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-word;
       color: #94a3b8;
     }
     .tool-card.expanded .tool-card-body {
+      display: block;
       max-height: min(80vh, 600px);
-    }
-    .tool-card-body:empty {
-      display: none;
     }
     .tool-card-label {
       color: #64748b;
       font-size: 10px;
       text-transform: uppercase;
       margin-bottom: 2px;
+    }
+    .tool-card-output {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #3d3d5c;
+    }
+    /* Running indicator */
+    .tool-card.running .tool-name::after {
+      content: '...';
+      animation: ellipsis 1.5s infinite;
+    }
+    @keyframes ellipsis {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
     }
 
     /* Agent prompt (user message in agent mode) */
@@ -791,12 +816,17 @@
 
     function renderToolCard(tool, input, id) {
       const card = document.createElement('div')
-      card.className = 'tool-card'
+      card.className = 'tool-card running'
       card.dataset.toolId = id
 
       const header = document.createElement('div')
       header.className = 'tool-card-header'
-      header.innerHTML = `<span><span class="tool-name">${escapeHtml(tool)}</span> ${escapeHtml(summarizeInput(tool, input))}</span><span class="tool-chevron">▶</span>`
+      const summary = summarizeInput(tool, input)
+      header.innerHTML = `
+        <span class="tool-name">${escapeHtml(tool)}</span>
+        <span class="tool-summary">${escapeHtml(summary)}</span>
+        <span class="tool-chevron">▶</span>
+      `
       header.addEventListener('click', () => {
         card.classList.toggle('expanded')
       })
@@ -808,7 +838,7 @@
       inputLabel.textContent = 'input'
       body.appendChild(inputLabel)
       const inputPre = document.createElement('pre')
-      inputPre.style.cssText = 'margin: 0 0 6px 0; white-space: pre-wrap;'
+      inputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
       inputPre.textContent = input
       body.appendChild(inputPre)
 
@@ -823,11 +853,14 @@
     function addToolResult(id, output) {
       const card = pendingTools.get(id)
       if (card) {
+        card.classList.remove('running')
         const body = card.querySelector('.tool-card-body')
+        const outputDiv = document.createElement('div')
+        outputDiv.className = 'tool-card-output'
         const outputLabel = document.createElement('div')
         outputLabel.className = 'tool-card-label'
         outputLabel.textContent = 'output'
-        body.appendChild(outputLabel)
+        outputDiv.appendChild(outputLabel)
         const outputPre = document.createElement('pre')
         outputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
         // Truncate long outputs
@@ -837,7 +870,8 @@
         } else {
           outputPre.textContent = output
         }
-        body.appendChild(outputPre)
+        outputDiv.appendChild(outputPre)
+        body.appendChild(outputDiv)
         pendingTools.delete(id)
       }
     }

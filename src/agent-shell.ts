@@ -6,9 +6,14 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process'
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { mkdir, writeFile, readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+
+// Get the directory where this module lives (for finding MCP server)
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // ============================================
 // Types
@@ -271,11 +276,13 @@ export function buildAgentCommand(config: AgentConfig, prompt: string, cwd?: str
   
   // Connect to Haltija MCP server for browser control tools
   // This gives the agent direct access to hj commands as MCP tools
+  // Use __dirname to find the MCP server relative to this module (works in bundled dist too)
+  const mcpServerPath = join(__dirname, '..', 'apps', 'mcp', 'build', 'index.js')
   const mcpConfig = JSON.stringify({
     mcpServers: {
       haltija: {
         command: 'node',
-        args: [join(process.cwd(), 'apps/mcp/build/index.js')],
+        args: [mcpServerPath],
       }
     }
   })

@@ -1505,7 +1505,8 @@ For complete API reference with all options and response formats:
 
   // List saved transcripts for the working directory
   if (path === '/terminal/transcripts' && req.method === 'GET') {
-    const transcripts = await listTranscripts(workingDir)
+    const cwd = process.env.HOME || process.cwd()
+    const transcripts = await listTranscripts(cwd)
     return Response.json({ transcripts }, { headers })
   }
 
@@ -1515,7 +1516,8 @@ For complete API reference with all options and response formats:
     if (!filename) {
       return Response.json({ error: 'filename required' }, { status: 400, headers })
     }
-    const transcript = await loadTranscript(workingDir, filename)
+    const cwd = process.env.HOME || process.cwd()
+    const transcript = await loadTranscript(cwd, filename)
     if (!transcript) {
       return Response.json({ error: 'transcript not found' }, { status: 404, headers })
     }
@@ -1528,7 +1530,8 @@ For complete API reference with all options and response formats:
     if (!body.filename || !body.shellId) {
       return Response.json({ error: 'filename and shellId required' }, { status: 400, headers })
     }
-    const transcriptFile = await loadTranscript(workingDir, body.filename)
+    const cwd = process.env.HOME || process.cwd()
+    const transcriptFile = await loadTranscript(cwd, body.filename)
     if (!transcriptFile) {
       return Response.json({ error: 'transcript not found' }, { status: 404, headers })
     }
