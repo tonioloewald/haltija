@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.6";
+  var VERSION = "1.1.7";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -5459,7 +5459,9 @@ ${elementSummary}${moreText}`;
     async clearElement(el, isNativeInput, isContentEditable) {
       if (isNativeInput) {
         const input = el;
-        input.select();
+        try {
+          input.select();
+        } catch {}
         await this.sleep(10);
         el.dispatchEvent(new KeyboardEvent("keydown", {
           key: "Backspace",
@@ -5529,11 +5531,15 @@ ${elementSummary}${moreText}`;
       if (allowed) {
         if (isNativeInput) {
           const input = el;
-          const start = input.selectionStart ?? input.value.length;
-          const end = input.selectionEnd ?? input.value.length;
-          const newValue = input.value.slice(0, start) + char + input.value.slice(end);
-          this.setNativeValue(input, newValue);
-          input.selectionStart = input.selectionEnd = start + 1;
+          if (this.supportsSelection(input)) {
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            const newValue = input.value.slice(0, start) + char + input.value.slice(end);
+            this.setNativeValue(input, newValue);
+            input.selectionStart = input.selectionEnd = start + 1;
+          } else {
+            this.setNativeValue(input, input.value + char);
+          }
         } else if (isContentEditable) {
           document.execCommand("insertText", false, char);
         } else {}
@@ -5565,16 +5571,22 @@ ${elementSummary}${moreText}`;
       if (allowed) {
         if (isNativeInput) {
           const input = el;
-          const start = input.selectionStart ?? input.value.length;
-          const end = input.selectionEnd ?? input.value.length;
-          if (start === end && start > 0) {
-            const newValue = input.value.slice(0, start - 1) + input.value.slice(end);
-            this.setNativeValue(input, newValue);
-            input.selectionStart = input.selectionEnd = start - 1;
-          } else if (start !== end) {
-            const newValue = input.value.slice(0, start) + input.value.slice(end);
-            this.setNativeValue(input, newValue);
-            input.selectionStart = input.selectionEnd = start;
+          if (this.supportsSelection(input)) {
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            if (start === end && start > 0) {
+              const newValue = input.value.slice(0, start - 1) + input.value.slice(end);
+              this.setNativeValue(input, newValue);
+              input.selectionStart = input.selectionEnd = start - 1;
+            } else if (start !== end) {
+              const newValue = input.value.slice(0, start) + input.value.slice(end);
+              this.setNativeValue(input, newValue);
+              input.selectionStart = input.selectionEnd = start;
+            }
+          } else {
+            if (input.value.length > 0) {
+              this.setNativeValue(input, input.value.slice(0, -1));
+            }
           }
         } else if (isContentEditable) {
           document.execCommand("delete", false);
@@ -5589,6 +5601,17 @@ ${elementSummary}${moreText}`;
         code: "Backspace",
         bubbles: true
       }));
+    }
+    supportsSelection(el) {
+      try {
+        if (el.tagName === "TEXTAREA")
+          return true;
+        const type = el.type;
+        const noSelection = ["email", "number", "date", "datetime-local", "month", "time", "week"];
+        return !noSelection.includes(type);
+      } catch {
+        return false;
+      }
     }
     setNativeValue(el, value) {
       const prototype = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;

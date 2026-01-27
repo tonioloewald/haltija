@@ -7422,8 +7422,8 @@ export class DevChannel extends HTMLElement {
   ) {
     if (isNativeInput) {
       const input = el as HTMLInputElement | HTMLTextAreaElement
-      // Select all and delete
-      input.select()
+      // Select all and delete (select() throws on email/number/date inputs)
+      try { input.select() } catch { /* non-selectable input type */ }
       await this.sleep(10)
 
       // Fire key events for the delete
@@ -7533,16 +7533,17 @@ export class DevChannel extends HTMLElement {
     if (allowed) {
       if (isNativeInput) {
         const input = el as HTMLInputElement | HTMLTextAreaElement
-        const start = input.selectionStart ?? input.value.length
-        const end = input.selectionEnd ?? input.value.length
-        const newValue =
-          input.value.slice(0, start) + char + input.value.slice(end)
-
-        // Use native setter for React compatibility
-        this.setNativeValue(input, newValue)
-
-        // Update cursor position
-        input.selectionStart = input.selectionEnd = start + 1
+        if (this.supportsSelection(input)) {
+          const start = input.selectionStart ?? input.value.length
+          const end = input.selectionEnd ?? input.value.length
+          const newValue =
+            input.value.slice(0, start) + char + input.value.slice(end)
+          this.setNativeValue(input, newValue)
+          input.selectionStart = input.selectionEnd = start + 1
+        } else {
+          // email, number, date etc. — just append
+          this.setNativeValue(input, input.value + char)
+        }
       } else if (isContentEditable) {
         // Insert text at cursor position
         document.execCommand('insertText', false, char)
@@ -7597,18 +7598,25 @@ export class DevChannel extends HTMLElement {
     if (allowed) {
       if (isNativeInput) {
         const input = el as HTMLInputElement | HTMLTextAreaElement
-        const start = input.selectionStart ?? input.value.length
-        const end = input.selectionEnd ?? input.value.length
+        if (this.supportsSelection(input)) {
+          const start = input.selectionStart ?? input.value.length
+          const end = input.selectionEnd ?? input.value.length
 
-        if (start === end && start > 0) {
-          const newValue =
-            input.value.slice(0, start - 1) + input.value.slice(end)
-          this.setNativeValue(input, newValue)
-          input.selectionStart = input.selectionEnd = start - 1
-        } else if (start !== end) {
-          const newValue = input.value.slice(0, start) + input.value.slice(end)
-          this.setNativeValue(input, newValue)
-          input.selectionStart = input.selectionEnd = start
+          if (start === end && start > 0) {
+            const newValue =
+              input.value.slice(0, start - 1) + input.value.slice(end)
+            this.setNativeValue(input, newValue)
+            input.selectionStart = input.selectionEnd = start - 1
+          } else if (start !== end) {
+            const newValue = input.value.slice(0, start) + input.value.slice(end)
+            this.setNativeValue(input, newValue)
+            input.selectionStart = input.selectionEnd = start
+          }
+        } else {
+          // email, number, date etc. — remove last character
+          if (input.value.length > 0) {
+            this.setNativeValue(input, input.value.slice(0, -1))
+          }
         }
       } else if (isContentEditable) {
         document.execCommand('delete', false)
@@ -7629,6 +7637,23 @@ export class DevChannel extends HTMLElement {
         bubbles: true,
       }),
     )
+  }
+
+  /**
+   * Check if an input element supports the selection API (selectionStart/selectionEnd).
+   * Email, number, date, datetime-local, month, time, and week inputs do not.
+   */
+  private supportsSelection(el: HTMLInputElement | HTMLTextAreaElement): boolean {
+    try {
+      // Textarea always supports selection
+      if (el.tagName === 'TEXTAREA') return true
+      const type = (el as HTMLInputElement).type
+      // These types throw when you access selectionStart
+      const noSelection = ['email', 'number', 'date', 'datetime-local', 'month', 'time', 'week']
+      return !noSelection.includes(type)
+    } catch {
+      return false
+    }
   }
 
   /**
