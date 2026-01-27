@@ -136,17 +136,25 @@ function formatStepDescription(step) {
     case 'key':
       return `key ${s.key || ''}`
     case 'wait':
-      return `wait ${s.selector || s.duration + 'ms' || ''}`
+      return `wait ${s.selector || s.url || (s.duration != null ? s.duration + 'ms' : '') || ''}`
     case 'assert': {
       const a = s.assertion || {}
       const sel = a.selector || ''
       const val = a.text || a.value || a.pattern || ''
       return `assert ${a.type || ''} ${sel} ${val ? '"' + truncate(val, 30) + '"' : ''}`.trim()
     }
+    case 'check':
+      return `check ${s.selector || ''}`
     case 'eval':
       return `eval ${truncate(s.code || '', 40)}`
     case 'verify':
       return `verify ${truncate(s.eval || '', 40)}`
+    case 'tabs-open':
+      return `tabs-open ${s.url || ''}`
+    case 'tabs-close':
+      return `tabs-close ${s.window || ''}`
+    case 'tabs-focus':
+      return `tabs-focus ${s.window || ''}`
     default:
       return step.description || action || 'unknown'
   }
