@@ -136,7 +136,7 @@ function formatStepDescription(step) {
     case 'key':
       return `key ${s.key || ''}`
     case 'wait':
-      return `wait ${s.selector || s.url || (s.duration != null ? s.duration + 'ms' : '') || ''}`
+      return `wait ${s.selector || s.url || (s.forWindow ? 'new window' : '') || (s.duration != null ? s.duration + 'ms' : '') || ''}`
     case 'assert': {
       const a = s.assertion || {}
       const sel = a.selector || ''

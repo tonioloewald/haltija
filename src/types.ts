@@ -630,6 +630,8 @@ export interface WaitStep extends BaseStep {
   duration?: number
   /** Wait for URL to match */
   url?: string | RegExp
+  /** Wait for a new window/tab to connect (use after tabs-open) */
+  forWindow?: boolean
 }
 
 export interface AssertStep extends BaseStep {

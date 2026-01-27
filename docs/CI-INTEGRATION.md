@@ -95,6 +95,7 @@ Tests are JSON files with steps:
 | `tabs-open` | `{"action": "tabs-open", "url": "..."}` | Open a new tab |
 | `tabs-close` | `{"action": "tabs-close", "window": "id"}` | Close a tab |
 | `tabs-focus` | `{"action": "tabs-focus", "window": "id"}` | Focus a tab |
+| `wait` (window) | `{"action": "wait", "forWindow": true}` | Wait for new tab to connect |
 
 ### Text Selectors
 

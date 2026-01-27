@@ -168,6 +168,7 @@ Step types: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval
 - **`tabs-close`**: Closes a tab by `window` ID.
 - **`tabs-focus`**: Focuses a tab by `window` ID. Updates server-side focus tracking.
 - **`navigate`**: After navigation, waits for the specific window to reconnect (tracked by `windowId` + `browserId`). Works correctly with multiple tabs open.
+- **`wait`** with `forWindow: true`: Polls until a new window/tab connects. Use after `tabs-open` to wait for the new tab's widget to initialize. Returns `newWindowId` in step context.
 - All interaction steps route through the same `performRealisticType`/`performRealisticClick` handlers as the REST API.
 
 ## Desktop App (Electron)

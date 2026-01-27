@@ -2174,6 +2174,30 @@ Run 'hj --help' for all commands.`
                 stepPassed = false
                 error = `Timeout waiting for selector: ${step.selector}`
               }
+            } else if (step.forWindow) {
+              // Wait for a new window/tab to connect (use after tabs-open)
+              const existingWindowIds = new Set(windows.keys())
+              const waitStart = Date.now()
+              let newWindowId: string | null = null
+              while (Date.now() - waitStart < stepTimeout) {
+                for (const id of windows.keys()) {
+                  if (!existingWindowIds.has(id)) {
+                    newWindowId = id
+                    break
+                  }
+                }
+                if (newWindowId) break
+                await new Promise(r => setTimeout(r, 100))
+              }
+              if (!newWindowId) {
+                stepPassed = false
+                error = 'Timeout waiting for new window to connect'
+                context = { existingWindows: Array.from(existingWindowIds) }
+              } else {
+                // Give widget time to fully initialize
+                await new Promise(r => setTimeout(r, 300))
+                context = { newWindowId }
+              }
             } else if (step.url) {
               // Wait for URL to match
               const waitStart = Date.now()
