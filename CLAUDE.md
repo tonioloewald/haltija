@@ -156,13 +156,18 @@ Tests are pure JSON with atomic steps:
 }
 ```
 
-Step types: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`
+Step types: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`
 
 ### Test Runner Behavior
 
 - **`type`**: Uses realistic per-character keystroke simulation by default (native setter, keydown/input/keyup per character, focus/blur lifecycle). Add `"paste": true` for fast paste-style input that still triggers React/form framework validation. Add `"humanlike": false` for instant typing. `"typoRate"` is always 0 in tests.
 - **`click`**: Uses realistic click simulation (scroll into view, mouseenter/mouseover/mousedown/mouseup/click sequence).
 - **`check`**: For checkboxes/radios — uses realistic click. The recording system generates these.
+- **`eval`**: Executes JavaScript in the browser. Promises are automatically awaited — if the code returns a Promise, the resolved value is returned.
+- **`tabs-open`**: Opens a new tab (desktop app only). Optional `url` field.
+- **`tabs-close`**: Closes a tab by `window` ID.
+- **`tabs-focus`**: Focuses a tab by `window` ID. Updates server-side focus tracking.
+- **`navigate`**: After navigation, waits for the specific window to reconnect (tracked by `windowId` + `browserId`). Works correctly with multiple tabs open.
 - All interaction steps route through the same `performRealisticType`/`performRealisticClick` handlers as the REST API.
 
 ## Desktop App (Electron)

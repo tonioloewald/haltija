@@ -27,7 +27,6 @@ const PORT = parseInt(process.env.HALTIJA_PORT || '8700') // Default to standard
 const BASE_URL = `http://localhost:${PORT}`
 
 let electronProcess: Subprocess | null = null
-let serverWasAlreadyRunning = false
 
 // Helper to wait for condition
 async function waitFor(
@@ -88,12 +87,33 @@ async function hasBrowserConnected(): Promise<boolean> {
   }
 }
 
+// Kill any existing process on the test port to avoid conflicts
+function killProcessOnPort(port: number): boolean {
+  try {
+    const result = Bun.spawnSync({
+      cmd: ['lsof', '-ti', `:${port}`],
+      stdout: 'pipe',
+    })
+    const pids = new TextDecoder().decode(result.stdout).trim()
+    if (pids) {
+      for (const pid of pids.split('\n')) {
+        try { process.kill(parseInt(pid), 'SIGTERM') } catch {}
+      }
+      // Give processes time to exit
+      Bun.sleepSync(500)
+      return true
+    }
+  } catch {}
+  return false
+}
+
 // Module-level setup: launch Electron once for all test suites
 beforeAll(async () => {
-  // Check if server is already running
+  // Kill any existing process on the port to avoid conflicts with stale instances
   if (await isServerReady()) {
-    serverWasAlreadyRunning = true
-    return
+    killProcessOnPort(PORT)
+    // Wait for port to be released
+    await new Promise(r => setTimeout(r, 1000))
   }
 
   // Check if npm/electron is available
@@ -129,14 +149,12 @@ beforeAll(async () => {
 }, 30000)
 
 afterAll(() => {
-  if (!serverWasAlreadyRunning) {
-    electronProcess?.kill()
-  }
+  electronProcess?.kill()
 })
 
 // Helper to check if tests can run (server available)
 async function isServerAvailable(): Promise<boolean> {
-  return serverWasAlreadyRunning || electronProcess !== null
+  return electronProcess !== null
 }
 
 describe('Desktop App Integration Tests', () => {
@@ -276,21 +294,17 @@ describe('Desktop App Integration Tests', () => {
     // The important thing is the click worked
   })
 
-  it('navigates to another HTTPS site', async () => {
+  it('navigates to local server page and reconnects', async () => {
     if (!await isServerAvailable()) {
       console.log('Server not available, skipping')
       return
     }
-    if (!await checkNetwork()) {
-      skipIfNoNetwork('navigates to another HTTPS site')
-      return
-    }
 
-    // Navigate to httpbin
+    // Navigate to the local server root (no network dependency)
     const navRes = await fetch(`${BASE_URL}/navigate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://httpbin.org/html' }),
+      body: JSON.stringify({ url: `${BASE_URL}/` }),
     })
     expect(navRes.ok).toBe(true)
 
@@ -298,33 +312,29 @@ describe('Desktop App Integration Tests', () => {
     const reconnected = await waitFor(async () => {
       const res = await fetch(`${BASE_URL}/windows`)
       const data = await res.json()
-      return data.count > 0 && data.windows[0]?.url?.includes('httpbin')
+      return data.count > 0 && data.windows[0]?.url?.includes('localhost')
     }, 10000)
 
     expect(reconnected).toBe(true)
-  }, 15000) // External site navigation needs more time
+  }, 15000)
 
-  it('can query DOM on httpbin', async () => {
+  it('can query DOM on local server page', async () => {
     if (!await isServerAvailable()) {
       console.log('Server not available, skipping')
       return
     }
-    if (!await checkNetwork()) {
-      skipIfNoNetwork('can query DOM on httpbin')
-      return
-    }
 
-    // Query the h1 on httpbin
+    // Query the page title on the local server
     const res = await fetch(`${BASE_URL}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selector: 'h1' }),
+      body: JSON.stringify({ selector: 'title' }),
     })
 
     expect(res.ok).toBe(true)
     const data = await res.json()
     expect(data.success).toBe(true)
-    expect(data.data.textContent).toContain('Moby')
+    expect(data.data.textContent).toBeDefined()
   })
 
   it('can take screenshots with Electron native capture', async () => {

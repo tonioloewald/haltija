@@ -82,13 +82,19 @@ Tests are JSON files with steps:
 
 | Action | Example | What It Does |
 |--------|---------|--------------|
-| `navigate` | `{"action": "navigate", "url": "..."}` | Load a URL |
+| `navigate` | `{"action": "navigate", "url": "..."}` | Load a URL (waits for reconnect) |
 | `click` | `{"action": "click", "selector": "#btn"}` | Click element |
-| `type` | `{"action": "type", "selector": "#input", "text": "..."}` | Type text |
+| `type` | `{"action": "type", "selector": "#input", "text": "..."}` | Type text (realistic keystrokes) |
+| `type` (paste) | `{"action": "type", "selector": "#input", "text": "...", "paste": true}` | Paste text (fast, React-compatible) |
+| `check` | `{"action": "check", "selector": "#agree"}` | Toggle checkbox/radio |
 | `key` | `{"action": "key", "key": "Enter"}` | Press key |
 | `wait` | `{"action": "wait", "selector": ".loaded"}` | Wait for element |
 | `assert` | `{"action": "assert", "assertion": {...}}` | Check condition |
-| `eval` | `{"action": "eval", "code": "..."}` | Run JavaScript |
+| `eval` | `{"action": "eval", "code": "..."}` | Run JavaScript (auto-awaits promises) |
+| `verify` | `{"action": "verify", "eval": "...", "expect": {...}}` | Poll until expression matches |
+| `tabs-open` | `{"action": "tabs-open", "url": "..."}` | Open a new tab |
+| `tabs-close` | `{"action": "tabs-close", "window": "id"}` | Close a tab |
+| `tabs-focus` | `{"action": "tabs-focus", "window": "id"}` | Focus a tab |
 
 ### Text Selectors
 

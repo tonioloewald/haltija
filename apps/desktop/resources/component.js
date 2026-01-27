@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.7";
+  var VERSION = "1.1.8";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -5246,10 +5246,11 @@ ${elementSummary}${moreText}`;
         this.respond(msg2.id, true);
       }
     }
-    handleEvalMessage(msg) {
+    async handleEvalMessage(msg) {
       try {
         const result = eval(msg.payload.code);
-        this.respond(msg.id, true, result);
+        const resolved = result instanceof Promise ? await result : result;
+        this.respond(msg.id, true, resolved);
       } catch (err) {
         this.respond(msg.id, false, null, err.message);
       }

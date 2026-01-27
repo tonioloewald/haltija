@@ -1877,16 +1877,30 @@ Run 'hj --help' for all commands.`
   }
 
   // Helper: Wait for browser to reconnect after navigation
-  async function waitForBrowserReconnect(timeoutMs = 10000): Promise<boolean> {
+  // Tracks a specific window by ID + browserId so it works correctly with multiple tabs
+  async function waitForBrowserReconnect(
+    windowId: string | null,
+    previousBrowserId: string | null,
+    timeoutMs = 10000,
+  ): Promise<boolean> {
     const start = Date.now()
-    // First, wait a moment for disconnect to happen
+    // Wait a moment for disconnect to happen
     await new Promise(r => setTimeout(r, 100))
     
     while (Date.now() - start < timeoutMs) {
-      if (browsers.size > 0) {
-        // Give widget time to fully initialize after reconnect
-        await new Promise(r => setTimeout(r, 300))
-        return true
+      if (windowId) {
+        const w = windows.get(windowId)
+        // Reconnected = same windowId, different browserId (new page load)
+        if (w && w.browserId !== previousBrowserId) {
+          await new Promise(r => setTimeout(r, 300)) // widget init
+          return true
+        }
+      } else {
+        // No specific window — fall back to any browser connected
+        if (browsers.size > 0) {
+          await new Promise(r => setTimeout(r, 300))
+          return true
+        }
       }
       await new Promise(r => setTimeout(r, 100))
     }
@@ -1952,6 +1966,11 @@ Run 'hj --help' for all commands.`
       try {
         switch (step.action) {
           case 'navigate': {
+            // Capture current window state before navigation so we can detect reconnect
+            const navWindowId = focusedWindowId
+            const navWindow = navWindowId ? windows.get(navWindowId) : null
+            const navPrevBrowserId = navWindow?.browserId ?? null
+            
             const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout)
             if (!response.success) {
               stepPassed = false
@@ -1959,7 +1978,7 @@ Run 'hj --help' for all commands.`
               break
             }
             // Wait for browser to reconnect after page load (widget reloads)
-            const reconnected = await waitForBrowserReconnect(stepTimeout)
+            const reconnected = await waitForBrowserReconnect(navWindowId, navPrevBrowserId, stepTimeout)
             if (!reconnected) {
               stepPassed = false
               error = 'Browser did not reconnect after navigation'
@@ -2400,6 +2419,37 @@ Run 'hj --help' for all commands.`
                 actual: lastActual,
                 timeout
               }
+            }
+            break
+          }
+
+          case 'tabs-open': {
+            const resp = await requestFromBrowser('tabs', 'open', { url: step.url }, stepTimeout)
+            if (!resp.success) {
+              stepPassed = false
+              error = resp.error || 'Failed to open tab'
+            }
+            break
+          }
+
+          case 'tabs-close': {
+            const resp = await requestFromBrowser('tabs', 'close', { windowId: step.window }, stepTimeout)
+            if (!resp.success) {
+              stepPassed = false
+              error = resp.error || 'Failed to close tab'
+            }
+            break
+          }
+
+          case 'tabs-focus': {
+            const resp = await requestFromBrowser('tabs', 'focus', { windowId: step.window }, stepTimeout)
+            if (!resp.success) {
+              stepPassed = false
+              error = resp.error || 'Failed to focus tab'
+            }
+            // Update server-side focus tracking
+            if (step.window && windows.has(step.window)) {
+              focusedWindowId = step.window
             }
             break
           }

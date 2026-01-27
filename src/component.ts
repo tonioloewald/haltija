@@ -7080,11 +7080,13 @@ export class DevChannel extends HTMLElement {
     }
   }
 
-  private handleEvalMessage(msg: DevMessage) {
+  private async handleEvalMessage(msg: DevMessage) {
     try {
       // Note: eval is dangerous but this is a dev tool for localhost
       const result = eval(msg.payload.code)
-      this.respond(msg.id, true, result)
+      // Auto-await promises so callers get the resolved value
+      const resolved = result instanceof Promise ? await result : result
+      this.respond(msg.id, true, resolved)
     } catch (err: any) {
       this.respond(msg.id, false, null, err.message)
     }

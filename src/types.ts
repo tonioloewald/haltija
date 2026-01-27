@@ -566,6 +566,9 @@ export type TestStep =
   | AssertStep
   | EvalStep
   | VerifyStep
+  | TabsOpenStep
+  | TabsCloseStep
+  | TabsFocusStep
 
 interface BaseStep {
   /** Human-readable description of what this step does (the "what") */
@@ -684,6 +687,24 @@ export interface VerifyStep extends BaseStep {
   timeout?: number
   /** How often to poll (ms, default: 100) */
   interval?: number
+}
+
+export interface TabsOpenStep extends BaseStep {
+  action: 'tabs-open'
+  /** URL to open in the new tab */
+  url?: string
+}
+
+export interface TabsCloseStep extends BaseStep {
+  action: 'tabs-close'
+  /** Window ID of the tab to close */
+  window: string
+}
+
+export interface TabsFocusStep extends BaseStep {
+  action: 'tabs-focus'
+  /** Window ID of the tab to focus */
+  window: string
 }
 
 /**
