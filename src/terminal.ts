@@ -63,8 +63,7 @@ export interface TerminalState {
 /** Status line items with their default states */
 export const STATUS_ITEMS = {
   hj: { default: 'no browser' },
-  todos: { default: 'empty' },
-  messages: { default: 'none' },
+  memos: { default: 'empty' },
 } as const
 
 export type StatusItemKey = keyof typeof STATUS_ITEMS
@@ -198,7 +197,8 @@ export function removeStatus(state: TerminalState, tool: string): void {
 
 /**
  * Get the status line as a compact string.
- * Format: hj > localhost:8700 "title" | todos empty | messages none
+ * Each segment is a runnable hj command showing current state.
+ * Format: hj localhost:8700 "title" | hj memos 2 active
  */
 export function getStatusLine(state: TerminalState): string {
   if (state.statuses.size === 0) return ''
@@ -207,14 +207,14 @@ export function getStatusLine(state: TerminalState): string {
   // hj status gets special formatting
   const hjStatus = state.statuses.get('hj')
   if (hjStatus?.state) {
-    parts.push(`hj > ${hjStatus.state}`)
+    parts.push(`hj ${hjStatus.state}`)
   }
   
-  // Other items use simple "name state" format
+  // Other items use "hj name state" format (self-documenting commands)
   for (const status of state.statuses.values()) {
     if (status.tool === 'hj') continue // already handled
     if (status.state) {
-      parts.push(`${status.tool} ${status.state}`)
+      parts.push(`hj ${status.tool} ${status.state}`)
     }
   }
   return parts.join(' | ')

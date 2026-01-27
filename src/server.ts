@@ -1557,6 +1557,24 @@ For complete API reference with all options and response formats:
 
     // Get agent config from haltija.json
     const agentConfig: AgentConfig = (terminalConfig as any)?.agent || {}
+    
+    // Default system prompt tells agent about hj browser control
+    if (!agentConfig.systemPrompt) {
+      agentConfig.systemPrompt = `You have browser control via the 'hj' CLI. Use it to see and interact with web pages.
+
+Each message starts with a status line like: hj localhost:8700 "Page Title" | hj memos 2 active
+Each segment is a runnable command showing current state.
+
+Key commands:
+- hj status - check connection
+- hj tree - see page structure  
+- hj click "selector" - click elements
+- hj type "selector" "text" - type in inputs
+- hj screenshot - capture the page
+- hj memos - view the shared memo board (NOT your built-in TodoWrite tool)
+
+Run 'hj --help' for all commands.`
+    }
 
     // Event handler: forward events to the shell's WebSocket
     const onEvent = (event: AgentEvent) => {
@@ -1571,7 +1589,7 @@ For complete API reference with all options and response formats:
     const agentCwd = shell.cwd || process.env.HOME || process.cwd()
 
     // Build compact UI state line to prepend to prompt
-    // Format: hj > host "title" | todos status | messages count
+    // Each segment is a runnable hj command: hj localhost:8700 "title" | hj memos 2 active
     const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
     let browserStatus: string
     if (focusedWindow) {
@@ -1579,18 +1597,16 @@ For complete API reference with all options and response formats:
         const urlObj = new URL(focusedWindow.url)
         const host = urlObj.host || 'localhost'
         const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
-        browserStatus = `hj > ${host}${title}`
+        browserStatus = `hj ${host}${title}`
       } catch {
-        browserStatus = 'hj > connected'
+        browserStatus = 'hj connected'
       }
     } else {
-      browserStatus = `hj > ${STATUS_ITEMS.hj.default}`
+      browserStatus = `hj ${STATUS_ITEMS.hj.default}`
     }
-    const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.todos.default
-    const messageCount = getAgentMessageCount(body.shellId)
-    const messageStatus = messageCount > 0 ? `${messageCount} new` : 'none'
+    const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.memos.default
     
-    const uiState = `${browserStatus} | todos ${taskStatus} | messages ${messageStatus}
+    const uiState = `${browserStatus} | hj memos ${taskStatus}
 
 `
     // Inject any pending messages before the user's prompt

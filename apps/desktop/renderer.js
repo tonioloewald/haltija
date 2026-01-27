@@ -1410,7 +1410,8 @@ function handleAgentStatusMessage(msg) {
 
 /**
  * Parse and render the status line in the GUI
- * Format: "hj > localhost:8700 'title' | todos 2 active | messages none"
+ * Format: "hj localhost:8700 'title' | hj memos 2 active"
+ * Each segment is a self-documenting hj command.
  */
 function renderAgentStatusBar(line) {
   if (!line) {
@@ -1418,9 +1419,17 @@ function renderAgentStatusBar(line) {
     return
   }
   
+  // Only show if active tab is a terminal tab
+  const activeTab = getActiveTab()
+  if (activeTab && !activeTab.isTerminal) {
+    agentStatusBar.classList.add('hidden')
+    return
+  }
+  
   agentStatusBar.classList.remove('hidden')
   
   // Split by | and render each segment
+  // Each segment starts with "hj" - e.g. "hj localhost:8700" or "hj memos 2 active"
   const segments = line.split(' | ')
   let html = ''
   
@@ -1428,21 +1437,20 @@ function renderAgentStatusBar(line) {
     const trimmed = segment.trim()
     if (!trimmed) continue
     
-    // Parse "key value" or "key > value" patterns
+    // All segments now start with "hj" - parse "hj <tool> <state>" or "hj <state>"
     let label = ''
     let value = trimmed
     
-    // Handle "hj > localhost:8700 'title'" format
-    const arrowMatch = trimmed.match(/^(\w+)\s*>\s*(.+)$/)
-    if (arrowMatch) {
-      label = arrowMatch[1]
-      value = arrowMatch[2]
-    } else {
-      // Handle "todos 2 active" format - first word is label
-      const spaceIdx = trimmed.indexOf(' ')
-      if (spaceIdx > 0) {
-        label = trimmed.substring(0, spaceIdx)
-        value = trimmed.substring(spaceIdx + 1)
+    if (trimmed.startsWith('hj ')) {
+      const rest = trimmed.substring(3) // strip "hj "
+      // Check if second word is a known tool name
+      const words = rest.split(' ')
+      if (words.length > 1 && /^(memos|board|tasks)$/.test(words[0])) {
+        label = words[0]
+        value = words.slice(1).join(' ')
+      } else {
+        label = 'hj'
+        value = rest
       }
     }
     
@@ -1476,14 +1484,11 @@ function renderAgentStatusBar(line) {
  */
 function handleStatusSegmentClick(segmentName, target) {
   switch (segmentName) {
-    case 'todos':
-      showTodosPanel(target)
+    case 'memos':
+      showMemosPanel(target)
       break
     case 'hj':
       // Could show connection details or browser info
-      break
-    case 'messages':
-      // Could show message queue
       break
     default:
       console.log('[Agent Status] Clicked segment:', segmentName)
@@ -1491,18 +1496,18 @@ function handleStatusSegmentClick(segmentName, target) {
 }
 
 /**
- * Show the todos panel as a floating window
+ * Show the memos panel as a floating window
  */
-async function showTodosPanel(target) {
+async function showMemosPanel(target) {
   // Create content for the panel
   const content = document.createElement('div')
-  content.className = 'todos-panel-content'
-  content.innerHTML = '<div class="loading">Loading tasks...</div>'
+  content.className = 'memos-panel-content'
+  content.innerHTML = '<div class="loading">Loading memos...</div>'
   
   const panel = createFloatPanel({
     target,
     content,
-    title: 'Tasks',
+    title: 'Memos',
     position: 's'
   })
   
@@ -1518,19 +1523,19 @@ async function showTodosPanel(target) {
     const result = await resp.json()
     
     if (result.boardJson?.items) {
-      renderTodosPanel(content, result.boardJson.items)
+      renderMemosPanel(content, result.boardJson.items)
     } else {
-      content.innerHTML = '<div class="empty">No tasks</div>'
+      content.innerHTML = '<div class="empty">No memos</div>'
     }
   } catch (err) {
-    content.innerHTML = `<div class="error">Failed to load tasks: ${escapeHtml(err.message)}</div>`
+    content.innerHTML = `<div class="error">Failed to load memos: ${escapeHtml(err.message)}</div>`
   }
 }
 
 /**
- * Render tasks in a simple list view (for now)
+ * Render memos in a simple list view (for now)
  */
-function renderTodosPanel(container, items) {
+function renderMemosPanel(container, items) {
   const columns = ['in_progress', 'blocked', 'queued', 'review']
   const columnNames = {
     in_progress: '🔄 In Progress',
@@ -1539,26 +1544,26 @@ function renderTodosPanel(container, items) {
     review: '👀 Review'
   }
   
-  let html = '<div class="todos-list">'
+  let html = '<div class="memos-list">'
   
   for (const col of columns) {
     const colItems = items.filter(i => i.column === col)
     if (colItems.length === 0) continue
     
-    html += `<div class="todos-column">
-      <div class="todos-column-header">${columnNames[col]} (${colItems.length})</div>`
+    html += `<div class="memos-column">
+      <div class="memos-column-header">${columnNames[col]} (${colItems.length})</div>`
     
     for (const item of colItems) {
-      html += `<div class="todo-item" data-id="${item.id}">
-        <span class="todo-title">${escapeHtml(item.title)}</span>
+      html += `<div class="memo-item" data-id="${item.id}">
+        <span class="memo-title">${escapeHtml(item.title)}</span>
       </div>`
     }
     
     html += '</div>'
   }
   
-  if (html === '<div class="todos-list">') {
-    html += '<div class="empty">No active tasks</div>'
+  if (html === '<div class="memos-list">') {
+    html += '<div class="empty">No active memos</div>'
   }
   
   html += '</div>'
