@@ -300,6 +300,14 @@ function closeTab(tabId) {
 
   const tab = tabs[tabIndex]
 
+  // Proper webview teardown — stop rendering before removal
+  if (tab.webview && tab.webview.tagName === 'WEBVIEW') {
+    try {
+      tab.webview.stop()
+      tab.webview.src = 'about:blank'
+    } catch (e) {}
+  }
+
   // Remove elements
   tab.element.remove()
   tab.webview.remove()
@@ -314,8 +322,8 @@ function closeTab(tabId) {
       const newIndex = Math.max(0, tabIndex - 1)
       activateTab(tabs[newIndex].id)
     } else {
-      // No tabs left, create a new one
-      createTab()
+      // Last tab — close the window (quit on non-macOS, hide on macOS)
+      window.haltija.closeWindow()
     }
   }
 }

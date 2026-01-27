@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('haltija', {
   
   // Navigation (from widget via main process) - uses renderer's smart navigate with fallback
   onNavigateUrl: (callback) => ipcRenderer.on('navigate-url', (event, data) => callback(data)),
+  
+  // Window management
+  closeWindow: () => ipcRenderer.send('close-window'),
 })
 
 console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))

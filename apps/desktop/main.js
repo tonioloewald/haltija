@@ -587,6 +587,12 @@ function setupWidgetInjection() {
     setupWebContentsInjection(wc)
   })
 
+  // Close window (triggered when last tab is closed)
+  ipcMain.on('close-window', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.close()
+  })
+
   // Inject into the main webview when it loads (legacy support)
   ipcMain.on('webview-ready', (event, webContentsId) => {
     const wc = webContents.fromId(webContentsId)
