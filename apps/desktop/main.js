@@ -168,9 +168,7 @@ function setupMcpConfig() {
 async function checkAndPromptMcpSetup() {
   // Skip if Claude Desktop isn't installed
   if (!isClaudeDesktopInstalled()) {
-    console.log(
-      '[Haltija Desktop] Claude Desktop not detected, skipping MCP setup prompt',
-    )
+    // Claude Desktop app not installed — no MCP auto-setup dialog needed
     return
   }
 
