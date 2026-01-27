@@ -17,7 +17,7 @@
  */
 
 import { spawn } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
@@ -98,6 +98,19 @@ export const ARG_MAPS = {
   form: (args) => parseTargetArgs(args),
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
+  'test-run': (args) => {
+    if (!args.length) { console.error('Usage: hj test-run <file.json>'); process.exit(1) }
+    return readTestFile(args[0])
+  },
+  'test-validate': (args) => {
+    if (!args.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
+    return readTestFile(args[0])
+  },
+  'test-suite': (args) => {
+    if (!args.length) { console.error('Usage: hj test-suite <file1.json> [file2.json ...]'); process.exit(1) }
+    const tests = args.map(f => readTestFile(f).test)
+    return { tests }
+  },
   'send-message': (args) => {
     const noSubmit = args.includes('--no-submit')
     const filtered = args.filter(a => a !== '--no-submit')
@@ -177,6 +190,22 @@ export function parseModifiers(args) {
     if (a === '--meta' || a === '-m') mods.meta = true
   }
   return Object.keys(mods).length ? mods : {}
+}
+
+/** Read a test JSON file, returning { test: <parsed> } */
+function readTestFile(filePath) {
+  if (!existsSync(filePath)) {
+    console.error(`Error: File not found: ${filePath}`)
+    process.exit(1)
+  }
+  try {
+    const content = readFileSync(filePath, 'utf-8')
+    const parsed = JSON.parse(content)
+    return { test: parsed }
+  } catch (err) {
+    console.error(`Error: Failed to parse ${filePath}: ${err.message}`)
+    process.exit(1)
+  }
 }
 
 function num(s) { return s != null ? Number(s) : undefined }
@@ -384,7 +413,7 @@ export const KNOWN_COMMANDS = new Set([
   'select-start', 'select-result', 'select-cancel', 'select-clear',
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
   'recording-start', 'recording-stop', 'recording-generate', 'recordings',
-  'test-run', 'test-validate',
+  'test-run', 'test-validate', 'test-suite',
   'send', 'send-message', 'send-selection', 'send-recording',
   'status', 'version', 'docs', 'api', 'stats'
 ])
