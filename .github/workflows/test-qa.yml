@@ -33,8 +33,14 @@ jobs:
         run: |
           cd apps/desktop
           npm install --omit=dev
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx electron . &
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+            npx electron . --no-sandbox > /tmp/electron-stdout.log 2> /tmp/electron-stderr.log &
           echo $! > /tmp/electron.pid
+          sleep 2
+          echo "--- Electron stdout ---"
+          cat /tmp/electron-stdout.log || true
+          echo "--- Electron stderr ---"
+          cat /tmp/electron-stderr.log || true
 
       - name: Wait for server
         run: |
@@ -46,7 +52,12 @@ jobs:
             fi
             sleep 1
           done
-          curl -sf http://localhost:8700/status || (echo "Server failed to start" && exit 1)
+          if ! curl -sf http://localhost:8700/status; then
+            echo "Server failed to start. Electron logs:"
+            cat /tmp/electron-stdout.log || true
+            cat /tmp/electron-stderr.log || true
+            exit 1
+          fi
 
       - name: Wait for browser connection
         run: |
