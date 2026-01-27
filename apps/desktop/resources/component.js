@@ -36,7 +36,57 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.3";
+  var VERSION = "1.1.4";
+
+  // src/text-selector.ts
+  var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
+  function parseTextSelector(selector) {
+    const match = selector.match(/:(?:text-is|has-text|text)\(/);
+    if (!match || match.index === undefined)
+      return null;
+    const pseudoStart = match.index;
+    const pseudoName = match[0].slice(1, -1);
+    let depth = 1;
+    let i = pseudoStart + match[0].length;
+    while (i < selector.length && depth > 0) {
+      if (selector[i] === "(")
+        depth++;
+      else if (selector[i] === ")")
+        depth--;
+      i++;
+    }
+    if (depth !== 0)
+      return null;
+    const rawArg = selector.slice(pseudoStart + match[0].length, i - 1).trim();
+    const baseSelector = (selector.slice(0, pseudoStart) + selector.slice(i)).trim() || "*";
+    const regexMatch = rawArg.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (regexMatch) {
+      try {
+        return {
+          baseSelector,
+          pseudoType: pseudoName,
+          searchRegex: new RegExp(regexMatch[1], regexMatch[2])
+        };
+      } catch {}
+    }
+    const unquoted = rawArg.startsWith('"') && rawArg.endsWith('"') || rawArg.startsWith("'") && rawArg.endsWith("'") ? rawArg.slice(1, -1) : rawArg;
+    return {
+      baseSelector,
+      pseudoType: pseudoName,
+      searchText: unquoted.toLowerCase()
+    };
+  }
+  function textMatches(elementText, parsed) {
+    const text = elementText.trim();
+    if (parsed.searchRegex) {
+      return parsed.searchRegex.test(text);
+    }
+    const lower = text.toLowerCase();
+    if (parsed.pseudoType === "text-is") {
+      return lower === parsed.searchText;
+    }
+    return lower.includes(parsed.searchText);
+  }
 
   // src/component.ts
   var VERSION2 = VERSION;
@@ -299,7 +349,7 @@
         const allSimilar = document.querySelectorAll(selector);
         const matchingText = Array.from(allSimilar).filter((e) => e.innerText?.trim() === text);
         if (matchingText.length === 1) {
-          return `${tag}:has-text("${text}")`;
+          return `${tag}:text-is("${text}")`;
         }
       }
     }
@@ -324,6 +374,34 @@
       }
     }
     return getSelector(el);
+  }
+  function elementTextMatches(el, parsed) {
+    const text = el.innerText ?? "";
+    return textMatches(text, parsed);
+  }
+  function resolveSelector(selector) {
+    if (!TEXT_PSEUDO_RE.test(selector)) {
+      return document.querySelector(selector);
+    }
+    const parsed = parseTextSelector(selector);
+    if (!parsed)
+      return document.querySelector(selector);
+    const candidates = document.querySelectorAll(parsed.baseSelector);
+    for (const el of candidates) {
+      if (elementTextMatches(el, parsed))
+        return el;
+    }
+    return null;
+  }
+  function resolveSelectorAll(selector) {
+    if (!TEXT_PSEUDO_RE.test(selector)) {
+      return Array.from(document.querySelectorAll(selector));
+    }
+    const parsed = parseTextSelector(selector);
+    if (!parsed)
+      return Array.from(document.querySelectorAll(selector));
+    const candidates = document.querySelectorAll(parsed.baseSelector);
+    return Array.from(candidates).filter((el) => elementTextMatches(el, parsed));
   }
   function extractElement(el) {
     const rect = el.getBoundingClientRect();
@@ -4905,10 +4983,10 @@ ${elementSummary}${moreText}`;
         const req = payload2;
         try {
           if (req.all) {
-            const elements = document.querySelectorAll(req.selector);
-            this.respond(msg2.id, true, Array.from(elements).map(extractElement));
+            const elements = resolveSelectorAll(req.selector);
+            this.respond(msg2.id, true, elements.map(extractElement));
           } else {
-            const el = document.querySelector(req.selector);
+            const el = resolveSelector(req.selector);
             this.respond(msg2.id, true, el ? extractElement(el) : null);
           }
         } catch (err) {
@@ -4916,7 +4994,7 @@ ${elementSummary}${moreText}`;
         }
       } else if (action2 === "inspect") {
         try {
-          const el = document.querySelector(payload2.selector);
+          const el = resolveSelector(payload2.selector);
           if (!el) {
             this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
             return;
@@ -4931,19 +5009,19 @@ ${elementSummary}${moreText}`;
         }
       } else if (action2 === "inspectAll") {
         try {
-          const elements = document.querySelectorAll(payload2.selector);
+          const elements = resolveSelectorAll(payload2.selector);
           const opts = {
             fullStyles: payload2.fullStyles,
             matchedRules: payload2.matchedRules
           };
-          const results = Array.from(elements).slice(0, payload2.limit || 10).map((el) => inspectElement(el, opts));
+          const results = elements.slice(0, payload2.limit || 10).map((el) => inspectElement(el, opts));
           this.respond(msg2.id, true, results);
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
       } else if (action2 === "highlight") {
         try {
-          const el = document.querySelector(payload2.selector);
+          const el = resolveSelector(payload2.selector);
           if (!el) {
             this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
             return;
@@ -4963,7 +5041,7 @@ ${elementSummary}${moreText}`;
       } else if (action2 === "tree") {
         try {
           const request = payload2;
-          const el = document.querySelector(request.selector);
+          const el = resolveSelector(request.selector);
           if (!el) {
             this.respond(msg2.id, false, null, `Element not found: ${request.selector}`);
             return;
@@ -5108,7 +5186,7 @@ ${elementSummary}${moreText}`;
           }
           const html2canvas = window.html2canvas;
           if (html2canvas) {
-            const target = payload2?.selector ? document.querySelector(payload2.selector) : document.body;
+            const target = payload2?.selector ? resolveSelector(payload2.selector) : document.body;
             if (!target) {
               this.respond(msg2.id, false, null, `Element not found: ${payload2?.selector}`);
               return;
@@ -5262,7 +5340,7 @@ ${elementSummary}${moreText}`;
           return;
         }
       } else if (selector) {
-        el = document.querySelector(selector);
+        el = resolveSelector(selector);
         targetDesc = selector;
       }
       if (!el) {
@@ -5614,7 +5692,7 @@ ${elementSummary}${moreText}`;
           return;
         }
       } else if (payload2.selector) {
-        el = document.querySelector(payload2.selector);
+        el = resolveSelector(payload2.selector);
         targetDesc = payload2.selector;
       }
       if (!el) {
@@ -5689,7 +5767,7 @@ ${elementSummary}${moreText}`;
             return;
           }
         } else if (selector) {
-          target = document.querySelector(selector);
+          target = resolveSelector(selector);
           targetDesc = selector;
           if (!target) {
             this.respond(responseId, false, null, `Element not found: ${selector}`);
@@ -6095,7 +6173,7 @@ ${elementSummary}${moreText}`;
     startMutationWatch(config) {
       this.stopMutationWatch();
       this.mutationConfig = config;
-      const root = config.root ? document.querySelector(config.root) : document.body;
+      const root = config.root ? resolveSelector(config.root) : document.body;
       if (!root) {
         this.send("mutations", "error", {
           error: `Root element not found: ${config.root}`
@@ -6369,7 +6447,7 @@ ${elementSummary}${moreText}`;
       this.send("mutations", "batch", batch);
     }
     watchEvents(req, watchId) {
-      const target = req.selector ? document.querySelector(req.selector) : document;
+      const target = req.selector ? resolveSelector(req.selector) : document;
       if (!target) {
         this.respond(watchId, false, null, `Element not found: ${req.selector}`);
         return;
@@ -6444,7 +6522,7 @@ ${elementSummary}${moreText}`;
       this.eventWatchers.clear();
     }
     dispatchSyntheticEvent(req, responseId) {
-      const el = document.querySelector(req.selector);
+      const el = resolveSelector(req.selector);
       if (!el) {
         this.respond(responseId, false, null, `Element not found: ${req.selector}`);
         return;
@@ -6588,6 +6666,8 @@ ${elementSummary}${moreText}`;
     }
     customElements.define(TAG_NAME, DevChannel);
     currentTagName = TAG_NAME;
+    window.__haltija_resolveSelector = resolveSelector;
+    window.__haltija_resolveSelectorAll = resolveSelectorAll;
   }
   registerDevChannel();
   var WIDGET_ID = "haltija-widget";

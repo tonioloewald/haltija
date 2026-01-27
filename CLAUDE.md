@@ -65,6 +65,7 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/api-router.ts` | Schema-driven request routing |
 | `src/api-handlers.ts` | Handler implementations for routed endpoints |
 | `src/types.ts` | All TypeScript types (DevMessage, TestStep, SemanticEvent, etc.) |
+| `src/text-selector.ts` | Custom `:text()` pseudo-selector parser (shared by component + tests) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
 | `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
 
@@ -83,6 +84,31 @@ The `/tree` endpoint assigns stable ref IDs (e.g., `1`, `42`) to elements. Inter
 - More efficient than CSS selectors (direct lookup vs DOM query)
 - Survives DOM updates within same page load
 - Use `ref: "1"` instead of `selector: "#btn"` when working with tree output
+
+### Text Selectors
+
+Haltija extends CSS selectors with custom pseudo-selectors for finding elements by visible text. These work everywhere a `selector` parameter is accepted (`/click`, `/type`, `/query`, `/inspect`, `/tree`, etc.):
+
+| Pseudo-selector | Behavior |
+|----------------|----------|
+| `:text(str)` | Contains `str` (case-insensitive) |
+| `:text-is(str)` | Exact match of `str` (case-insensitive) |
+| `:has-text(str)` | Alias for `:text()` (Playwright compat) |
+| `:text(/regex/)` | Matches regex (case-sensitive) |
+| `:text(/regex/i)` | Matches regex (case-insensitive) |
+
+Examples:
+```
+button:text(sign in)        # Button containing "sign in" (case-insensitive)
+button:text(/Sign in/)      # Case-sensitive match
+a:text(/docs|blog/i)        # Link containing "docs" or "blog"
+h1:text-is(Dashboard)       # Exact text match
+h1:text(/^Dashboard$/)      # Same thing via anchored regex
+```
+
+The base CSS selector (before `:text()`) is used to narrow candidates, then text filtering is applied. Quotes around the text are optional: `:text(foo)`, `:text("foo")`, and `:text('foo')` are equivalent.
+
+Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSelector`/`resolveSelectorAll`).
 
 ### Multi-Window Support
 

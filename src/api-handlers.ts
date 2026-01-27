@@ -79,6 +79,24 @@ export function registerHandler<T>(
 /** Sleep helper */
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+/** 
+ * Generate eval-safe JS code to resolve a selector (supports :text() pseudo-selectors).
+ * Returns a JS expression string that resolves to an Element or null.
+ * Uses __haltija_resolveSelector if available, falls back to document.querySelector.
+ */
+function qs(selector: string): string {
+  const s = JSON.stringify(selector)
+  return `(window.__haltija_resolveSelector || document.querySelector.bind(document))(${s})`
+}
+
+/**
+ * Generate eval-safe JS code for querySelector existence + visibility check.
+ * Returns a JS expression string that evaluates to boolean.
+ */
+function qsVisible(selector: string): string {
+  return `(function(){var el=${qs(selector)};return !!el && el.offsetParent !== null})()`
+}
+
 // ============================================
 // DOM Diff Support
 // ============================================
@@ -347,7 +365,7 @@ registerHandler(api.click, async (body, ctx) => {
   if (autoWait) {
     const startTime = Date.now()
     const pollInterval = 100
-    const checkCode = `!!document.querySelector(${JSON.stringify(selector)}) && document.querySelector(${JSON.stringify(selector)}).offsetParent !== null`
+    const checkCode = qsVisible(selector)
     
     while (Date.now() - startTime < timeout) {
       const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
@@ -412,6 +430,7 @@ registerHandler(api.fetchUrl, async (body, ctx) => {
 registerHandler(api.call, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const selector = JSON.stringify(body.selector)
+  const resolveExpr = `(window.__haltija_resolveSelector || document.querySelector.bind(document))(${selector})`
   const method = body.method
   const args = body.args
   
@@ -420,7 +439,7 @@ registerHandler(api.call, async (body, ctx) => {
     // Method call mode: element.method(...args)
     const argsJson = JSON.stringify(args)
     code = `(function() {
-      const el = document.querySelector(${selector});
+      const el = ${resolveExpr};
       if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
       if (typeof el[${JSON.stringify(method)}] !== 'function') {
         return { success: false, error: 'Method not found: ${method}' };
@@ -435,7 +454,7 @@ registerHandler(api.call, async (body, ctx) => {
   } else {
     // Property access mode: element.property
     code = `(function() {
-      const el = document.querySelector(${selector});
+      const el = ${resolveExpr};
       if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
       try {
         const value = el[${JSON.stringify(method)}];
@@ -466,7 +485,7 @@ registerHandler(api.drag, async (body, ctx) => {
   
   // Scroll into view
   await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+    code: `${qs(selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
   }, 5000, windowId)
   await sleep(100)
   
@@ -525,7 +544,7 @@ registerHandler(api.type, async (body, ctx) => {
   if (autoWait && body.selector) {
     const startTime = Date.now()
     const pollInterval = 100
-    const checkCode = `!!document.querySelector(${JSON.stringify(body.selector)}) && document.querySelector(${JSON.stringify(body.selector)}).offsetParent !== null`
+    const checkCode = qsVisible(body.selector)
     
     while (Date.now() - startTime < waitTimeout) {
       const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
@@ -622,7 +641,7 @@ registerHandler(api.highlight, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   
   await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.querySelector(${JSON.stringify(body.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
+    code: `${qs(body.selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
   }, 5000, windowId)
   await sleep(100)
   
@@ -867,8 +886,8 @@ registerHandler(api.wait, async (body, ctx) => {
   if (body.forElement) {
     const selector = body.forElement
     const checkCode = hidden
-      ? `!document.querySelector(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)}).offsetParent === null`
-      : `!!document.querySelector(${JSON.stringify(selector)}) && document.querySelector(${JSON.stringify(selector)}).offsetParent !== null`
+      ? `(function(){var el=${qs(selector)};return !el || el.offsetParent === null})()`
+      : qsVisible(selector)
     
     while (Date.now() - startTime < timeout) {
       const checkResponse = await ctx.requestFromBrowser('eval', 'exec', { code: checkCode }, 5000, windowId)
@@ -981,7 +1000,7 @@ registerHandler(api.formData, async (body, ctx) => {
   const selector = body.selector || 'form'
   
   const formCode = `(function() {
-    const form = document.querySelector(${JSON.stringify(selector)});
+    const form = (window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(selector)});
     if (!form) return { success: false, error: 'Form not found: ${selector.replace(/'/g, "\\'")}' };
     
     const fields = {};
@@ -1107,7 +1126,7 @@ registerHandler(api.scroll, async (body, ctx) => {
   if (body.selector) {
     const code = `
       (async () => {
-        const el = document.querySelector(${JSON.stringify(body.selector)});
+        const el = (window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(body.selector)});
         if (!el) return { success: false, error: 'Element not found' };
         const rect = el.getBoundingClientRect();
         const blockAlign = ${JSON.stringify(block)};

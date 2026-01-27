@@ -1860,3 +1860,299 @@ test.describe('haltija-dev new endpoints', () => {
     expect(ancestorIds).toContain('ancestor-inner')
   })
 })
+
+test.describe('haltija-dev :text() pseudo-selectors', () => {
+  test.beforeEach(async ({ page }) => {
+    await injectDevChannel(page)
+    await page.waitForTimeout(500)
+    
+    // Set up test DOM with various text content
+    await page.evaluate(() => {
+      const container = document.createElement('div')
+      container.id = 'text-selector-test'
+      container.innerHTML = `
+        <button id="signin-btn">Sign in</button>
+        <button id="signup-btn">Sign Up</button>
+        <button id="logout-btn">Log Out</button>
+        <a id="about-link" href="/about">About Us</a>
+        <a id="contact-link" href="/contact">Contact Support</a>
+        <h1 id="title">Dashboard</h1>
+        <h2 id="subtitle">Welcome Back</h2>
+        <p id="paragraph">This is a longer paragraph with some text in it.</p>
+        <span id="empty-span"></span>
+        <div id="nested"><span>Nested Text Content</span></div>
+      `
+      document.body.appendChild(container)
+    })
+  })
+  
+  test(':text() finds element by substring match (case-insensitive)', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(sign in)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+  })
+  
+  test(':text() is case-insensitive', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(SIGN IN)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+  })
+  
+  test(':text() with quoted string', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text("Sign Up")' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signup-btn')
+  })
+  
+  test(':text() with single-quoted string', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: "button:text('log out')" })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('logout-btn')
+  })
+  
+  test(':text() without tag matches any element', async () => {
+    // :text() without a tag qualifier uses '*' as base, matching first element
+    // whose innerText contains the search text. This will be the h1 itself.
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: ':text-is(dashboard)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('title')
+  })
+  
+  test(':text() does substring matching', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'a:text(support)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('contact-link')
+  })
+  
+  test(':text-is() requires exact text match (case-insensitive)', async () => {
+    // "Sign in" exact match should work
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text-is(sign in)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+    
+    // Substring should NOT match with :text-is()
+    const res2 = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text-is(sign)' })
+    })
+    const data2 = await res2.json()
+    expect(data2.success).toBe(true)
+    expect(data2.data).toBeNull()
+  })
+  
+  test(':has-text() works as alias for :text()', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:has-text(sign in)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+  })
+  
+  test(':text() works with querySelectorAll via query all', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(sign)', all: true })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.length).toBe(2) // "Sign in" and "Sign Up"
+    const ids = data.data.map((d: any) => d.id).sort()
+    expect(ids).toEqual(['signin-btn', 'signup-btn'])
+  })
+  
+  test(':text() works with /click', async ({ page }) => {
+    // Set up click tracking
+    await page.evaluate(() => {
+      (window as any).textClickWorked = false
+      document.getElementById('signin-btn')!.onclick = () => {
+        (window as any).textClickWorked = true
+      }
+    })
+    
+    await fetch(`${SERVER_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(sign in)' })
+    })
+    
+    await page.waitForTimeout(300)
+    
+    const clicked = await page.evaluate(() => (window as any).textClickWorked)
+    expect(clicked).toBe(true)
+  })
+  
+  test(':text() works with /inspect', async () => {
+    // First verify the element exists via /query
+    const queryRes = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h1:text(dashboard)' })
+    })
+    const queryData = await queryRes.json()
+    expect(queryData.success).toBe(true)
+    expect(queryData.data?.tagName).toBe('h1')
+    
+    // Now inspect it
+    const res = await fetch(`${SERVER_URL}/inspect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h1:text(dashboard)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.tagName).toBe('h1')
+    expect(data.data.text.textContent).toContain('Dashboard')
+  })
+  
+  test(':text() works with /tree', async () => {
+    const res = await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#nested:text(nested text)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.tag).toBe('div')
+    expect(data.data.id).toBe('nested')
+  })
+  
+  test(':text() returns null for no match', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(nonexistent)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data).toBeNull()
+  })
+  
+  test('standard CSS selectors still work unchanged', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: '#signin-btn' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+  })
+  
+  test(':text(/regex/) is case-sensitive by default', async () => {
+    // "Sign in" with correct case should match
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(/Sign in/)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+    
+    // Wrong case should NOT match
+    const res2 = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(/sign in/)' })
+    })
+    const data2 = await res2.json()
+    expect(data2.success).toBe(true)
+    expect(data2.data).toBeNull()
+  })
+  
+  test(':text(/regex/i) enables case-insensitive matching', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(/sign in/i)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('signin-btn')
+  })
+  
+  test(':text(/pattern/) supports regex alternation', async () => {
+    // Match buttons containing "Sign" or "Log"
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'button:text(/Sign|Log/)', all: true })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data.length).toBe(3) // Sign in, Sign Up, Log Out
+  })
+  
+  test(':text(/^exact$/) anchored regex for exact match', async () => {
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h1:text(/^Dashboard$/)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('title')
+    
+    // Partial anchor should NOT match
+    const res2 = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h1:text(/^Dash$/)' })
+    })
+    const data2 = await res2.json()
+    expect(data2.success).toBe(true)
+    expect(data2.data).toBeNull()
+  })
+  
+  test(':text(/regex/) with character classes', async () => {
+    // Match elements with text starting with "Welcome"
+    const res = await fetch(`${SERVER_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: 'h2:text(/^Welcome\\s+Back$/i)' })
+    })
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.data?.id).toBe('subtitle')
+  })
+})

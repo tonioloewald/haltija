@@ -498,7 +498,7 @@ function getStableSelector(el: Element): string {
         e => (e as HTMLElement).innerText?.trim() === text
       )
       if (matchingText.length === 1) {
-        return `${tag}:has-text("${text}")`
+        return `${tag}:text-is("${text}")`
       }
     }
   }
@@ -530,6 +530,42 @@ function getStableSelector(el: Element): string {
   
   // 7. Fall back to structural selector (original behavior)
   return getSelector(el)
+}
+
+// Custom pseudo-selector support - see src/text-selector.ts for parser
+import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
+import type { ParsedTextSelector } from './text-selector'
+
+function elementTextMatches(el: Element, parsed: ParsedTextSelector): boolean {
+  const text = (el as HTMLElement).innerText ?? ''
+  return _textMatches(text, parsed)
+}
+
+/** querySelector with :text() pseudo-selector support */
+function resolveSelector(selector: string): Element | null {
+  if (!TEXT_PSEUDO_RE.test(selector)) {
+    return document.querySelector(selector)
+  }
+  const parsed = parseTextSelector(selector)
+  if (!parsed) return document.querySelector(selector)
+
+  const candidates = document.querySelectorAll(parsed.baseSelector)
+  for (const el of candidates) {
+    if (elementTextMatches(el, parsed)) return el
+  }
+  return null
+}
+
+/** querySelectorAll with :text() pseudo-selector support */
+function resolveSelectorAll(selector: string): Element[] {
+  if (!TEXT_PSEUDO_RE.test(selector)) {
+    return Array.from(document.querySelectorAll(selector))
+  }
+  const parsed = parseTextSelector(selector)
+  if (!parsed) return Array.from(document.querySelectorAll(selector))
+
+  const candidates = document.querySelectorAll(parsed.baseSelector)
+  return Array.from(candidates).filter(el => elementTextMatches(el, parsed))
 }
 
 // Extract element info for serialization
@@ -6681,10 +6717,10 @@ export class DevChannel extends HTMLElement {
       const req = payload as DomQueryRequest
       try {
         if (req.all) {
-          const elements = document.querySelectorAll(req.selector)
-          this.respond(msg.id, true, Array.from(elements).map(extractElement))
+          const elements = resolveSelectorAll(req.selector)
+          this.respond(msg.id, true, elements.map(extractElement))
         } else {
-          const el = document.querySelector(req.selector)
+          const el = resolveSelector(req.selector)
           this.respond(msg.id, true, el ? extractElement(el) : null)
         }
       } catch (err: any) {
@@ -6692,7 +6728,7 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'inspect') {
       try {
-        const el = document.querySelector(payload.selector)
+        const el = resolveSelector(payload.selector)
         if (!el) {
           this.respond(
             msg.id,
@@ -6712,12 +6748,12 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'inspectAll') {
       try {
-        const elements = document.querySelectorAll(payload.selector)
+        const elements = resolveSelectorAll(payload.selector)
         const opts = {
           fullStyles: payload.fullStyles,
           matchedRules: payload.matchedRules,
         }
-        const results = Array.from(elements)
+        const results = elements
           .slice(0, payload.limit || 10)
           .map((el) => inspectElement(el, opts))
         this.respond(msg.id, true, results)
@@ -6726,7 +6762,7 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'highlight') {
       try {
-        const el = document.querySelector(payload.selector)
+        const el = resolveSelector(payload.selector)
         if (!el) {
           this.respond(
             msg.id,
@@ -6752,7 +6788,7 @@ export class DevChannel extends HTMLElement {
       // Build a DOM tree representation or actionable summary
       try {
         const request = payload as DomTreeRequest
-        const el = document.querySelector(request.selector)
+        const el = resolveSelector(request.selector)
         if (!el) {
           this.respond(
             msg.id,
@@ -6971,7 +7007,7 @@ export class DevChannel extends HTMLElement {
         const html2canvas = (window as any).html2canvas
         if (html2canvas) {
           const target = payload?.selector
-            ? document.querySelector(payload.selector)
+            ? resolveSelector(payload.selector)
             : document.body
           if (!target) {
             this.respond(
@@ -7188,7 +7224,7 @@ export class DevChannel extends HTMLElement {
         return
       }
     } else if (selector) {
-      el = document.querySelector(selector) as HTMLElement
+      el = resolveSelector(selector) as HTMLElement
       targetDesc = selector
     }
 
@@ -7750,7 +7786,7 @@ export class DevChannel extends HTMLElement {
         return
       }
     } else if (payload.selector) {
-      el = document.querySelector(payload.selector) as HTMLElement
+      el = resolveSelector(payload.selector) as HTMLElement
       targetDesc = payload.selector
     }
 
@@ -7879,7 +7915,7 @@ export class DevChannel extends HTMLElement {
           return
         }
       } else if (selector) {
-        target = document.querySelector(selector) as HTMLElement
+        target = resolveSelector(selector) as HTMLElement
         targetDesc = selector
         if (!target) {
           this.respond(
@@ -8444,7 +8480,7 @@ export class DevChannel extends HTMLElement {
 
     this.mutationConfig = config
     const root = config.root
-      ? document.querySelector(config.root)
+      ? resolveSelector(config.root)
       : document.body
 
     if (!root) {
@@ -8860,7 +8896,7 @@ export class DevChannel extends HTMLElement {
 
   private watchEvents(req: EventWatchRequest, watchId: string) {
     const target = req.selector
-      ? document.querySelector(req.selector)
+      ? resolveSelector(req.selector)
       : document
     if (!target) {
       this.respond(watchId, false, null, `Element not found: ${req.selector}`)
@@ -8957,7 +8993,7 @@ export class DevChannel extends HTMLElement {
     req: SyntheticEventRequest,
     responseId: string,
   ) {
-    const el = document.querySelector(req.selector) as HTMLElement
+    const el = resolveSelector(req.selector) as HTMLElement
     if (!el) {
       this.respond(
         responseId,
@@ -9154,6 +9190,10 @@ function registerDevChannel() {
 
   customElements.define(TAG_NAME, DevChannel)
   currentTagName = TAG_NAME
+
+  // Expose custom selector resolver globally for eval'd code
+  ;(window as any).__haltija_resolveSelector = resolveSelector
+  ;(window as any).__haltija_resolveSelectorAll = resolveSelectorAll
 }
 
 registerDevChannel()
