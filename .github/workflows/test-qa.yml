@@ -78,11 +78,11 @@ jobs:
 
       - name: Run playground tests
         run: |
-          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+          RESULT=$(curl -s -X POST http://localhost:8700/test/run \
             -H "Content-Type: application/json" \
             -d @tests/playground.json)
-          echo "$RESULT" | jq .
-          PASSED=$(echo "$RESULT" | jq '.passed')
+          echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
+          PASSED=$(echo "$RESULT" | jq '.passed' 2>/dev/null || echo "null")
           if [ "$PASSED" != "true" ]; then
             echo "::error::Playground tests failed"
             exit 1
@@ -90,11 +90,11 @@ jobs:
 
       - name: Run homepage tests
         run: |
-          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+          RESULT=$(curl -s -X POST http://localhost:8700/test/run \
             -H "Content-Type: application/json" \
             -d @tests/homepage.json)
-          echo "$RESULT" | jq .
-          PASSED=$(echo "$RESULT" | jq '.passed')
+          echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
+          PASSED=$(echo "$RESULT" | jq '.passed' 2>/dev/null || echo "null")
           if [ "$PASSED" != "true" ]; then
             echo "::error::Homepage tests failed"
             exit 1
@@ -103,7 +103,7 @@ jobs:
       - name: Run xinjs SPA tests (non-blocking)
         continue-on-error: true
         run: |
-          RESULT=$(curl -sf -X POST http://localhost:8700/test/run \
+          RESULT=$(curl -s -X POST http://localhost:8700/test/run \
             -H "Content-Type: application/json" \
             --max-time 60 \
             -d @tests/xinjs-spa.json) || true
