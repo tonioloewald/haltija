@@ -54,22 +54,16 @@ Use these to test clicking, typing, and reading page content.
 
 Try these commands to interact with the playground:
 
-Click the primary button:
 ```bash
-curl -X POST http://localhost:8700/click -H "Content-Type: application/json" -d '{"selector": "#btn-primary"}'
-```
+# Click the primary button
+hj click "#btn-primary"
 
-Type in the text input:
-```bash
-curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '{"selector": "#text-input", "text": "Hello from the agent!"}'
-```
+# Type in the text input
+hj type "#text-input" "Hello from the agent!"
 
-Read the output area:
-```bash
-curl -X POST http://localhost:8700/query -H "Content-Type: application/json" -d '{"selector": "#output"}'
-```
+# Read the output area
+hj query "#output"
 
-Get all form values:
-```bash
-curl -X POST http://localhost:8700/eval -H "Content-Type: application/json" -d '{"code": "JSON.stringify({text: document.getElementById(\"text-input\").value, email: document.getElementById(\"email-input\").value})"}'
+# Get all form values
+hj eval 'JSON.stringify({text: document.getElementById("text-input").value, email: document.getElementById("email-input").value})'
 ```

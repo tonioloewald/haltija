@@ -23,20 +23,7 @@ writeFileSync('src/version.ts', `/**
 export const VERSION = '${pkg.version}'
 `)
 
-// 1. Embed static assets into TypeScript
-await $`bun run scripts/embed-assets.ts`
-
-// 2. Build browser component (IIFE for injection)
-await $`bun build ./src/component.ts --outdir=dist --target=browser --format=iife`
-
-// 3. Build server, client, and index for Bun runtime
-await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts --outdir=dist --target=bun`
-
-// 4. Sync component to desktop app resources (single source of truth)
-await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
-
-// 5. Generate MCP endpoints JSON from api-schema (single source of truth)
-// Filter out internal endpoints - they're not exposed to MCP clients
+// 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS
   .filter(ep => (ep as any).visibility !== 'internal')
@@ -181,5 +168,123 @@ function generateApiMd(): string {
 }
 
 writeFileSync('API.md', generateApiMd())
+
+// 7. Generate DOCS.md - hj-centric quick start (single source of truth)
+function generateDocsMd(): string {
+  const lines: string[] = [
+    '# Haltija: Browser Control for AI Agents',
+    '',
+    '> **Auto-generated from `src/api-schema.ts`** - Do not edit directly.',
+    '',
+    'You have access to a live browser tab. Use the `hj` command to see the DOM,',
+    'click elements, type text, run JavaScript, and watch for changes.',
+    '',
+    '## Quick Start',
+    '',
+    '```',
+    'hj status              # Check connection',
+    'hj tree                # See page structure (ref IDs for targeting)',
+    'hj click 42            # Click element by ref ID',
+    'hj click "#submit"     # Click by CSS selector',
+    'hj type 10 "hello"     # Type into input (realistic keystroke simulation)',
+    'hj key Enter           # Press keys',
+    'hj screenshot          # Capture page',
+    'hj --help              # All commands',
+    '```',
+    '',
+    '## Commands by Category',
+    '',
+  ]
+
+  // Group endpoints by category
+  const byCategory = new Map<string, typeof ALL_ENDPOINTS>()
+  for (const ep of ALL_ENDPOINTS) {
+    if ((ep as any).visibility === 'internal') continue
+    const cat = (ep as any).category || 'other'
+    if (!byCategory.has(cat)) byCategory.set(cat, [])
+    byCategory.get(cat)!.push(ep)
+  }
+
+  const categoryOrder = ['meta', 'dom', 'interaction', 'navigation', 'events', 'mutations', 'selection', 'windows', 'recording', 'testing', 'debug']
+  const categoryTitles: Record<string, string> = {
+    meta: 'Status & Info',
+    dom: 'See the Page',
+    interaction: 'Interact',
+    navigation: 'Navigate',
+    events: 'Watch Events',
+    mutations: 'Watch DOM Changes',
+    selection: 'User Selection',
+    windows: 'Multiple Tabs',
+    recording: 'Record & Replay',
+    testing: 'Run Tests',
+    debug: 'Debug & Eval',
+  }
+
+  // Map REST paths to hj subcommands
+  const pathToHj = (path: string, method: string): string => {
+    // /mutations/watch -> mutations-watch, /test/run -> test-run
+    const sub = path.slice(1).replace(/\//g, '-')
+    return `hj ${sub}`
+  }
+
+  for (const cat of categoryOrder) {
+    const eps = byCategory.get(cat)
+    if (!eps || eps.length === 0) continue
+
+    lines.push(`### ${categoryTitles[cat] || cat}`)
+    lines.push('')
+
+    for (const ep of eps) {
+      const hj = pathToHj(ep.path, ep.method)
+      const params = getInputSchema(ep)
+      const paramKeys = params && (params as any).properties ? Object.keys((params as any).properties) : []
+      const paramHint = paramKeys.length > 0 ? ` [${paramKeys.slice(0, 3).join(', ')}${paramKeys.length > 3 ? ', ...' : ''}]` : ''
+      lines.push(`- \`${hj}${paramHint}\` - ${ep.summary}`)
+    }
+    lines.push('')
+  }
+
+  lines.push('## Tips')
+  lines.push('')
+  lines.push('1. `hj tree` first — ref IDs are the fastest way to target elements')
+  lines.push('2. Selectors support `:text()` pseudo-selector: `hj click "button:text(Sign in)"`')
+  lines.push('3. `:text(/regex/i)` for regex matching: `hj click "a:text(/sign\\s+up/i)"`')
+  lines.push('4. `hj events` shows what happened — aggregated semantic events, not raw DOM')
+  lines.push('5. `hj highlight 42 "Look here"` to show the user something')
+  lines.push('6. `hj api` for the full API reference with all parameters')
+  lines.push('')
+  lines.push('## Test Runner')
+  lines.push('')
+  lines.push('```')
+  lines.push('hj test-run tests/login.json       # Run a test')
+  lines.push('hj test-validate tests/login.json   # Validate format')
+  lines.push('hj test-suite tests/a.json tests/b.json  # Run multiple')
+  lines.push('```')
+  lines.push('')
+  lines.push('Test steps: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`')
+  lines.push('')
+  lines.push('The `type` action uses realistic per-character keystroke simulation by default.')
+  lines.push('Add `"paste": true` for fast paste-style input (still framework-compatible).')
+  lines.push('')
+  lines.push('## Full API Reference')
+  lines.push('')
+  lines.push('Run `hj api` for complete endpoint docs with all parameters and examples.')
+
+  return lines.join('\n')
+}
+
+writeFileSync('DOCS.md', generateDocsMd())
+
+// 2. Embed static assets into TypeScript (after schema-derived files are generated)
+await $`bun run scripts/embed-assets.ts`
+
+// 3. Build browser component (IIFE for injection)
+await $`bun build ./src/component.ts --outdir=dist --target=browser --format=iife`
+
+// 4. Build server, client, and index for Bun runtime
+await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts --outdir=dist --target=bun`
+
+// 5. Sync component to desktop app resources (single source of truth)
+await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 
 console.log('Build complete')

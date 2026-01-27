@@ -18,7 +18,7 @@ import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest,
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { generateTestPage } from './test-page'
-import { ICON_SVG, API_MD } from './embedded-assets'
+import { ICON_SVG, API_MD, DOCS_MD } from './embedded-assets'
 import * as api from './api-schema'
 import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
@@ -909,178 +909,7 @@ async function handleRest(req: Request): Promise<Response> {
   
   // Agent documentation endpoint - everything an LLM needs to use this tool
   if (path === '/docs' && req.method === 'GET') {
-    const baseUrl = USE_HTTPS ? `https://localhost:${PORT}` : `http://localhost:${PORT}`
-    const wsProtocol = USE_HTTPS ? 'wss' : 'ws'
-    
-    const docs = `# ${PRODUCT_NAME}: Browser Control for AI Agents
-
-You have access to a live browser tab. You can see the DOM, click elements, type text, 
-run JavaScript, watch for changes, and control navigation. The human has injected a 
-widget into their browser that connects to this server.
-
-## Quick Start
-
-Check connection:
-  curl ${baseUrl}/status
-
-Get current page:
-  curl ${baseUrl}/location
-
-See the DOM tree:
-  curl -X POST ${baseUrl}/tree -H "Content-Type: application/json" -d '{"selector": "body", "depth": 3}'
-
-## Core Endpoints
-
-### Page Info
-- GET  /status          - Server status, connected browsers/agents
-- GET  /location        - Current URL, title, pathname
-- GET  /version         - Server and component versions
-- GET  /console         - Captured console output (logs, errors, warnings)
-
-### DOM Exploration  
-- POST /tree            - Get DOM tree: {"selector": "body", "depth": 4}
-- POST /query           - Query single element: {"selector": "#login-btn"}
-- POST /inspect         - Detailed element info: {"selector": ".header"}
-- POST /inspectAll      - Inspect multiple elements: {"selector": "button"}
-
-### Interaction
-- POST /click           - Click element: {"selector": "#submit"}
-- POST /type            - Type text (human-like): {"selector": "input", "text": "hello"}
-- POST /drag            - Drag element: {"selector": ".item", "deltaX": 100, "deltaY": 0}
-- POST /eval            - Run JavaScript: {"code": "document.title"}
-
-### Visual Feedback
-- POST /highlight       - Highlight element: {"selector": ".target", "color": "red"}
-- POST /unhighlight     - Remove highlights
-
-### Navigation
-- POST /navigate        - Go to URL: {"url": "https://example.com"}
-- POST /refresh         - Reload the page
-- POST /reload          - Reload the ${PRODUCT_NAME} widget
-
-### Mutation Watching
-- POST /mutations/watch   - Start watching: {"selector": "body", "subtree": true}
-- POST /mutations/unwatch - Stop watching
-- GET  /mutations/status  - Get recorded mutations
-
-### Session Recording
-- POST /recording/start - Record user interactions
-- POST /recording/stop  - Stop and get recorded events
-
-### Selection Tool
-- POST /select/start   - Start selection mode (user drags rectangle)
-- POST /select/cancel  - Cancel selection mode
-- GET  /select/status  - Check if selection is active or has result
-- GET  /select/result  - Get the selected elements
-- POST /select/clear   - Clear stored selection
-
-### Test Runner
-- POST /test/validate   - Validate test JSON format
-- POST /test/run        - Run a single test: POST full test JSON
-- POST /test/suite      - Run multiple tests: {"tests": [test1, test2, ...]}
-
-### Snapshots (Time Travel Debugging)
-- POST /snapshot        - Capture current page state (DOM tree, console, viewport)
-- GET  /snapshot/:id    - Retrieve a snapshot by ID
-- GET  /snapshots       - List all snapshots (metadata only)
-- DELETE /snapshot/:id  - Delete a snapshot
-
-Test failures automatically capture snapshots. The snapshotId is included in test results.
-
-### Recordings (User-Created Test Sessions)
-- GET  /recordings      - List all recordings (metadata: id, url, duration, eventCount)
-- GET  /recording/:id   - Get a recording by ID (includes full semantic events)
-- DELETE /recording/:id - Delete a recording
-
-When the user clicks 🎬 to start and 💾 to stop, semantic events are saved server-side.
-The agent sees recording:started and recording:stopped in the event stream, then can 
-fetch the full recording. Perfect for "show me how you do X" workflows.
-
-### Semantic Events (The Hindsight Buffer)
-- POST /events/watch    - Start watching semantic events
-- POST /events/unwatch  - Stop watching
-- GET  /events?since=N  - Get event buffer since timestamp
-- GET  /events/status   - Check if watching
-
-Events are aggregated at source: "user typed 'hello'" not 5 keystrokes.
-Categories: interaction, navigation, input, hover, scroll, mutation, focus, console.
-
-### Reference Docs (Extensible Knowledge Base)
-- GET  /docs/list       - List all available docs (built-in + custom)
-- GET  /docs/:name      - Fetch a specific doc by name (e.g., /docs/ux-crimes)
-
-Built-in docs: ux-crimes (The Haltija Criminal Code - 35 UX anti-patterns)
-
-Custom docs: Add your own .md files to a directory and use --docs-dir <path>
-Example: style-guide.md, api-reference.md, testing-conventions.md
-
-Custom docs can override built-in docs by using the same filename.
-
-## Tips
-
-1. Use /tree first to understand page structure before querying specific elements
-2. Selectors work like CSS: "#id", ".class", "tag", "[attr=value]", combinations
-3. /inspectAll is great for finding all buttons, inputs, links on a page
-4. /console shows what the page is logging - useful for debugging
-5. /eval can run any JavaScript and return results
-6. The widget shows a visual indicator when connected - the human can see activity
-
-## Example: Explore a Page
-
-# What page am I on?
-curl ${baseUrl}/location
-
-# What's the structure?
-curl -X POST ${baseUrl}/tree -d '{"selector":"body","depth":3}' -H "Content-Type: application/json"
-
-# Find all interactive elements
-curl -X POST ${baseUrl}/inspectAll -d '{"selector":"button, a, input"}' -H "Content-Type: application/json"
-
-# Click something
-curl -X POST ${baseUrl}/click -d '{"selector":"#login-btn"}' -H "Content-Type: application/json"
-
-## Example: Run a Test
-
-Tests are JSON files with atomic actions. Run them via the API:
-
-# Validate test format
-curl -X POST ${baseUrl}/test/validate -H "Content-Type: application/json" -d @my-test.json
-
-# Run a single test
-curl -X POST ${baseUrl}/test/run -H "Content-Type: application/json" -d @my-test.json
-
-# Run a test suite
-curl -X POST ${baseUrl}/test/suite -H "Content-Type: application/json" -d '{"tests":[...]}'
-
-Test format:
-{
-  "version": 1,
-  "name": "Test name",
-  "url": "http://localhost:3000",
-  "steps": [
-    {"action": "click", "selector": "#btn", "description": "Click button"},
-    {"action": "type", "selector": "input", "text": "hello"},
-    {"action": "assert", "type": "exists", "selector": ".result"}
-  ]
-}
-
-## Developer Integration
-
-Add this one-liner to your project to auto-inject the widget on localhost:
-
-  /^localhost$|^127\\./.test(location.hostname)&&import('${baseUrl}/dev.js')
-
-It's safe to leave in production - it only runs on localhost/127.x.x.x.
-The console will show a colored badge when connected.
-
-Server: ${baseUrl}
-WebSocket: ${wsProtocol}://localhost:${PORT}/ws/browser (for browser widget)
-WebSocket: ${wsProtocol}://localhost:${PORT}/ws/agent (for programmatic agents)
-
-For complete API reference with all options and response formats:
-  curl ${baseUrl}/api
-`
-    return new Response(docs, { 
+    return new Response(DOCS_MD, { 
       headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
     })
   }
@@ -2139,15 +1968,12 @@ Run 'hj --help' for all commands.`
           }
           
           case 'click': {
-            // Scroll into view
-            await requestFromBrowser('eval', 'exec', {
-              code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-            })
-            await new Promise(r => setTimeout(r, 100))
-
-            // Check element exists and is clickable
-            const inspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
-            if (!inspectResponse.success || !inspectResponse.data) {
+            // Use realistic click (same as /click REST endpoint)
+            const clickResponse = await requestFromBrowser('interaction', 'click', {
+              selector: step.selector,
+            }, stepTimeout)
+            
+            if (!clickResponse.success) {
               stepPassed = false
 
               // Gather page context - what's actually there?
@@ -2159,96 +1985,142 @@ Run 'hj --help' for all commands.`
               })
               const buttonsOnPage = pageButtonsResponse.data || []
 
-              error = step.description || `Click ${step.selector}`
+              error = clickResponse.error || step.description || `Click ${step.selector}`
               context = {
-                reason: 'Element not found',
+                reason: clickResponse.error || 'Element not found',
                 selector: step.selector,
                 buttonsOnPage,
                 suggestion: inferSuggestion(step, { buttonsOnPage })
               }
-              break
-            }
-
-            const elData = inspectResponse.data
-            if (elData.properties?.disabled) {
-              stepPassed = false
-              error = step.description || 'Click element'
-              context = {
-                reason: 'Element is disabled',
-                selector: step.selector,
-                suggestion: 'The button may be disabled until certain conditions are met (e.g., form validation)'
-              }
-              break
-            }
-
-            // Click
-            for (const event of ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-              await requestFromBrowser('events', 'dispatch', { selector: step.selector, event })
             }
             break
           }
           
           case 'type': {
-            // Scroll into view
-            await requestFromBrowser('eval', 'exec', {
-              code: `document.querySelector(${JSON.stringify(step.selector)})?.scrollIntoView({behavior: "smooth", block: "center"})`
-            })
-            await new Promise(r => setTimeout(r, 100))
-
-            // Check element exists
-            const typeInspectResponse = await requestFromBrowser('dom', 'inspect', { selector: step.selector })
-            if (!typeInspectResponse.success || !typeInspectResponse.data) {
-              stepPassed = false
-
-              // Gather page context - what inputs are there?
-              const pageInputsResponse = await requestFromBrowser('eval', 'exec', {
-                code: `Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
-                  .slice(0, 10)
-                  .map(el => {
-                    const label = el.id && document.querySelector('label[for="' + el.id + '"]')?.innerText?.trim()
-                    return label || el.placeholder || el.name || el.type || el.tagName.toLowerCase()
-                  })
-                  .filter(Boolean)`
-              })
-              const inputsOnPage = pageInputsResponse.data || []
-
-              error = step.description || `Type in ${step.selector}`
-              context = {
-                reason: 'Input element not found',
-                selector: step.selector,
-                inputsOnPage,
-                suggestion: inputsOnPage.length === 0
-                  ? 'No input elements found - page may not have loaded or form is conditionally rendered'
-                  : 'Input may have been renamed or removed'
-              }
-              break
-            }
-            
-            // Clear if needed
-            if (step.clear !== false) {
-              await requestFromBrowser('eval', 'exec', {
-                code: `document.querySelector(${JSON.stringify(step.selector)}).value = ''`
-              })
-            }
-            
-            // Focus and type
-            await requestFromBrowser('eval', 'exec', {
-              code: `document.querySelector(${JSON.stringify(step.selector)})?.focus()`
-            })
-            
-            // Set value and fire input event
-            await requestFromBrowser('eval', 'exec', {
-              code: `(function(){
-                const el = document.querySelector(${JSON.stringify(step.selector)});
-                if (el) { 
-                  el.value = ${JSON.stringify(step.text)}; 
-                  el.dispatchEvent(new InputEvent('input', {bubbles: true})); 
+            if (step.paste) {
+              // Paste mode: simulate Ctrl+V paste with full event lifecycle
+              // Fast but still triggers React/form frameworks correctly
+              const pasteResponse = await requestFromBrowser('eval', 'exec', {
+                code: `(function(){
+                  const el = (window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(step.selector)});
+                  if (!el) return { error: 'not_found' };
+                  
+                  // Scroll into view
+                  el.scrollIntoView({behavior: "smooth", block: "center"});
+                  
+                  // Focus with proper events
+                  el.dispatchEvent(new FocusEvent('focusin', {bubbles: true}));
+                  el.dispatchEvent(new FocusEvent('focus', {bubbles: false}));
+                  el.focus();
+                  
+                  // Select all existing content (like Ctrl+A before paste)
+                  if (el.select) el.select();
+                  
+                  // Simulate paste event
+                  const clipboardData = new DataTransfer();
+                  clipboardData.setData('text/plain', ${JSON.stringify(step.text)});
+                  const pasteEvent = new ClipboardEvent('paste', {
+                    bubbles: true, cancelable: true, clipboardData
+                  });
+                  const allowed = el.dispatchEvent(pasteEvent);
+                  
+                  // Set value using native setter (React compatibility)
+                  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                  if (nativeSetter) nativeSetter.call(el, ${JSON.stringify(step.text)});
+                  else el.value = ${JSON.stringify(step.text)};
+                  
+                  // Fire input + change events
+                  el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertFromPaste', data: ${JSON.stringify(step.text)}}));
+                  el.dispatchEvent(new Event('change', {bubbles: true}));
+                  
+                  // Blur
+                  el.dispatchEvent(new FocusEvent('focusout', {bubbles: true}));
+                  el.dispatchEvent(new FocusEvent('blur', {bubbles: false}));
+                  el.blur();
+                  
+                  return { ok: true };
+                })()`
+              }, stepTimeout)
+              
+              const pasteResult = pasteResponse.data
+              if (!pasteResponse.success || pasteResult?.error === 'not_found') {
+                stepPassed = false
+                const pageInputsResponse = await requestFromBrowser('eval', 'exec', {
+                  code: `Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
+                    .slice(0, 10)
+                    .map(el => {
+                      const label = el.id && document.querySelector('label[for="' + el.id + '"]')?.innerText?.trim()
+                      return label || el.placeholder || el.name || el.type || el.tagName.toLowerCase()
+                    })
+                    .filter(Boolean)`
+                })
+                const inputsOnPage = pageInputsResponse.data || []
+                error = step.description || `Type in ${step.selector}`
+                context = {
+                  reason: 'Input element not found',
+                  selector: step.selector,
+                  inputsOnPage,
+                  suggestion: inputsOnPage.length === 0
+                    ? 'No input elements found - page may not have loaded or form is conditionally rendered'
+                    : 'Input may have been renamed or removed'
                 }
-              })()`
-            })
+              }
+            } else {
+              // Default: realistic per-character typing (same as /type REST endpoint)
+              const typeResponse = await requestFromBrowser('interaction', 'type', {
+                selector: step.selector,
+                text: step.text,
+                clear: step.clear !== false,
+                humanlike: step.humanlike !== false,
+                minDelay: step.minDelay ?? 30,
+                maxDelay: step.maxDelay ?? 80,
+                typoRate: 0,  // No typos in tests
+              }, stepTimeout + (step.text?.length || 0) * 200)
+              
+              if (!typeResponse.success) {
+                stepPassed = false
+                const pageInputsResponse = await requestFromBrowser('eval', 'exec', {
+                  code: `Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'))
+                    .slice(0, 10)
+                    .map(el => {
+                      const label = el.id && document.querySelector('label[for="' + el.id + '"]')?.innerText?.trim()
+                      return label || el.placeholder || el.name || el.type || el.tagName.toLowerCase()
+                    })
+                    .filter(Boolean)`
+                })
+                const inputsOnPage = pageInputsResponse.data || []
+                error = typeResponse.error || step.description || `Type in ${step.selector}`
+                context = {
+                  reason: typeResponse.error || 'Input element not found',
+                  selector: step.selector,
+                  inputsOnPage,
+                  suggestion: inputsOnPage.length === 0
+                    ? 'No input elements found - page may not have loaded or form is conditionally rendered'
+                    : 'Input may have been renamed or removed'
+                }
+              }
+            }
             break
           }
           
+          case 'check': {
+            // Check/uncheck a checkbox or radio — uses realistic click
+            const checkResponse = await requestFromBrowser('interaction', 'click', {
+              selector: step.selector,
+            }, stepTimeout)
+            
+            if (!checkResponse.success) {
+              stepPassed = false
+              error = checkResponse.error || step.description || `Check ${step.selector}`
+              context = {
+                reason: checkResponse.error || 'Element not found',
+                selector: step.selector,
+              }
+            }
+            break
+          }
+
           case 'key': {
             await requestFromBrowser('events', 'dispatch', {
               selector: 'body',

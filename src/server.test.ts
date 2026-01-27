@@ -96,9 +96,9 @@ describe('tosijs-dev server', () => {
       
       const docs = await res.text()
       expect(docs).toContain('Browser Control for AI Agents')
-      expect(docs).toContain('/status')
-      expect(docs).toContain('/tree')
-      expect(docs).toContain('/api')
+      expect(docs).toContain('hj status')
+      expect(docs).toContain('hj tree')
+      expect(docs).toContain('hj api')
     })
   })
   

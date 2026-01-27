@@ -36,6 +36,9 @@ const assets = {
   
   // API reference (auto-generated from schema)
   'API.md': 'API_MD',
+  
+  // Quick-start docs (auto-generated from schema, hj CLI focused)
+  'DOCS.md': 'DOCS_MD',
 }
 
 function escapeForTemplate(content: string): string {

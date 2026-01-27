@@ -13,78 +13,35 @@ You're running Haltija in the desktop app. This gives you a browser with superpo
 Give your agent this prompt to get started:
 
 ```prompt
-I have Haltija running at http://localhost:8700. You can see and control my browser.
+I have Haltija running. Use the hj command to control my browser.
 
-**Quick start:**
-1. Check server: curl http://localhost:8700/status
-2. Find tabs: curl http://localhost:8700/windows
-3. See what's on page: curl -X POST http://localhost:8700/tree -d '{"selector":"body","mode":"actionable"}'
-4. Do something: curl -X POST http://localhost:8700/click -d '{"selector":"button"}'
-
-**Key endpoints:**
-- GET /status - check connection, list tabs
-- GET /windows - list connected tabs with IDs
-- GET /location?window=ID - current URL
-- GET /endpoints - compact JSON list of all capabilities
-- POST /tree - see page structure (use mode:"actionable" for summary of buttons/links/inputs)
-- POST /click - click an element
-- POST /type - type into a field
-- POST /scroll - smooth scroll to element or position
-- POST /highlight - show the user an element (with optional label)
-- POST /wait - wait for element to appear/disappear or fixed delay
-- POST /eval - run JavaScript (escape hatch)
-- POST /screenshot - capture page image (see options below)
-- GET /events - recent events including network errors
-- GET /console - recent console logs/errors
-- GET /select/result - get elements user has selected in browser
-
-**Screenshot options:**
-- format: "png" (default), "webp", "jpeg"
-- quality: 0.0-1.0 (for webp/jpeg, default 0.8)
-- scale: 0.5 = half size (saves bandwidth)
-- maxWidth/maxHeight: constrain dimensions (great for vision models)
-- selector: capture specific element instead of full page
-
-Example: curl -X POST http://localhost:8700/screenshot -d '{"scale":0.5,"format":"webp"}'
-
-**Wait for async UI:**
-- curl -X POST http://localhost:8700/wait -d '{"forElement":".modal"}'           # Wait for element
-- curl -X POST http://localhost:8700/wait -d '{"forElement":".loading","hidden":true}'  # Wait for disappear
-- curl -X POST http://localhost:8700/wait -d '{"ms":500}'                         # Simple delay
-
-**Showing things to the user:**
-When explaining something or pointing out an issue, use /highlight to visually show the user:
-- curl -X POST http://localhost:8700/highlight -d '{"selector":"#login-btn","label":"Click here"}'
-- curl -X POST http://localhost:8700/highlight -d '{"selector":".error","label":"This is the problem","color":"#ef4444"}'
-The highlight stays until you call /unhighlight or set a duration in ms.
-
-**Target a specific tab:** Add ?window=<id> or include "window":"id" in POST body
-
-All POST endpoints return: {"success": true, "data": ...} or {"success": false, "error": "..."}
+hj status              # Check connection
+hj tree                # See page structure (with ref IDs)
+hj click 42            # Click element by ref ID
+hj click "#selector"   # Click by CSS selector
+hj type 10 "hello"     # Type into input
+hj key Enter           # Press keys
+hj screenshot          # Capture page
+hj docs                # Quick start guide
+hj api                 # Full API reference
+hj --help              # All commands
 ```
-
-For the full agent prompt with more examples, see [agent-prompt.md](../agent-prompt.md).
 
 ## Useful Commands
 
-Check if the server is running:
 ```bash
-curl http://localhost:8700/status
-```
-
-Get the page structure:
-```bash
-curl -X POST http://localhost:8700/tree -d '{"selector": "body", "depth": 3}'
-```
-
-Take a screenshot:
-```bash
-curl -X POST http://localhost:8700/screenshot -d '{"scale": 0.5}'
-```
-
-Click a button:
-```bash
-curl -X POST http://localhost:8700/click -d '{"selector": "button"}'
+hj status              # Server running?
+hj tree                # DOM structure with ref IDs
+hj tree -d 5           # Deeper tree
+hj click 42            # Click by ref
+hj click "#submit"     # Click by selector
+hj type 10 "hello"     # Type text
+hj key Enter           # Press key
+hj screenshot          # Capture page
+hj highlight 5 "Here"  # Show the user
+hj events              # Recent activity
+hj docs                # Quick start
+hj api                 # Full API reference
 ```
 
 ## Keyboard Shortcuts

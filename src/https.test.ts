@@ -86,13 +86,13 @@ describe('tosijs-dev HTTPS mode', () => {
   })
   
   describe('GET /docs', () => {
-    it('returns docs with HTTPS URLs', async () => {
+    it('returns hj CLI docs over HTTPS', async () => {
       const res = await fetchHttps('/docs')
       expect(res.ok).toBe(true)
       
       const docs = await res.text()
-      expect(docs).toContain('https://localhost')
-      expect(docs).toContain('wss://localhost')
+      expect(docs).toContain('hj status')
+      expect(docs).toContain('hj tree')
     })
   })
   

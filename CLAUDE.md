@@ -156,7 +156,14 @@ Tests are pure JSON with atomic steps:
 }
 ```
 
-Step types: `navigate`, `click`, `type`, `key`, `wait`, `assert`, `eval`, `verify`
+Step types: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`
+
+### Test Runner Behavior
+
+- **`type`**: Uses realistic per-character keystroke simulation by default (native setter, keydown/input/keyup per character, focus/blur lifecycle). Add `"paste": true` for fast paste-style input that still triggers React/form framework validation. Add `"humanlike": false` for instant typing. `"typoRate"` is always 0 in tests.
+- **`click`**: Uses realistic click simulation (scroll into view, mouseenter/mouseover/mousedown/mouseup/click sequence).
+- **`check`**: For checkboxes/radios — uses realistic click. The recording system generates these.
+- All interaction steps route through the same `performRealisticType`/`performRealisticClick` handlers as the REST API.
 
 ## Desktop App (Electron)
 
@@ -182,6 +189,7 @@ The build script (`scripts/build.ts`) generates:
 4. `apps/desktop/resources/component.js` - Synced copy for desktop app
 5. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 6. `API.md` - Auto-generated API reference (do not edit directly)
+7. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
 
 ## Version Management
 

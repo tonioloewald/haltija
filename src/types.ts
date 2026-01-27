@@ -560,6 +560,7 @@ export type TestStep =
   | NavigateStep
   | ClickStep
   | TypeStep
+  | CheckStep
   | KeyStep
   | WaitStep
   | AssertStep
@@ -595,6 +596,21 @@ export interface TypeStep extends BaseStep {
   text: string
   /** Clear existing value first (default: true) */
   clear?: boolean
+  /** Use paste simulation instead of per-character typing (default: false) */
+  paste?: boolean
+  /** Enable human-like typing delays (default: true, ignored when paste: true) */
+  humanlike?: boolean
+  /** Min delay between keystrokes in ms (default: 30, ignored when paste: true) */
+  minDelay?: number
+  /** Max delay between keystrokes in ms (default: 80, ignored when paste: true) */
+  maxDelay?: number
+}
+
+export interface CheckStep extends BaseStep {
+  action: 'check'
+  selector: string
+  /** Expected value after check (e.g. "on") */
+  value?: string
 }
 
 export interface KeyStep extends BaseStep {
