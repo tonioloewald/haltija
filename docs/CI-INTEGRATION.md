@@ -90,6 +90,26 @@ Tests are JSON files with steps:
 | `assert` | `{"action": "assert", "assertion": {...}}` | Check condition |
 | `eval` | `{"action": "eval", "code": "..."}` | Run JavaScript |
 
+### Text Selectors
+
+All selectors support custom pseudo-selectors for finding elements by visible text — no need to hunt for CSS classes or test IDs:
+
+```json
+{"action": "click", "selector": "button:text(sign in)"}
+{"action": "click", "selector": "a:text(forgot password)"}
+{"action": "wait", "selector": "h1:text-is(Dashboard)"}
+```
+
+| Syntax | Behavior |
+|--------|----------|
+| `:text(str)` | Contains `str` (case-insensitive) |
+| `:text-is(str)` | Exact text match (case-insensitive) |
+| `:has-text(str)` | Alias for `:text()` |
+| `:text(/regex/)` | Regex match (case-sensitive) |
+| `:text(/regex/i)` | Regex match (case-insensitive) |
+
+Combine with CSS selectors to narrow scope: `nav a:text(home)`, `form button:text(/submit/i)`.
+
 ### Assertions
 
 ```json
