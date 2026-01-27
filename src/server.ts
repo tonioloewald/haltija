@@ -1910,7 +1910,7 @@ Run 'hj --help' for all commands.`
   // Run a test and return results
   if (path === '/test/run' && req.method === 'POST') {
     const body = await req.json()
-    const test = body.test as DevChannelTest
+    const test = (body.steps ? body : body.test) as DevChannelTest
     const format = (body.format || 'json') as OutputFormat
     const testFile = body.testFile as string | undefined  // Optional path for GitHub annotations
     const options = {
@@ -2579,7 +2579,7 @@ Run 'hj --help' for all commands.`
   // Run a test suite (multiple tests)
   if (path === '/test/suite' && req.method === 'POST') {
     const body = await req.json()
-    const tests = body.tests as DevChannelTest[]
+    const tests = (Array.isArray(body) ? body : body.tests) as DevChannelTest[]
     const format = (body.format || 'json') as OutputFormat
     const testFiles = body.testFiles as string[] | undefined  // Optional paths for GitHub annotations
     const options = {
