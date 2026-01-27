@@ -577,6 +577,8 @@ interface BaseStep {
   purpose?: string
   /** Delay in ms before executing this step (default: 0) */
   delay?: number
+  /** Per-step timeout in ms (overrides global timeout, useful for slow cross-origin navigations) */
+  timeout?: number
   /** Reference to the plan that generated this step (e.g., "checkout-flow/plan.md#guest-checkout") */
   planRef?: string
 }

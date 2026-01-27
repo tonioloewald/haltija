@@ -1960,8 +1960,9 @@ Run 'hj --help' for all commands.`
         await new Promise(r => setTimeout(r, step.delay || options.stepDelay))
       }
       
-      // Use elastic timeout when patience mode is active
-      const stepTimeout = patience > 0 ? currentTimeout : options.timeout
+      // Per-step timeout override, then elastic timeout, then global
+      const baseTimeout = patience > 0 ? currentTimeout : options.timeout
+      const stepTimeout = step.timeout ?? baseTimeout
       
       try {
         switch (step.action) {
@@ -2156,8 +2157,9 @@ Run 'hj --help' for all commands.`
           }
           
           case 'wait': {
-            if (step.duration) {
-              await new Promise(r => setTimeout(r, step.duration))
+            const waitDuration = step.duration ?? (step as any).ms
+            if (waitDuration) {
+              await new Promise(r => setTimeout(r, waitDuration))
             } else if (step.selector) {
               // Wait for selector to appear
               const waitStart = Date.now()
