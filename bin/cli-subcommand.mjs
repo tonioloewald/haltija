@@ -32,8 +32,9 @@ export const GET_ENDPOINTS = new Set([
   'status', 'version', 'docs', 'api', 'stats'
 ])
 
-// Compound paths (subcommand contains slash)
+// Compound paths (subcommand contains slash) or aliases to different endpoint
 export const COMPOUND_PATHS = {
+  'styles': '/inspect',  // Shortcut: hj styles <selector> → /inspect with matchedRules
   'mutations-watch': '/mutations/watch',
   'mutations-unwatch': '/mutations/unwatch',
   'mutations-status': '/mutations/status',
@@ -66,7 +67,7 @@ export const GET_COMPOUND = new Set([
 
 // How to map positional args to body fields for each endpoint
 export const ARG_MAPS = {
-  click: (args) => parseTargetArgs(args),
+  click: (args) => parseClickArgs(args),
   type: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), text: args.slice(1).join(' ') }),
   key: (args) => ({ key: args[0], ...parseModifiers(args.slice(1)) }),
   drag: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), deltaX: num(args[1]), deltaY: num(args[2]) }),
@@ -74,8 +75,9 @@ export const ARG_MAPS = {
   navigate: (args) => ({ url: args[0] }),
   eval: (args) => ({ code: args.join(' ') }),
   query: (args) => ({ selector: args[0] }),
-  inspect: (args) => parseTargetArgs(args),
-  'inspectAll': (args) => ({ selector: args[0] }),
+  inspect: (args) => parseInspectArgs(args),
+  'inspectAll': (args) => parseInspectArgs(args),
+  styles: (args) => ({ ...parseTargetArgs(args), matchedRules: true }),
   tree: (args) => parseTreeArgs(args),
   highlight: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), label: args[1] }),
   unhighlight: () => ({}),
@@ -150,6 +152,8 @@ export function parseTreeArgs(args) {
     if (a === '--text') { body.includeText = true; continue }
     if (a === '--no-text') { body.includeText = false; continue }
     if (a === '--shadow') { body.pierceShadow = true; continue }
+    if (a === '--frames') { body.pierceFrames = true; continue }
+    if (a === '--no-frames') { body.pierceFrames = false; continue }
     // First positional arg is selector if present
     if (!a.startsWith('-')) { body.selector = a; continue }
   }
@@ -178,6 +182,51 @@ export function parseWaitArgs(args) {
   const first = args[0]
   if (!isNaN(first)) return { ms: num(first) }
   return { ...parseTargetArgs([first]), timeout: args[1] ? num(args[1]) : undefined }
+}
+
+/** Parse click args: selector/ref + --diff flag + --delay */
+export function parseClickArgs(args) {
+  const body = {}
+  const positional = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--diff') { body.diff = true; continue }
+    if (a === '--delay' && args[i + 1]) { body.diffDelay = num(args[++i]); continue }
+    if (!a.startsWith('-')) { positional.push(a); continue }
+  }
+  // First positional is target (ref or selector)
+  if (positional.length) {
+    const target = positional[0]
+    if (/^@?\d+$/.test(target)) {
+      body.ref = target.replace('@', '')
+    } else {
+      body.selector = target
+    }
+  }
+  return Object.keys(body).length ? body : {}
+}
+
+/** Parse inspect args: selector/ref + CSS flags */
+export function parseInspectArgs(args) {
+  const body = {}
+  const positional = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--full-styles' || a === '--styles') { body.fullStyles = true; continue }
+    if (a === '--matched-rules' || a === '--rules') { body.matchedRules = true; continue }
+    if (a === '--ancestors') { body.ancestors = true; continue }
+    if (!a.startsWith('-')) { positional.push(a); continue }
+  }
+  // First positional is target (ref or selector)
+  if (positional.length) {
+    const target = positional[0]
+    if (/^@?\d+$/.test(target)) {
+      body.ref = target.replace('@', '')
+    } else {
+      body.selector = target
+    }
+  }
+  return Object.keys(body).length ? body : undefined
 }
 
 /** Parse key modifiers */
@@ -403,7 +452,7 @@ async function doRequest(url, method, body, context = {}) {
 
 /** Known valid subcommands */
 export const KNOWN_COMMANDS = new Set([
-  'tree', 'query', 'inspect', 'inspectAll', 'find',
+  'tree', 'query', 'inspect', 'inspectAll', 'styles', 'find',
   'click', 'type', 'key', 'drag', 'scroll', 'call',
   'navigate', 'refresh', 'location',
   'events', 'events-watch', 'events-unwatch', 'console',

@@ -45,6 +45,7 @@ hj console                       # Recent errors and logs
 
 # Interact
 hj click 42                      # Click by ref (from tree output)
+hj click 42 --diff               # Click and return what changed (DOM diff)
 hj type 10 user@example.com      # Type text
 hj key Escape                    # Keyboard input
 hj key s --ctrl                  # Keyboard shortcuts
@@ -68,6 +69,7 @@ Full API: `hj docs` — or `hj api` for complete reference
 | **State** | Already logged in, cookies, extensions | Clean slate every time |
 | **Setup** | `bunx haltija` | Install Playwright, configure MCP |
 | **Protocol** | Simple REST/curl | Complex CDP |
+| **Feedback** | "Button hidden by modal" | `TimeoutError: element not found` |
 | **Visibility** | Watch it happen live | Background process |
 
 Haltija connects to the browser you're already using. The one with the bug, the active session, and the weird cookie state. No reproduction script required.
@@ -99,6 +101,30 @@ The `/tree` endpoint doesn't dump raw HTML. It produces a semantic structure wit
 ```
 
 Ref IDs (the numbers before `:`) let agents target elements efficiently without CSS selectors. Refs are stable within a page session — they survive DOM updates and re-renders as long as the element stays in the document.
+
+### Shadow DOM & Iframe Piercing
+
+Web Components with shadow DOM are invisible to most tools. Haltija flattens them into the same tree:
+
+```bash
+hj tree --shadow                 # Pierce shadow DOM boundaries
+hj tree --frames                 # Include same-origin iframe content
+```
+
+No special selectors or `composedPath()` hacking required.
+
+### Click with Diff
+
+Agents often need to verify that an action worked. The `--diff` flag returns what changed:
+
+```bash
+hj click 42 --diff
+# Returns: { added: ["#error-msg"], removed: [], changed: [...] }
+
+hj click 42 --diff --delay 500   # Wait 500ms before capturing (default 100ms)
+```
+
+The agent knows immediately if the click triggered an error modal, loaded new content, or did nothing.
 
 ### Noise-Reduced Events
 
@@ -194,7 +220,7 @@ haltija --setup-mcp        # Configure Claude Desktop
 - **AI pair programming** — Agent sees your actual app, not a description of it
 - **Automated QA** — Agent explores, finds bugs, writes repro steps
 - **Accessibility auditing** — Inspect ARIA across the whole page
-- **UX crime detection** — Detects 35+ anti-patterns automatically
+- **UX crime detection** — Reference for 35+ anti-patterns (`hj docs ux-crimes`)
 - **Support** — See exactly what customers see
 
 ---

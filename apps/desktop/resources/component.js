@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.9";
+  var VERSION = "1.1.10";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -1278,6 +1278,31 @@
         node.text = directText.slice(0, 200);
       } else if (directText && directText.length <= 50) {
         node.text = directText;
+      } else if (childElements > 0) {
+        const interactiveTags = new Set([
+          "a",
+          "button",
+          "label",
+          "summary",
+          "option",
+          "th",
+          "td",
+          "li",
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6"
+        ]);
+        if (interactiveTags.has(tagName)) {
+          const innerText = htmlEl.innerText?.trim();
+          if (innerText && innerText.length <= 100) {
+            node.text = innerText;
+          } else if (innerText) {
+            node.text = innerText.slice(0, 100) + "…";
+          }
+        }
       }
     }
     if (htmlEl instanceof HTMLInputElement) {

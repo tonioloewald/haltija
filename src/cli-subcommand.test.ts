@@ -98,6 +98,11 @@ describe('parseTreeArgs', () => {
     expect(parseTreeArgs(['--shadow'])).toEqual({ pierceShadow: true })
   })
 
+  test('parses frames flags', () => {
+    expect(parseTreeArgs(['--frames'])).toEqual({ pierceFrames: true })
+    expect(parseTreeArgs(['--no-frames'])).toEqual({ pierceFrames: false })
+  })
+
   test('combines multiple flags', () => {
     expect(parseTreeArgs(['-d', '4', '--visible', '--compact'])).toEqual({
       depth: 4,
@@ -199,6 +204,15 @@ describe('ARG_MAPS', () => {
 
     test('maps selector', () => {
       expect(ARG_MAPS.click(['#btn'])).toEqual({ selector: '#btn' })
+    })
+
+    test('maps --diff flag', () => {
+      expect(ARG_MAPS.click(['42', '--diff'])).toEqual({ ref: '42', diff: true })
+      expect(ARG_MAPS.click(['#btn', '--diff'])).toEqual({ selector: '#btn', diff: true })
+    })
+
+    test('maps --diff with --delay', () => {
+      expect(ARG_MAPS.click(['42', '--diff', '--delay', '500'])).toEqual({ ref: '42', diff: true, diffDelay: 500 })
     })
 
     test('empty args', () => {
@@ -359,6 +373,53 @@ describe('ARG_MAPS', () => {
       expect(ARG_MAPS.snapshot([])).toEqual({ context: undefined })
     })
   })
+
+  describe('inspect', () => {
+    test('maps selector', () => {
+      expect(ARG_MAPS.inspect(['#btn'])).toEqual({ selector: '#btn' })
+    })
+
+    test('maps ref', () => {
+      expect(ARG_MAPS.inspect(['42'])).toEqual({ ref: '42' })
+      expect(ARG_MAPS.inspect(['@42'])).toEqual({ ref: '42' })
+    })
+
+    test('maps --matched-rules flag', () => {
+      expect(ARG_MAPS.inspect(['#btn', '--matched-rules'])).toEqual({ selector: '#btn', matchedRules: true })
+      expect(ARG_MAPS.inspect(['#btn', '--rules'])).toEqual({ selector: '#btn', matchedRules: true })
+    })
+
+    test('maps --full-styles flag', () => {
+      expect(ARG_MAPS.inspect(['#btn', '--full-styles'])).toEqual({ selector: '#btn', fullStyles: true })
+      expect(ARG_MAPS.inspect(['#btn', '--styles'])).toEqual({ selector: '#btn', fullStyles: true })
+    })
+
+    test('maps --ancestors flag', () => {
+      expect(ARG_MAPS.inspect(['#btn', '--ancestors'])).toEqual({ selector: '#btn', ancestors: true })
+    })
+
+    test('combines multiple flags', () => {
+      expect(ARG_MAPS.inspect(['#btn', '--matched-rules', '--ancestors'])).toEqual({
+        selector: '#btn',
+        matchedRules: true,
+        ancestors: true,
+      })
+    })
+
+    test('empty args', () => {
+      expect(ARG_MAPS.inspect([])).toBeUndefined()
+    })
+  })
+
+  describe('styles', () => {
+    test('maps selector with matchedRules', () => {
+      expect(ARG_MAPS.styles(['#btn'])).toEqual({ selector: '#btn', matchedRules: true })
+    })
+
+    test('maps ref with matchedRules', () => {
+      expect(ARG_MAPS.styles(['42'])).toEqual({ ref: '42', matchedRules: true })
+    })
+  })
 })
 
 describe('GET vs POST routing', () => {
@@ -404,6 +465,10 @@ describe('COMPOUND_PATHS', () => {
     expect(COMPOUND_PATHS['send-message']).toBe('/send/message')
     expect(COMPOUND_PATHS['send-selection']).toBe('/send/selection')
     expect(COMPOUND_PATHS['send-recording']).toBe('/send/recording')
+  })
+
+  test('styles alias routes to /inspect', () => {
+    expect(COMPOUND_PATHS['styles']).toBe('/inspect')
   })
 })
 

@@ -1837,6 +1837,33 @@ function buildDomTree(
     } else if (directText && directText.length <= 50) {
       // Short direct text even with children
       node.text = directText
+    } else if (childElements > 0) {
+      // For interactive elements with nested text (e.g., <a><span>Link</span></a>),
+      // include innerText so agents know what the element says
+      const interactiveTags = new Set([
+        'a',
+        'button',
+        'label',
+        'summary',
+        'option',
+        'th',
+        'td',
+        'li',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+      ])
+      if (interactiveTags.has(tagName)) {
+        const innerText = htmlEl.innerText?.trim()
+        if (innerText && innerText.length <= 100) {
+          node.text = innerText
+        } else if (innerText) {
+          node.text = innerText.slice(0, 100) + '…'
+        }
+      }
     }
   }
 
