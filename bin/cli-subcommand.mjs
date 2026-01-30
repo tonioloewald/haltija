@@ -289,21 +289,33 @@ async function isServerRunning(port) {
 }
 
 async function startServerInBackground(port) {
-  const serverPath = join(__dirname, '../dist/server.js')
-  if (!existsSync(serverPath)) {
-    console.error('Error: Server not built. Run `bun run build` first.')
+  // Check for compiled server binary (app bundle) first
+  // In compiled binaries, __dirname doesn't work - use dirname of the executable
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const execDir = dirname(process.execPath)
+  const bundledServerPath = join(execDir, `haltija-server-${arch}`)
+  const devServerPath = join(__dirname, '../dist/server.js')
+  
+  let command, cmdArgs
+  
+  if (existsSync(bundledServerPath)) {
+    // Running from app bundle - use compiled binary directly
+    command = bundledServerPath
+    cmdArgs = []
+  } else if (existsSync(devServerPath)) {
+    // Development mode - use bun/node to run server.js
+    command = 'bun'
+    cmdArgs = ['run', devServerPath]
+    try {
+      const { execSync } = await import('child_process')
+      execSync('bun --version', { stdio: 'ignore' })
+    } catch {
+      command = 'node'
+      cmdArgs = [devServerPath]
+    }
+  } else {
+    console.error('Error: Server not found. Run `bun run build` first.')
     process.exit(1)
-  }
-
-  // Try bun first, fall back to node
-  let command = 'bun'
-  let cmdArgs = ['run', serverPath]
-  try {
-    const { execSync } = await import('child_process')
-    execSync('bun --version', { stdio: 'ignore' })
-  } catch {
-    command = 'node'
-    cmdArgs = [serverPath]
   }
 
   const child = spawn(command, cmdArgs, {
