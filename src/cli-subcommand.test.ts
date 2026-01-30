@@ -11,6 +11,7 @@ import {
   GET_COMPOUND,
   COMPOUND_PATHS,
   ARG_MAPS,
+  resolveServerPath,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -546,5 +547,24 @@ describe('ARG_MAPS send commands', () => {
         submit: false,
       })
     })
+  })
+})
+
+describe('resolveServerPath', () => {
+  test('finds dev server when built', () => {
+    // In dev environment with built dist, should find dist/server.js
+    const resolved = resolveServerPath()
+    expect(resolved).not.toBeNull()
+    // Should be 'dev' type since we're running tests from source, not from compiled binary
+    expect(resolved?.type).toBe('dev')
+    expect(resolved?.path).toContain('dist/server.js')
+  })
+
+  test('returns path based on architecture', () => {
+    const resolved = resolveServerPath()
+    expect(resolved).not.toBeNull()
+    // The path should exist
+    const { existsSync } = require('fs')
+    expect(existsSync(resolved?.path)).toBe(true)
   })
 })
