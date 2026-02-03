@@ -60,19 +60,20 @@ curl -X POST localhost:8700/inspect -d '{"selector":".header","matchedRules":tru
 **Goal**: Capture steps to reproduce a bug for the team.
 
 ```bash
-# Start watching events
-curl -X POST localhost:8700/events/watch -d '{"preset":"interactive"}'
+# Start recording (tracks all interactions including across page loads)
+curl -X POST localhost:8700/recording -d '{"action":"start"}'
 
 # ... user reproduces the bug manually ...
+# (can navigate between pages - recording survives!)
 
-# Get what happened
-curl localhost:8700/events
+# Stop recording and get events
+curl -X POST localhost:8700/recording -d '{"action":"stop"}'
 
 # Take a screenshot of the broken state
 curl -X POST localhost:8700/screenshot -d '{"scale":0.5}'
 ```
 
-**Output**: Semantic events like "user clicked Settings", "user typed 'admin'", "error: 500 from /api/users"
+**Output**: Semantic events like "user clicked Settings", "user typed 'admin'", "navigated to /settings", "error: 500 from /api/users"
 
 **Or just tell the agent**: "Watch what I do and write up repro steps"
 
@@ -83,15 +84,26 @@ curl -X POST localhost:8700/screenshot -d '{"scale":0.5}'
 **Goal**: Turn a manual walkthrough into an automated test.
 
 ```bash
-# Start recording
-curl -X POST localhost:8700/recording/start -d '{"name":"checkout-flow"}'
+# Start recording (survives page navigations!)
+curl -X POST localhost:8700/recording -d '{"action":"start"}'
 
-# ... click around manually ...
+# ... click around manually, navigate between pages ...
 
-# Stop and generate test
-curl -X POST localhost:8700/recording/stop
-curl -X POST localhost:8700/recording/generate -d '{"name":"checkout-flow"}'
+# Check recording status (optional)
+curl -X POST localhost:8700/recording -d '{"action":"status"}'
+# Returns: {"success":true,"data":{"recording":true,"eventCount":23}}
+
+# Stop and get events
+curl -X POST localhost:8700/recording -d '{"action":"stop"}'
+
+# Generate test from recorded events
+curl -X POST localhost:8700/recording -d '{"action":"generate","name":"checkout-flow"}'
 ```
+
+**Cross-page recording**: Recordings now survive page navigations! The server tracks your session by window ID, so you can record multi-page flows like:
+- Login → Dashboard → Settings
+- Shopping cart → Checkout → Confirmation
+- OAuth flows that redirect between pages
 
 **Output**: JSON test file ready for CI.
 

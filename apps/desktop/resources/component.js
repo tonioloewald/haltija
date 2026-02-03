@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.11";
+  var VERSION = "1.1.12";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -1511,6 +1511,7 @@
     widgetHidden = false;
     serverUrl = "wss://localhost:8700/ws/browser";
     windowId;
+    isElectron = false;
     browserId = uid();
     killed = false;
     isActive = true;
@@ -1526,6 +1527,7 @@
     recordingStartTime = 0;
     recordingEvents = [];
     lastRecordingId = null;
+    serverManagedRecording = false;
     pending = new Map;
     semanticEventsEnabled = false;
     semanticEventBuffer = [];
@@ -1661,18 +1663,24 @@
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
-      const WINDOW_ID_KEY = "haltija-window-id";
-      let storedWindowId = null;
-      try {
-        storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
-        if (!storedWindowId) {
+      const config = window.__haltija_config__;
+      if (config?.windowId) {
+        this.windowId = config.windowId;
+        this.isElectron = true;
+      } else {
+        const WINDOW_ID_KEY = "haltija-window-id";
+        let storedWindowId = null;
+        try {
+          storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
+          if (!storedWindowId) {
+            storedWindowId = uid();
+            sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
+          }
+        } catch {
           storedWindowId = uid();
-          sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
         }
-      } catch {
-        storedWindowId = uid();
+        this.windowId = storedWindowId;
       }
-      this.windowId = storedWindowId;
     }
     connectedCallback() {
       this.killed = false;
@@ -1808,40 +1816,6 @@
           font-size: 12px;
         }
 
-        .indicators {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 120px;
-        }
-
-        .indicator {
-          font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-weight: 500;
-          white-space: nowrap;
-        }
-
-        .indicator.errors {
-          background: #ef4444;
-          color: white;
-          cursor: pointer;
-        }
-
-        .indicator.errors:hover {
-          background: #dc2626;
-        }
-
-        .indicator.recording {
-          background: #ef4444;
-          color: white;
-          animation: pulse 1s infinite;
-        }
-
         .controls {
           display: flex;
           gap: 4px;
@@ -1862,7 +1836,65 @@
         .btn.active { color: #6366f1; }
         .btn.has-selection { color: #22c55e; } /* Green to show selection is ready for retrieval */
         .btn.danger:hover { color: #ef4444; }
-        .btn.recording { color: #ef4444; animation: pulse 1s infinite; }
+        .btn.recording { 
+          background: #ef4444; 
+          color: white; 
+          border-radius: 3px;
+          padding: 2px 4px;
+          font-size: 9px;
+          font-weight: bold;
+          animation: pulse 1s infinite; 
+        }
+        .btn[data-action="record"] {
+          font-size: 10px;
+          font-weight: 500;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255,255,255,0.1);
+        }
+        .btn[data-action="record"]:hover:not(.recording) {
+          background: rgba(255,255,255,0.2);
+        }
+        .btn[data-action="record"].recording {
+          background: #ef4444;
+          color: white;
+          animation: pulse 1s infinite;
+        }
+        .btn[data-action="logs"] {
+          font-size: 10px;
+          font-weight: 500;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255,255,255,0.1);
+        }
+        .btn[data-action="logs"]:hover:not(.has-errors) {
+          background: rgba(255,255,255,0.2);
+        }
+        .btn[data-action="logs"].has-errors {
+          background: #ef4444;
+          color: white;
+        }
+        .btn[data-action="logs"].has-errors:hover {
+          background: #dc2626;
+        }
+        .btn.info-btn {
+          width: 18px;
+          height: 18px;
+          padding: 0;
+          border-radius: 50%;
+          background: #3b82f6;
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+          font-style: italic;
+          font-family: Georgia, serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .btn.info-btn:hover {
+          background: #2563eb;
+        }
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
@@ -2225,17 +2257,16 @@
             <span class="logo">\uD83E\uDDDD</span>
           </div>
           <div class="title">${PRODUCT_NAME}</div>
-          <div class="indicators"></div>
           <div class="controls">
             <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">\uD83D\uDC46</button>
-            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">\uD83C\uDFAC</button>
-            <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">\uD83D\uDCCB</button>
-            <button class="btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">\uD83D\uDCCA</button>
+            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
+            <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">LOG</button>
+            <button class="btn info-btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">i</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
-            <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
+            ${this.isElectron ? "" : '<button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>'}
           </div>
         </div>
-        <div class="body">
+        <div class="body"${this.isElectron ? ' style="display:none"' : ""}>
             <a href="javascript:(function(){fetch('${this.serverUrl.replace("ws:", "http:").replace("wss:", "https:").replace("/ws/browser", "")}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();"
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
@@ -2294,8 +2325,16 @@
             this.toggleMinimize();
           if (action2 === "kill")
             this.kill();
-          if (action2 === "logs")
+          if (action2 === "logs") {
+            const btn2 = e.currentTarget;
+            if (btn2.classList.contains("has-errors")) {
+              const logFilter2 = this.shadowRoot?.querySelector(".log-filter");
+              if (logFilter2) {
+                logFilter2.value = "console";
+              }
+            }
             this.toggleLogPanel();
+          }
           if (action2 === "clear-logs")
             this.clearLogPanel();
           if (action2 === "record")
@@ -2314,23 +2353,6 @@
             this.sendToAgent();
         });
       });
-      const indicators = shadow.querySelector(".indicators");
-      if (indicators) {
-        indicators.addEventListener("click", (e) => {
-          const target = e.target;
-          if (target.classList.contains("errors")) {
-            const logFilter2 = shadow.querySelector(".log-filter");
-            if (logFilter2) {
-              logFilter2.value = "console";
-            }
-            if (!this.logPanelOpen) {
-              this.toggleLogPanel();
-            } else {
-              this.updateLogPanel();
-            }
-          }
-        });
-      }
       const logFilter = shadow.querySelector(".log-filter");
       if (logFilter) {
         logFilter.addEventListener("change", () => this.updateLogPanel());
@@ -2374,21 +2396,18 @@
       if (statusRing) {
         statusRing.className = `status-ring ${this.state}`;
       }
-      const indicators = shadow.querySelector(".indicators");
-      if (indicators) {
-        const errorCount = this.consoleBuffer.filter((e) => e.level === "error").length;
-        let html = "";
-        if (errorCount > 0) {
-          html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? "s" : ""}">${errorCount} ⚠</span>`;
-        }
-        if (this.recording) {
-          html += `<span class="indicator recording">REC</span>`;
-        }
-        indicators.innerHTML = html;
-      }
       const logBtn = shadow.querySelector('[data-action="logs"]');
       if (logBtn) {
+        const errorCount = this.consoleBuffer.filter((e) => e.level === "error").length;
         logBtn.classList.toggle("active", this.logPanelOpen);
+        logBtn.classList.toggle("has-errors", errorCount > 0);
+        if (errorCount > 0) {
+          logBtn.textContent = `${errorCount} ⚠`;
+          logBtn.setAttribute("title", `${errorCount} error${errorCount > 1 ? "s" : ""} - click to view logs`);
+        } else {
+          logBtn.textContent = "LOG";
+          logBtn.setAttribute("title", "Show event log panel");
+        }
       }
     }
     toggleLogPanel() {
@@ -2544,11 +2563,67 @@
     escapeHtml(str) {
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
-    toggleRecording() {
-      if (this.isRecording) {
-        this.stopRecording();
+    async toggleRecording() {
+      if (this.isRecording || this.serverManagedRecording) {
+        await this.stopRecordingViaServer();
       } else {
-        this.startRecording();
+        await this.startRecordingViaServer();
+      }
+    }
+    async startRecordingViaServer() {
+      try {
+        const config = window.__haltija_config__;
+        const serverUrl2 = config?.serverUrl?.replace("ws:", "http:").replace("/ws/browser", "") || "http://localhost:8700";
+        const response = await fetch(`${serverUrl2}/recording`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", window: this.windowId })
+        });
+        const result2 = await response.json();
+        if (result2.success) {
+          this.isRecording = true;
+          this.serverManagedRecording = true;
+          this.recordingStartTime = Date.now();
+          this.recordingEvents = [];
+          if (!this.semanticEventsEnabled) {
+            this.semanticSubscription = { preset: "interactive" };
+            this.startSemanticEvents();
+          }
+          this.updateRecordingUI(true);
+          console.log("[Haltija] Recording started (server-managed)");
+        } else {
+          console.error("[Haltija] Failed to start recording:", result2.error);
+        }
+      } catch (err) {
+        console.error("[Haltija] Failed to start recording:", err);
+      }
+    }
+    async stopRecordingViaServer() {
+      try {
+        const config = window.__haltija_config__;
+        const serverUrl2 = config?.serverUrl?.replace("ws:", "http:").replace("/ws/browser", "") || "http://localhost:8700";
+        const response = await fetch(`${serverUrl2}/recording`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop", window: this.windowId })
+        });
+        const result2 = await response.json();
+        if (result2.success && result2.data) {
+          this.recordingEvents = result2.data.events || [];
+          this.recordingStartTime = result2.data.startTime || this.recordingStartTime;
+          const recordingId = `rec_${this.recordingStartTime}_${Math.random().toString(36).slice(2, 8)}`;
+          this.lastRecordingId = recordingId;
+          console.log(`[Haltija] Recording stopped (${this.recordingEvents.length} events)`);
+        }
+        this.isRecording = false;
+        this.serverManagedRecording = false;
+        this.updateRecordingUI(false);
+        this.generateAndShowTest();
+      } catch (err) {
+        console.error("[Haltija] Failed to stop recording:", err);
+        this.isRecording = false;
+        this.serverManagedRecording = false;
+        this.updateRecordingUI(false);
       }
     }
     startRecording() {
@@ -2569,12 +2644,7 @@
           title: document.title
         }
       });
-      const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]');
-      if (recordBtn) {
-        recordBtn.textContent = "\uD83D\uDCBE";
-        recordBtn.classList.add("recording");
-        recordBtn.setAttribute("title", "Stop recording (click to finish)");
-      }
+      this.updateRecordingUI(true);
     }
     stopRecording() {
       this.isRecording = false;
@@ -2598,12 +2668,7 @@
         }
       });
       this.saveRecordingToServer(recordingId, stopTime);
-      const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]');
-      if (recordBtn) {
-        recordBtn.textContent = "\uD83C\uDFAC";
-        recordBtn.classList.remove("recording");
-        recordBtn.setAttribute("title", "Record test (click to start)");
-      }
+      this.updateRecordingUI(false);
       this.generateAndShowTest();
     }
     saveRecordingToServer(recordingId, endTime) {
@@ -2896,20 +2961,14 @@
       stats.refsStale = refStats.stale;
       const formattedStats = getFormattedStats();
       const json = JSON.stringify(formattedStats, null, 2);
+      console.log(`${LOG_PREFIX} Stats:`);
+      console.log(formattedStats);
       try {
         await navigator.clipboard.writeText(json);
-        console.log(`${LOG_PREFIX} Stats copied to clipboard!`);
-        console.log(formattedStats);
-        const statsBtn = this.shadowRoot?.querySelector('[data-action="stats"]');
-        if (statsBtn) {
-          statsBtn.textContent = "✓";
-          setTimeout(() => {
-            statsBtn.textContent = "\uD83D\uDCCA";
-          }, 1500);
-        }
+        this.showSubtitle("Stats copied to clipboard", 2000);
       } catch (err) {
         console.error(`${LOG_PREFIX} Failed to copy stats:`, err);
-        console.log(`${LOG_PREFIX} Stats (copy manually):`, json);
+        this.showSubtitle("Stats logged to console", 2000);
       }
     }
     downloadTest() {
@@ -4601,6 +4660,19 @@ ${elementSummary}${moreText}`;
       if (this.semanticEventBuffer.length > this.SEMANTIC_BUFFER_MAX) {
         this.semanticEventBuffer.shift();
       }
+      if (this.serverManagedRecording && this.ws && this.windowId) {
+        this.ws.send(JSON.stringify({
+          id: uid(),
+          channel: "recording",
+          action: "event",
+          payload: {
+            windowId: this.windowId,
+            event
+          },
+          timestamp: Date.now(),
+          source: "browser"
+        }));
+      }
       if (this.logPanelOpen) {
         this.updateLogPanel();
       }
@@ -6139,11 +6211,12 @@ ${elementSummary}${moreText}`;
       if (action2 === "start") {
         this.recording = {
           id: uid(),
-          name: payload2.name || "Recording",
+          name: payload2?.name || "Recording",
           startTime: Date.now(),
           events: [],
           consoleEntries: []
         };
+        this.serverManagedRecording = payload2?.serverManaged === true;
         this.watchEvents({
           events: [
             "click",
@@ -6155,21 +6228,61 @@ ${elementSummary}${moreText}`;
             "blur"
           ]
         }, `recording-${this.recording.id}`);
-        this.respond(msg2.id, true, { sessionId: this.recording.id });
+        if (!this.semanticEventsEnabled) {
+          this.semanticSubscription = { preset: "interactive" };
+          this.startSemanticEvents();
+        }
+        this.isRecording = true;
+        this.recordingStartTime = Date.now();
+        this.recordingEvents = [];
+        this.respond(msg2.id, true, {
+          sessionId: this.recording.id,
+          serverManaged: this.serverManagedRecording
+        });
       } else if (action2 === "stop") {
-        if (this.recording) {
-          this.recording.endTime = Date.now();
-          this.recording.consoleEntries = [...this.consoleBuffer];
-          const session = this.recording;
-          this.eventWatchers.get(`recording-${session.id}`)?.();
-          this.eventWatchers.delete(`recording-${session.id}`);
-          this.recording = null;
-          this.respond(msg2.id, true, session);
+        if (this.recording || this.serverManagedRecording) {
+          if (this.recording) {
+            this.recording.endTime = Date.now();
+            this.recording.consoleEntries = [...this.consoleBuffer];
+            const session = this.recording;
+            this.eventWatchers.get(`recording-${session.id}`)?.();
+            this.eventWatchers.delete(`recording-${session.id}`);
+            this.recording = null;
+          }
+          this.isRecording = false;
+          this.serverManagedRecording = false;
+          this.recordingEvents = [];
+          this.respond(msg2.id, true, { stopped: true });
         } else {
           this.respond(msg2.id, false, null, "No active recording");
         }
+      } else if (action2 === "resume") {
+        console.log("[Haltija] Resuming recording session from server");
+        this.serverManagedRecording = true;
+        this.isRecording = true;
+        this.recordingStartTime = payload2?.startTime || Date.now();
+        this.recordingEvents = [];
+        if (!this.semanticEventsEnabled) {
+          this.semanticSubscription = { preset: "interactive" };
+          this.startSemanticEvents();
+        }
+        this.updateRecordingUI(true);
       } else if (action2 === "replay") {
         this.replaySession(payload2.session, payload2.speed || 1, msg2.id);
+      }
+    }
+    updateRecordingUI(recording) {
+      const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]');
+      if (recordBtn) {
+        if (recording) {
+          recordBtn.textContent = "REC";
+          recordBtn.classList.add("recording");
+          recordBtn.setAttribute("title", "Stop recording (click to finish)");
+        } else {
+          recordBtn.textContent = "REC";
+          recordBtn.classList.remove("recording");
+          recordBtn.setAttribute("title", "Start recording");
+        }
       }
     }
     handleSelectionMessage(msg2) {

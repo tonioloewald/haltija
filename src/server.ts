@@ -240,6 +240,17 @@ interface StoredRecording {
 const recordings = new Map<string, StoredRecording>()
 const MAX_RECORDINGS = 20
 
+// Active recording sessions (keyed by windowId)
+// These survive page navigations - the session persists even when the widget reloads
+interface ActiveRecordingSession {
+  windowId: string
+  startTime: number
+  startUrl: string
+  events: unknown[]  // SemanticEvent objects streamed from browser
+  name?: string      // Optional test name
+}
+const activeRecordingSessions = new Map<string, ActiveRecordingSession>()
+
 // Create snapshots directory if configured
 if (SNAPSHOTS_DIR) {
   try {
@@ -599,6 +610,15 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
       console.log(`${LOG_PREFIX} Saved recording: ${recording.id} (${recording.events.length} events)`)
     }
     
+    // Handle streamed recording events from browser (for cross-page recording)
+    if (msg.channel === 'recording' && msg.action === 'event' && msg.payload) {
+      const payload = msg.payload as { windowId: string; event: unknown }
+      const session = activeRecordingSessions.get(payload.windowId)
+      if (session) {
+        session.events.push(payload.event)
+      }
+    }
+    
     // Don't buffer system messages, but do broadcast them
     if (msg.channel !== 'system') {
       bufferMessage(msg)
@@ -654,6 +674,31 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     }
   }
   
+  // Recording session management (for cross-page recording)
+  const startRecordingSession = (windowId: string, startUrl: string, name?: string) => {
+    activeRecordingSessions.set(windowId, {
+      windowId,
+      startTime: Date.now(),
+      startUrl,
+      events: [],
+      name,
+    })
+    console.log(`${LOG_PREFIX} Started recording session for window ${windowId}`)
+  }
+  
+  const stopRecordingSession = (windowId: string) => {
+    const session = activeRecordingSessions.get(windowId)
+    if (session) {
+      activeRecordingSessions.delete(windowId)
+      console.log(`${LOG_PREFIX} Stopped recording session for window ${windowId} (${session.events.length} events)`)
+    }
+    return session
+  }
+  
+  const getRecordingSession = (windowId: string) => {
+    return activeRecordingSessions.get(windowId)
+  }
+  
   return {
     requestFromBrowser,
     targetWindowId,
@@ -662,6 +707,9 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     sessionId,
     getWindowInfo,
     updateSessionAffinity,
+    startRecordingSession,
+    stopRecordingSession,
+    getRecordingSession,
   }
 }
 
@@ -958,18 +1006,24 @@ async function handleRest(req: Request): Promise<Response> {
   if (path === '/status') {
     const mcpStatus = getMcpStatus()
     
-    // Include compact window list
+    // Include compact window list with recording status
     const windowList = Array.from(windows.values()).map(w => ({
       id: w.id,
       title: w.title?.slice(0, 50) || '(untitled)',
       url: w.url,
       focused: w.id === focusedWindowId,
+      recording: activeRecordingSessions.has(w.id),
     }))
+    
+    // Count active recordings
+    const activeRecordings = activeRecordingSessions.size
     
     return Response.json({
       ok: windows.size > 0,
       windows: windowList,
       serverVersion: SERVER_VERSION,
+      recording: activeRecordings > 0,
+      activeRecordings,
       // Legacy fields for backwards compatibility
       browsers: browsers.size,
       agents: agents.size,
@@ -3364,6 +3418,26 @@ const serverConfig = {
                 timestamp: Date.now(),
                 source: 'server'
               }))
+            }
+            
+            // Check if there's an active recording session for this window
+            if (windowId) {
+              const recordingSession = activeRecordingSessions.get(windowId)
+              if (recordingSession) {
+                console.log(`${LOG_PREFIX} Resuming recording for window ${windowId}`)
+                wsTyped.send(JSON.stringify({
+                  id: uid(),
+                  channel: 'recording',
+                  action: 'resume',
+                  payload: { 
+                    windowId,
+                    startTime: recordingSession.startTime,
+                    eventCount: recordingSession.events.length
+                  },
+                  timestamp: Date.now(),
+                  source: 'server'
+                }))
+              }
             }
           }
           

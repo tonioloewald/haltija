@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "name": "Dev server functionality",
+  "description": "Tests the Haltija dev server - proves Haltija can test itself",
+  "url": "http://localhost:3000",
+  "tags": ["smoke", "dev-server", "ci"],
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "http://localhost:8700",
+      "description": "Load Haltija home page"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "title", "text": "Haltija", "contains": true },
+      "description": "Page title contains Haltija"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "exists", "selector": "haltija-dev" },
+      "description": "Widget is auto-injected"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": ".header img" },
+      "description": "Logo image is visible"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelector('.header img').complete && document.querySelector('.header img').naturalWidth > 0",
+      "expect": true,
+      "description": "Logo image loaded successfully"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "body", "text": "browser with superpowers", "contains": true },
+      "description": "App tab content is present (from app.md)"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"service\"]",
+      "description": "Switch to Service tab"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#tab-service", "text": "Drag the bookmarklet", "contains": true },
+      "description": "Service tab content is present (from service.md)"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab=\"playground\"]",
+      "description": "Switch to Playground tab"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "visible", "selector": "#tab-playground" },
+      "description": "Playground tab is visible"
+    },
+    {
+      "action": "click",
+      "selector": "#btn-primary",
+      "description": "Click Primary button"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Primary button clicked!" },
+      "description": "Button click registered in output"
+    },
+    {
+      "action": "type",
+      "selector": "#text-input",
+      "text": "CI test input",
+      "description": "Type in text input"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "value", "selector": "#text-input", "value": "CI test input" },
+      "description": "Text input has correct value"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Text: CI test input" },
+      "description": "Typing registered in output"
+    },
+    {
+      "action": "eval",
+      "code": "typeof window.DevChannel === 'function'",
+      "expect": true,
+      "description": "DevChannel class is available globally"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelector('haltija-dev').shadowRoot !== null",
+      "expect": true,
+      "description": "Widget has shadow DOM"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelector('haltija-dev').shadowRoot.querySelector('.controls').innerText.includes('─')",
+      "expect": true,
+      "description": "Unicode characters render correctly (box drawing)"
+    },
+    {
+      "action": "eval",
+      "code": "document.querySelector('haltija-dev').shadowRoot.querySelector('.controls').innerText.includes('✕')",
+      "expect": true,
+      "description": "Unicode characters render correctly (close button)"
+    }
+  ]
+}

@@ -1309,7 +1309,7 @@
     "path": "/recording",
     "method": "POST",
     "summary": "Record user actions and generate tests",
-    "description": "Record user interactions and convert them to runnable tests.\n\nActions:\n- start: Begin capturing user interactions\n- stop: Stop capturing, returns recorded events\n- generate: Convert recording to JSON test format\n- list: List all saved recordings\n\nWorkflow: start → (user interacts) → stop → generate → run with /test",
+    "description": "Record user interactions and convert them to runnable tests.\n\n**Cross-page recording**: Recordings now survive page navigations! The server tracks\nthe recording session by window ID, so you can record a multi-page flow (e.g., login → dashboard).\n\nActions:\n- start: Begin capturing user interactions (survives page navigations)\n- stop: Stop capturing, returns all recorded events including from previous pages\n- status: Check if recording is active and get event count\n- generate: Convert recording to JSON test format\n- list: List all saved recordings\n\nWorkflow: start → (user interacts, navigates pages) → stop → generate → run with /test",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1318,6 +1318,7 @@
           "enum": [
             "start",
             "stop",
+            "status",
             "generate",
             "list"
           ],

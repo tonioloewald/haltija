@@ -1239,13 +1239,17 @@ Useful when working with multiple tabs to ensure the right one is visible.
 
 Record user interactions and convert them to runnable tests.
 
+**Cross-page recording**: Recordings now survive page navigations! The server tracks
+the recording session by window ID, so you can record a multi-page flow (e.g., login → dashboard).
+
 Actions:
-- start: Begin capturing user interactions
-- stop: Stop capturing, returns recorded events
+- start: Begin capturing user interactions (survives page navigations)
+- stop: Stop capturing, returns all recorded events including from previous pages
+- status: Check if recording is active and get event count
 - generate: Convert recording to JSON test format
 - list: List all saved recordings
 
-Workflow: start → (user interacts) → stop → generate → run with /test
+Workflow: start → (user interacts, navigates pages) → stop → generate → run with /test
 
 **Parameters:**
 
@@ -1257,13 +1261,17 @@ Workflow: start → (user interacts) → stop → generate → run with /test
 
 **Examples:**
 
-- **start**: Begin recording
+- **start**: Begin recording (survives page navigations)
   ```json
   {"action":"start"}
   ```
-- **stop**: Stop and get events
+- **stop**: Stop and get all events
   ```json
   {"action":"stop"}
+  ```
+- **status**: Check recording status and event count
+  ```json
+  {"action":"status"}
   ```
 - **generate**: Generate test from recording
   ```json

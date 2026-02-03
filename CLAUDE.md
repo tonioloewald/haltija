@@ -33,6 +33,14 @@ haltija --both               # HTTP + HTTPS simultaneously
 haltija --port 3000          # Custom port
 haltija --headless           # Playwright mode for CI
 haltija --docs-dir ./docs    # Custom reference docs directory
+
+# hj CLI (agent-facing commands)
+hj tree                       # DOM tree
+hj click 42                   # Click element by ref ID
+hj type 10 "hello"            # Type text into element
+hj eval "1+1"                 # Eval JS in browser
+hj status                     # Server status
+hj --help                     # List all subcommands
 ```
 
 ## Critical: Bun vs Playwright Test Separation

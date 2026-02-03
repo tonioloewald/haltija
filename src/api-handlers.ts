@@ -40,6 +40,15 @@ export interface WindowInfo {
   title: string
 }
 
+/** Active recording session info */
+export interface RecordingSessionInfo {
+  windowId: string
+  startTime: number
+  startUrl: string
+  events: unknown[]
+  name?: string
+}
+
 /** Context passed to every handler */
 export interface HandlerContext {
   requestFromBrowser: RequestFromBrowserFn
@@ -49,6 +58,10 @@ export interface HandlerContext {
   sessionId: string | undefined
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
   updateSessionAffinity: (windowId: string) => void
+  // Recording session management (for cross-page recording)
+  startRecordingSession: (windowId: string, url: string, name?: string) => void
+  stopRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
+  getRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
 }
 
 /** Handler function signature */
@@ -778,21 +791,94 @@ registerHandler(api.eventsUnwatch, async (_body, ctx) => {
 })
 
 // Consolidated recording handler
+// Uses server-side session management so recordings survive page navigations
 registerHandler(api.recording, async (body, ctx) => {
-  const windowId = body.window || ctx.targetWindowId
+  // Get window ID - try explicit, then targeted, then get from windowInfo (which falls back to focused)
+  let windowId = body.window || ctx.targetWindowId
+  if (!windowId) {
+    // Fall back to focused window via getWindowInfo
+    const info = ctx.getWindowInfo()
+    windowId = info?.id
+  }
   const action = body.action
   
+  if (!windowId) {
+    return Response.json(
+      { success: false, error: 'No window connected' },
+      { status: 400, headers: ctx.headers }
+    )
+  }
+  
   switch (action) {
-    case 'start':
+    case 'start': {
+      // Get current window URL for the session
+      const windowInfo = ctx.getWindowInfo(windowId)
+      const url = windowInfo?.url || 'unknown'
+      
+      // Create server-side recording session
+      ctx.startRecordingSession(windowId, url, body.name)
+      
+      // Tell browser to start capturing events
+      const response = await ctx.requestFromBrowser('recording', 'start', { 
+        name: body.name,
+        serverManaged: true  // Tell browser to stream events to server
+      }, 5000, windowId)
+      
       return Response.json(
-        await ctx.requestFromBrowser('recording', 'start', { name: body.name }, 5000, windowId),
+        { 
+          ...response, 
+          crossPage: true,
+          message: 'Recording started (survives page navigations)'
+        },
         { headers: ctx.headers }
       )
-    case 'stop':
+    }
+    
+    case 'stop': {
+      // Tell browser to stop capturing
+      await ctx.requestFromBrowser('recording', 'stop', { serverManaged: true }, 5000, windowId)
+      
+      // Get and clear server-side session
+      const session = ctx.stopRecordingSession(windowId)
+      if (!session) {
+        return Response.json(
+          { success: false, error: 'No active recording session for this window' },
+          { headers: ctx.headers }
+        )
+      }
+      
       return Response.json(
-        await ctx.requestFromBrowser('recording', 'stop', {}, 5000, windowId),
+        { 
+          success: true, 
+          data: {
+            events: session.events,
+            startTime: session.startTime,
+            endTime: Date.now(),
+            startUrl: session.startUrl,
+            eventCount: session.events.length
+          }
+        },
         { headers: ctx.headers }
       )
+    }
+    
+    case 'status': {
+      // New action: check if recording is active
+      const session = ctx.getRecordingSession(windowId)
+      return Response.json(
+        { 
+          success: true, 
+          data: {
+            recording: !!session,
+            startTime: session?.startTime,
+            eventCount: session?.events.length || 0,
+            startUrl: session?.startUrl
+          }
+        },
+        { headers: ctx.headers }
+      )
+    }
+    
     case 'generate':
       return Response.json(
         await ctx.requestFromBrowser('recording', 'generate', { name: body.name }, 5000, windowId),
@@ -805,7 +891,7 @@ registerHandler(api.recording, async (body, ctx) => {
       )
     default:
       return Response.json(
-        { success: false, error: 'action is required: start, stop, generate, or list' },
+        { success: false, error: 'action is required: start, stop, status, generate, or list' },
         { status: 400, headers: ctx.headers }
       )
   }

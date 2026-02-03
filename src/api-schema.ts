@@ -1551,17 +1551,21 @@ export const recording = endpoint({
   summary: 'Record user actions and generate tests',
   description: `Record user interactions and convert them to runnable tests.
 
+**Cross-page recording**: Recordings now survive page navigations! The server tracks
+the recording session by window ID, so you can record a multi-page flow (e.g., login → dashboard).
+
 Actions:
-- start: Begin capturing user interactions
-- stop: Stop capturing, returns recorded events
+- start: Begin capturing user interactions (survives page navigations)
+- stop: Stop capturing, returns all recorded events including from previous pages
+- status: Check if recording is active and get event count
 - generate: Convert recording to JSON test format
 - list: List all saved recordings
 
-Workflow: start → (user interacts) → stop → generate → run with /test`,
+Workflow: start → (user interacts, navigates pages) → stop → generate → run with /test`,
   category: 'recording',
   input: s.object({
     action: s
-      .enum(['start', 'stop', 'generate', 'list'] as const)
+      .enum(['start', 'stop', 'status', 'generate', 'list'] as const)
       .describe('Recording action to perform'),
     name: s.string.describe('Test name (for generate action)').optional,
     window: s.string.describe('Target window ID').optional,
@@ -1570,12 +1574,17 @@ Workflow: start → (user interacts) → stop → generate → run with /test`,
     {
       name: 'start',
       input: { action: 'start' },
-      description: 'Begin recording',
+      description: 'Begin recording (survives page navigations)',
     },
     {
       name: 'stop',
       input: { action: 'stop' },
-      description: 'Stop and get events',
+      description: 'Stop and get all events',
+    },
+    {
+      name: 'status',
+      input: { action: 'status' },
+      description: 'Check recording status and event count',
     },
     {
       name: 'generate',

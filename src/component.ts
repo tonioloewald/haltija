@@ -2147,6 +2147,7 @@ export class DevChannel extends HTMLElement {
   private widgetHidden = false
   private serverUrl = 'wss://localhost:8700/ws/browser'
   private windowId: string // Stable ID persisted in sessionStorage (survives refresh)
+  private isElectron = false // True when running in the desktop app
   private browserId = uid() // Unique ID for this browser instance (changes each page load)
   private killed = false // Prevents reconnection after kill()
   private isActive = true // Whether this window is active (responding to commands)
@@ -2168,6 +2169,7 @@ export class DevChannel extends HTMLElement {
   private recordingStartTime = 0
   private recordingEvents: SemanticEvent[] = []
   private lastRecordingId: string | null = null
+  private serverManagedRecording = false  // When true, stream events to server (survives page loads)
 
   // Pending requests waiting for response
   private pending = new Map<
@@ -2398,22 +2400,31 @@ export class DevChannel extends HTMLElement {
     super()
     this.attachShadow({ mode: 'open' })
 
-    // Initialize windowId from sessionStorage or generate new one
-    // This survives page refreshes but not tab close
-    // Note: sessionStorage may be unavailable in some contexts (e.g., sandboxed iframes, Playwright setContent)
-    const WINDOW_ID_KEY = 'haltija-window-id'
-    let storedWindowId: string | null = null
-    try {
-      storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
-      if (!storedWindowId) {
+    // Initialize windowId - prefer container-provided windowId (stable across origins)
+    // In the desktop app, __haltija_config__.windowId combines app instance ID + webContents.id
+    // which persists across navigations even through OAuth flows to different origins.
+    // Fall back to sessionStorage (works for same-origin navigations in regular browsers)
+    const config = (window as any).__haltija_config__
+    if (config?.windowId) {
+      // Desktop app provides globally unique, stable window ID
+      this.windowId = config.windowId
+      this.isElectron = true
+    } else {
+      // Browser context - use sessionStorage (survives same-origin navigations only)
+      const WINDOW_ID_KEY = 'haltija-window-id'
+      let storedWindowId: string | null = null
+      try {
+        storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
+        if (!storedWindowId) {
+          storedWindowId = uid()
+          sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
+        }
+      } catch {
+        // sessionStorage not available - generate a new ID each time
         storedWindowId = uid()
-        sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
       }
-    } catch {
-      // sessionStorage not available - generate a new ID each time
-      storedWindowId = uid()
+      this.windowId = storedWindowId
     }
-    this.windowId = storedWindowId
   }
 
   connectedCallback() {
@@ -2563,40 +2574,6 @@ export class DevChannel extends HTMLElement {
           font-size: 12px;
         }
 
-        .indicators {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 120px;
-        }
-
-        .indicator {
-          font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-weight: 500;
-          white-space: nowrap;
-        }
-
-        .indicator.errors {
-          background: #ef4444;
-          color: white;
-          cursor: pointer;
-        }
-
-        .indicator.errors:hover {
-          background: #dc2626;
-        }
-
-        .indicator.recording {
-          background: #ef4444;
-          color: white;
-          animation: pulse 1s infinite;
-        }
-
         .controls {
           display: flex;
           gap: 4px;
@@ -2617,7 +2594,65 @@ export class DevChannel extends HTMLElement {
         .btn.active { color: #6366f1; }
         .btn.has-selection { color: #22c55e; } /* Green to show selection is ready for retrieval */
         .btn.danger:hover { color: #ef4444; }
-        .btn.recording { color: #ef4444; animation: pulse 1s infinite; }
+        .btn.recording { 
+          background: #ef4444; 
+          color: white; 
+          border-radius: 3px;
+          padding: 2px 4px;
+          font-size: 9px;
+          font-weight: bold;
+          animation: pulse 1s infinite; 
+        }
+        .btn[data-action="record"] {
+          font-size: 10px;
+          font-weight: 500;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255,255,255,0.1);
+        }
+        .btn[data-action="record"]:hover:not(.recording) {
+          background: rgba(255,255,255,0.2);
+        }
+        .btn[data-action="record"].recording {
+          background: #ef4444;
+          color: white;
+          animation: pulse 1s infinite;
+        }
+        .btn[data-action="logs"] {
+          font-size: 10px;
+          font-weight: 500;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(255,255,255,0.1);
+        }
+        .btn[data-action="logs"]:hover:not(.has-errors) {
+          background: rgba(255,255,255,0.2);
+        }
+        .btn[data-action="logs"].has-errors {
+          background: #ef4444;
+          color: white;
+        }
+        .btn[data-action="logs"].has-errors:hover {
+          background: #dc2626;
+        }
+        .btn.info-btn {
+          width: 18px;
+          height: 18px;
+          padding: 0;
+          border-radius: 50%;
+          background: #3b82f6;
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+          font-style: italic;
+          font-family: Georgia, serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .btn.info-btn:hover {
+          background: #2563eb;
+        }
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
@@ -2980,17 +3015,16 @@ export class DevChannel extends HTMLElement {
             <span class="logo">🧝</span>
           </div>
           <div class="title">${PRODUCT_NAME}</div>
-          <div class="indicators"></div>
           <div class="controls">
             <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">👆</button>
-            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">🎬</button>
-            <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">📋</button>
-            <button class="btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">📊</button>
+            <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
+            <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">LOG</button>
+            <button class="btn info-btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">i</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
-            <button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>
+            ${this.isElectron ? '' : '<button class="btn danger" data-action="kill" title="Close and disconnect" aria-label="Close widget">✕</button>'}
           </div>
         </div>
-        <div class="body">
+        <div class="body"${this.isElectron ? ' style="display:none"' : ''}>
             <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();"
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
@@ -3051,7 +3085,17 @@ export class DevChannel extends HTMLElement {
         const action = (e.currentTarget as HTMLElement).dataset.action
         if (action === 'minimize') this.toggleMinimize()
         if (action === 'kill') this.kill()
-        if (action === 'logs') this.toggleLogPanel()
+        if (action === 'logs') {
+          // If there are errors, auto-filter to console
+          const btn = e.currentTarget as HTMLElement
+          if (btn.classList.contains('has-errors')) {
+            const logFilter = this.shadowRoot?.querySelector('.log-filter') as HTMLSelectElement
+            if (logFilter) {
+              logFilter.value = 'console'
+            }
+          }
+          this.toggleLogPanel()
+        }
         if (action === 'clear-logs') this.clearLogPanel()
         if (action === 'record') this.toggleRecording()
         if (action === 'select') this.startSelection()
@@ -3062,30 +3106,6 @@ export class DevChannel extends HTMLElement {
         if (action === 'send-to-agent') this.sendToAgent()
       })
     })
-
-    // Error indicator click - open log panel with console filter
-    const indicators = shadow.querySelector('.indicators')
-    if (indicators) {
-      indicators.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement
-        if (target.classList.contains('errors')) {
-          // Set filter to console first, then open panel
-          const logFilter = shadow.querySelector(
-            '.log-filter',
-          ) as HTMLSelectElement
-          if (logFilter) {
-            logFilter.value = 'console'
-          }
-          // Open log panel if not already open
-          if (!this.logPanelOpen) {
-            this.toggleLogPanel()
-          } else {
-            // Already open, just update the display
-            this.updateLogPanel()
-          }
-        }
-      })
-    }
 
     // Log panel controls
     const logFilter = shadow.querySelector('.log-filter') as HTMLSelectElement
@@ -3144,26 +3164,21 @@ export class DevChannel extends HTMLElement {
       statusRing.className = `status-ring ${this.state}`
     }
 
-    // Update indicators
-    const indicators = shadow.querySelector('.indicators')
-    if (indicators) {
+    // Update log panel button state and error indicator
+    const logBtn = shadow.querySelector('[data-action="logs"]')
+    if (logBtn) {
       const errorCount = this.consoleBuffer.filter(
         (e) => e.level === 'error',
       ).length
-      let html = ''
-      if (errorCount > 0) {
-        html += `<span class="indicator errors" title="${errorCount} error${errorCount > 1 ? 's' : ''}">${errorCount} ⚠</span>`
-      }
-      if (this.recording) {
-        html += `<span class="indicator recording">REC</span>`
-      }
-      indicators.innerHTML = html
-    }
-
-    // Update log panel button state
-    const logBtn = shadow.querySelector('[data-action="logs"]')
-    if (logBtn) {
       logBtn.classList.toggle('active', this.logPanelOpen)
+      logBtn.classList.toggle('has-errors', errorCount > 0)
+      if (errorCount > 0) {
+        logBtn.textContent = `${errorCount} ⚠`
+        logBtn.setAttribute('title', `${errorCount} error${errorCount > 1 ? 's' : ''} - click to view logs`)
+      } else {
+        logBtn.textContent = 'LOG'
+        logBtn.setAttribute('title', 'Show event log panel')
+      }
     }
   }
 
@@ -3397,14 +3412,91 @@ export class DevChannel extends HTMLElement {
   // Recording Methods
   // ============================================
 
-  private toggleRecording() {
-    if (this.isRecording) {
-      this.stopRecording()
+  private async toggleRecording() {
+    if (this.isRecording || this.serverManagedRecording) {
+      await this.stopRecordingViaServer()
     } else {
-      this.startRecording()
+      await this.startRecordingViaServer()
     }
   }
 
+  // Start recording via server API (enables cross-page recording)
+  private async startRecordingViaServer() {
+    try {
+      const config = (window as any).__haltija_config__
+      const serverUrl = config?.serverUrl?.replace('ws:', 'http:').replace('/ws/browser', '') 
+        || 'http://localhost:8700'
+      
+      const response = await fetch(`${serverUrl}/recording`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', window: this.windowId })
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        this.isRecording = true
+        this.serverManagedRecording = true
+        this.recordingStartTime = Date.now()
+        this.recordingEvents = []
+        
+        // Start semantic event watching if not already active
+        if (!this.semanticEventsEnabled) {
+          this.semanticSubscription = { preset: 'interactive' }
+          this.startSemanticEvents()
+        }
+        
+        this.updateRecordingUI(true)
+        console.log('[Haltija] Recording started (server-managed)')
+      } else {
+        console.error('[Haltija] Failed to start recording:', result.error)
+      }
+    } catch (err) {
+      console.error('[Haltija] Failed to start recording:', err)
+    }
+  }
+
+  // Stop recording via server API and show test modal
+  private async stopRecordingViaServer() {
+    try {
+      const config = (window as any).__haltija_config__
+      const serverUrl = config?.serverUrl?.replace('ws:', 'http:').replace('/ws/browser', '') 
+        || 'http://localhost:8700'
+      
+      const response = await fetch(`${serverUrl}/recording`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop', window: this.windowId })
+      })
+      
+      const result = await response.json()
+      if (result.success && result.data) {
+        // Store the events for test generation
+        this.recordingEvents = result.data.events || []
+        this.recordingStartTime = result.data.startTime || this.recordingStartTime
+        
+        // Generate recording ID
+        const recordingId = `rec_${this.recordingStartTime}_${Math.random().toString(36).slice(2, 8)}`
+        this.lastRecordingId = recordingId
+        
+        console.log(`[Haltija] Recording stopped (${this.recordingEvents.length} events)`)
+      }
+      
+      this.isRecording = false
+      this.serverManagedRecording = false
+      this.updateRecordingUI(false)
+      
+      // Generate the test and show modal
+      this.generateAndShowTest()
+    } catch (err) {
+      console.error('[Haltija] Failed to stop recording:', err)
+      this.isRecording = false
+      this.serverManagedRecording = false
+      this.updateRecordingUI(false)
+    }
+  }
+
+  // Legacy local recording methods (kept for backward compatibility with handleRecordingMessage)
   private startRecording() {
     this.isRecording = true
     this.recordingStartTime = Date.now()
@@ -3428,13 +3520,7 @@ export class DevChannel extends HTMLElement {
       },
     })
 
-    // Update button state
-    const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
-    if (recordBtn) {
-      recordBtn.textContent = '💾'
-      recordBtn.classList.add('recording')
-      recordBtn.setAttribute('title', 'Stop recording (click to finish)')
-    }
+    this.updateRecordingUI(true)
   }
 
   private stopRecording() {
@@ -3470,13 +3556,7 @@ export class DevChannel extends HTMLElement {
     // Send recording to server for storage
     this.saveRecordingToServer(recordingId, stopTime)
 
-    // Update button state
-    const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
-    if (recordBtn) {
-      recordBtn.textContent = '🎬'
-      recordBtn.classList.remove('recording')
-      recordBtn.setAttribute('title', 'Record test (click to start)')
-    }
+    this.updateRecordingUI(false)
 
     // Generate the test and show modal
     this.generateAndShowTest()
@@ -3868,23 +3948,16 @@ export class DevChannel extends HTMLElement {
     const formattedStats = getFormattedStats()
     const json = JSON.stringify(formattedStats, null, 2)
 
+    // Always log to console
+    console.log(`${LOG_PREFIX} Stats:`)
+    console.log(formattedStats)
+
     try {
       await navigator.clipboard.writeText(json)
-      console.log(`${LOG_PREFIX} Stats copied to clipboard!`)
-      console.log(formattedStats)
-
-      // Visual feedback - flash the stats button
-      const statsBtn = this.shadowRoot?.querySelector('[data-action="stats"]')
-      if (statsBtn) {
-        statsBtn.textContent = '✓'
-        setTimeout(() => {
-          statsBtn.textContent = '📊'
-        }, 1500)
-      }
+      this.showSubtitle('Stats copied to clipboard', 2000)
     } catch (err) {
       console.error(`${LOG_PREFIX} Failed to copy stats:`, err)
-      // Fallback: log to console
-      console.log(`${LOG_PREFIX} Stats (copy manually):`, json)
+      this.showSubtitle('Stats logged to console', 2000)
     }
   }
 
@@ -6160,6 +6233,22 @@ export class DevChannel extends HTMLElement {
     if (this.semanticEventBuffer.length > this.SEMANTIC_BUFFER_MAX) {
       this.semanticEventBuffer.shift()
     }
+    
+    // Stream to server if in server-managed recording mode
+    // This allows recordings to survive page navigations
+    if (this.serverManagedRecording && this.ws && this.windowId) {
+      this.ws.send(JSON.stringify({
+        id: uid(),
+        channel: 'recording',
+        action: 'event',
+        payload: {
+          windowId: this.windowId,
+          event: event
+        },
+        timestamp: Date.now(),
+        source: 'browser'
+      }))
+    }
 
     // Update log panel if open
     if (this.logPanelOpen) {
@@ -8429,11 +8518,15 @@ export class DevChannel extends HTMLElement {
     if (action === 'start') {
       this.recording = {
         id: uid(),
-        name: payload.name || 'Recording',
+        name: payload?.name || 'Recording',
         startTime: Date.now(),
         events: [],
         consoleEntries: [],
       }
+      
+      // Check if this is server-managed (for cross-page recording)
+      this.serverManagedRecording = payload?.serverManaged === true
+      
       // Watch common interaction events
       this.watchEvents(
         {
@@ -8449,22 +8542,79 @@ export class DevChannel extends HTMLElement {
         },
         `recording-${this.recording.id}`,
       )
-      this.respond(msg.id, true, { sessionId: this.recording.id })
+      
+      // Also start semantic event capture for better event aggregation
+      if (!this.semanticEventsEnabled) {
+        this.semanticSubscription = { preset: 'interactive' }
+        this.startSemanticEvents()
+      }
+      
+      // Update UI to show recording indicator
+      this.isRecording = true
+      this.recordingStartTime = Date.now()
+      this.recordingEvents = []
+      
+      this.respond(msg.id, true, { 
+        sessionId: this.recording.id,
+        serverManaged: this.serverManagedRecording
+      })
     } else if (action === 'stop') {
-      if (this.recording) {
-        this.recording.endTime = Date.now()
-        this.recording.consoleEntries = [...this.consoleBuffer]
-        const session = this.recording
-        // Stop event watching
-        this.eventWatchers.get(`recording-${session.id}`)?.()
-        this.eventWatchers.delete(`recording-${session.id}`)
-        this.recording = null
-        this.respond(msg.id, true, session)
+      if (this.recording || this.serverManagedRecording) {
+        if (this.recording) {
+          this.recording.endTime = Date.now()
+          this.recording.consoleEntries = [...this.consoleBuffer]
+          const session = this.recording
+          // Stop event watching
+          this.eventWatchers.get(`recording-${session.id}`)?.()
+          this.eventWatchers.delete(`recording-${session.id}`)
+          this.recording = null
+        }
+        
+        // Reset recording state
+        this.isRecording = false
+        this.serverManagedRecording = false
+        this.recordingEvents = []
+        
+        this.respond(msg.id, true, { stopped: true })
       } else {
         this.respond(msg.id, false, null, 'No active recording')
       }
+    } else if (action === 'resume') {
+      // Server is telling us to resume an active recording session (after page navigation)
+      console.log('[Haltija] Resuming recording session from server')
+      this.serverManagedRecording = true
+      this.isRecording = true
+      this.recordingStartTime = payload?.startTime || Date.now()
+      this.recordingEvents = []
+      
+      // Start semantic event capture
+      if (!this.semanticEventsEnabled) {
+        this.semanticSubscription = { preset: 'interactive' }
+        this.startSemanticEvents()
+      }
+      
+      // Update UI - show recording indicator
+      this.updateRecordingUI(true)
+      
+      // No response needed - this is a server-initiated message
     } else if (action === 'replay') {
       this.replaySession(payload.session, payload.speed || 1, msg.id)
+    }
+  }
+  
+  // Helper to update recording UI state
+  private updateRecordingUI(recording: boolean) {
+    const recordBtn = this.shadowRoot?.querySelector('[data-action="record"]')
+    if (recordBtn) {
+      if (recording) {
+        recordBtn.textContent = 'REC'
+        recordBtn.classList.add('recording')
+        recordBtn.setAttribute('title', 'Stop recording (click to finish)')
+      } else {
+        recordBtn.textContent = 'REC'
+        recordBtn.classList.remove('recording')
+        recordBtn.setAttribute('title', 'Start recording')
+      }
     }
   }
 

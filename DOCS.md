@@ -113,7 +113,8 @@ hj --help              # All commands
 3. `:text(/regex/i)` for regex matching: `hj click "a:text(/sign\s+up/i)"`
 4. `hj events` shows what happened — aggregated semantic events, not raw DOM
 5. `hj highlight 42 "Look here"` to show the user something
-6. `hj api` for the full API reference with all parameters
+6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
+7. `hj api` for the full API reference with all parameters
 
 ## Test Runner
 

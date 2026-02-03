@@ -32,6 +32,10 @@ process.stderr.on('error', () => {})
 const HALTIJA_PORT = parseInt(process.env.HALTIJA_PORT || '8700')
 const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
+// Unique app instance ID - used to create stable window IDs across navigations
+// Combined with webContents.id to create globally unique tab identifiers
+const APP_INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+
 // ============================================
 // Preferences
 // ============================================
@@ -719,9 +723,12 @@ async function injectWidget(webContents) {
 
     // Set config for auto-inject, then execute component code
     // component.ts will handle deduplication, ID generation, and element creation
+    // windowId combines app instance ID + webContents.id for globally unique tab identification
+    // This is stable across navigations (even cross-origin) enabling cross-page recording
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
+    const windowId = `hj-${APP_INSTANCE_ID}-${webContents.id}`
     await webContents.executeJavaScript(
-      `window.__haltija_config__ = { serverUrl: '${wsUrl}' };`,
+      `window.__haltija_config__ = { serverUrl: '${wsUrl}', windowId: '${windowId}' };`,
     )
     await webContents.executeJavaScript(componentCode)
 
