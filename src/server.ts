@@ -2075,9 +2075,24 @@ Run 'hj --help' for all commands.`
           
           case 'click': {
             // Use realistic click (same as /click REST endpoint)
-            const clickResponse = await requestFromBrowser('interaction', 'click', {
+            let clickResponse = await requestFromBrowser('interaction', 'click', {
               selector: step.selector,
             }, stepTimeout)
+            
+            let usedFallback = false
+            let matchedSelector = step.selector
+            
+            // If primary selector failed and we have a fallback, try it
+            if (!clickResponse.success && step.fallbackSelector) {
+              clickResponse = await requestFromBrowser('interaction', 'click', {
+                selector: step.fallbackSelector,
+              }, stepTimeout)
+              
+              if (clickResponse.success) {
+                usedFallback = true
+                matchedSelector = step.fallbackSelector
+              }
+            }
             
             if (!clickResponse.success) {
               stepPassed = false
@@ -2095,9 +2110,14 @@ Run 'hj --help' for all commands.`
               context = {
                 reason: clickResponse.error || 'Element not found',
                 selector: step.selector,
+                fallbackSelector: step.fallbackSelector,
+                triedFallback: !!step.fallbackSelector,
                 buttonsOnPage,
                 suggestion: inferSuggestion(step, { buttonsOnPage })
               }
+            } else {
+              // Track which selector worked
+              context = usedFallback ? { usedFallback, matchedSelector } : undefined
             }
             break
           }
@@ -2174,7 +2194,7 @@ Run 'hj --help' for all commands.`
               }
             } else {
               // Default: realistic per-character typing (same as /type REST endpoint)
-              const typeResponse = await requestFromBrowser('interaction', 'type', {
+              let typeResponse = await requestFromBrowser('interaction', 'type', {
                 selector: step.selector,
                 text: step.text,
                 clear: step.clear !== false,
@@ -2183,6 +2203,27 @@ Run 'hj --help' for all commands.`
                 maxDelay: step.maxDelay ?? 80,
                 typoRate: 0,  // No typos in tests
               }, stepTimeout + (step.text?.length || 0) * 200)
+              
+              let usedFallback = false
+              let matchedSelector = step.selector
+              
+              // If primary selector failed and we have a fallback, try it
+              if (!typeResponse.success && step.fallbackSelector) {
+                typeResponse = await requestFromBrowser('interaction', 'type', {
+                  selector: step.fallbackSelector,
+                  text: step.text,
+                  clear: step.clear !== false,
+                  humanlike: step.humanlike !== false,
+                  minDelay: step.minDelay ?? 30,
+                  maxDelay: step.maxDelay ?? 80,
+                  typoRate: 0,
+                }, stepTimeout + (step.text?.length || 0) * 200)
+                
+                if (typeResponse.success) {
+                  usedFallback = true
+                  matchedSelector = step.fallbackSelector
+                }
+              }
               
               if (!typeResponse.success) {
                 stepPassed = false
@@ -2200,11 +2241,16 @@ Run 'hj --help' for all commands.`
                 context = {
                   reason: typeResponse.error || 'Input element not found',
                   selector: step.selector,
+                  fallbackSelector: step.fallbackSelector,
+                  triedFallback: !!step.fallbackSelector,
                   inputsOnPage,
                   suggestion: inputsOnPage.length === 0
                     ? 'No input elements found - page may not have loaded or form is conditionally rendered'
                     : 'Input may have been renamed or removed'
                 }
+              } else {
+                // Track which selector worked
+                context = usedFallback ? { usedFallback, matchedSelector } : undefined
               }
             }
             break
@@ -2212,9 +2258,24 @@ Run 'hj --help' for all commands.`
           
           case 'check': {
             // Check/uncheck a checkbox or radio — uses realistic click
-            const checkResponse = await requestFromBrowser('interaction', 'click', {
+            let checkResponse = await requestFromBrowser('interaction', 'click', {
               selector: step.selector,
             }, stepTimeout)
+            
+            let usedFallback = false
+            let matchedSelector = step.selector
+            
+            // If primary selector failed and we have a fallback, try it
+            if (!checkResponse.success && step.fallbackSelector) {
+              checkResponse = await requestFromBrowser('interaction', 'click', {
+                selector: step.fallbackSelector,
+              }, stepTimeout)
+              
+              if (checkResponse.success) {
+                usedFallback = true
+                matchedSelector = step.fallbackSelector
+              }
+            }
             
             if (!checkResponse.success) {
               stepPassed = false
@@ -2222,7 +2283,12 @@ Run 'hj --help' for all commands.`
               context = {
                 reason: checkResponse.error || 'Element not found',
                 selector: step.selector,
+                fallbackSelector: step.fallbackSelector,
+                triedFallback: !!step.fallbackSelector,
               }
+            } else {
+              // Track which selector worked
+              context = usedFallback ? { usedFallback, matchedSelector } : undefined
             }
             break
           }
@@ -2592,6 +2658,9 @@ Run 'hj --help' for all commands.`
         purpose: step.purpose,
         context,
         snapshotId: stepSnapshotId,
+        // Track fallback selector usage
+        usedFallback: context?.usedFallback,
+        matchedSelector: context?.matchedSelector,
       })
       
       if (!stepPassed) {

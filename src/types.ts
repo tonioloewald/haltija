@@ -293,6 +293,12 @@ export interface SemanticEvent {
     text?: string         // Truncated innerText
     role?: string         // ARIA role
     label?: string        // aria-label or associated label
+    /** Fallback selector (more robust, often text-based) for test recording */
+    fallbackSelector?: string
+    /** Selector confidence: 'high' = test-id/stable-id, 'medium' = aria/text, 'low' = structural */
+    selectorConfidence?: 'high' | 'medium' | 'low'
+    /** Whether the primary selector is known to be fragile */
+    selectorFragile?: boolean
   }
   /** Event-specific payload - always included, never requires re-query */
   payload: Record<string, any>
@@ -583,21 +589,34 @@ interface BaseStep {
   planRef?: string
 }
 
+/**
+ * Extended step interface with fallback selector support.
+ * Used for steps that target elements (click, type, check, wait, assert).
+ */
+interface StepWithSelector {
+  /** Primary selector for the target element */
+  selector: string
+  /** Fallback selector to use if primary fails (more robust, often text-based) */
+  fallbackSelector?: string
+  /** Selector confidence: 'high' = test-id/stable-id, 'medium' = aria/text, 'low' = structural */
+  selectorConfidence?: 'high' | 'medium' | 'low'
+  /** Whether the primary selector is known to be fragile (uses dynamic IDs/classes) */
+  selectorFragile?: boolean
+}
+
 export interface NavigateStep extends BaseStep {
   action: 'navigate'
   url: string
 }
 
-export interface ClickStep extends BaseStep {
+export interface ClickStep extends BaseStep, StepWithSelector {
   action: 'click'
-  selector: string
   /** Optional: specific position within element */
   position?: { x: number, y: number }
 }
 
-export interface TypeStep extends BaseStep {
+export interface TypeStep extends BaseStep, StepWithSelector {
   action: 'type'
-  selector: string
   text: string
   /** Clear existing value first (default: true) */
   clear?: boolean
@@ -611,9 +630,8 @@ export interface TypeStep extends BaseStep {
   maxDelay?: number
 }
 
-export interface CheckStep extends BaseStep {
+export interface CheckStep extends BaseStep, StepWithSelector {
   action: 'check'
-  selector: string
   /** Expected value after check (e.g. "on") */
   value?: string
 }
@@ -774,6 +792,10 @@ export interface StepResult {
   context?: Record<string, any>
   /** Snapshot ID at point of failure (only present on failed steps) */
   snapshotId?: string
+  /** True if the fallback selector was used instead of the primary */
+  usedFallback?: boolean
+  /** The actual selector that matched (primary or fallback) */
+  matchedSelector?: string
 }
 
 // ============================================

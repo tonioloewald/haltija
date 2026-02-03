@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.12";
+  var VERSION = "1.1.13";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -320,27 +320,114 @@
     /^:r[a-z0-9]+:/,
     /^\d+$/
   ];
+  var UNSTABLE_CLASS_PATTERNS = [
+    /^css-[a-z0-9]{6,}$/i,
+    /^sc-[a-zA-Z]{10,}/,
+    /^makeStyles-[a-zA-Z]+-\d+$/,
+    /^jss\d+$/,
+    /^Mui[A-Z][a-zA-Z]+-root-\d+$/,
+    /^_[a-z0-9]{5,}_[a-z0-9]+$/i,
+    /^[a-zA-Z]+_[a-z0-9]{5,}$/,
+    /^[a-z]+-[a-z0-9]{6,8}$/,
+    /^[a-z]{1,3}[0-9a-z]{4,}$/i,
+    /^[a-z]{2,4}\d{2,}[a-z]*$/i,
+    /^[a-zA-Z-]+-\d{3,}$/,
+    /-[a-f0-9]{8,}$/,
+    /^ng-[a-z]+-\d+$/,
+    /^cdk-[a-z]+-\d+$/,
+    /^chakra-[a-z]+-[a-z0-9]+$/i,
+    /^__[a-z]+_[a-z0-9]+__$/i
+  ];
   function isUnstableId(id) {
     return UNSTABLE_ID_PATTERNS.some((pattern) => pattern.test(id));
   }
-  function getStableSelector(el) {
-    const htmlEl = el;
-    const testId = el.getAttribute("data-testid") || el.getAttribute("data-cy") || el.getAttribute("data-test") || el.getAttribute("data-test-id");
-    if (testId) {
-      return `[data-testid="${testId}"]`;
+  function isUnstableClass(className) {
+    return UNSTABLE_CLASS_PATTERNS.some((pattern) => pattern.test(className));
+  }
+  function isSelectorFragile(selector) {
+    const idMatch = selector.match(/#([a-zA-Z0-9_-]+)/);
+    if (idMatch && isUnstableId(idMatch[1])) {
+      return true;
     }
-    if (el.id && !isUnstableId(el.id)) {
-      return `#${el.id}`;
-    }
-    const ariaLabel = el.getAttribute("aria-label");
-    if (ariaLabel && ariaLabel.length < 50) {
-      const tag2 = el.tagName.toLowerCase();
-      const matches = document.querySelectorAll(`${tag2}[aria-label="${CSS.escape(ariaLabel)}"]`);
-      if (matches.length === 1) {
-        return `${tag2}[aria-label="${ariaLabel}"]`;
+    const classMatches = selector.matchAll(/\.([a-zA-Z0-9_-]+)/g);
+    for (const match of classMatches) {
+      if (isUnstableClass(match[1])) {
+        return true;
       }
     }
+    const nthMatch = selector.match(/:nth-child\((\d+)\)/);
+    if (nthMatch && parseInt(nthMatch[1]) > 5) {
+      return true;
+    }
+    return false;
+  }
+  function getStableSelector(el) {
+    return getStableSelectorWithFallback(el).primary;
+  }
+  function getStableSelectorWithFallback(el) {
+    const htmlEl = el;
     const tag = el.tagName.toLowerCase();
+    const getTextFallback = () => {
+      const text = htmlEl.innerText?.trim();
+      if (text && text.length < 50 && !text.includes(`
+`)) {
+        return `${tag}:has-text("${text.slice(0, 30)}")`;
+      }
+      return;
+    };
+    const getAriaSelector = () => {
+      const ariaLabel = el.getAttribute("aria-label");
+      if (ariaLabel && ariaLabel.length < 50) {
+        const matches = document.querySelectorAll(`${tag}[aria-label="${CSS.escape(ariaLabel)}"]`);
+        if (matches.length === 1) {
+          return `${tag}[aria-label="${ariaLabel}"]`;
+        }
+      }
+      return;
+    };
+    const getRoleSelector = () => {
+      const role = el.getAttribute("role");
+      const ariaLabel = el.getAttribute("aria-label");
+      if (role && ariaLabel) {
+        const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`);
+        if (matches.length === 1) {
+          return `[role="${role}"][aria-label="${ariaLabel}"]`;
+        }
+      }
+      if (role) {
+        const text = htmlEl.innerText?.trim();
+        if (text && text.length < 30) {
+          return `[role="${role}"]:has-text("${text}")`;
+        }
+      }
+      return;
+    };
+    const testId = el.getAttribute("data-testid") || el.getAttribute("data-cy") || el.getAttribute("data-test") || el.getAttribute("data-test-id");
+    if (testId) {
+      return {
+        primary: `[data-testid="${testId}"]`,
+        fallback: getTextFallback() || getAriaSelector(),
+        isFragile: false,
+        confidence: "high"
+      };
+    }
+    if (el.id && !isUnstableId(el.id)) {
+      return {
+        primary: `#${el.id}`,
+        fallback: getTextFallback() || getAriaSelector(),
+        isFragile: false,
+        confidence: "high"
+      };
+    }
+    const ariaSelector = getAriaSelector();
+    if (ariaSelector) {
+      return {
+        primary: ariaSelector,
+        fallback: getTextFallback() || getRoleSelector(),
+        isFragile: false,
+        confidence: "medium"
+      };
+    }
     if (["button", "a"].includes(tag) || el.getAttribute("role") === "button") {
       const text = htmlEl.innerText?.trim();
       if (text && text.length < 30 && !text.includes(`
@@ -349,31 +436,62 @@
         const allSimilar = document.querySelectorAll(selector);
         const matchingText = Array.from(allSimilar).filter((e) => e.innerText?.trim() === text);
         if (matchingText.length === 1) {
-          return `${tag}:text-is("${text}")`;
+          const structuralSelector2 = getSelector(el);
+          return {
+            primary: `${tag}:text-is("${text}")`,
+            fallback: !isSelectorFragile(structuralSelector2) ? structuralSelector2 : undefined,
+            isFragile: false,
+            confidence: "medium"
+          };
         }
       }
     }
     if (tag === "input" || tag === "textarea" || tag === "select") {
       const name = el.getAttribute("name");
       if (name && !isUnstableId(name)) {
-        return `${tag}[name="${name}"]`;
+        const placeholder2 = el.getAttribute("placeholder");
+        return {
+          primary: `${tag}[name="${name}"]`,
+          fallback: placeholder2 ? `${tag}[placeholder="${placeholder2}"]` : undefined,
+          isFragile: false,
+          confidence: "medium"
+        };
       }
       const placeholder = el.getAttribute("placeholder");
       if (placeholder && placeholder.length < 40) {
         const matches = document.querySelectorAll(`${tag}[placeholder="${CSS.escape(placeholder)}"]`);
         if (matches.length === 1) {
-          return `${tag}[placeholder="${placeholder}"]`;
+          return {
+            primary: `${tag}[placeholder="${placeholder}"]`,
+            fallback: undefined,
+            isFragile: false,
+            confidence: "medium"
+          };
         }
       }
     }
-    const role = el.getAttribute("role");
-    if (role && ariaLabel) {
-      const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`);
-      if (matches.length === 1) {
-        return `[role="${role}"][aria-label="${ariaLabel}"]`;
-      }
+    const roleSelector = getRoleSelector();
+    if (roleSelector) {
+      const structuralSelector2 = getSelector(el);
+      return {
+        primary: roleSelector,
+        fallback: !isSelectorFragile(structuralSelector2) ? structuralSelector2 : undefined,
+        isFragile: false,
+        confidence: "medium"
+      };
     }
-    return getSelector(el);
+    const structuralSelector = getSelector(el);
+    const isFragile = isSelectorFragile(structuralSelector);
+    let fallback;
+    if (isFragile) {
+      fallback = getTextFallback() || getRoleSelector();
+    }
+    return {
+      primary: structuralSelector,
+      fallback,
+      isFragile,
+      confidence: "low"
+    };
   }
   function elementTextMatches(el, parsed) {
     const text = el.innerText ?? "";
@@ -2717,6 +2835,18 @@
     eventsToTest(events, options) {
       const steps = [];
       let prevTimestamp = events[0]?.timestamp || Date.now();
+      const withFallback = (step, target) => {
+        if (target?.fallbackSelector) {
+          step.fallbackSelector = target.fallbackSelector;
+        }
+        if (target?.selectorConfidence) {
+          step.selectorConfidence = target.selectorConfidence;
+        }
+        if (target?.selectorFragile) {
+          step.selectorFragile = target.selectorFragile;
+        }
+        return step;
+      };
       for (let i = 0;i < events.length; i++) {
         const event = events[i];
         const delay = i > 0 ? Math.min(event.timestamp - prevTimestamp, 5000) : undefined;
@@ -2726,12 +2856,12 @@
         switch (event.type) {
           case "interaction:click":
             const clickText = this.cleanDescription(text);
-            steps.push({
+            steps.push(withFallback({
               action: "click",
               selector,
               description: clickText ? `Click "${clickText}"` : `Click ${selector}`,
               ...delay && delay > 50 ? { delay } : {}
-            });
+            }, event.target));
             const nextEvent = events[i + 1];
             if (nextEvent?.type === "navigation:navigate" && options.addAssertions) {
               steps.push({
@@ -2769,13 +2899,13 @@
             } else {
               inputDesc = `Type "${inputValue}" in ${inputLabel}`;
             }
-            steps.push({
+            steps.push(withFallback({
               action: inputAction,
               selector,
               ...inputAction === "type" || inputAction === "set" ? { text: inputValue } : { value: inputValue },
               description: inputDesc,
               ...delay && delay > 50 ? { delay } : {}
-            });
+            }, event.target));
             if (options.addAssertions && inputValue) {
               steps.push({
                 action: "assert",
@@ -2795,12 +2925,12 @@
             }
             break;
           case "interaction:submit":
-            steps.push({
+            steps.push(withFallback({
               action: "click",
               selector: event.target?.selector || 'button[type="submit"]',
               description: `Submit form`,
               ...delay && delay > 50 ? { delay } : {}
-            });
+            }, event.target));
             break;
           case "interaction:select":
             const selectedText = this.cleanDescription(event.payload?.text || "", 50);
@@ -4633,13 +4763,17 @@ ${elementSummary}${moreText}`;
       this.hoverState = { element: null, enterTime: 0, timeout: null };
     }
     getTargetInfo(el) {
+      const dualSelector = getStableSelectorWithFallback(el);
       return {
-        selector: this.getBestSelector(el),
+        selector: dualSelector.primary,
         tag: el.tagName.toLowerCase(),
         id: el.id || undefined,
         text: el.innerText?.slice(0, 50),
         role: el.getAttribute("role") || undefined,
-        label: el.getAttribute("aria-label") || el.labels?.[0]?.innerText
+        label: el.getAttribute("aria-label") || el.labels?.[0]?.innerText,
+        fallbackSelector: dualSelector.fallback,
+        selectorConfidence: dualSelector.confidence,
+        selectorFragile: dualSelector.isFragile || undefined
       };
     }
     countRawEvent(eventType) {

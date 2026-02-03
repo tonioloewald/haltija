@@ -442,11 +442,88 @@ const UNSTABLE_ID_PATTERNS = [
   /^\d+$/,              // Pure numeric IDs
 ]
 
+// Patterns that indicate unstable/dynamic class names (CSS-in-JS, build hashes, etc.)
+const UNSTABLE_CLASS_PATTERNS = [
+  // CSS-in-JS libraries
+  /^css-[a-z0-9]{6,}$/i,          // Emotion/styled-components: css-1a2b3c4
+  /^sc-[a-zA-Z]{10,}/,            // styled-components: sc-aBcDeFgHiJ
+  /^makeStyles-[a-zA-Z]+-\d+$/,   // MUI v4 makeStyles: makeStyles-container-73
+  /^jss\d+$/,                     // JSS: jss123
+  /^Mui[A-Z][a-zA-Z]+-root-\d+$/, // MUI: MuiButton-root-123
+  
+  // Build tool hashes
+  /^_[a-z0-9]{5,}_[a-z0-9]+$/i,   // CSS Modules: _className_abc12
+  /^[a-zA-Z]+_[a-z0-9]{5,}$/,     // CSS Modules variant: Button_abc12def
+  /^[a-z]+-[a-z0-9]{6,8}$/,       // Vite CSS modules: button-a1b2c3d4
+  
+  // Base36-ish hashes (common in generated CSS)
+  /^[a-z]{1,3}[0-9a-z]{4,}$/i,    // Short prefix + hash: c1xbd2e, xyz123abc
+  /^[a-z]{2,4}\d{2,}[a-z]*$/i,    // Letter prefix + numbers: abc123, xy99z
+  
+  // Numbered class variants (often dynamically generated)
+  /^[a-zA-Z-]+-\d{3,}$/,          // Any class ending in 3+ digits: foo-123
+  /-[a-f0-9]{8,}$/,               // Hash suffix: foo-a1b2c3d4e5
+  
+  // Framework-specific patterns
+  /^ng-[a-z]+-\d+$/,              // Angular: ng-content-123
+  /^cdk-[a-z]+-\d+$/,             // Angular CDK: cdk-overlay-0
+  /^chakra-[a-z]+-[a-z0-9]+$/i,   // Chakra UI: chakra-button-abc123
+  /^__[a-z]+_[a-z0-9]+__$/i,      // Linaria/other: __className_hash__
+]
+
 /**
  * Check if an ID looks like it's dynamically generated
  */
 function isUnstableId(id: string): boolean {
   return UNSTABLE_ID_PATTERNS.some(pattern => pattern.test(id))
+}
+
+/**
+ * Check if a class name looks like it's dynamically generated
+ */
+function isUnstableClass(className: string): boolean {
+  return UNSTABLE_CLASS_PATTERNS.some(pattern => pattern.test(className))
+}
+
+/**
+ * Check if a selector relies on unstable/fragile identifiers
+ */
+function isSelectorFragile(selector: string): boolean {
+  // Check for unstable IDs
+  const idMatch = selector.match(/#([a-zA-Z0-9_-]+)/)
+  if (idMatch && isUnstableId(idMatch[1])) {
+    return true
+  }
+  
+  // Check for unstable classes
+  const classMatches = selector.matchAll(/\.([a-zA-Z0-9_-]+)/g)
+  for (const match of classMatches) {
+    if (isUnstableClass(match[1])) {
+      return true
+    }
+  }
+  
+  // Check for nth-child with high indices (fragile)
+  const nthMatch = selector.match(/:nth-child\((\d+)\)/)
+  if (nthMatch && parseInt(nthMatch[1]) > 5) {
+    return true
+  }
+  
+  return false
+}
+
+/**
+ * Result of getStableSelectorWithFallback
+ */
+interface DualSelector {
+  /** Primary selector (most stable available) */
+  primary: string
+  /** Fallback selector (usually text-based or structural) */
+  fallback?: string
+  /** Whether the primary selector is considered fragile */
+  isFragile: boolean
+  /** Confidence level: 'high' = test-id/stable-id, 'medium' = aria/text, 'low' = structural */
+  confidence: 'high' | 'medium' | 'low'
 }
 
 /**
@@ -459,46 +536,110 @@ function isUnstableId(id: string): boolean {
  * 6. Fall back to structural selector
  */
 function getStableSelector(el: Element): string {
+  return getStableSelectorWithFallback(el).primary
+}
+
+/**
+ * Get a stable selector with an optional fallback selector.
+ * Use this for test recording to get robust dual selectors.
+ */
+function getStableSelectorWithFallback(el: Element): DualSelector {
   const htmlEl = el as HTMLElement
+  const tag = el.tagName.toLowerCase()
   
-  // 1. Test IDs are explicitly for automation - best choice
+  // Helper to get a text-based fallback selector
+  const getTextFallback = (): string | undefined => {
+    const text = htmlEl.innerText?.trim()
+    if (text && text.length < 50 && !text.includes('\n')) {
+      // For any element with readable text, use :has-text() as fallback
+      return `${tag}:has-text("${text.slice(0, 30)}")`
+    }
+    return undefined
+  }
+  
+  // Helper to get aria-based selector
+  const getAriaSelector = (): string | undefined => {
+    const ariaLabel = el.getAttribute('aria-label')
+    if (ariaLabel && ariaLabel.length < 50) {
+      const matches = document.querySelectorAll(`${tag}[aria-label="${CSS.escape(ariaLabel)}"]`)
+      if (matches.length === 1) {
+        return `${tag}[aria-label="${ariaLabel}"]`
+      }
+    }
+    return undefined
+  }
+  
+  // Helper to get role-based selector
+  const getRoleSelector = (): string | undefined => {
+    const role = el.getAttribute('role')
+    const ariaLabel = el.getAttribute('aria-label')
+    if (role && ariaLabel) {
+      const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`)
+      if (matches.length === 1) {
+        return `[role="${role}"][aria-label="${ariaLabel}"]`
+      }
+    }
+    if (role) {
+      const text = htmlEl.innerText?.trim()
+      if (text && text.length < 30) {
+        return `[role="${role}"]:has-text("${text}")`
+      }
+    }
+    return undefined
+  }
+  
+  // 1. Test IDs are explicitly for automation - best choice (high confidence)
   const testId = el.getAttribute('data-testid') || 
                  el.getAttribute('data-cy') || 
                  el.getAttribute('data-test') ||
                  el.getAttribute('data-test-id')
   if (testId) {
-    return `[data-testid="${testId}"]`
-  }
-  
-  // 2. Stable ID (not dynamically generated)
-  if (el.id && !isUnstableId(el.id)) {
-    return `#${el.id}`
-  }
-  
-  // 3. ARIA label - good for accessibility and stability
-  const ariaLabel = el.getAttribute('aria-label')
-  if (ariaLabel && ariaLabel.length < 50) {
-    const tag = el.tagName.toLowerCase()
-    // Verify it's unique
-    const matches = document.querySelectorAll(`${tag}[aria-label="${CSS.escape(ariaLabel)}"]`)
-    if (matches.length === 1) {
-      return `${tag}[aria-label="${ariaLabel}"]`
+    return {
+      primary: `[data-testid="${testId}"]`,
+      fallback: getTextFallback() || getAriaSelector(),
+      isFragile: false,
+      confidence: 'high'
     }
   }
   
-  // 4. For buttons/links, use text content if unique
-  const tag = el.tagName.toLowerCase()
+  // 2. Stable ID (not dynamically generated) - high confidence
+  if (el.id && !isUnstableId(el.id)) {
+    return {
+      primary: `#${el.id}`,
+      fallback: getTextFallback() || getAriaSelector(),
+      isFragile: false,
+      confidence: 'high'
+    }
+  }
+  
+  // 3. ARIA label - medium confidence (good for a11y, fairly stable)
+  const ariaSelector = getAriaSelector()
+  if (ariaSelector) {
+    return {
+      primary: ariaSelector,
+      fallback: getTextFallback() || getRoleSelector(),
+      isFragile: false,
+      confidence: 'medium'
+    }
+  }
+  
+  // 4. For buttons/links, use text content if unique - medium confidence
   if (['button', 'a'].includes(tag) || el.getAttribute('role') === 'button') {
     const text = htmlEl.innerText?.trim()
     if (text && text.length < 30 && !text.includes('\n')) {
-      // Check if this text is unique among similar elements
       const selector = tag === 'a' ? 'a' : 'button, [role="button"]'
       const allSimilar = document.querySelectorAll(selector)
       const matchingText = Array.from(allSimilar).filter(
         e => (e as HTMLElement).innerText?.trim() === text
       )
       if (matchingText.length === 1) {
-        return `${tag}:text-is("${text}")`
+        const structuralSelector = getSelector(el)
+        return {
+          primary: `${tag}:text-is("${text}")`,
+          fallback: !isSelectorFragile(structuralSelector) ? structuralSelector : undefined,
+          isFragile: false,
+          confidence: 'medium'
+        }
       }
     }
   }
@@ -507,29 +648,57 @@ function getStableSelector(el: Element): string {
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
     const name = el.getAttribute('name')
     if (name && !isUnstableId(name)) {
-      return `${tag}[name="${name}"]`
+      const placeholder = el.getAttribute('placeholder')
+      return {
+        primary: `${tag}[name="${name}"]`,
+        fallback: placeholder ? `${tag}[placeholder="${placeholder}"]` : undefined,
+        isFragile: false,
+        confidence: 'medium'
+      }
     }
     
     const placeholder = el.getAttribute('placeholder')
     if (placeholder && placeholder.length < 40) {
       const matches = document.querySelectorAll(`${tag}[placeholder="${CSS.escape(placeholder)}"]`)
       if (matches.length === 1) {
-        return `${tag}[placeholder="${placeholder}"]`
+        return {
+          primary: `${tag}[placeholder="${placeholder}"]`,
+          fallback: undefined,
+          isFragile: false,
+          confidence: 'medium'
+        }
       }
     }
   }
   
-  // 6. Role + name combination
-  const role = el.getAttribute('role')
-  if (role && ariaLabel) {
-    const matches = document.querySelectorAll(`[role="${role}"][aria-label="${CSS.escape(ariaLabel)}"]`)
-    if (matches.length === 1) {
-      return `[role="${role}"][aria-label="${ariaLabel}"]`
+  // 6. Role + name combination - medium confidence
+  const roleSelector = getRoleSelector()
+  if (roleSelector) {
+    const structuralSelector = getSelector(el)
+    return {
+      primary: roleSelector,
+      fallback: !isSelectorFragile(structuralSelector) ? structuralSelector : undefined,
+      isFragile: false,
+      confidence: 'medium'
     }
   }
   
-  // 7. Fall back to structural selector (original behavior)
-  return getSelector(el)
+  // 7. Fall back to structural selector - check if it's fragile
+  const structuralSelector = getSelector(el)
+  const isFragile = isSelectorFragile(structuralSelector)
+  
+  // If fragile, try to create a more robust fallback using text/role
+  let fallback: string | undefined
+  if (isFragile) {
+    fallback = getTextFallback() || getRoleSelector()
+  }
+  
+  return {
+    primary: structuralSelector,
+    fallback,
+    isFragile,
+    confidence: 'low'
+  }
 }
 
 // Custom pseudo-selector support - see src/text-selector.ts for parser
@@ -3634,6 +3803,23 @@ export class DevChannel extends HTMLElement {
     const steps: TestStep[] = []
     let prevTimestamp = events[0]?.timestamp || Date.now()
 
+    // Helper to build step with fallback selector info
+    const withFallback = (
+      step: any,
+      target: SemanticEvent['target'],
+    ): any => {
+      if (target?.fallbackSelector) {
+        step.fallbackSelector = target.fallbackSelector
+      }
+      if (target?.selectorConfidence) {
+        step.selectorConfidence = target.selectorConfidence
+      }
+      if (target?.selectorFragile) {
+        step.selectorFragile = target.selectorFragile
+      }
+      return step
+    }
+
     for (let i = 0; i < events.length; i++) {
       const event = events[i]
       const delay =
@@ -3646,14 +3832,19 @@ export class DevChannel extends HTMLElement {
       switch (event.type) {
         case 'interaction:click':
           const clickText = this.cleanDescription(text)
-          steps.push({
-            action: 'click',
-            selector,
-            description: clickText
-              ? `Click "${clickText}"`
-              : `Click ${selector}`,
-            ...(delay && delay > 50 ? { delay } : {}),
-          })
+          steps.push(
+            withFallback(
+              {
+                action: 'click',
+                selector,
+                description: clickText
+                  ? `Click "${clickText}"`
+                  : `Click ${selector}`,
+                ...(delay && delay > 50 ? { delay } : {}),
+              },
+              event.target,
+            ),
+          )
 
           // Check if next event is navigation (click triggered it)
           const nextEvent = events[i + 1]
@@ -3711,15 +3902,20 @@ export class DevChannel extends HTMLElement {
             inputDesc = `Type "${inputValue}" in ${inputLabel}`
           }
 
-          steps.push({
-            action: inputAction,
-            selector,
-            ...(inputAction === 'type' || inputAction === 'set'
-              ? { text: inputValue }
-              : { value: inputValue }),
-            description: inputDesc,
-            ...(delay && delay > 50 ? { delay } : {}),
-          })
+          steps.push(
+            withFallback(
+              {
+                action: inputAction,
+                selector,
+                ...(inputAction === 'type' || inputAction === 'set'
+                  ? { text: inputValue }
+                  : { value: inputValue }),
+                description: inputDesc,
+                ...(delay && delay > 50 ? { delay } : {}),
+              },
+              event.target,
+            ),
+          )
 
           // Add value assertion
           if (options.addAssertions && inputValue) {
@@ -3749,12 +3945,17 @@ export class DevChannel extends HTMLElement {
           break
 
         case 'interaction:submit':
-          steps.push({
-            action: 'click',
-            selector: event.target?.selector || 'button[type="submit"]',
-            description: `Submit form`,
-            ...(delay && delay > 50 ? { delay } : {}),
-          })
+          steps.push(
+            withFallback(
+              {
+                action: 'click',
+                selector: event.target?.selector || 'button[type="submit"]',
+                description: `Submit form`,
+                ...(delay && delay > 50 ? { delay } : {}),
+              },
+              event.target,
+            ),
+          )
           break
 
         case 'interaction:select':
@@ -6188,8 +6389,11 @@ export class DevChannel extends HTMLElement {
   }
 
   private getTargetInfo(el: Element): SemanticEvent['target'] {
+    // Get dual selector info for robust test recording
+    const dualSelector = getStableSelectorWithFallback(el)
+    
     return {
-      selector: this.getBestSelector(el),
+      selector: dualSelector.primary,
       tag: el.tagName.toLowerCase(),
       id: el.id || undefined,
       text: (el as HTMLElement).innerText?.slice(0, 50),
@@ -6197,6 +6401,10 @@ export class DevChannel extends HTMLElement {
       label:
         el.getAttribute('aria-label') ||
         (el as HTMLInputElement).labels?.[0]?.innerText,
+      // Include fallback selector info for test recording
+      fallbackSelector: dualSelector.fallback,
+      selectorConfidence: dualSelector.confidence,
+      selectorFragile: dualSelector.isFragile || undefined,
     }
   }
 
