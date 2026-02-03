@@ -49,6 +49,17 @@ export interface RecordingSessionInfo {
   name?: string
 }
 
+/** Stored recording info */
+export interface StoredRecording {
+  id: string
+  url: string
+  title: string
+  startTime: number
+  endTime: number
+  events: unknown[]
+  createdAt: number
+}
+
 /** Context passed to every handler */
 export interface HandlerContext {
   requestFromBrowser: RequestFromBrowserFn
@@ -62,6 +73,10 @@ export interface HandlerContext {
   startRecordingSession: (windowId: string, url: string, name?: string) => void
   stopRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
   getRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
+  // Recording storage
+  saveRecording: (recording: StoredRecording) => void
+  listRecordings: () => Array<{id: string; url: string; title: string; startTime: number; endTime: number; eventCount: number; createdAt: number}>
+  getRecording: (id: string) => StoredRecording | undefined
 }
 
 /** Handler function signature */
@@ -847,13 +862,28 @@ registerHandler(api.recording, async (body, ctx) => {
         )
       }
       
+      const endTime = Date.now()
+      const recordingId = `rec_${session.startTime}_${Math.random().toString(36).slice(2, 8)}`
+      
+      // Save to permanent storage
+      ctx.saveRecording({
+        id: recordingId,
+        url: session.startUrl,
+        title: session.name || `Recording ${new Date(session.startTime).toLocaleString()}`,
+        startTime: session.startTime,
+        endTime,
+        events: session.events,
+        createdAt: Date.now(),
+      })
+      
       return Response.json(
         { 
           success: true, 
           data: {
+            id: recordingId,
             events: session.events,
             startTime: session.startTime,
-            endTime: Date.now(),
+            endTime,
             startUrl: session.startUrl,
             eventCount: session.events.length
           }
@@ -879,14 +909,40 @@ registerHandler(api.recording, async (body, ctx) => {
       )
     }
     
-    case 'generate':
+    case 'generate': {
+      // Generate test from last recording or specified recording
+      const recordingsList = ctx.listRecordings()
+      if (recordingsList.length === 0) {
+        return Response.json(
+          { success: false, error: 'No recordings available' },
+          { status: 400, headers: ctx.headers }
+        )
+      }
+      // Get most recent recording
+      const latest = recordingsList[recordingsList.length - 1]
+      const recording = ctx.getRecording(latest.id)
+      if (!recording) {
+        return Response.json(
+          { success: false, error: 'Recording not found' },
+          { status: 404, headers: ctx.headers }
+        )
+      }
+      
+      // Generate test JSON from events
+      // For now, forward to browser for test generation (it has the test-generator logic)
+      // TODO: Move test generation to server
       return Response.json(
-        await ctx.requestFromBrowser('recording', 'generate', { name: body.name }, 5000, windowId),
+        await ctx.requestFromBrowser('recording', 'generate', { 
+          name: body.name || recording.title,
+          events: recording.events,
+          url: recording.url,
+        }, 5000, windowId),
         { headers: ctx.headers }
       )
+    }
     case 'list':
       return Response.json(
-        await ctx.requestFromBrowser('recording', 'list', {}, 5000, windowId),
+        { success: true, data: ctx.listRecordings() },
         { headers: ctx.headers }
       )
     default:

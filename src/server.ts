@@ -699,6 +699,35 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     return activeRecordingSessions.get(windowId)
   }
   
+  // Save a recording to permanent storage
+  const saveRecording = (recording: StoredRecording) => {
+    // Evict oldest if over limit
+    if (recordings.size >= MAX_RECORDINGS) {
+      const oldest = recordings.keys().next().value
+      if (oldest) recordings.delete(oldest)
+    }
+    recordings.set(recording.id, recording)
+    console.log(`${LOG_PREFIX} Saved recording: ${recording.id} (${recording.events.length} events)`)
+  }
+  
+  // List all saved recordings
+  const listRecordings = () => {
+    return Array.from(recordings.values()).map(r => ({
+      id: r.id,
+      url: r.url,
+      title: r.title,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      eventCount: r.events.length,
+      createdAt: r.createdAt,
+    }))
+  }
+  
+  // Get a specific recording
+  const getRecording = (id: string) => {
+    return recordings.get(id)
+  }
+  
   return {
     requestFromBrowser,
     targetWindowId,
@@ -710,6 +739,9 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     startRecordingSession,
     stopRecordingSession,
     getRecordingSession,
+    saveRecording,
+    listRecordings,
+    getRecording,
   }
 }
 
@@ -3507,11 +3539,16 @@ const serverConfig = {
 
 // Helper: Kill process using a port (returns true if killed something)
 function killProcessOnPort(port: number): boolean {
+  const myPid = process.pid.toString()
   try {
     // Use lsof to find PID using the port
     const output = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
     if (output) {
-      const pids = output.split('\n').filter(Boolean)
+      const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
+      if (pids.length === 0) {
+        // Only found our own PID - nothing to kill
+        return false
+      }
       for (const pid of pids) {
         try {
           execSync(`kill ${pid} 2>/dev/null`)
