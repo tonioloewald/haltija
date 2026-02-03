@@ -36,6 +36,17 @@ const mcpEndpoints = ALL_ENDPOINTS
   }))
 writeFileSync('apps/mcp/src/endpoints.json', JSON.stringify(mcpEndpoints, null, 2))
 
+// Generate CLI hints from schema (path -> hint)
+const cliHints: Record<string, string> = {}
+for (const ep of ALL_ENDPOINTS) {
+  if ((ep as any).hints) {
+    // Convert path to CLI subcommand name (e.g., /tree -> tree, /events/watch -> events-watch)
+    const subcommand = ep.path.slice(1).replace(/\//g, '-')
+    cliHints[subcommand] = (ep as any).hints
+  }
+}
+writeFileSync('bin/hints.json', JSON.stringify(cliHints, null, 2))
+
 // 6. Generate API.md from api-schema (single source of truth)
 function generateApiMd(): string {
   const lines: string[] = [

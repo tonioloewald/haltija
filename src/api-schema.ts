@@ -63,6 +63,8 @@ export interface EndpointDef<TInput = any> {
   category?: string // Grouping for docs (interaction, dom, events, etc.)
   visibility?: EndpointVisibility // Default: 'public'
   cli?: CliConfig // CLI subcommand config (omit if not CLI-accessible)
+  /** Quick hints shown after CLI output to help discovery */
+  hints?: string // e.g., "-d 5 (depth), --json, selector"
 }
 
 // Helper to create endpoint with proper typing
@@ -136,6 +138,7 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
       description: 'See element with parent context',
     },
   ],
+  hints: '-d 5 (deeper), --compact, "#selector" | see: inspect, query, click',
 })
 
 export const query = endpoint({
@@ -187,6 +190,7 @@ Response: { tagName, id, className, textContent, attributes: {...} }`,
       error: 'selector must be string',
     },
   ],
+  hints: '"selector", --all | see: tree, inspect',
 })
 
 export const inspect = endpoint({
@@ -413,6 +417,7 @@ Automatically fails if element is not found or is disabled. Check response.succe
       error: 'selector must be string',
     },
   ],
+  hints: '@ref or "selector", :text(Button), --diff | see: tree, wait, type',
 })
 
 export const type = endpoint({
@@ -522,6 +527,7 @@ Options:
       error: 'selector is required',
     },
   ],
+  hints: '@ref, --clear, --humanlike false (fast) | see: click, key',
 })
 
 export const key = endpoint({
@@ -587,6 +593,7 @@ Common keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Hom
   invalidExamples: [
     { name: 'missing-key', input: {}, error: 'key is required' },
   ],
+  hints: '<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click',
 })
 
 export const drag = endpoint({
@@ -628,6 +635,7 @@ Good for: sliders, resize handles, drag-and-drop reordering, range inputs.`,
       error: 'selector is required',
     },
   ],
+  hints: '"selector" <deltaX> <deltaY>, --duration 500 | see: click, scroll',
 })
 
 export const highlight = endpoint({
@@ -666,6 +674,7 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
   invalidExamples: [
     { name: 'missing-selector', input: {}, error: 'selector is required' },
   ],
+  hints: '"selector", --label "text", --color #f00, --duration 3000 | see: unhighlight, screenshot',
 })
 
 export const unhighlight = endpoint({
@@ -728,6 +737,7 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.`,
       description: 'Slow animated scroll',
     },
   ],
+  hints: '"selector" or <deltaY>, --duration 500 | see: click, wait',
 })
 
 // ============================================
@@ -781,6 +791,7 @@ Response: { success: true, waited: ms, found?: boolean }`,
       description: 'Wait for dropdown, then 100ms for animation',
     },
   ],
+  hints: '"selector", --text "content", --timeout 5000 | see: click, navigate',
 })
 
 export const formData = endpoint({
@@ -1100,6 +1111,7 @@ Response: { events: [{ type, timestamp, category, target?, payload }], since, co
 
 Event types: interaction:click, input:typed, navigation:navigate, hover:dwell, scroll:stop, etc.`,
   category: 'events',
+  hints: 'events-watch first | see: recording, console, mutations-watch',
 })
 
 export const eventsStats = endpoint({
@@ -1173,6 +1185,7 @@ Return values are JSON-serialized. Promises are awaited.`,
   invalidExamples: [
     { name: 'missing-code', input: {}, error: 'code is required' },
   ],
+  hints: '"code" (returns result) | see: console, snapshot',
 })
 
 export const fetchUrl = endpoint({
@@ -1362,6 +1375,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
       description: 'Clean screenshot without burned-in metadata',
     },
   ],
+  hints: '[selector], --scale 0.5, --maxWidth 800 | see: highlight, snapshot',
 })
 
 // ============================================
@@ -1609,6 +1623,7 @@ Workflow: start → (user interacts, navigates pages) → stop → list → repl
       description: 'Replay recording by ID',
     },
   ],
+  hints: 'start, stop, list, replay <id|index> | see: test-run, events',
 })
 
 // Legacy endpoints for backwards compatibility (deprecated)

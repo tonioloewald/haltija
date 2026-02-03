@@ -1,0 +1,15 @@
+{
+  "tree": "-d 5 (deeper), --compact, \"#selector\" | see: inspect, query, click",
+  "query": "\"selector\", --all | see: tree, inspect",
+  "click": "@ref or \"selector\", :text(Button), --diff | see: tree, wait, type",
+  "type": "@ref, --clear, --humanlike false (fast) | see: click, key",
+  "key": "<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click",
+  "drag": "\"selector\" <deltaX> <deltaY>, --duration 500 | see: click, scroll",
+  "highlight": "\"selector\", --label \"text\", --color #f00, --duration 3000 | see: unhighlight, screenshot",
+  "scroll": "\"selector\" or <deltaY>, --duration 500 | see: click, wait",
+  "wait": "\"selector\", --text \"content\", --timeout 5000 | see: click, navigate",
+  "events": "events-watch first | see: recording, console, mutations-watch",
+  "eval": "\"code\" (returns result) | see: console, snapshot",
+  "screenshot": "[selector], --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
+  "recording": "start, stop, list, replay <id|index> | see: test-run, events"
+}

@@ -26,6 +26,10 @@ import { formatTestResult, formatSuiteResult } from './format-test.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// Command hints - generated from api-schema.ts during build
+import hintsJson from './hints.json' with { type: 'json' }
+export const COMMAND_HINTS = hintsJson
+
 // Endpoints that use GET (everything else is POST)
 export const GET_ENDPOINTS = new Set([
   'location', 'events', 'console', 'windows', 'recordings',
@@ -477,6 +481,15 @@ async function doRequest(url, method, body, context = {}) {
     } else {
       const text = await resp.text()
       console.log(text)
+    }
+
+    // Show hint for this command (if available and successful)
+    if (resp.ok && !jsonOutput) {
+      const hint = COMMAND_HINTS[subcommand]
+      if (hint) {
+        const dim = (s) => `\x1b[2m${s}\x1b[0m`
+        console.log(dim(`\nhj ${subcommand} : ${hint}`))
+      }
     }
 
     if (!resp.ok) {
