@@ -128,6 +128,22 @@ export const ARG_MAPS = {
     const filtered = args.filter(a => a !== '--no-submit')
     return { agent: filtered[0], description: filtered.slice(1).join(' ') || undefined, submit: !noSubmit }
   },
+  // hj recording <action> [name|id]
+  // hj recording start [name]
+  // hj recording stop
+  // hj recording list
+  // hj recording replay <id|index>
+  // hj recording generate [name]
+  'recording': (args) => {
+    const action = args[0] || 'status'
+    if (action === 'replay') {
+      return { action, id: args[1] }
+    }
+    if (action === 'generate' || action === 'start') {
+      return { action, name: args.slice(1).join(' ') || undefined }
+    }
+    return { action }
+  },
 }
 
 /** Parse a target argument — @ref number or selector */
@@ -488,7 +504,7 @@ export const KNOWN_COMMANDS = new Set([
   'screenshot', 'snapshot', 'highlight', 'unhighlight',
   'select-start', 'select-result', 'select-cancel', 'select-clear',
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
-  'recording-start', 'recording-stop', 'recording-generate', 'recordings',
+  'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   'send', 'send-message', 'send-selection', 'send-recording',
   'status', 'version', 'docs', 'api', 'stats'
@@ -597,10 +613,11 @@ Subcommands (replace curl with simple commands):
     tabs-focus <windowId>          Focus tab
 
   ${bold('Recording')}
-    recording-start                Start recording
-    recording-stop                 Stop recording
-    recording-generate             Generate test from recording
-    recordings                     List recordings
+    recording start [name]         Start recording (survives page navigations)
+    recording stop                 Stop recording and save
+    recording list                 List saved recordings
+    recording replay <id|index>    Replay a saved recording
+    recording generate [name]      Generate test from last recording
 
   ${bold('Send to Agent')}
     send <agent> <message>         Send message to agent (auto-submits)

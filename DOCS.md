@@ -86,7 +86,7 @@ hj --help              # All commands
 
 ### Record & Replay
 
-- `hj recording [action, name, window]` - Record user actions and generate tests
+- `hj recording [action, name, id, ...]` - Record user actions and generate tests
 - `hj recording-start` - [Deprecated] Use /recording with action:"start"
 - `hj recording-stop` - [Deprecated] Use /recording with action:"stop"
 - `hj recording-generate [name]` - [Deprecated] Use /recording with action:"generate"

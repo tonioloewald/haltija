@@ -1559,15 +1559,17 @@ Actions:
 - stop: Stop capturing, returns all recorded events including from previous pages
 - status: Check if recording is active and get event count
 - generate: Convert recording to JSON test format
-- list: List all saved recordings
+- list: List all saved recordings (with index numbers for replay)
+- replay: Replay a saved recording by index or ID
 
-Workflow: start → (user interacts, navigates pages) → stop → generate → run with /test`,
+Workflow: start → (user interacts, navigates pages) → stop → list → replay`,
   category: 'recording',
   input: s.object({
     action: s
-      .enum(['start', 'stop', 'status', 'generate', 'list'] as const)
+      .enum(['start', 'stop', 'status', 'generate', 'list', 'replay'] as const)
       .describe('Recording action to perform'),
     name: s.string.describe('Test name (for generate action)').optional,
+    id: s.string.describe('Recording ID or index number (for replay action)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -1594,7 +1596,17 @@ Workflow: start → (user interacts, navigates pages) → stop → generate → 
     {
       name: 'list',
       input: { action: 'list' },
-      description: 'List saved recordings',
+      description: 'List saved recordings with indices',
+    },
+    {
+      name: 'replay by index',
+      input: { action: 'replay', id: '0' },
+      description: 'Replay most recent recording',
+    },
+    {
+      name: 'replay by ID',
+      input: { action: 'replay', id: 'rec_123456_abc' },
+      description: 'Replay recording by ID',
     },
   ],
 })

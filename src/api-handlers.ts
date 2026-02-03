@@ -940,14 +940,68 @@ registerHandler(api.recording, async (body, ctx) => {
         { headers: ctx.headers }
       )
     }
-    case 'list':
+    case 'list': {
+      const list = ctx.listRecordings()
+      // Add index to each recording for easy replay
+      const indexed = list.map((r, i) => ({ index: i, ...r }))
       return Response.json(
-        { success: true, data: ctx.listRecordings() },
+        { success: true, data: indexed },
         { headers: ctx.headers }
       )
+    }
+    
+    case 'replay': {
+      if (!body.id && body.id !== 0) {
+        return Response.json(
+          { success: false, error: 'id is required (recording ID or index number)' },
+          { status: 400, headers: ctx.headers }
+        )
+      }
+      
+      const list = ctx.listRecordings()
+      let recording: StoredRecording | undefined
+      
+      // Check if id is an index number
+      const index = parseInt(String(body.id), 10)
+      if (!isNaN(index) && index >= 0 && index < list.length) {
+        recording = ctx.getRecording(list[index].id)
+      } else {
+        // Try as recording ID
+        recording = ctx.getRecording(String(body.id))
+      }
+      
+      if (!recording) {
+        return Response.json(
+          { success: false, error: `Recording not found: ${body.id}` },
+          { status: 404, headers: ctx.headers }
+        )
+      }
+      
+      // Generate test from recording and run it
+      const generateResult = await ctx.requestFromBrowser('recording', 'generate', {
+        name: recording.title,
+        events: recording.events,
+        url: recording.url,
+      }, 5000, windowId) as { success: boolean; test?: unknown; error?: string }
+      
+      if (!generateResult.success || !generateResult.test) {
+        return Response.json(
+          { success: false, error: generateResult.error || 'Failed to generate test from recording' },
+          { status: 500, headers: ctx.headers }
+        )
+      }
+      
+      // Run the generated test
+      const testResult = await ctx.requestFromBrowser('test', 'run', {
+        test: generateResult.test,
+      }, 120000, windowId)
+      
+      return Response.json(testResult, { headers: ctx.headers })
+    }
+    
     default:
       return Response.json(
-        { success: false, error: 'action is required: start, stop, status, generate, or list' },
+        { success: false, error: 'action is required: start, stop, status, generate, list, or replay' },
         { status: 400, headers: ctx.headers }
       )
   }

@@ -2163,9 +2163,10 @@ Actions:
 - stop: Stop capturing, returns all recorded events including from previous pages
 - status: Check if recording is active and get event count
 - generate: Convert recording to JSON test format
-- list: List all saved recordings
+- list: List all saved recordings (with index numbers for replay)
+- replay: Replay a saved recording by index or ID
 
-Workflow: start → (user interacts, navigates pages) → stop → generate → run with /test
+Workflow: start → (user interacts, navigates pages) → stop → list → replay
 
 **Parameters:**
 
@@ -2173,6 +2174,7 @@ Workflow: start → (user interacts, navigates pages) → stop → generate → 
 |------|------|-------------|
 | \`action\` | string | Recording action to perform *(required)* |
 | \`name\` | string,null | Test name (for generate action) |
+| \`id\` | string,null | Recording ID or index number (for replay action) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
@@ -2193,9 +2195,17 @@ Workflow: start → (user interacts, navigates pages) → stop → generate → 
   \`\`\`json
   {"action":"generate","name":"Login flow"}
   \`\`\`
-- **list**: List saved recordings
+- **list**: List saved recordings with indices
   \`\`\`json
   {"action":"list"}
+  \`\`\`
+- **replay by index**: Replay most recent recording
+  \`\`\`json
+  {"action":"replay","id":"0"}
+  \`\`\`
+- **replay by ID**: Replay recording by ID
+  \`\`\`json
+  {"action":"replay","id":"rec_123456_abc"}
   \`\`\`
 
 ---
@@ -2605,7 +2615,7 @@ hj --help              # All commands
 
 ### Record & Replay
 
-- \`hj recording [action, name, window]\` - Record user actions and generate tests
+- \`hj recording [action, name, id, ...]\` - Record user actions and generate tests
 - \`hj recording-start\` - [Deprecated] Use /recording with action:"start"
 - \`hj recording-stop\` - [Deprecated] Use /recording with action:"stop"
 - \`hj recording-generate [name]\` - [Deprecated] Use /recording with action:"generate"
