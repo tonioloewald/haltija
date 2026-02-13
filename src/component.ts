@@ -75,6 +75,8 @@ class RefRegistry {
   private refs = new Map<string, WeakRef<Element>>()
   private elementToRef = new WeakMap<Element, string>()
   private counter = 0
+  // Track the highest ref ID ever assigned (never reuse)
+  private highWaterMark = 0
 
   /** Assign a ref to an element (or return existing ref) */
   assign(el: Element): string {
@@ -88,25 +90,53 @@ class RefRegistry {
       }
     }
 
-    // Assign new ref
+    // Assign new ref - always increment, never reuse IDs
     const ref = String(++this.counter)
+    this.highWaterMark = Math.max(this.highWaterMark, this.counter)
     this.refs.set(ref, new WeakRef(el))
     this.elementToRef.set(el, ref)
     return ref
   }
 
-  /** Resolve a ref to an element, or null if element left DOM */
-  resolve(ref: string): Element | null {
+  /** 
+   * Resolve a ref to an element.
+   * Returns { element, status } where status indicates why resolution may have failed.
+   */
+  resolveWithStatus(ref: string): { 
+    element: Element | null
+    status: 'valid' | 'not_found' | 'garbage_collected' | 'removed_from_dom' | 'never_assigned'
+  } {
+    // Check if this ref was ever assigned
+    const refNum = parseInt(ref, 10)
+    if (isNaN(refNum) || refNum > this.highWaterMark || refNum < 1) {
+      return { element: null, status: 'never_assigned' }
+    }
+
     const weakRef = this.refs.get(ref)
-    if (!weakRef) return null
+    if (!weakRef) {
+      // Ref was assigned but has been cleaned up (element was garbage collected)
+      return { element: null, status: 'garbage_collected' }
+    }
 
     const el = weakRef.deref()
-    if (!el || !document.contains(el)) {
-      // Element was garbage collected or removed from DOM
+    if (!el) {
+      // WeakRef still exists but element was garbage collected
       this.refs.delete(ref)
-      return null
+      return { element: null, status: 'garbage_collected' }
     }
-    return el
+    
+    if (!document.contains(el)) {
+      // Element exists but was removed from DOM
+      this.refs.delete(ref)
+      return { element: null, status: 'removed_from_dom' }
+    }
+    
+    return { element: el, status: 'valid' }
+  }
+
+  /** Resolve a ref to an element, or null if element left DOM */
+  resolve(ref: string): Element | null {
+    return this.resolveWithStatus(ref).element
   }
 
   /** Check if a ref is still valid */
@@ -115,9 +145,10 @@ class RefRegistry {
   }
 
   /** Get stats about the registry */
-  getStats(): { assigned: number; valid: number; stale: number } {
+  getStats(): { assigned: number; valid: number; stale: number; highWaterMark: number } {
     let valid = 0
     let stale = 0
+    const staleRefs: string[] = []
 
     for (const [ref, weakRef] of this.refs) {
       const el = weakRef.deref()
@@ -125,17 +156,25 @@ class RefRegistry {
         valid++
       } else {
         stale++
-        this.refs.delete(ref) // Clean up while we're here
+        staleRefs.push(ref)
       }
     }
+    
+    // Clean up stale refs after iteration (not during)
+    for (const ref of staleRefs) {
+      this.refs.delete(ref)
+    }
 
-    return { assigned: this.counter, valid, stale }
+    return { assigned: this.counter, valid, stale, highWaterMark: this.highWaterMark }
   }
 
   /** Clear all refs (e.g., on page navigation) */
   clear(): void {
     this.refs.clear()
+    // Don't reset counter - keep incrementing to avoid confusion
+    // New page = fresh counter is fine since old refs wouldn't work anyway
     this.counter = 0
+    this.highWaterMark = 0
   }
 }
 
@@ -7535,18 +7574,20 @@ export class DevChannel extends HTMLElement {
     let targetDesc = ''
 
     if (ref) {
-      el = refRegistry.resolve(ref) as HTMLElement
-      targetDesc = ref
+      const result = refRegistry.resolveWithStatus(ref)
+      el = result.element as HTMLElement
+      targetDesc = `@${ref}`
       if (el) {
         stats.refsResolved++
       } else {
         stats.refsStale++
-        this.respond(
-          responseId,
-          false,
-          null,
-          `Ref not found or element removed from DOM: ${ref}`,
-        )
+        // Provide specific error message based on why the ref failed
+        const errorMsg = result.status === 'never_assigned'
+          ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
+          : result.status === 'removed_from_dom'
+          ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
+          : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+        this.respond(responseId, false, null, errorMsg)
         return
       }
     } else if (selector) {
@@ -8122,18 +8163,20 @@ export class DevChannel extends HTMLElement {
     let targetDesc = ''
 
     if (payload.ref) {
-      el = refRegistry.resolve(payload.ref) as HTMLElement
-      targetDesc = payload.ref
+      const result = refRegistry.resolveWithStatus(payload.ref)
+      el = result.element as HTMLElement
+      targetDesc = `@${payload.ref}`
       if (el) {
         stats.refsResolved++
       } else {
         stats.refsStale++
-        this.respond(
-          responseId,
-          false,
-          null,
-          `Ref not found or element removed from DOM: ${payload.ref}`,
-        )
+        // Provide specific error message based on why the ref failed
+        const errorMsg = result.status === 'never_assigned'
+          ? `Ref @${payload.ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
+          : result.status === 'removed_from_dom'
+          ? `Ref @${payload.ref} points to an element that was removed from the DOM (try refreshing /tree)`
+          : `Ref @${payload.ref} is stale - element was garbage collected (try refreshing /tree)`
+        this.respond(responseId, false, null, errorMsg)
         return
       }
     } else if (payload.selector) {
@@ -8250,19 +8293,21 @@ export class DevChannel extends HTMLElement {
       let targetDesc = ''
 
       if (ref) {
-        target = refRegistry.resolve(ref) as HTMLElement
-        targetDesc = ref
+        const result = refRegistry.resolveWithStatus(ref)
+        target = result.element as HTMLElement
+        targetDesc = `@${ref}`
         if (target) {
           stats.refsResolved++
           target.focus()
         } else {
           stats.refsStale++
-          this.respond(
-            responseId,
-            false,
-            null,
-            `Ref not found or element removed from DOM: ${ref}`,
-          )
+          // Provide specific error message based on why the ref failed
+          const errorMsg = result.status === 'never_assigned'
+            ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
+            : result.status === 'removed_from_dom'
+            ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
+            : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+          this.respond(responseId, false, null, errorMsg)
           return
         }
       } else if (selector) {

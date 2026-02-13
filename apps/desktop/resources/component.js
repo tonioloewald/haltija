@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.13";
+  var VERSION = "1.1.14";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -100,6 +100,7 @@
     refs = new Map;
     elementToRef = new WeakMap;
     counter = 0;
+    highWaterMark = 0;
     assign(el) {
       const existing = this.elementToRef.get(el);
       if (existing) {
@@ -109,20 +110,33 @@
         }
       }
       const ref = String(++this.counter);
+      this.highWaterMark = Math.max(this.highWaterMark, this.counter);
       this.refs.set(ref, new WeakRef(el));
       this.elementToRef.set(el, ref);
       return ref;
     }
-    resolve(ref) {
-      const weakRef = this.refs.get(ref);
-      if (!weakRef)
-        return null;
-      const el = weakRef.deref();
-      if (!el || !document.contains(el)) {
-        this.refs.delete(ref);
-        return null;
+    resolveWithStatus(ref) {
+      const refNum = parseInt(ref, 10);
+      if (isNaN(refNum) || refNum > this.highWaterMark || refNum < 1) {
+        return { element: null, status: "never_assigned" };
       }
-      return el;
+      const weakRef = this.refs.get(ref);
+      if (!weakRef) {
+        return { element: null, status: "garbage_collected" };
+      }
+      const el = weakRef.deref();
+      if (!el) {
+        this.refs.delete(ref);
+        return { element: null, status: "garbage_collected" };
+      }
+      if (!document.contains(el)) {
+        this.refs.delete(ref);
+        return { element: null, status: "removed_from_dom" };
+      }
+      return { element: el, status: "valid" };
+    }
+    resolve(ref) {
+      return this.resolveWithStatus(ref).element;
     }
     isValid(ref) {
       return this.resolve(ref) !== null;
@@ -130,20 +144,25 @@
     getStats() {
       let valid = 0;
       let stale = 0;
+      const staleRefs = [];
       for (const [ref, weakRef] of this.refs) {
         const el = weakRef.deref();
         if (el && document.contains(el)) {
           valid++;
         } else {
           stale++;
-          this.refs.delete(ref);
+          staleRefs.push(ref);
         }
       }
-      return { assigned: this.counter, valid, stale };
+      for (const ref of staleRefs) {
+        this.refs.delete(ref);
+      }
+      return { assigned: this.counter, valid, stale, highWaterMark: this.highWaterMark };
     }
     clear() {
       this.refs.clear();
       this.counter = 0;
+      this.highWaterMark = 0;
     }
   }
   var refRegistry = new RefRegistry;
@@ -5562,13 +5581,15 @@ ${elementSummary}${moreText}`;
       let el = null;
       let targetDesc = "";
       if (ref) {
-        el = refRegistry.resolve(ref);
-        targetDesc = ref;
+        const result2 = refRegistry.resolveWithStatus(ref);
+        el = result2.element;
+        targetDesc = `@${ref}`;
         if (el) {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${ref}`);
+          const errorMsg = result2.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result2.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+          this.respond(responseId, false, null, errorMsg);
           return;
         }
       } else if (selector) {
@@ -5937,13 +5958,15 @@ ${elementSummary}${moreText}`;
       let el = null;
       let targetDesc = "";
       if (payload2.ref) {
-        el = refRegistry.resolve(payload2.ref);
-        targetDesc = payload2.ref;
+        const result2 = refRegistry.resolveWithStatus(payload2.ref);
+        el = result2.element;
+        targetDesc = `@${payload2.ref}`;
         if (el) {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${payload2.ref}`);
+          const errorMsg = result2.status === "never_assigned" ? `Ref @${payload2.ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result2.status === "removed_from_dom" ? `Ref @${payload2.ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${payload2.ref} is stale - element was garbage collected (try refreshing /tree)`;
+          this.respond(responseId, false, null, errorMsg);
           return;
         }
       } else if (payload2.selector) {
@@ -6011,14 +6034,16 @@ ${elementSummary}${moreText}`;
         let target = null;
         let targetDesc = "";
         if (ref) {
-          target = refRegistry.resolve(ref);
-          targetDesc = ref;
+          const result2 = refRegistry.resolveWithStatus(ref);
+          target = result2.element;
+          targetDesc = `@${ref}`;
           if (target) {
             stats.refsResolved++;
             target.focus();
           } else {
             stats.refsStale++;
-            this.respond(responseId, false, null, `Ref not found or element removed from DOM: ${ref}`);
+            const errorMsg = result2.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result2.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+            this.respond(responseId, false, null, errorMsg);
             return;
           }
         } else if (selector) {

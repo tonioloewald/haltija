@@ -1487,6 +1487,7 @@ Response: { windows: [{ id, url, title, focused }] }
 
 Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.`,
   category: 'windows',
+  hints: '--json | see: tabs-open, tabs-close, tabs-focus, status',
 })
 
 export const tabsOpen = endpoint({
@@ -1508,6 +1509,7 @@ If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
       description: 'Open tab with URL',
     },
   ],
+  hints: '[url] | see: tabs-focus, tabs-close, windows',
 })
 
 export const tabsClose = endpoint({
@@ -1531,6 +1533,7 @@ Get window IDs from /windows endpoint.`,
   invalidExamples: [
     { name: 'missing-window', input: {}, error: 'window is required' },
   ],
+  hints: '<window-id> | see: windows, tabs-focus, tabs-open',
 })
 
 export const tabsFocus = endpoint({
@@ -1551,6 +1554,7 @@ Useful when working with multiple tabs to ensure the right one is visible.`,
       description: 'Bring tab to front',
     },
   ],
+  hints: '<window-id> | see: windows, tabs-close, tabs-open',
 })
 
 // ============================================
@@ -1885,6 +1889,7 @@ Response: { version, uptime, browsers: n, focused?: windowId }
 
 Use to verify server is running and browsers are connected before testing.`,
   category: 'meta',
+  hints: '--json | see: windows, stats, console',
 })
 
 export const version = endpoint({

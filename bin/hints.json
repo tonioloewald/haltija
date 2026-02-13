@@ -11,5 +11,10 @@
   "events": "events-watch first | see: recording, console, mutations-watch",
   "eval": "\"code\" (returns result) | see: console, snapshot",
   "screenshot": "[selector], --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
-  "recording": "start, stop, list, replay <id|index> | see: test-run, events"
+  "windows": "--json | see: tabs-open, tabs-close, tabs-focus, status",
+  "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
+  "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
+  "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
+  "recording": "start, stop, list, replay <id|index> | see: test-run, events",
+  "status": "--json | see: windows, stats, console"
 }

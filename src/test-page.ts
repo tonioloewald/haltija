@@ -193,24 +193,30 @@ function getPlaygroundHtml(): string {
     </div>
     
     <h2>Test Commands</h2>
-    <p>Try these commands to interact with the playground:</p>
+    <p>Try these commands to interact with the playground (using the <code>hj</code> CLI):</p>
     
     <p>Click the primary button:</p>
     <div class="code-block">
       <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
-      <pre><code>curl -X POST http://localhost:8700/click -H "Content-Type: application/json" -d '{"selector": "#btn-primary"}'</code></pre>
+      <pre><code>hj click "#btn-primary"</code></pre>
     </div>
     
     <p>Type in the text input:</p>
     <div class="code-block">
       <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
-      <pre><code>curl -X POST http://localhost:8700/type -H "Content-Type: application/json" -d '{"selector": "#text-input", "text": "Hello from the agent!"}'</code></pre>
+      <pre><code>hj type "#text-input" "Hello from the agent!"</code></pre>
     </div>
     
     <p>Read the output area:</p>
     <div class="code-block">
       <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
-      <pre><code>curl -X POST http://localhost:8700/query -H "Content-Type: application/json" -d '{"selector": "#output"}'</code></pre>
+      <pre><code>hj query "#output"</code></pre>
+    </div>
+    
+    <p>Get the page tree:</p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
+      <pre><code>hj tree</code></pre>
     </div>
   `
 }
