@@ -52,6 +52,7 @@ Options:
   --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
+  --force, -f     Restart even if server already running
   --setup-mcp     Configure Claude Desktop MCP integration
   --setup-mcp-check  Check MCP configuration status
   --setup-mcp-remove Remove Haltija from Claude Desktop config
@@ -399,12 +400,33 @@ function printBanner(mode, port) {
   console.log('')
 }
 
+/** Check if electron is available (cached by npx or installed) */
+function isElectronAvailable() {
+  try {
+    // Check if electron is in npx cache or node_modules
+    execSyncImported('npx --no electron --version', { 
+      stdio: 'pipe',
+      timeout: 5000 
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Launch the Electron desktop app using npx electron */
 function launchApp(desktopDir, port) {
+  // Check if electron is available without prompting
+  if (!isElectronAvailable()) {
+    console.log(yellow('Note:') + ' Electron not cached. Installing (one-time)...')
+    console.log(dim('This may take a moment on first run.'))
+    console.log('')
+  }
+  
   printBanner('app', port)
 
-  // Use npx electron - it will cache/install electron automatically
-  const child = spawn('npx', ['electron', desktopDir], {
+  // Use npx --yes to auto-accept installation if needed (no interactive prompt)
+  const child = spawn('npx', ['--yes', 'electron', desktopDir], {
     env: { ...env, DEV_CHANNEL_PORT: String(port) },
     stdio: 'inherit'
   })
@@ -551,10 +573,75 @@ const tryNode = () => {
 }
 
 // ============================================
+// Port Conflict Detection
+// ============================================
+
+/** Check if a Haltija server is already running on the port */
+async function checkExistingServer(port) {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2000)
+    const response = await fetch(`http://localhost:${port}/status`, { 
+      signal: controller.signal 
+    })
+    clearTimeout(timeout)
+    if (response.ok) {
+      const data = await response.json()
+      // Check if it's actually a Haltija server (serverVersion field in /status response)
+      if (data.serverVersion) {
+        return { running: true, version: data.serverVersion }
+      }
+    }
+    return { running: false }
+  } catch {
+    return { running: false }
+  }
+}
+
+/** Kill process on port (cross-platform) */
+function killOnPort(port) {
+  const myPid = process.pid.toString()
+  try {
+    const output = execSyncImported(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    if (output) {
+      const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
+      for (const pid of pids) {
+        try {
+          execSyncImported(`kill ${pid} 2>/dev/null`)
+        } catch {}
+      }
+      return pids.length > 0
+    }
+  } catch {}
+  return false
+}
+
+// ============================================
 // Launch Mode Selection
 // ============================================
 
 const port = env.DEV_CHANNEL_PORT || '8700'
+const forceRestart = args.includes('--force') || args.includes('-f')
+
+// Check for existing server before launching
+const existingServer = await checkExistingServer(port)
+if (existingServer.running && !forceRestart) {
+  console.log('')
+  console.log(green('✓') + ` Haltija is already running on port ${port}` + 
+    (existingServer.version ? dim(` (v${existingServer.version})`) : ''))
+  console.log('')
+  console.log('  To use the existing server, just connect your browser.')
+  console.log('  To restart, run: ' + bold(`haltija --force`) + ' or ' + bold(`haltija -f`))
+  console.log('')
+  process.exit(0)
+}
+
+if (existingServer.running && forceRestart) {
+  console.log(yellow('Restarting...') + ' Stopping existing Haltija server.')
+  killOnPort(port)
+  // Brief pause to let port release
+  await new Promise(resolve => setTimeout(resolve, 200))
+}
 
 if (headlessMode) {
   // Headless mode: start server + headless browser
