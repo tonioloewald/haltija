@@ -17,7 +17,7 @@
  */
 
 import { spawn } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
@@ -113,8 +113,10 @@ export const ARG_MAPS = {
     return readTestFile(args[0])
   },
   'test-suite': (args) => {
-    if (!args.length) { console.error('Usage: hj test-suite <file1.json> [file2.json ...]'); process.exit(1) }
-    const tests = args.map(f => readTestFile(f).test)
+    if (!args.length) { console.error('Usage: hj test-suite <dir|file1.json> [file2.json ...]'); process.exit(1) }
+    const files = expandTestFiles(args)
+    if (!files.length) { console.error('Error: No test files found'); process.exit(1) }
+    const tests = files.map(f => readTestFile(f).test)
     return { tests }
   },
   'send-message': (args) => {
@@ -275,6 +277,29 @@ function readTestFile(filePath) {
     console.error(`Error: Failed to parse ${filePath}: ${err.message}`)
     process.exit(1)
   }
+}
+
+/** Expand test file arguments - directories become sorted list of .json files */
+function expandTestFiles(args) {
+  const files = []
+  for (const arg of args) {
+    if (!existsSync(arg)) {
+      console.error(`Error: Not found: ${arg}`)
+      process.exit(1)
+    }
+    const stat = statSync(arg)
+    if (stat.isDirectory()) {
+      // Find all .json files in directory, sorted alphabetically
+      const jsonFiles = readdirSync(arg)
+        .filter(f => f.endsWith('.json'))
+        .sort()
+        .map(f => join(arg, f))
+      files.push(...jsonFiles)
+    } else {
+      files.push(arg)
+    }
+  }
+  return files
 }
 
 function num(s) { return s != null ? Number(s) : undefined }
@@ -640,6 +665,7 @@ Subcommands (replace curl with simple commands):
 
   ${bold('Testing')}
     test-run <json>                Run a test
+    test-suite <dir|files...>      Run all tests in dir (alphabetical)
     test-validate <json>           Validate test format
 
   ${bold('Info')}
