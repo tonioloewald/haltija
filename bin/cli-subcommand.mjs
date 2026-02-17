@@ -105,23 +105,23 @@ export const ARG_MAPS = {
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
   'test-run': (args) => {
-    if (!args.length) { console.error('Usage: hj test-run <file.json> [--timeoutMs N] [--allow-failures N] [--allow-failures-streak N]'); process.exit(1) }
-    const { files, options } = parseTestArgs(args)
+    if (!args.length) { console.error('Usage: hj test-run <file.json> [--vars JSON] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
+    const { files, options, vars } = parseTestArgs(args)
     if (!files.length) { console.error('Usage: hj test-run <file.json>'); process.exit(1) }
-    return { ...readTestFile(files[0]), ...options }
+    return { ...readTestFile(files[0], vars), ...options }
   },
   'test-validate': (args) => {
-    if (!args.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
-    const { files } = parseTestArgs(args)
+    if (!args.length) { console.error('Usage: hj test-validate <file.json> [--vars JSON]'); process.exit(1) }
+    const { files, vars } = parseTestArgs(args)
     if (!files.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
-    return readTestFile(files[0])
+    return readTestFile(files[0], vars)
   },
   'test-suite': (args) => {
-    if (!args.length) { console.error('Usage: hj test-suite <dir|file...> [--timeoutMs N] [--allow-failures N] [--allow-failures-streak N]'); process.exit(1) }
-    const { files: rawFiles, options } = parseTestArgs(args)
+    if (!args.length) { console.error('Usage: hj test-suite <dir|file...> [--vars JSON] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
+    const { files: rawFiles, options, vars } = parseTestArgs(args)
     const files = expandTestFiles(rawFiles)
     if (!files.length) { console.error('Error: No test files found'); process.exit(1) }
-    const tests = files.map(f => readTestFile(f).test)
+    const tests = files.map(f => readTestFile(f, vars).test)
     return { tests, ...options }
   },
   'send-message': (args) => {
@@ -268,15 +268,30 @@ export function parseModifiers(args) {
   return Object.keys(mods).length ? mods : {}
 }
 
-/** Read a test JSON file, returning { test: <parsed> } */
-function readTestFile(filePath) {
+/**
+ * Substitute template variables in a string.
+ * Replaces ${VAR_NAME} with values from vars object, falling back to env vars.
+ * Unresolved variables are left as-is for debugging.
+ */
+export function substituteVars(text, vars = {}) {
+  return text.replace(/\$\{([^}]+)\}/g, (match, varName) => {
+    const trimmed = varName.trim()
+    if (trimmed in vars) return vars[trimmed]
+    if (trimmed in process.env) return process.env[trimmed]
+    return match  // Leave unresolved for debugging
+  })
+}
+
+/** Read a test JSON file, returning { test: <parsed> }. Applies template variable substitution. */
+function readTestFile(filePath, vars = {}) {
   if (!existsSync(filePath)) {
     console.error(`Error: File not found: ${filePath}`)
     process.exit(1)
   }
   try {
     const content = readFileSync(filePath, 'utf-8')
-    const parsed = JSON.parse(content)
+    const processed = substituteVars(content, vars)
+    const parsed = JSON.parse(processed)
     return { test: parsed }
   } catch (err) {
     console.error(`Error: Failed to parse ${filePath}: ${err.message}`)
@@ -284,10 +299,11 @@ function readTestFile(filePath) {
   }
 }
 
-/** Parse test command args, extracting options and files */
-function parseTestArgs(args) {
+/** Parse test command args, extracting options, files, and vars */
+export function parseTestArgs(args) {
   const files = []
   const options = {}
+  let vars = {}
   let i = 0
   while (i < args.length) {
     const arg = args[i]
@@ -303,6 +319,15 @@ function parseTestArgs(args) {
     } else if (arg === '--step-delay' && args[i + 1]) {
       options.stepDelay = parseInt(args[i + 1], 10)
       i += 2
+    } else if (arg === '--vars' && args[i + 1]) {
+      // Parse JSON object of variables: --vars '{"APP_URL": "http://localhost:5050"}'
+      try {
+        vars = { ...vars, ...JSON.parse(args[i + 1]) }
+      } catch (err) {
+        console.error(`Error: Invalid JSON for --vars: ${args[i + 1]}`)
+        process.exit(1)
+      }
+      i += 2
     } else if (arg.startsWith('--')) {
       // Skip unknown flags
       i++
@@ -311,7 +336,7 @@ function parseTestArgs(args) {
       i++
     }
   }
-  return { files, options }
+  return { files, options, vars }
 }
 
 /** Expand test file arguments - directories become sorted list of .json files */
@@ -704,6 +729,8 @@ Subcommands (replace curl with simple commands):
     test-validate <json>           Validate test format
     
     Test options:
+      --vars <json>                Template variables: '{"APP_URL": "http://localhost:5050"}'
+                                   Replaces \${VAR_NAME} in test files. Falls back to env vars.
       --timeoutMs <ms>             Step timeout (default 5000)
       --allow-failures <n>         Total failures before giving up (0=stop on first)
       --allow-failures-streak <n>  Consecutive failures to bail (default 2)

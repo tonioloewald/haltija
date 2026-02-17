@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import {
   isSubcommand,
   parseTargetArgs,
@@ -12,6 +12,8 @@ import {
   COMPOUND_PATHS,
   ARG_MAPS,
   resolveServerPath,
+  substituteVars,
+  parseTestArgs,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -566,5 +568,144 @@ describe('resolveServerPath', () => {
     // The path should exist
     const { existsSync } = require('fs')
     expect(existsSync(resolved?.path)).toBe(true)
+  })
+})
+
+describe('substituteVars', () => {
+  // Save original env vars
+  let originalEnv: Record<string, string | undefined>
+  
+  beforeAll(() => {
+    originalEnv = { ...process.env }
+    // Set up test env vars
+    process.env.TEST_PORT = '3000'
+    process.env.TEST_HOST = 'localhost'
+  })
+  
+  afterAll(() => {
+    // Restore original env
+    delete process.env.TEST_PORT
+    delete process.env.TEST_HOST
+  })
+
+  test('substitutes from vars object', () => {
+    const result = substituteVars('http://${HOST}:${PORT}/app', { HOST: 'example.com', PORT: '8080' })
+    expect(result).toBe('http://example.com:8080/app')
+  })
+
+  test('falls back to env vars', () => {
+    const result = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', {})
+    expect(result).toBe('http://localhost:3000/app')
+  })
+
+  test('vars object takes precedence over env vars', () => {
+    const result = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', { TEST_PORT: '5050' })
+    expect(result).toBe('http://localhost:5050/app')
+  })
+
+  test('leaves unresolved variables as-is', () => {
+    const result = substituteVars('http://${UNKNOWN_VAR}/app', {})
+    expect(result).toBe('http://${UNKNOWN_VAR}/app')
+  })
+
+  test('handles multiple occurrences of same variable', () => {
+    const result = substituteVars('${X} and ${X} again', { X: 'foo' })
+    expect(result).toBe('foo and foo again')
+  })
+
+  test('handles whitespace in variable names', () => {
+    const result = substituteVars('${ SPACED }', { SPACED: 'works' })
+    expect(result).toBe('works')
+  })
+
+  test('handles no variables', () => {
+    const result = substituteVars('plain text', {})
+    expect(result).toBe('plain text')
+  })
+
+  test('works with JSON content', () => {
+    const json = '{"url": "http://${HOST}:${PORT}", "name": "${TEST_NAME}"}'
+    const result = substituteVars(json, { HOST: 'localhost', PORT: '5050', TEST_NAME: 'my-test' })
+    expect(result).toBe('{"url": "http://localhost:5050", "name": "my-test"}')
+    // Verify it's valid JSON
+    const parsed = JSON.parse(result)
+    expect(parsed.url).toBe('http://localhost:5050')
+    expect(parsed.name).toBe('my-test')
+  })
+})
+
+describe('parseTestArgs', () => {
+  test('extracts files', () => {
+    const { files, options, vars } = parseTestArgs(['test1.json', 'test2.json'])
+    expect(files).toEqual(['test1.json', 'test2.json'])
+    expect(options).toEqual({})
+    expect(vars).toEqual({})
+  })
+
+  test('extracts --timeoutMs', () => {
+    const { files, options } = parseTestArgs(['test.json', '--timeoutMs', '10000'])
+    expect(files).toEqual(['test.json'])
+    expect(options.timeout).toBe(10000)
+  })
+
+  test('extracts --allow-failures', () => {
+    const { options } = parseTestArgs(['test.json', '--allow-failures', '5'])
+    expect(options.patience).toBe(5)
+  })
+
+  test('extracts --allow-failures-streak', () => {
+    const { options } = parseTestArgs(['test.json', '--allow-failures-streak', '3'])
+    expect(options.patienceStreak).toBe(3)
+  })
+
+  test('extracts --step-delay', () => {
+    const { options } = parseTestArgs(['test.json', '--step-delay', '200'])
+    expect(options.stepDelay).toBe(200)
+  })
+
+  test('extracts --vars JSON', () => {
+    const { vars } = parseTestArgs(['test.json', '--vars', '{"APP_URL": "http://localhost:5050", "USER": "test"}'])
+    expect(vars).toEqual({ APP_URL: 'http://localhost:5050', USER: 'test' })
+  })
+
+  test('combines multiple --vars', () => {
+    const { vars } = parseTestArgs([
+      'test.json',
+      '--vars', '{"A": "1"}',
+      '--vars', '{"B": "2"}',
+    ])
+    expect(vars).toEqual({ A: '1', B: '2' })
+  })
+
+  test('later --vars override earlier ones', () => {
+    const { vars } = parseTestArgs([
+      'test.json',
+      '--vars', '{"X": "first"}',
+      '--vars', '{"X": "second"}',
+    ])
+    expect(vars).toEqual({ X: 'second' })
+  })
+
+  test('handles all options together', () => {
+    const { files, options, vars } = parseTestArgs([
+      'tests/',
+      '--timeoutMs', '8000',
+      '--allow-failures', '3',
+      '--vars', '{"PORT": "5050"}',
+      '--step-delay', '150',
+    ])
+    expect(files).toEqual(['tests/'])
+    expect(options).toEqual({
+      timeout: 8000,
+      patience: 3,
+      stepDelay: 150,
+    })
+    expect(vars).toEqual({ PORT: '5050' })
+  })
+
+  test('skips unknown flags', () => {
+    const { files, options } = parseTestArgs(['test.json', '--unknown-flag', '--another'])
+    expect(files).toEqual(['test.json'])
+    expect(options).toEqual({})
   })
 })
