@@ -744,8 +744,16 @@ function getStableSelectorWithFallback(el: Element): DualSelector {
 import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
 import type { ParsedTextSelector } from './text-selector'
 
+/** Get visible text from element, excluding SVG internals */
+function getVisibleText(el: Element): string {
+  // Clone the element and remove SVGs to avoid their internal text (titles, descs, etc.)
+  const clone = el.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('svg').forEach(svg => svg.remove())
+  return clone.innerText ?? ''
+}
+
 function elementTextMatches(el: Element, parsed: ParsedTextSelector): boolean {
-  const text = (el as HTMLElement).innerText ?? ''
+  const text = getVisibleText(el)
   return _textMatches(text, parsed)
 }
 

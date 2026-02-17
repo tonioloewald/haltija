@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.19";
+  var VERSION = "1.1.20";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -512,8 +512,13 @@
       confidence: "low"
     };
   }
+  function getVisibleText(el) {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll("svg").forEach((svg) => svg.remove());
+    return clone.innerText ?? "";
+  }
   function elementTextMatches(el, parsed) {
-    const text = el.innerText ?? "";
+    const text = getVisibleText(el);
     return textMatches(text, parsed);
   }
   function resolveSelector(selector) {
