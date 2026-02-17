@@ -105,19 +105,24 @@ export const ARG_MAPS = {
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
   'test-run': (args) => {
-    if (!args.length) { console.error('Usage: hj test-run <file.json>'); process.exit(1) }
-    return readTestFile(args[0])
+    if (!args.length) { console.error('Usage: hj test-run <file.json> [--timeoutMs N] [--allow-failures N] [--allow-failures-streak N]'); process.exit(1) }
+    const { files, options } = parseTestArgs(args)
+    if (!files.length) { console.error('Usage: hj test-run <file.json>'); process.exit(1) }
+    return { ...readTestFile(files[0]), ...options }
   },
   'test-validate': (args) => {
     if (!args.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
-    return readTestFile(args[0])
+    const { files } = parseTestArgs(args)
+    if (!files.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
+    return readTestFile(files[0])
   },
   'test-suite': (args) => {
-    if (!args.length) { console.error('Usage: hj test-suite <dir|file1.json> [file2.json ...]'); process.exit(1) }
-    const files = expandTestFiles(args)
+    if (!args.length) { console.error('Usage: hj test-suite <dir|file...> [--timeoutMs N] [--allow-failures N] [--allow-failures-streak N]'); process.exit(1) }
+    const { files: rawFiles, options } = parseTestArgs(args)
+    const files = expandTestFiles(rawFiles)
     if (!files.length) { console.error('Error: No test files found'); process.exit(1) }
     const tests = files.map(f => readTestFile(f).test)
-    return { tests }
+    return { tests, ...options }
   },
   'send-message': (args) => {
     const noSubmit = args.includes('--no-submit')
@@ -277,6 +282,36 @@ function readTestFile(filePath) {
     console.error(`Error: Failed to parse ${filePath}: ${err.message}`)
     process.exit(1)
   }
+}
+
+/** Parse test command args, extracting options and files */
+function parseTestArgs(args) {
+  const files = []
+  const options = {}
+  let i = 0
+  while (i < args.length) {
+    const arg = args[i]
+    if (arg === '--timeoutMs' && args[i + 1]) {
+      options.timeout = parseInt(args[i + 1], 10)
+      i += 2
+    } else if (arg === '--allow-failures' && args[i + 1]) {
+      options.patience = parseInt(args[i + 1], 10)
+      i += 2
+    } else if (arg === '--allow-failures-streak' && args[i + 1]) {
+      options.patienceStreak = parseInt(args[i + 1], 10)
+      i += 2
+    } else if (arg === '--step-delay' && args[i + 1]) {
+      options.stepDelay = parseInt(args[i + 1], 10)
+      i += 2
+    } else if (arg.startsWith('--')) {
+      // Skip unknown flags
+      i++
+    } else {
+      files.push(arg)
+      i++
+    }
+  }
+  return { files, options }
 }
 
 /** Expand test file arguments - directories become sorted list of .json files */
@@ -664,9 +699,15 @@ Subcommands (replace curl with simple commands):
     --no-submit                    Paste only, don't auto-submit
 
   ${bold('Testing')}
-    test-run <json>                Run a test
+    test-run <json> [options]      Run a test
     test-suite <dir|files...>      Run all tests in dir (alphabetical)
     test-validate <json>           Validate test format
+    
+    Test options:
+      --timeoutMs <ms>             Step timeout (default 5000)
+      --allow-failures <n>         Total failures before giving up (0=stop on first)
+      --allow-failures-streak <n>  Consecutive failures to bail (default 2)
+      --step-delay <ms>            Delay between steps (default 100)
 
   ${bold('Info')}
     status                         Server status
