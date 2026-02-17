@@ -2645,6 +2645,24 @@ hj --help              # All commands
 6. \`hj recording start\` survives page navigations — record OAuth flows, multi-page checkouts
 7. \`hj api\` for the full API reference with all parameters
 
+## CI / Headless
+
+\`\`\`bash
+# Install deps (Ubuntu)
+apt-get install -y xvfb jq libnss3 libatk1.0-0 libatk-bridge2.0-0 \\
+  libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \\
+  libxfixes3 libxrandr2 libgbm1 libasound2t64
+
+# Start Haltija in CI mode (Electron + xvfb)
+export PATH="$HOME/.local/bin:$PATH"
+xvfb-run --auto-servernum bunx haltija@latest --ci &
+
+# --ci waits for ready, then run tests
+hj test-run tests/my-test.json
+\`\`\`
+
+See docs/CI-INTEGRATION.md for complete examples.
+
 ## Test Runner
 
 \`\`\`

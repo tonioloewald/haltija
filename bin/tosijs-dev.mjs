@@ -42,6 +42,7 @@ Modes:
   --app           Explicitly launch desktop app (Electron)
   --server        Server only (for CI, headless, or bookmarklet usage)
   --headless      Start with headless Chromium browser (for CI)
+  --ci            CI mode: Electron app + wait for ready + sandbox disabled
 
 Options:
   --http          HTTP only on port 8700 (default protocol)
@@ -53,6 +54,7 @@ Options:
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
   --force, -f     Restart even if server already running
+  --wait-ready    Block until server + browser are ready (for scripts)
   --setup-mcp     Configure Claude Desktop MCP integration
   --setup-mcp-check  Check MCP configuration status
   --setup-mcp-remove Remove Haltija from Claude Desktop config
@@ -81,6 +83,7 @@ Examples:
   haltija --server                 # Server only
   haltija --server --https         # HTTPS server only
   haltija --headless               # Headless browser for CI
+  haltija --ci                     # CI mode (headless + wait + sandbox disabled)
   haltija --setup-mcp              # Configure Claude Desktop integration
 `)
   process.exit(0)
@@ -358,11 +361,18 @@ if (docsDirIdx !== -1 && args[docsDirIdx + 1]) {
 // Mode Detection
 // ============================================
 
-const headlessMode = args.includes('--headless')
+const ciMode = args.includes('--ci')
+const headlessMode = args.includes('--headless')  // Playwright headless (separate from CI)
 const headlessUrlIdx = args.indexOf('--headless-url')
 const headlessUrl = headlessUrlIdx !== -1 ? args[headlessUrlIdx + 1] : null
 const explicitServer = args.includes('--server')
-const explicitApp = args.includes('--app')
+const explicitApp = args.includes('--app') || ciMode  // CI mode uses Electron app
+const waitReady = args.includes('--wait-ready') || ciMode
+
+// CI mode sets ELECTRON_DISABLE_SANDBOX automatically (needed for containerized CI)
+if (ciMode && !process.env.ELECTRON_DISABLE_SANDBOX) {
+  process.env.ELECTRON_DISABLE_SANDBOX = '1'
+}
 
 /** Detect desktop app directory */
 function findDesktopApp() {
@@ -390,7 +400,10 @@ function printBanner(mode, port) {
   console.log('')
   console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
   console.log(`  ${bold('Haltija')} v${version} ${dim('—')} ${green(url)}`)
-  console.log(`  Mode: ${mode === 'app' ? 'Desktop App' : mode === 'headless' ? 'Headless' : 'Server'}`)
+  const modeLabel = mode === 'ci' ? 'CI (Electron + xvfb)' : 
+                    mode === 'app' ? 'Desktop App' : 
+                    mode === 'headless' ? 'Headless (Playwright)' : 'Server'
+  console.log(`  Mode: ${modeLabel}`)
   console.log('')
   console.log(dim('  Agent setup:'))
   console.log(`    MCP:   ${dim('bunx haltija --setup-mcp')}`)
@@ -423,7 +436,7 @@ function launchApp(desktopDir, port) {
     console.log('')
   }
   
-  printBanner('app', port)
+  printBanner(ciMode ? 'ci' : 'app', port)
 
   // Use npx --yes to auto-accept installation if needed (no interactive prompt)
   const child = spawn('npx', ['--yes', 'electron', desktopDir], {
@@ -441,12 +454,73 @@ function launchApp(desktopDir, port) {
   child.on('exit', code => {
     process.exit(code || 0)
   })
+  
+  // In CI/wait-ready mode, wait for server + browser to be ready
+  if (waitReady) {
+    (async () => {
+      console.log('[haltija] Waiting for server...')
+      const serverReady = await waitForServer(port)
+      if (!serverReady) {
+        console.error(red('✗') + ' Server failed to start within timeout')
+        process.exit(1)
+      }
+      console.log('[haltija] Server ready, waiting for browser...')
+      const browserReady = await waitForBrowser(port)
+      if (!browserReady) {
+        console.error(red('✗') + ' Browser failed to connect within timeout')
+        process.exit(1)
+      }
+      console.log(green('✓') + ' Haltija ready (server + browser connected)')
+    })()
+  }
 }
 
 /** Start the server (current behavior) */
 function startServer(port) {
   printBanner('server', port)
   tryBun()
+}
+
+/** Wait for server to be ready */
+async function waitForServer(port, timeout = 30000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    try {
+      const controller = new AbortController()
+      const fetchTimeout = setTimeout(() => controller.abort(), 2000)
+      const response = await fetch(`http://localhost:${port}/status`, { signal: controller.signal })
+      clearTimeout(fetchTimeout)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.serverVersion) {
+          return true
+        }
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+  return false
+}
+
+/** Wait for browser to connect */
+async function waitForBrowser(port, timeout = 30000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    try {
+      const controller = new AbortController()
+      const fetchTimeout = setTimeout(() => controller.abort(), 2000)
+      const response = await fetch(`http://localhost:${port}/windows`, { signal: controller.signal })
+      clearTimeout(fetchTimeout)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.windows && data.windows.length > 0) {
+          return true
+        }
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+  return false
 }
 
 // Start headless browser after server is ready
@@ -500,6 +574,18 @@ const startHeadlessBrowser = async (port) => {
     console.log('[tosijs-dev] Headless browser ready. Widget auto-injected.')
     console.log('[tosijs-dev] Use POST /navigate to change pages.')
     
+    // Wait for browser connection if --wait-ready or --ci
+    if (waitReady) {
+      console.log('[tosijs-dev] Waiting for browser connection...')
+      const browserReady = await waitForBrowser(port)
+      if (browserReady) {
+        console.log(green('✓') + ' Haltija ready (server + browser connected)')
+      } else {
+        console.error(red('✗') + ' Browser failed to connect within timeout')
+        process.exit(1)
+      }
+    }
+    
     // Keep browser alive
     process.on('SIGINT', async () => {
       console.log('\\n[tosijs-dev] Closing browser...')
@@ -539,11 +625,19 @@ const tryBun = () => {
     process.exit(code || 0)
   })
   
-  // Start headless browser after a short delay for server to start
+  // Start headless browser after server is ready
   if (headlessMode) {
-    setTimeout(() => {
-      startHeadlessBrowser(env.DEV_CHANNEL_PORT || 8700)
-    }, 2000)
+    (async () => {
+      const serverPort = env.DEV_CHANNEL_PORT || 8700
+      console.log('[tosijs-dev] Waiting for server to be ready...')
+      const serverReady = await waitForServer(serverPort)
+      if (serverReady) {
+        startHeadlessBrowser(serverPort)
+      } else {
+        console.error('[tosijs-dev] Server failed to start within timeout')
+        process.exit(1)
+      }
+    })()
   }
 }
 
@@ -564,11 +658,19 @@ const tryNode = () => {
     process.exit(code || 0)
   })
   
-  // Start headless browser after a short delay for server to start
+  // Start headless browser after server is ready
   if (headlessMode) {
-    setTimeout(() => {
-      startHeadlessBrowser(env.DEV_CHANNEL_PORT || 8700)
-    }, 2000)
+    (async () => {
+      const serverPort = env.DEV_CHANNEL_PORT || 8700
+      console.log('[tosijs-dev] Waiting for server to be ready...')
+      const serverReady = await waitForServer(serverPort)
+      if (serverReady) {
+        startHeadlessBrowser(serverPort)
+      } else {
+        console.error('[tosijs-dev] Server failed to start within timeout')
+        process.exit(1)
+      }
+    })()
   }
 }
 
