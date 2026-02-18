@@ -3506,19 +3506,15 @@ const serverConfig = {
               updateHjStatus()
             }
             
-            // Check if widget has the correct server session ID
+            // Check if widget has a different server session ID
+            // This can happen when:
+            // 1. Server restarted and widget hasn't reloaded
+            // 2. External browser connected to a different server instance
+            // Instead of forcing reload (which can cause infinite loops with cached widgets),
+            // just log it and accept the connection. The widget will work fine.
             const widgetSessionId = data.payload.serverSessionId
             if (widgetSessionId && widgetSessionId !== SERVER_SESSION_ID) {
-              // Widget is from a different server session - tell it to reload
-              console.log(`${LOG_PREFIX} Widget session mismatch (${widgetSessionId} vs ${SERVER_SESSION_ID}), sending reload`)
-              wsTyped.send(JSON.stringify({
-                id: uid(),
-                channel: 'system',
-                action: 'reload',
-                payload: { reason: 'session_mismatch' },
-                timestamp: Date.now(),
-                source: 'server'
-              }))
+              console.log(`${LOG_PREFIX} Widget from different session (${widgetSessionId.slice(0, 8)}... vs ${SERVER_SESSION_ID.slice(0, 8)}...), accepting anyway`)
             }
             
             // Check if there's an active recording session for this window

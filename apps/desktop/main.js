@@ -1046,17 +1046,44 @@ async function startEmbeddedServer() {
 async function killZombieServer() {
   if (os.platform() === 'win32') return
 
-  try {
-    const { execSync } = require('child_process')
-    const pids = execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' }).trim()
-    if (pids) {
-      console.log(`[Haltija Desktop] Killing zombie process(es) on port ${HALTIJA_PORT}: ${pids.replace(/\n/g, ', ')}`)
-      execSync(`lsof -ti:${HALTIJA_PORT} | xargs kill 2>/dev/null`, { encoding: 'utf-8' })
-      await new Promise(r => setTimeout(r, 1000))
+  const { execSync } = require('child_process')
+  
+  // Try up to 3 times to kill the process
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const pids = execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+      if (!pids) {
+        console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} is free`)
+        return true
+      }
+      
+      console.log(`[Haltija Desktop] Attempt ${attempt}: Killing process(es) on port ${HALTIJA_PORT}: ${pids.replace(/\n/g, ', ')}`)
+      
+      // Use SIGTERM first, then SIGKILL if needed
+      const signal = attempt < 3 ? '' : '-9'
+      execSync(`lsof -ti:${HALTIJA_PORT} | xargs kill ${signal} 2>/dev/null`, { encoding: 'utf-8' })
+      
+      // Wait for process to die
+      await new Promise(r => setTimeout(r, 500 * attempt))
+      
+      // Check if port is now free
+      try {
+        execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' })
+        // Still occupied, continue trying
+      } catch {
+        // No process found = success
+        console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} freed successfully`)
+        return true
+      }
+    } catch {
+      // lsof found nothing = port is free
+      console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} is free`)
+      return true
     }
-  } catch {
-    // No processes found or kill failed — proceed
   }
+  
+  console.error(`[Haltija Desktop] Warning: Could not free port ${HALTIJA_PORT} after 3 attempts`)
+  return false
 }
 
 async function ensureServer() {
@@ -1095,21 +1122,36 @@ async function ensureServer() {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  // Start or connect to server first
-  const serverReady = await ensureServer()
+  console.log('[Haltija Desktop] App ready, starting initialization...')
+  
+  try {
+    // Start or connect to server first
+    const serverReady = await ensureServer()
 
-  if (!serverReady) {
-    console.error(
-      '[Haltija Desktop] Could not start server. Install bun: https://bun.sh',
-    )
-    // Continue anyway - user might start server manually
+    if (!serverReady) {
+      console.error(
+        '[Haltija Desktop] Could not start server. Install bun: https://bun.sh',
+      )
+      // Continue anyway - user might start server manually
+    }
+
+    setupMenu()
+    setupHeaderStripping()
+    setupWidgetInjection()
+    setupScreenCapture()
+    
+    console.log('[Haltija Desktop] Creating main window...')
+    createWindow()
+    console.log('[Haltija Desktop] Window created successfully')
+  } catch (err) {
+    console.error('[Haltija Desktop] Fatal error during startup:', err)
+    // Still try to create a window so user sees something
+    try {
+      createWindow()
+    } catch (windowErr) {
+      console.error('[Haltija Desktop] Failed to create window:', windowErr)
+    }
   }
-
-  setupMenu()
-  setupHeaderStripping()
-  setupWidgetInjection()
-  setupScreenCapture()
-  createWindow()
 
   // Check for Claude Desktop MCP setup (after window is ready)
   if (!hasSkippedMcpSetup()) {
