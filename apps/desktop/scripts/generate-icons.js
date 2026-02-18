@@ -1,96 +1,64 @@
 #!/usr/bin/env node
 /**
- * Generate app icons from SVG using Electron's browser context.
- * Renders SVG to canvas at each size with proper transparency.
+ * Generate app icons from haltija.png (exported from Icon Composer).
+ * 
+ * Source of truth: haltija.icon (Icon Composer bundle)
+ * Export: haltija.png (manually exported at 1024x1024 from Icon Composer)
+ * 
+ * This script:
+ * 1. Resizes the exported PNG to each required size for cross-platform use
+ * 2. Creates .icns for older macOS versions (CFBundleIconFile)
+ * 3. Compiles .icon bundle to Assets.car for macOS 26+ Liquid Glass (CFBundleIconName)
  * 
  * Usage: node scripts/generate-icons.js
  * Or: npm run icons
  */
 
-const { app, BrowserWindow } = require('electron')
-const { writeFileSync, mkdirSync, readFileSync, copyFileSync, rmSync } = require('fs')
+const { app, nativeImage } = require('electron')
+const { writeFileSync, mkdirSync, copyFileSync, rmSync, existsSync } = require('fs')
 const { join, dirname } = require('path')
-const { execSync } = require('child_process')
+const { execSync, spawnSync } = require('child_process')
 
 const APP_DIR = dirname(__dirname)
 const ROOT_DIR = join(APP_DIR, '../..')
-const SVG_PATH = join(ROOT_DIR, 'haltija-icon.svg')
+const SOURCE_PNG = join(ROOT_DIR, 'haltija.png')
+const ICON_BUNDLE = join(ROOT_DIR, 'haltija.icon')
 const ICONS_DIR = join(APP_DIR, 'icons')
+const RESOURCES_DIR = join(APP_DIR, 'resources')
 
 const SIZES = [1024, 512, 256, 128, 64, 32, 16]
 
 async function generateIcons() {
+  // Check for source PNG
+  if (!existsSync(SOURCE_PNG)) {
+    console.error(`Source icon not found: ${SOURCE_PNG}`)
+    console.error('Export haltija.png from Icon Composer (haltija.icon)')
+    process.exit(1)
+  }
+  
+  console.log(`Loading source icon: ${SOURCE_PNG}`)
+  const sourceImage = nativeImage.createFromPath(SOURCE_PNG)
+  
+  if (sourceImage.isEmpty()) {
+    console.error('Failed to load source image')
+    process.exit(1)
+  }
+  
+  const sourceSize = sourceImage.getSize()
+  console.log(`Source size: ${sourceSize.width}x${sourceSize.height}`)
+  
   mkdirSync(ICONS_DIR, { recursive: true })
   
-  // Read SVG content
-  const svgContent = readFileSync(SVG_PATH, 'utf8')
-  
-  // Create hidden window for rendering with transparent background
-  const win = new BrowserWindow({
-    width: 1024,
-    height: 1024,
-    show: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    webPreferences: {
-      offscreen: true,
-      zoomFactor: 1.0,
-    }
-  })
-  
-  console.log('Generating icons from SVG...')
+  console.log('Generating icons...')
   
   // Generate each size
   for (const size of SIZES) {
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    * { margin: 0; padding: 0; }
-    html, body { background: transparent !important; }
-  </style>
-</head>
-<body>
-  <canvas id="c" width="${size}" height="${size}"></canvas>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    const svg = new Blob([${JSON.stringify(svgContent)}], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(svg);
-    const img = new Image();
-    img.onload = () => {
-      ctx.clearRect(0, 0, ${size}, ${size});
-      ctx.drawImage(img, 0, 0, ${size}, ${size});
-      URL.revokeObjectURL(url);
-      document.body.dataset.ready = 'true';
-    };
-    img.src = url;
-  </script>
-</body>
-</html>`
-    
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-    
-    // Wait for image to render
-    await win.webContents.executeJavaScript(`
-      new Promise(resolve => {
-        const check = () => document.body.dataset.ready === 'true' ? resolve() : setTimeout(check, 10);
-        check();
-      })
-    `)
-    
-    // Capture the canvas area (may be scaled by device pixel ratio)
-    const image = await win.webContents.capturePage({ x: 0, y: 0, width: size, height: size })
-    
-    // Resize to exact target size in case of retina scaling
-    const resized = image.resize({ width: size, height: size, quality: 'best' })
+    const resized = sourceImage.resize({ width: size, height: size, quality: 'best' })
     const pngBuffer = resized.toPNG()
     
     writeFileSync(join(ICONS_DIR, `icon_${size}x${size}.png`), pngBuffer)
     console.log(`  ${size}x${size}`)
   }
-  
-  win.close()
   
   // Copy main icon
   copyFileSync(join(ICONS_DIR, 'icon_512x512.png'), join(ICONS_DIR, 'icon.png'))
@@ -114,6 +82,42 @@ async function generateIcons() {
     
     execSync(`iconutil -c icns "${iconset}" -o "${join(ICONS_DIR, 'icon.icns')}"`)
     rmSync(iconset, { recursive: true })
+    
+    // Compile .icon bundle to Assets.car for macOS 26+ Liquid Glass
+    if (existsSync(ICON_BUNDLE)) {
+      console.log('Compiling .icon bundle to Assets.car for macOS 26+...')
+      
+      const actoolPath = '/Applications/Xcode.app/Contents/Developer/usr/bin/actool'
+      if (existsSync(actoolPath)) {
+        const tempDir = join(ICONS_DIR, 'actool-temp')
+        mkdirSync(tempDir, { recursive: true })
+        
+        const result = spawnSync(actoolPath, [
+          ICON_BUNDLE,
+          '--compile', RESOURCES_DIR,
+          '--output-format', 'human-readable-text',
+          '--notices', '--warnings', '--errors',
+          '--output-partial-info-plist', join(tempDir, 'partial-info.plist'),
+          '--app-icon', 'AppIcon',
+          '--include-all-app-icons',
+          '--enable-on-demand-resources', 'NO',
+          '--target-device', 'mac',
+          '--minimum-deployment-target', '26.0',
+          '--platform', 'macosx'
+        ], { encoding: 'utf8' })
+        
+        if (result.status === 0) {
+          console.log('  Assets.car created')
+          // Clean up temp
+          rmSync(tempDir, { recursive: true, force: true })
+        } else {
+          console.warn('  Warning: actool failed:', result.stderr || result.stdout)
+          rmSync(tempDir, { recursive: true, force: true })
+        }
+      } else {
+        console.log('  Skipping Assets.car (actool not found - need Xcode)')
+      }
+    }
   }
   
   console.log(`Done! Icons in ${ICONS_DIR}`)

@@ -40,6 +40,9 @@
       "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "CFBundleIconName": "AppIcon"
+      },
       "notarize": {
         "teamId": "TSAD7CQ4HH"
       },
@@ -101,6 +104,10 @@
       {
         "from": "resources/icon.svg",
         "to": "icon.svg"
+      },
+      {
+        "from": "resources/Assets.car",
+        "to": "Assets.car"
       }
     ],
     "asarUnpack": [
