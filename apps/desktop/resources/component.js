@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.21";
+  var VERSION = "1.1.22";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -544,6 +544,40 @@
       return Array.from(document.querySelectorAll(selector));
     const candidates = document.querySelectorAll(parsed.baseSelector);
     return Array.from(candidates).filter((el) => elementTextMatches(el, parsed));
+  }
+  function resolveRefOrSelector(ref, selector) {
+    if (ref) {
+      const result2 = refRegistry.resolveWithStatus(ref);
+      if (result2.element) {
+        stats.refsResolved++;
+        return { element: result2.element, targetDesc: `@${ref}` };
+      }
+      stats.refsStale++;
+      const errorMsg = result2.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result2.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+      return { element: null, targetDesc: `@${ref}`, error: errorMsg };
+    }
+    if (selector) {
+      const el = resolveSelector(selector);
+      return { element: el, targetDesc: selector };
+    }
+    return { element: null, targetDesc: "(none)", error: "ref or selector is required" };
+  }
+  function resolveRefOrSelectorAll(ref, selector) {
+    if (ref) {
+      const result2 = refRegistry.resolveWithStatus(ref);
+      if (result2.element) {
+        stats.refsResolved++;
+        return { elements: [result2.element], targetDesc: `@${ref}` };
+      }
+      stats.refsStale++;
+      const errorMsg = result2.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result2.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+      return { elements: [], targetDesc: `@${ref}`, error: errorMsg };
+    }
+    if (selector) {
+      const els = resolveSelectorAll(selector);
+      return { elements: els, targetDesc: selector };
+    }
+    return { elements: [], targetDesc: "(none)", error: "ref or selector is required" };
   }
   function extractElement(el) {
     const rect = el.getBoundingClientRect();
@@ -5238,20 +5272,32 @@ ${elementSummary}${moreText}`;
         const req = payload2;
         try {
           if (req.all) {
-            const elements = resolveSelectorAll(req.selector);
+            const { elements, error } = resolveRefOrSelectorAll(req.ref, req.selector);
+            if (error && elements.length === 0) {
+              this.respond(msg2.id, false, null, error);
+              return;
+            }
             this.respond(msg2.id, true, elements.map(extractElement));
           } else {
-            const el = resolveSelector(req.selector);
-            this.respond(msg2.id, true, el ? extractElement(el) : null);
+            const { element, targetDesc, error } = resolveRefOrSelector(req.ref, req.selector);
+            if (error) {
+              this.respond(msg2.id, false, null, error);
+              return;
+            }
+            this.respond(msg2.id, true, element ? extractElement(element) : null);
           }
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
       } else if (action2 === "inspect") {
         try {
-          const el = resolveSelector(payload2.selector);
+          const { element: el, targetDesc, error } = resolveRefOrSelector(payload2.ref, payload2.selector);
+          if (error) {
+            this.respond(msg2.id, false, null, error);
+            return;
+          }
           if (!el) {
-            this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
+            this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
             return;
           }
           const opts = {
@@ -5264,7 +5310,11 @@ ${elementSummary}${moreText}`;
         }
       } else if (action2 === "inspectAll") {
         try {
-          const elements = resolveSelectorAll(payload2.selector);
+          const { elements, error } = resolveRefOrSelectorAll(payload2.ref, payload2.selector);
+          if (error && elements.length === 0) {
+            this.respond(msg2.id, false, null, error);
+            return;
+          }
           const opts = {
             fullStyles: payload2.fullStyles,
             matchedRules: payload2.matchedRules
@@ -5276,9 +5326,13 @@ ${elementSummary}${moreText}`;
         }
       } else if (action2 === "highlight") {
         try {
-          const el = resolveSelector(payload2.selector);
+          const { element: el, targetDesc, error } = resolveRefOrSelector(payload2.ref, payload2.selector);
+          if (error) {
+            this.respond(msg2.id, false, null, error);
+            return;
+          }
           if (!el) {
-            this.respond(msg2.id, false, null, `Element not found: ${payload2.selector}`);
+            this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
             return;
           }
           if (payload2.duration) {
@@ -5286,7 +5340,7 @@ ${elementSummary}${moreText}`;
           } else {
             showHighlight(el, payload2.label, payload2.color);
           }
-          this.respond(msg2.id, true, { highlighted: payload2.selector });
+          this.respond(msg2.id, true, { highlighted: targetDesc });
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
@@ -5413,10 +5467,21 @@ ${elementSummary}${moreText}`;
               img.src = dataUrl;
             });
           };
+          let targetSelector = payload2?.selector;
+          if (payload2?.ref) {
+            const { element, targetDesc, error } = resolveRefOrSelector(payload2.ref, undefined);
+            if (error) {
+              this.respond(msg2.id, false, null, error);
+              return;
+            }
+            if (element) {
+              targetSelector = element.id ? `#${element.id}` : element.getAttribute("data-testid") ? `[data-testid="${element.getAttribute("data-testid")}"]` : undefined;
+            }
+          }
           const haltija = window.haltija;
           if (haltija?.capturePage) {
             try {
-              const capturePromise = payload2?.selector ? haltija.captureElement(payload2.selector) : haltija.capturePage();
+              const capturePromise = targetSelector ? haltija.captureElement(targetSelector) : haltija.capturePage();
               const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ success: false, error: "Screenshot capture timed out after 10s" }), 1e4));
               const result2 = await Promise.race([capturePromise, timeoutPromise]);
               if (result2?.success && result2.data) {
@@ -5441,10 +5506,18 @@ ${elementSummary}${moreText}`;
           }
           const html2canvas = window.html2canvas;
           if (html2canvas) {
-            const target = payload2?.selector ? resolveSelector(payload2.selector) : document.body;
-            if (!target) {
-              this.respond(msg2.id, false, null, `Element not found: ${payload2?.selector}`);
-              return;
+            let target = document.body;
+            if (payload2?.ref || payload2?.selector) {
+              const { element, targetDesc, error } = resolveRefOrSelector(payload2?.ref, payload2?.selector);
+              if (error) {
+                this.respond(msg2.id, false, null, error);
+                return;
+              }
+              if (!element) {
+                this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
+                return;
+              }
+              target = element;
             }
             const canvas = await html2canvas(target, {
               useCORS: true,
@@ -6994,6 +7067,7 @@ ${elementSummary}${moreText}`;
     currentTagName = TAG_NAME;
     window.__haltija_resolveSelector = resolveSelector;
     window.__haltija_resolveSelectorAll = resolveSelectorAll;
+    window.__haltija_refRegistry = refRegistry;
   }
   registerDevChannel();
   var WIDGET_ID = "haltija-widget";

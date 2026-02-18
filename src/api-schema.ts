@@ -152,11 +152,17 @@ Use this to check if an element exists before clicking/typing. For detailed info
 Response: { tagName, id, className, textContent, attributes: {...} }`,
   category: 'dom',
   input: s.object({
-    selector: s.string.describe('CSS selector'),
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
+    selector: s.string.describe('CSS selector').optional,
     all: s.boolean.describe('Return all matches (default false = first only)')
       .optional,
   }),
   examples: [
+    {
+      name: 'by-ref',
+      input: { ref: '42' },
+      description: 'Query element by ref ID from /tree',
+    },
     {
       name: 'by-id',
       input: { selector: '#submit-btn' },
@@ -183,14 +189,14 @@ Response: { tagName, id, className, textContent, attributes: {...} }`,
     },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'missing-target', input: {}, error: 'ref or selector is required' },
     {
       name: 'wrong-type',
       input: { selector: 123 },
       error: 'selector must be string',
     },
   ],
-  hints: '"selector", --all | see: tree, inspect',
+  hints: '@ref or "selector", --all | see: tree, inspect',
 })
 
 export const inspect = endpoint({
@@ -211,7 +217,8 @@ Response includes:
 Use before clicking to verify element is visible and enabled.`,
   category: 'dom',
   input: s.object({
-    selector: s.string.describe('CSS selector'),
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
+    selector: s.string.describe('CSS selector').optional,
     fullStyles: s.boolean.describe(
       'Include all computed styles (default: false)',
     ).optional,
@@ -221,6 +228,11 @@ Use before clicking to verify element is visible and enabled.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
+    {
+      name: 'by-ref',
+      input: { ref: '42' },
+      description: 'Inspect element by ref ID from /tree',
+    },
     {
       name: 'check-button',
       input: { selector: '#submit' },
@@ -264,8 +276,9 @@ Use before clicking to verify element is visible and enabled.`,
     },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'missing-target', input: {}, error: 'ref or selector is required' },
   ],
+  hints: '@ref or "selector", --styles, --rules, --ancestors | see: tree, query',
 })
 
 export const inspectAll = endpoint({
@@ -282,7 +295,8 @@ Same detailed info as /inspect, but for multiple elements. Great for:
 Response: array of inspection objects`,
   category: 'dom',
   input: s.object({
-    selector: s.string.describe('CSS selector'),
+    ref: s.string.describe('Ref ID from /tree output - returns single element as array').optional,
+    selector: s.string.describe('CSS selector').optional,
     limit: s.number.describe('Max elements (default 10)').optional,
     fullStyles: s.boolean.describe(
       'Include all computed styles (default: false)',
@@ -605,13 +619,19 @@ export const drag = endpoint({
 Good for: sliders, resize handles, drag-and-drop reordering, range inputs.`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector of drag handle'),
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
+    selector: s.string.describe('CSS selector of drag handle').optional,
     deltaX: s.number.describe('Horizontal distance in pixels').optional,
     deltaY: s.number.describe('Vertical distance in pixels').optional,
     duration: s.number.describe('Drag duration in ms (default 300)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
+    {
+      name: 'by-ref',
+      input: { ref: '15', deltaX: 100 },
+      description: 'Drag element by ref ID',
+    },
     {
       name: 'slider-right',
       input: { selector: '.slider-handle', deltaX: 100 },
@@ -630,12 +650,12 @@ Good for: sliders, resize handles, drag-and-drop reordering, range inputs.`,
   ],
   invalidExamples: [
     {
-      name: 'missing-selector',
+      name: 'missing-target',
       input: { deltaX: 100 },
-      error: 'selector is required',
+      error: 'ref or selector is required',
     },
   ],
-  hints: '"selector" <deltaX> <deltaY>, --duration 500 | see: click, scroll',
+  hints: '@ref or "selector" <deltaX> <deltaY>, --duration 500 | see: click, scroll',
 })
 
 export const highlight = endpoint({
@@ -647,7 +667,8 @@ export const highlight = endpoint({
 Great for showing users what you found or pointing out issues. Use /unhighlight to remove.`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector'),
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
+    selector: s.string.describe('CSS selector').optional,
     label: s.string.describe('Label text to show').optional,
     color: s.string.describe('CSS color (default #6366f1)').optional,
     duration: s.number.describe('Auto-hide after ms (omit for manual)')
@@ -655,6 +676,11 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
+    {
+      name: 'by-ref',
+      input: { ref: '42', label: 'Found it!' },
+      description: 'Highlight element by ref ID',
+    },
     {
       name: 'point-out',
       input: { selector: '#login-btn', label: 'Click here' },
@@ -672,9 +698,9 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
     },
   ],
   invalidExamples: [
-    { name: 'missing-selector', input: {}, error: 'selector is required' },
+    { name: 'missing-target', input: {}, error: 'ref or selector is required' },
   ],
-  hints: '"selector", --label "text", --color #f00, --duration 3000 | see: unhighlight, screenshot',
+  hints: '@ref or "selector", --label "text", --color #f00, --duration 3000 | see: unhighlight, screenshot',
 })
 
 export const unhighlight = endpoint({
@@ -692,13 +718,14 @@ export const scroll = endpoint({
   summary: 'Scroll to element or position',
   description: `Smooth scroll with natural easing. Multiple modes:
 
-- selector: Scroll element into view (most common)
+- ref/selector: Scroll element into view (most common)
 - x/y: Scroll to absolute position
 - deltaX/deltaY: Scroll relative to current position
 
-At least one of selector, x, y, deltaX, or deltaY must be provided.`,
+At least one of ref, selector, x, y, deltaX, or deltaY must be provided.`,
   category: 'interaction',
   input: s.object({
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
     selector: s.string.describe('CSS selector to scroll into view').optional,
     x: s.number.describe('Absolute X position in pixels').optional,
     y: s.number.describe('Absolute Y position in pixels').optional,
@@ -715,6 +742,11 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.`,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
+    {
+      name: 'by-ref',
+      input: { ref: '42' },
+      description: 'Scroll element into view by ref ID',
+    },
     {
       name: 'to-element',
       input: { selector: '#pricing' },
@@ -737,7 +769,7 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.`,
       description: 'Slow animated scroll',
     },
   ],
-  hints: '"selector" or <deltaY>, --duration 500 | see: click, wait',
+  hints: '@ref or "selector" or <deltaY>, --duration 500 | see: click, wait',
 })
 
 // ============================================
@@ -1240,7 +1272,8 @@ Return value is JSON-serialized. Promises are awaited.
 Response: { success: true, data: <return value> }`,
   category: 'interaction',
   input: s.object({
-    selector: s.string.describe('CSS selector of the element'),
+    ref: s.string.describe('Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency').optional,
+    selector: s.string.describe('CSS selector of the element').optional,
     method: s.string.describe('Method name to call or property name to get'),
     args: s
       .array(s.any)
@@ -1249,6 +1282,11 @@ Response: { success: true, data: <return value> }`,
   }),
   examples: [
     // Property access (no args)
+    {
+      name: 'by-ref',
+      input: { ref: '42', method: 'value' },
+      description: 'Get property by ref ID',
+    },
     {
       name: 'get-value',
       input: { selector: '#email', method: 'value' },
@@ -1321,9 +1359,9 @@ Response: { success: true, data: <return value> }`,
   ],
   invalidExamples: [
     {
-      name: 'missing-selector',
+      name: 'missing-target',
       input: { method: 'click' },
-      error: 'selector is required',
+      error: 'ref or selector is required',
     },
     {
       name: 'missing-method',
@@ -1331,6 +1369,7 @@ Response: { success: true, data: <return value> }`,
       error: 'method is required',
     },
   ],
+  hints: '@ref or "selector" <method>, --args [...]  | see: eval, inspect',
 })
 
 // ============================================
@@ -1348,6 +1387,7 @@ Works automatically in the Haltija Desktop app. In browser widget mode, captures
 Response: { success, image: "data:image/png;base64,...", width, height, source }`,
   category: 'debug',
   input: s.object({
+    ref: s.string.describe('Ref ID from /tree output - capture specific element').optional,
     selector: s.string.describe('Element to capture (omit for full page)')
       .optional,
     scale: s.number.describe('Scale factor (default 1)').optional,
@@ -1359,6 +1399,11 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
   }),
   examples: [
     { name: 'full-page', input: {}, description: 'Capture entire page with chyron showing URL/title' },
+    {
+      name: 'by-ref',
+      input: { ref: '42' },
+      description: 'Capture element by ref ID',
+    },
     {
       name: 'element',
       input: { selector: '#chart' },

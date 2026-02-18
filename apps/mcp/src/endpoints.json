@@ -83,8 +83,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector"
         },
         "all": {
@@ -95,9 +105,7 @@
           "description": "Return all matches (default false = first only)"
         }
       },
-      "required": [
-        "selector"
-      ],
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -109,8 +117,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector"
         },
         "fullStyles": {
@@ -135,9 +153,7 @@
           "description": "Target window ID"
         }
       },
-      "required": [
-        "selector"
-      ],
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -149,8 +165,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output - returns single element as array"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector"
         },
         "limit": {
@@ -182,9 +208,7 @@
           "description": "Target window ID"
         }
       },
-      "required": [
-        "selector"
-      ],
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -564,8 +588,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector of drag handle"
         },
         "deltaX": {
@@ -597,9 +631,7 @@
           "description": "Target window ID"
         }
       },
-      "required": [
-        "selector"
-      ],
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -611,8 +643,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector"
         },
         "label": {
@@ -644,9 +686,7 @@
           "description": "Target window ID"
         }
       },
-      "required": [
-        "selector"
-      ],
+      "required": [],
       "additionalProperties": false
     }
   },
@@ -666,10 +706,17 @@
     "path": "/scroll",
     "method": "POST",
     "summary": "Scroll to element or position",
-    "description": "Smooth scroll with natural easing. Multiple modes:\n\n- selector: Scroll element into view (most common)\n- x/y: Scroll to absolute position\n- deltaX/deltaY: Scroll relative to current position\n\nAt least one of selector, x, y, deltaX, or deltaY must be provided.",
+    "description": "Smooth scroll with natural easing. Multiple modes:\n\n- ref/selector: Scroll element into view (most common)\n- x/y: Scroll to absolute position\n- deltaX/deltaY: Scroll relative to current position\n\nAt least one of ref, selector, x, y, deltaX, or deltaY must be provided.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
           "type": [
             "string",
@@ -1066,8 +1113,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
         "selector": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "CSS selector of the element"
         },
         "method": {
@@ -1091,7 +1148,6 @@
         }
       },
       "required": [
-        "selector",
         "method"
       ],
       "additionalProperties": false
@@ -1105,6 +1161,13 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output - capture specific element"
+        },
         "selector": {
           "type": [
             "string",

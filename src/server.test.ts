@@ -579,8 +579,9 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.endpoint).toBe('/query')
     expect(data.method).toBe('POST')
     expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.ref).toBeDefined() // ref is also accepted
     expect(data.input.properties.all).toBeDefined()
-    expect(data.input.required).toContain('selector')
+    // selector is now optional (ref can be used instead)
   })
   
   it('GET on /inspect returns schema documentation', async () => {
@@ -591,7 +592,8 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.endpoint).toBe('/inspect')
     expect(data.method).toBe('POST')
     expect(data.input.properties.selector).toBeDefined()
-    expect(data.input.required).toContain('selector')
+    expect(data.input.properties.ref).toBeDefined() // ref is also accepted
+    // selector is now optional (ref can be used instead)
   })
   
   it('GET on /highlight returns schema documentation', async () => {
@@ -671,23 +673,15 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(data.method).toBe('POST')
     expect(data.summary).toBe('Call a method or get a property on an element')
     expect(data.input.properties.selector).toBeDefined()
+    expect(data.input.properties.ref).toBeDefined() // ref is also accepted
     expect(data.input.properties.method).toBeDefined()
     expect(data.input.properties.args).toBeDefined()
-    expect(data.input.required).toContain('selector')
+    // selector is now optional (ref can be used instead), only method is required
     expect(data.input.required).toContain('method')
   })
   
-  it('/call rejects missing selector', async () => {
-    const res = await fetch(`${BASE_URL}/call`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ method: 'focus' })
-    })
-    expect(res.status).toBe(400)
-    
-    const data = await res.json()
-    expect(data.error).toContain('selector')
-  })
+  // Note: /call no longer rejects missing selector at schema level since ref can be used instead.
+  // The runtime handler validates that at least one of ref/selector is provided.
   
   it('/call rejects missing method', async () => {
     const res = await fetch(`${BASE_URL}/call`, {

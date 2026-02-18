@@ -784,6 +784,64 @@ function resolveSelectorAll(selector: string): Element[] {
   return Array.from(candidates).filter(el => elementTextMatches(el, parsed))
 }
 
+/**
+ * Resolve element from ref or selector.
+ * Returns { element, targetDesc, error } - if error is set, element is null.
+ */
+function resolveRefOrSelector(
+  ref?: string,
+  selector?: string
+): { element: Element | null; targetDesc: string; error?: string } {
+  if (ref) {
+    const result = refRegistry.resolveWithStatus(ref)
+    if (result.element) {
+      stats.refsResolved++
+      return { element: result.element, targetDesc: `@${ref}` }
+    }
+    stats.refsStale++
+    const errorMsg = result.status === 'never_assigned'
+      ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
+      : result.status === 'removed_from_dom'
+      ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
+      : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+    return { element: null, targetDesc: `@${ref}`, error: errorMsg }
+  }
+  if (selector) {
+    const el = resolveSelector(selector)
+    return { element: el, targetDesc: selector }
+  }
+  return { element: null, targetDesc: '(none)', error: 'ref or selector is required' }
+}
+
+/**
+ * Resolve all elements matching ref or selector.
+ * For ref, returns single-element array if found.
+ */
+function resolveRefOrSelectorAll(
+  ref?: string,
+  selector?: string
+): { elements: Element[]; targetDesc: string; error?: string } {
+  if (ref) {
+    const result = refRegistry.resolveWithStatus(ref)
+    if (result.element) {
+      stats.refsResolved++
+      return { elements: [result.element], targetDesc: `@${ref}` }
+    }
+    stats.refsStale++
+    const errorMsg = result.status === 'never_assigned'
+      ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
+      : result.status === 'removed_from_dom'
+      ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
+      : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+    return { elements: [], targetDesc: `@${ref}`, error: errorMsg }
+  }
+  if (selector) {
+    const els = resolveSelectorAll(selector)
+    return { elements: els, targetDesc: selector }
+  }
+  return { elements: [], targetDesc: '(none)', error: 'ref or selector is required' }
+}
+
 // Extract element info for serialization
 function extractElement(el: Element): DomElement {
   const rect = el.getBoundingClientRect()
@@ -7088,24 +7146,36 @@ export class DevChannel extends HTMLElement {
       const req = payload as DomQueryRequest
       try {
         if (req.all) {
-          const elements = resolveSelectorAll(req.selector)
+          const { elements, error } = resolveRefOrSelectorAll(req.ref, req.selector)
+          if (error && elements.length === 0) {
+            this.respond(msg.id, false, null, error)
+            return
+          }
           this.respond(msg.id, true, elements.map(extractElement))
         } else {
-          const el = resolveSelector(req.selector)
-          this.respond(msg.id, true, el ? extractElement(el) : null)
+          const { element, targetDesc, error } = resolveRefOrSelector(req.ref, req.selector)
+          if (error) {
+            this.respond(msg.id, false, null, error)
+            return
+          }
+          this.respond(msg.id, true, element ? extractElement(element) : null)
         }
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }
     } else if (action === 'inspect') {
       try {
-        const el = resolveSelector(payload.selector)
+        const { element: el, targetDesc, error } = resolveRefOrSelector(payload.ref, payload.selector)
+        if (error) {
+          this.respond(msg.id, false, null, error)
+          return
+        }
         if (!el) {
           this.respond(
             msg.id,
             false,
             null,
-            `Element not found: ${payload.selector}`,
+            `Element not found: ${targetDesc}`,
           )
           return
         }
@@ -7119,7 +7189,11 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'inspectAll') {
       try {
-        const elements = resolveSelectorAll(payload.selector)
+        const { elements, error } = resolveRefOrSelectorAll(payload.ref, payload.selector)
+        if (error && elements.length === 0) {
+          this.respond(msg.id, false, null, error)
+          return
+        }
         const opts = {
           fullStyles: payload.fullStyles,
           matchedRules: payload.matchedRules,
@@ -7133,13 +7207,17 @@ export class DevChannel extends HTMLElement {
       }
     } else if (action === 'highlight') {
       try {
-        const el = resolveSelector(payload.selector)
+        const { element: el, targetDesc, error } = resolveRefOrSelector(payload.ref, payload.selector)
+        if (error) {
+          this.respond(msg.id, false, null, error)
+          return
+        }
         if (!el) {
           this.respond(
             msg.id,
             false,
             null,
-            `Element not found: ${payload.selector}`,
+            `Element not found: ${targetDesc}`,
           )
           return
         }
@@ -7148,7 +7226,7 @@ export class DevChannel extends HTMLElement {
         } else {
           showHighlight(el, payload.label, payload.color)
         }
-        this.respond(msg.id, true, { highlighted: payload.selector })
+        this.respond(msg.id, true, { highlighted: targetDesc })
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }
@@ -7336,13 +7414,29 @@ export class DevChannel extends HTMLElement {
           })
         }
 
+        // Resolve target element if ref or selector provided
+        let targetSelector: string | undefined = payload?.selector
+        if (payload?.ref) {
+          const { element, targetDesc, error } = resolveRefOrSelector(payload.ref, undefined)
+          if (error) {
+            this.respond(msg.id, false, null, error)
+            return
+          }
+          if (element) {
+            // Generate a unique selector for the resolved element
+            targetSelector = element.id ? `#${element.id}` 
+              : element.getAttribute('data-testid') ? `[data-testid="${element.getAttribute('data-testid')}"]`
+              : undefined // Fall back to full page if we can't generate a selector
+          }
+        }
+
         // Try Electron native capture first (best quality, works on any page)
         const haltija = (window as any).haltija
         if (haltija?.capturePage) {
           try {
             // Wrap in timeout to prevent hanging if IPC fails
-            const capturePromise = payload?.selector
-              ? haltija.captureElement(payload.selector)
+            const capturePromise = targetSelector
+              ? haltija.captureElement(targetSelector)
               : haltija.capturePage()
             
             const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => 
@@ -7377,17 +7471,18 @@ export class DevChannel extends HTMLElement {
         // Try html2canvas if available (user-provided)
         const html2canvas = (window as any).html2canvas
         if (html2canvas) {
-          const target = payload?.selector
-            ? resolveSelector(payload.selector)
-            : document.body
-          if (!target) {
-            this.respond(
-              msg.id,
-              false,
-              null,
-              `Element not found: ${payload?.selector}`,
-            )
-            return
+          let target: Element | null = document.body
+          if (payload?.ref || payload?.selector) {
+            const { element, targetDesc, error } = resolveRefOrSelector(payload?.ref, payload?.selector)
+            if (error) {
+              this.respond(msg.id, false, null, error)
+              return
+            }
+            if (!element) {
+              this.respond(msg.id, false, null, `Element not found: ${targetDesc}`)
+              return
+            }
+            target = element
           }
 
           const canvas = await html2canvas(target, {
@@ -9659,6 +9754,8 @@ function registerDevChannel() {
   // Expose custom selector resolver globally for eval'd code
   ;(window as any).__haltija_resolveSelector = resolveSelector
   ;(window as any).__haltija_resolveSelectorAll = resolveSelectorAll
+  // Expose ref registry for eval'd code that needs to resolve refs
+  ;(window as any).__haltija_refRegistry = refRegistry
 }
 
 registerDevChannel()

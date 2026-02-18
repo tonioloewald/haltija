@@ -1058,11 +1058,16 @@ Response: { tagName, id, className, textContent, attributes: {...} }
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
+| \`selector\` | string,null | CSS selector |
 | \`all\` | boolean,null | Return all matches (default false = first only) |
 
 **Examples:**
 
+- **by-ref**: Query element by ref ID from /tree
+  \`\`\`json
+  {"ref":"42"}
+  \`\`\`
 - **by-id**: Find element by ID
   \`\`\`json
   {"selector":"#submit-btn"}
@@ -1112,13 +1117,18 @@ Use before clicking to verify element is visible and enabled.
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
+| \`selector\` | string,null | CSS selector |
 | \`fullStyles\` | boolean,null | Include all computed styles (default: false) |
 | \`matchedRules\` | boolean,null | Include matched CSS rules with specificity (default: false) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
 
+- **by-ref**: Inspect element by ref ID from /tree
+  \`\`\`json
+  {"ref":"42"}
+  \`\`\`
 - **check-button**: Verify button is clickable
   \`\`\`json
   {"selector":"#submit"}
@@ -1196,7 +1206,8 @@ Response: array of inspection objects
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output - returns single element as array |
+| \`selector\` | string,null | CSS selector |
 | \`limit\` | number,null | Max elements (default 10) |
 | \`fullStyles\` | boolean,null | Include all computed styles (default: false) |
 | \`matchedRules\` | boolean,null | Include matched CSS rules with specificity (default: false) |
@@ -1530,7 +1541,8 @@ Good for: sliders, resize handles, drag-and-drop reordering, range inputs.
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector of drag handle *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
+| \`selector\` | string,null | CSS selector of drag handle |
 | \`deltaX\` | number,null | Horizontal distance in pixels |
 | \`deltaY\` | number,null | Vertical distance in pixels |
 | \`duration\` | number,null | Drag duration in ms (default 300) |
@@ -1538,6 +1550,10 @@ Good for: sliders, resize handles, drag-and-drop reordering, range inputs.
 
 **Examples:**
 
+- **by-ref**: Drag element by ref ID
+  \`\`\`json
+  {"ref":"15","deltaX":100}
+  \`\`\`
 - **slider-right**: Move slider right
   \`\`\`json
   {"selector":".slider-handle","deltaX":100}
@@ -1565,7 +1581,8 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
+| \`selector\` | string,null | CSS selector |
 | \`label\` | string,null | Label text to show |
 | \`color\` | string,null | CSS color (default #6366f1) |
 | \`duration\` | number,null | Auto-hide after ms (omit for manual) |
@@ -1573,6 +1590,10 @@ Great for showing users what you found or pointing out issues. Use /unhighlight 
 
 **Examples:**
 
+- **by-ref**: Highlight element by ref ID
+  \`\`\`json
+  {"ref":"42","label":"Found it!"}
+  \`\`\`
 - **point-out**: Show user where to click
   \`\`\`json
   {"selector":"#login-btn","label":"Click here"}
@@ -1602,16 +1623,17 @@ Remove any active highlight overlay created by /highlight.
 
 Smooth scroll with natural easing. Multiple modes:
 
-- selector: Scroll element into view (most common)
+- ref/selector: Scroll element into view (most common)
 - x/y: Scroll to absolute position
 - deltaX/deltaY: Scroll relative to current position
 
-At least one of selector, x, y, deltaX, or deltaY must be provided.
+At least one of ref, selector, x, y, deltaX, or deltaY must be provided.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
 | \`selector\` | string,null | CSS selector to scroll into view |
 | \`x\` | number,null | Absolute X position in pixels |
 | \`y\` | number,null | Absolute Y position in pixels |
@@ -1624,6 +1646,10 @@ At least one of selector, x, y, deltaX, or deltaY must be provided.
 
 **Examples:**
 
+- **by-ref**: Scroll element into view by ref ID
+  \`\`\`json
+  {"ref":"42"}
+  \`\`\`
 - **to-element**: Scroll pricing section into view
   \`\`\`json
   {"selector":"#pricing"}
@@ -1715,13 +1741,18 @@ Response: { success: true, data: <return value> }
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`selector\` | string | CSS selector of the element *(required)* |
+| \`ref\` | string,null | Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency |
+| \`selector\` | string,null | CSS selector of the element |
 | \`method\` | string | Method name to call or property name to get *(required)* |
 | \`args\` | array,null | Arguments to pass (omit to get property value) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
 
+- **by-ref**: Get property by ref ID
+  \`\`\`json
+  {"ref":"42","method":"value"}
+  \`\`\`
 - **get-value**: Get input value
   \`\`\`json
   {"selector":"#email","method":"value"}
@@ -2465,6 +2496,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 
 | Name | Type | Description |
 |------|------|-------------|
+| \`ref\` | string,null | Ref ID from /tree output - capture specific element |
 | \`selector\` | string,null | Element to capture (omit for full page) |
 | \`scale\` | number,null | Scale factor (default 1) |
 | \`maxWidth\` | number,null | Max width in pixels |
@@ -2478,6 +2510,10 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 - **full-page**: Capture entire page with chyron showing URL/title
   \`\`\`json
   {}
+  \`\`\`
+- **by-ref**: Capture element by ref ID
+  \`\`\`json
+  {"ref":"42"}
   \`\`\`
 - **element**: Capture specific element
   \`\`\`json
@@ -2560,9 +2596,9 @@ hj --help              # All commands
 ### See the Page
 
 - \`hj tree [selector, depth, includeText, ...]\` - Get DOM tree structure
-- \`hj query [selector, all]\` - Query DOM elements by selector
-- \`hj inspect [selector, fullStyles, matchedRules, ...]\` - Deep inspection of an element
-- \`hj inspectAll [selector, limit, fullStyles, ...]\` - Inspect multiple elements
+- \`hj query [ref, selector, all]\` - Query DOM elements by selector
+- \`hj inspect [ref, selector, fullStyles, ...]\` - Deep inspection of an element
+- \`hj inspectAll [ref, selector, limit, ...]\` - Inspect multiple elements
 - \`hj find [text, tag, exact, ...]\` - Find elements by text content
 - \`hj form [selector, includeDisabled, includeHidden, ...]\` - Extract all form values as structured JSON
 
@@ -2571,12 +2607,12 @@ hj --help              # All commands
 - \`hj click [ref, selector, text, ...]\` - Click an element
 - \`hj type [ref, selector, text, ...]\` - Type text into an element
 - \`hj key [key, ref, selector, ...]\` - Send keyboard input
-- \`hj drag [selector, deltaX, deltaY, ...]\` - Drag from an element
-- \`hj highlight [selector, label, color, ...]\` - Visually highlight an element
+- \`hj drag [ref, selector, deltaX, ...]\` - Drag from an element
+- \`hj highlight [ref, selector, label, ...]\` - Visually highlight an element
 - \`hj unhighlight\` - Remove highlight
-- \`hj scroll [selector, x, y, ...]\` - Scroll to element or position
+- \`hj scroll [ref, selector, x, ...]\` - Scroll to element or position
 - \`hj wait [ms, forElement, hidden, ...]\` - Wait for time, element, or condition
-- \`hj call [selector, method, args, ...]\` - Call a method or get a property on an element
+- \`hj call [ref, selector, method, ...]\` - Call a method or get a property on an element
 
 ### Navigate
 
@@ -2632,7 +2668,7 @@ hj --help              # All commands
 - \`hj console\` - Get console output
 - \`hj eval [code, window]\` - Execute JavaScript
 - \`hj fetch [url, window]\` - Fetch a URL from within the tab context
-- \`hj screenshot [selector, scale, maxWidth, ...]\` - Capture a screenshot
+- \`hj screenshot [ref, selector, scale, ...]\` - Capture a screenshot
 - \`hj snapshot [trigger, context]\` - Capture page snapshot
 
 ## Tips

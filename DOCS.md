@@ -31,9 +31,9 @@ hj --help              # All commands
 ### See the Page
 
 - `hj tree [selector, depth, includeText, ...]` - Get DOM tree structure
-- `hj query [selector, all]` - Query DOM elements by selector
-- `hj inspect [selector, fullStyles, matchedRules, ...]` - Deep inspection of an element
-- `hj inspectAll [selector, limit, fullStyles, ...]` - Inspect multiple elements
+- `hj query [ref, selector, all]` - Query DOM elements by selector
+- `hj inspect [ref, selector, fullStyles, ...]` - Deep inspection of an element
+- `hj inspectAll [ref, selector, limit, ...]` - Inspect multiple elements
 - `hj find [text, tag, exact, ...]` - Find elements by text content
 - `hj form [selector, includeDisabled, includeHidden, ...]` - Extract all form values as structured JSON
 
@@ -42,12 +42,12 @@ hj --help              # All commands
 - `hj click [ref, selector, text, ...]` - Click an element
 - `hj type [ref, selector, text, ...]` - Type text into an element
 - `hj key [key, ref, selector, ...]` - Send keyboard input
-- `hj drag [selector, deltaX, deltaY, ...]` - Drag from an element
-- `hj highlight [selector, label, color, ...]` - Visually highlight an element
+- `hj drag [ref, selector, deltaX, ...]` - Drag from an element
+- `hj highlight [ref, selector, label, ...]` - Visually highlight an element
 - `hj unhighlight` - Remove highlight
-- `hj scroll [selector, x, y, ...]` - Scroll to element or position
+- `hj scroll [ref, selector, x, ...]` - Scroll to element or position
 - `hj wait [ms, forElement, hidden, ...]` - Wait for time, element, or condition
-- `hj call [selector, method, args, ...]` - Call a method or get a property on an element
+- `hj call [ref, selector, method, ...]` - Call a method or get a property on an element
 
 ### Navigate
 
@@ -103,7 +103,7 @@ hj --help              # All commands
 - `hj console` - Get console output
 - `hj eval [code, window]` - Execute JavaScript
 - `hj fetch [url, window]` - Fetch a URL from within the tab context
-- `hj screenshot [selector, scale, maxWidth, ...]` - Capture a screenshot
+- `hj screenshot [ref, selector, scale, ...]` - Capture a screenshot
 - `hj snapshot [trigger, context]` - Capture page snapshot
 
 ## Tips

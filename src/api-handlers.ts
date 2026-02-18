@@ -434,6 +434,7 @@ registerHandler(api.click, async (body, ctx) => {
 registerHandler(api.query, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('dom', 'query', {
+    ref: body.ref,
     selector: body.selector,
     all: body.all,
   }, 5000, windowId)
@@ -457,10 +458,16 @@ registerHandler(api.fetchUrl, async (body, ctx) => {
 // Call handler - call method or get property on element
 registerHandler(api.call, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
-  const selector = JSON.stringify(body.selector)
-  const resolveExpr = `(window.__haltija_resolveSelector || document.querySelector.bind(document))(${selector})`
+  const ref = body.ref
+  const selector = body.selector
   const method = body.method
   const args = body.args
+  
+  // Build resolve expression based on ref or selector
+  const resolveExpr = ref
+    ? `window.__haltija_refRegistry?.resolve(${JSON.stringify(ref)})`
+    : `(window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(selector)})`
+  const targetDesc = ref ? `@${ref}` : (selector || '(none)')
   
   let code: string
   if (args !== undefined) {
@@ -468,7 +475,7 @@ registerHandler(api.call, async (body, ctx) => {
     const argsJson = JSON.stringify(args)
     code = `(function() {
       const el = ${resolveExpr};
-      if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
+      if (!el) return { success: false, error: 'Element not found: ${targetDesc.replace(/'/g, "\\'")}' };
       if (typeof el[${JSON.stringify(method)}] !== 'function') {
         return { success: false, error: 'Method not found: ${method}' };
       }
@@ -483,7 +490,7 @@ registerHandler(api.call, async (body, ctx) => {
     // Property access mode: element.property
     code = `(function() {
       const el = ${resolveExpr};
-      if (!el) return { success: false, error: 'Element not found: ${body.selector.replace(/'/g, "\\'")}' };
+      if (!el) return { success: false, error: 'Element not found: ${targetDesc.replace(/'/g, "\\'")}' };
       try {
         const value = el[${JSON.stringify(method)}];
         return { success: true, data: value };
@@ -504,23 +511,31 @@ registerHandler(api.call, async (body, ctx) => {
 
 // Drag handler
 registerHandler(api.drag, async (body, ctx) => {
+  const ref = body.ref
   const selector = body.selector
   const deltaX = body.deltaX || 0
   const deltaY = body.deltaY || 0
   const duration = body.duration || 300
   const steps = Math.max(5, Math.floor(duration / 16))
   const windowId = body.window || ctx.targetWindowId
+  const targetDesc = ref ? `@${ref}` : selector
   
-  // Scroll into view
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `${qs(selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
-  }, 5000, windowId)
+  // Scroll into view (use ref or selector)
+  if (ref) {
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `(window.__haltija_refRegistry?.resolve(${JSON.stringify(ref)}) || document.body)?.scrollIntoView({behavior: "smooth", block: "center"})`
+    }, 5000, windowId)
+  } else if (selector) {
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `${qs(selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
+    }, 5000, windowId)
+  }
   await sleep(100)
   
-  // Get element center
-  const inspectResponse = await ctx.requestFromBrowser('dom', 'inspect', { selector }, 5000, windowId)
+  // Get element center (pass ref or selector to inspect)
+  const inspectResponse = await ctx.requestFromBrowser('dom', 'inspect', { ref, selector }, 5000, windowId)
   if (!inspectResponse.success || !inspectResponse.data) {
-    return Response.json({ success: false, error: 'Element not found' }, { headers: ctx.headers })
+    return Response.json({ success: false, error: `Element not found: ${targetDesc}` }, { headers: ctx.headers })
   }
   const box = inspectResponse.data.box
   const startX = box.x + box.width / 2
@@ -529,13 +544,13 @@ registerHandler(api.drag, async (body, ctx) => {
   // mouseenter, mouseover, mousemove to start
   for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
     await ctx.requestFromBrowser('events', 'dispatch', {
-      selector, event, options: { clientX: startX, clientY: startY },
+      ref, selector, event, options: { clientX: startX, clientY: startY },
     }, 5000, windowId)
   }
   
   // mousedown
   await ctx.requestFromBrowser('events', 'dispatch', {
-    selector, event: 'mousedown', options: { clientX: startX, clientY: startY },
+    ref, selector, event: 'mousedown', options: { clientX: startX, clientY: startY },
   }, 5000, windowId)
   
   // mousemove steps
@@ -645,6 +660,7 @@ registerHandler(api.key, async (body, ctx) => {
 registerHandler(api.inspect, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('dom', 'inspect', { 
+    ref: body.ref,
     selector: body.selector,
     fullStyles: body.fullStyles,
     matchedRules: body.matchedRules,
@@ -656,6 +672,7 @@ registerHandler(api.inspect, async (body, ctx) => {
 registerHandler(api.inspectAll, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('dom', 'inspectAll', { 
+    ref: body.ref,
     selector: body.selector, 
     limit: body.limit || 10,
     fullStyles: body.fullStyles,
@@ -668,13 +685,20 @@ registerHandler(api.inspectAll, async (body, ctx) => {
 registerHandler(api.highlight, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `${qs(body.selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
-  }, 5000, windowId)
+  // Scroll element into view (use ref or selector)
+  if (body.ref) {
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `(window.__haltija_refRegistry?.resolve(${JSON.stringify(body.ref)}) || document.body)?.scrollIntoView({behavior: "smooth", block: "center"})`
+    }, 5000, windowId)
+  } else if (body.selector) {
+    await ctx.requestFromBrowser('eval', 'exec', {
+      code: `${qs(body.selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
+    }, 5000, windowId)
+  }
   await sleep(100)
   
   const response = await ctx.requestFromBrowser('dom', 'highlight', {
-    selector: body.selector, label: body.label, color: body.color, duration: body.duration,
+    ref: body.ref, selector: body.selector, label: body.label, color: body.color, duration: body.duration,
   }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
@@ -727,6 +751,7 @@ registerHandler(api.screenshot, async (body, ctx) => {
   }
   
   const response = await ctx.requestFromBrowser('dom', 'screenshot', {
+    ref: body.ref,
     selector: body.selector,
     format: body.format,
     quality: body.quality,
@@ -1319,11 +1344,16 @@ registerHandler(api.scroll, async (body, ctx) => {
     const easing = easings[${JSON.stringify(easing)}] || easings['ease-out'];
   `
   
-  if (body.selector) {
+  if (body.ref || body.selector) {
+    // Resolve element via ref or selector
+    const resolveCode = body.ref 
+      ? `window.__haltija_refRegistry?.resolve(${JSON.stringify(body.ref)})`
+      : `(window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(body.selector)})`
+    const targetDesc = body.ref ? `@${body.ref}` : body.selector
     const code = `
       (async () => {
-        const el = (window.__haltija_resolveSelector || document.querySelector.bind(document))(${JSON.stringify(body.selector)});
-        if (!el) return { success: false, error: 'Element not found' };
+        const el = ${resolveCode};
+        if (!el) return { success: false, error: 'Element not found: ${targetDesc}' };
         const rect = el.getBoundingClientRect();
         const blockAlign = ${JSON.stringify(block)};
         let targetY;
