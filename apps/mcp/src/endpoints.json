@@ -870,7 +870,7 @@
     "path": "/refresh",
     "method": "POST",
     "summary": "Refresh the page",
-    "description": "Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.",
+    "description": "Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -879,7 +879,7 @@
             "boolean",
             "null"
           ],
-          "description": "Use cached resources if available (default false = hard refresh)"
+          "description": "Use cached resources if available (default false = hard refresh that busts all caches)"
         },
         "window": {
           "type": [
@@ -1663,6 +1663,60 @@
       "required": [],
       "additionalProperties": false
     }
+  },
+  {
+    "path": "/dialog/configure",
+    "method": "POST",
+    "summary": "Configure native dialog auto-response policy",
+    "description": "Set how native browser dialogs (alert, confirm, prompt) are handled.\n\nBy default, Haltija intercepts all native dialogs and auto-responds:\n- alert: dismissed immediately\n- confirm: accepted (returns true)\n- prompt: dismissed (returns null)\n\nConfigure the policy **before** triggering actions that cause dialogs.\nEach dialog is logged and reported via the dialog/opened push event.\n\nResponse: { policy: { alert, confirm, prompt, beforeunload } }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "alert": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"dismiss\" (only option for alerts)"
+        },
+        "confirm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"accept\" or \"dismiss\""
+        },
+        "prompt": {
+          "description": "\"dismiss\" or { \"response\": \"text\" } to auto-fill",
+          "type": [
+            null,
+            "null"
+          ]
+        },
+        "beforeunload": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"allow\" or \"block\" — controls page unload"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/dialog/history",
+    "method": "GET",
+    "summary": "Get recent dialog history",
+    "description": "Returns a list of recently intercepted native dialogs.\n\nEach entry includes: type (alert/confirm/prompt), message, response given, timestamp.\nBuffer holds the last 50 dialogs.\n\nResponse: { history: [{ type, message, defaultValue?, response, timestamp }] }"
   },
   {
     "path": "/status",

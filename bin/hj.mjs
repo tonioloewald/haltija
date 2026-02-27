@@ -10,7 +10,7 @@
  *   hj status            # Server status
  */
 
-import { runSubcommand, isSubcommand, getSuggestion, listSubcommands } from './cli-subcommand.mjs'
+import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 
 const args = process.argv.slice(2)
 
@@ -42,7 +42,13 @@ const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all 
 if (!isSubcommand(subcommand)) {
   const suggestion = getSuggestion(subcommand)
   if (suggestion === '--help') {
-    console.log(listSubcommands())
+    // hj help <topic> — filter help output by topic
+    const topic = args[1]
+    if (topic) {
+      filterHelp(topic)
+    } else {
+      console.log(listSubcommands())
+    }
     process.exit(0)
   }
   
@@ -56,4 +62,57 @@ if (!isSubcommand(subcommand)) {
   process.exit(1)
 } else {
   runSubcommand(subcommand, subArgs, port)
+}
+
+function filterHelp(topic) {
+  const bold = (s) => `\x1b[1m${s}\x1b[0m`
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`
+  const needle = topic.toLowerCase()
+  const helpText = listSubcommands()
+  const lines = helpText.split('\n')
+
+  const matches = []
+  let currentCategory = ''
+
+  for (const line of lines) {
+    // Detect category headers (bold ANSI text with no leading spaces beyond the initial 2)
+    if (line.match(/^\s{2}\x1b\[1m/)) {
+      currentCategory = line
+      continue
+    }
+
+    // Match content lines against topic
+    const stripped = line.replace(/\x1b\[[0-9;]*m/g, '').toLowerCase()
+    if (stripped.trim() && stripped.includes(needle)) {
+      matches.push({ category: currentCategory, line })
+    }
+  }
+
+  if (matches.length === 0) {
+    console.log(`No commands matching '${topic}'.`)
+    console.log(`Run ${dim('hj help')} to see all commands.`)
+    return
+  }
+
+  console.log(`\nCommands matching '${bold(topic)}':\n`)
+  let lastCategory = ''
+  for (const m of matches) {
+    if (m.category && m.category !== lastCategory) {
+      console.log(m.category)
+      lastCategory = m.category
+    }
+    console.log(m.line)
+  }
+
+  // Also show matching hints
+  const hintMatches = Object.entries(COMMAND_HINTS).filter(([cmd, hint]) =>
+    cmd.toLowerCase().includes(needle) || hint.toLowerCase().includes(needle)
+  )
+  if (hintMatches.length > 0) {
+    console.log(`\n  ${bold('Hints')}`)
+    for (const [cmd, hint] of hintMatches) {
+      console.log(`    ${bold(cmd.padEnd(28))} ${dim(hint)}`)
+    }
+  }
+  console.log('')
 }

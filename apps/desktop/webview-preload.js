@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld('haltija', {
     console.log('[Haltija] openAgentTab called')
     return ipcRenderer.invoke('open-agent-tab')
   },
+  // Hard refresh — bypasses all caches (CSS, JS, images, everything)
+  hardRefresh: () => {
+    console.log('[Haltija] hardRefresh called')
+    return ipcRenderer.invoke('hard-refresh')
+  },
 })
 
 console.log('[Haltija] Webview preload complete, window.haltija exposed')

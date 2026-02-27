@@ -1838,18 +1838,18 @@ Use /location after to verify navigation succeeded.
 
 **Refresh the page**
 
-Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.
+Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`soft\` | boolean,null | Use cached resources if available (default false = hard refresh) |
+| \`soft\` | boolean,null | Use cached resources if available (default false = hard refresh that busts all caches) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
 
-- **hard**: Hard refresh (default, bypasses cache)
+- **hard**: Hard refresh (default, bypasses all caches)
   \`\`\`json
   {}
   \`\`\`

@@ -23,12 +23,14 @@ import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
 import { formatEvents } from './format-events.mjs'
 import { formatTestResult, formatSuiteResult } from './format-test.mjs'
+import { substituteGeneratedVars } from './test-data.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Command hints - generated from api-schema.ts during build
-import hintsJson from './hints.json' with { type: 'json' }
-export const COMMAND_HINTS = hintsJson
+// Use readFileSync instead of JSON import to avoid Node.js ExperimentalWarning
+const hintsPath = join(__dirname, 'hints.json')
+export const COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hintsPath, 'utf-8')) : {}
 
 // Endpoints that use GET (everything else is POST)
 export const GET_ENDPOINTS = new Set([
@@ -95,7 +97,7 @@ export const ARG_MAPS = {
   'select-start': () => ({}),
   'select-cancel': () => ({}),
   'select-clear': () => ({}),
-  refresh: (args) => (args.includes('--hard') ? { hard: true } : {}),
+  refresh: (args) => (args.includes('--soft') ? { soft: true } : {}),
   'tabs-open': (args) => ({ url: args[0] }),
   'tabs-close': (args) => ({ window: args[0] }),
   'tabs-focus': (args) => ({ window: args[0] }),
@@ -105,24 +107,26 @@ export const ARG_MAPS = {
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
   'test-run': (args) => {
-    if (!args.length) { console.error('Usage: hj test-run <file.json> [--vars JSON] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
+    if (!args.length) { console.error('Usage: hj test-run <file.json> [--vars JSON] [--seed N] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
     const { files, options, vars } = parseTestArgs(args)
     if (!files.length) { console.error('Usage: hj test-run <file.json>'); process.exit(1) }
-    return { ...readTestFile(files[0], vars), ...options }
+    const { seed, ...restOptions } = options
+    return { ...readTestFile(files[0], vars, seed), ...restOptions }
   },
   'test-validate': (args) => {
     if (!args.length) { console.error('Usage: hj test-validate <file.json> [--vars JSON]'); process.exit(1) }
-    const { files, vars } = parseTestArgs(args)
+    const { files, vars, options } = parseTestArgs(args)
     if (!files.length) { console.error('Usage: hj test-validate <file.json>'); process.exit(1) }
-    return readTestFile(files[0], vars)
+    return readTestFile(files[0], vars, options.seed)
   },
   'test-suite': (args) => {
-    if (!args.length) { console.error('Usage: hj test-suite <dir|file...> [--vars JSON] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
+    if (!args.length) { console.error('Usage: hj test-suite <dir|file...> [--vars JSON] [--seed N] [--timeoutMs N] [--allow-failures N]'); process.exit(1) }
     const { files: rawFiles, options, vars } = parseTestArgs(args)
     const files = expandTestFiles(rawFiles)
     if (!files.length) { console.error('Error: No test files found'); process.exit(1) }
-    const tests = files.map(f => readTestFile(f, vars).test)
-    return { tests, ...options }
+    const { seed, ...restOptions } = options
+    const tests = files.map(f => readTestFile(f, vars, seed).test)
+    return { tests, ...restOptions }
   },
   'send-message': (args) => {
     const noSubmit = args.includes('--no-submit')
@@ -271,26 +275,48 @@ export function parseModifiers(args) {
 /**
  * Substitute template variables in a string.
  * Replaces ${VAR_NAME} with values from vars object, falling back to env vars.
+ * Also handles ${GEN.TYPE} patterns for generated test data.
  * Unresolved variables are left as-is for debugging.
  */
-export function substituteVars(text, vars = {}) {
-  return text.replace(/\$\{([^}]+)\}/g, (match, varName) => {
+export function substituteVars(text, vars = {}, seed) {
+  // First pass: replace ${GEN.*} patterns with generated test data
+  let genInfo = null
+  if (/\$\{GEN\./i.test(text)) {
+    genInfo = substituteGeneratedVars(text, seed)
+    text = genInfo.result
+  }
+
+  // Second pass: replace ${VAR_NAME} with explicit vars / env vars
+  const result = text.replace(/\$\{([^}]+)\}/g, (match, varName) => {
     const trimmed = varName.trim()
     if (trimmed in vars) return vars[trimmed]
     if (trimmed in process.env) return process.env[trimmed]
     return match  // Leave unresolved for debugging
   })
+
+  return { text: result, genInfo }
 }
 
 /** Read a test JSON file, returning { test: <parsed> }. Applies template variable substitution. */
-function readTestFile(filePath, vars = {}) {
+function readTestFile(filePath, vars = {}, seed) {
   if (!existsSync(filePath)) {
     console.error(`Error: File not found: ${filePath}`)
     process.exit(1)
   }
   try {
     const content = readFileSync(filePath, 'utf-8')
-    const processed = substituteVars(content, vars)
+    const { text: processed, genInfo } = substituteVars(content, vars, seed)
+
+    // Report generated values if any
+    if (genInfo && Object.keys(genInfo.generated).length > 0) {
+      const dim = (s) => `\x1b[2m${s}\x1b[0m`
+      console.error(dim(`[test-data] seed: ${genInfo.seed}`))
+      for (const [key, value] of Object.entries(genInfo.generated)) {
+        const display = value.length > 60 ? value.slice(0, 57) + '...' : value
+        console.error(dim(`  ${key} = ${JSON.stringify(display)}`))
+      }
+    }
+
     const parsed = JSON.parse(processed)
     return { test: parsed }
   } catch (err) {
@@ -318,6 +344,9 @@ export function parseTestArgs(args) {
       i += 2
     } else if (arg === '--step-delay' && args[i + 1]) {
       options.stepDelay = parseInt(args[i + 1], 10)
+      i += 2
+    } else if (arg === '--seed' && args[i + 1]) {
+      options.seed = parseInt(args[i + 1], 10)
       i += 2
     } else if (arg === '--vars' && args[i + 1]) {
       // Parse JSON object of variables: --vars '{"APP_URL": "http://localhost:5050"}'
@@ -676,7 +705,7 @@ Subcommands (replace curl with simple commands):
 
   ${bold('Navigate')}
     navigate <url>                 Go to URL
-    refresh [--hard]               Reload page
+    refresh [--soft]               Reload page (hard by default)
     location                       Current URL and title
 
   ${bold('Observe')}

@@ -76,6 +76,19 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/text-selector.ts` | Custom `:text()` pseudo-selector parser (shared by component + tests) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
 | `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
+| `src/client.ts` | Typed REST client class (`DevChannelClient`) wrapping all server endpoints |
+| `src/tasks.ts` | Kanban task board persistence as Markdown (`.haltija/tasks-*.md`) |
+| `src/task-board.ts` | `<task-board>` web component — interactive kanban UI |
+| `src/agent-shell.ts` | Spawns `claude -p` subprocesses, parses stream-JSON output |
+| `src/terminal.ts` | Status registry, push notification buffer, command dispatch to tools |
+| `src/embedded-assets.ts` | Auto-generated asset embeds (do not edit — run `bun run build:assets`) |
+
+### `hj` CLI Architecture
+
+The `bin/` directory contains plain `.mjs` files (Node.js, not TypeScript):
+- `hj.mjs` — CLI entry point, parses args and delegates to subcommands
+- `cli-subcommand.mjs` — Translates subcommand invocations (e.g., `hj click 42`) into REST API calls against the running server, using a `COMMAND_HINTS` registry generated from `api-schema.ts` at build time
+- `format-tree.mjs`, `format-events.mjs`, `format-test.mjs` — Render API responses for human-readable terminal output
 
 ### Request Flow
 
@@ -85,6 +98,10 @@ Browser Tab              Server (Bun)           AI Agent
 4. Handler calls `requestFromBrowser()` which sends WebSocket message to browser
 5. Browser widget (`component.ts`) executes action and returns response
 6. Response flows back through WebSocket → REST response
+
+### Diff Mode
+
+The `/click` and `/type` endpoints accept optional `diff: true` and `diffDelay` (ms, default 100) parameters. When enabled, the handler captures a DOM snapshot before the action, waits `diffDelay` ms after, then returns a semantic diff (`{ added, removed, changed, scrolled }`) alongside the normal response. This lets agents verify that an action had the intended effect.
 
 ### Ref ID System
 
@@ -165,6 +182,10 @@ Tests are pure JSON with atomic steps:
 ```
 
 Step types: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`
+
+### Template Variable Substitution
+
+Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, variables are resolved first from explicit CLI `vars`, then from `process.env`, and left as-is if unresolved. This allows environment-agnostic test files (e.g., `"url": "http://${HOST}:${PORT}"`). Implementation is in `bin/cli-subcommand.mjs` (`substituteVars`).
 
 ### Test Runner Behavior
 

@@ -413,10 +413,50 @@ function printBanner(mode, port) {
   console.log('')
 }
 
+/** Resolve the electron binary path without going through npx.
+ *  This avoids ENOTEMPTY errors when npx's cache is still locked by a previous instance.
+ *  Falls back to npx --yes for first-time install. */
+function resolveElectronBinary() {
+  // 1. Check desktop app's own node_modules
+  const desktopElectron = join(__dirname, '../apps/desktop/node_modules/electron/dist')
+  if (existsSync(desktopElectron)) {
+    const binary = platform() === 'darwin'
+      ? join(desktopElectron, 'Electron.app/Contents/MacOS/Electron')
+      : platform() === 'win32'
+        ? join(desktopElectron, 'electron.exe')
+        : join(desktopElectron, 'electron')
+    if (existsSync(binary)) return binary
+  }
+
+  // 2. Ask the electron npm package for the binary path
+  try {
+    const electronPkgPath = execSyncImported('npx --no electron -e "process.stdout.write(process.execPath)"', {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+      encoding: 'utf-8',
+    }).trim()
+    if (electronPkgPath && existsSync(electronPkgPath)) return electronPkgPath
+  } catch {}
+
+  // 3. Search npx cache on macOS/Linux
+  if (platform() !== 'win32') {
+    try {
+      const cacheHits = execSyncImported(
+        `find ${homedir()}/.npm/_npx -name "Electron" -path "*/dist/*" -type f 2>/dev/null || find ${homedir()}/.npm/_npx -name "electron" -path "*/dist/*" -type f 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 3000 }
+      ).trim().split('\n').filter(Boolean)
+      if (cacheHits.length > 0 && existsSync(cacheHits[0])) return cacheHits[0]
+    } catch {}
+  }
+
+  return null
+}
+
 /** Check if electron is available (cached by npx or installed) */
 function isElectronAvailable() {
+  if (resolveElectronBinary()) return true
   try {
-    // Check if electron is in npx cache or node_modules
+    // Fallback: check via npx --no (no install)
     execSyncImported('npx --no electron --version', { 
       stdio: 'pipe',
       timeout: 5000 
@@ -438,11 +478,17 @@ function launchApp(desktopDir, port) {
   
   printBanner(ciMode ? 'ci' : 'app', port)
 
-  // Use npx --yes to auto-accept installation if needed (no interactive prompt)
-  const child = spawn('npx', ['--yes', 'electron', desktopDir], {
-    env: { ...env, DEV_CHANNEL_PORT: String(port) },
-    stdio: 'inherit'
-  })
+  // Resolve electron binary directly to avoid npx cache race conditions (ENOTEMPTY)
+  const electronBinary = resolveElectronBinary()
+  const child = electronBinary
+    ? spawn(electronBinary, [desktopDir], {
+        env: { ...env, DEV_CHANNEL_PORT: String(port) },
+        stdio: 'inherit'
+      })
+    : spawn('npx', ['--yes', 'electron', desktopDir], {
+        env: { ...env, DEV_CHANNEL_PORT: String(port) },
+        stdio: 'inherit'
+      })
 
   child.on('error', (err) => {
     console.error(red('Error:') + ` Failed to launch desktop app: ${err.message}`)
@@ -700,9 +746,12 @@ async function checkExistingServer(port) {
   }
 }
 
-/** Kill process on port (cross-platform) */
+/** Kill process on port and any related Electron processes (cross-platform) */
 function killOnPort(port) {
   const myPid = process.pid.toString()
+  let killed = false
+
+  // 1. Kill processes listening on the port (the Haltija server)
   try {
     const output = execSyncImported(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
     if (output) {
@@ -710,12 +759,34 @@ function killOnPort(port) {
       for (const pid of pids) {
         try {
           execSyncImported(`kill ${pid} 2>/dev/null`)
+          killed = true
         } catch {}
       }
-      return pids.length > 0
     }
   } catch {}
-  return false
+
+  // 2. Kill any Electron processes running the desktop app
+  //    The Electron parent process isn't on the port, so lsof won't find it.
+  //    Without this, npx's cache directory stays locked causing ENOTEMPTY on restart.
+  if (platform() !== 'win32') {
+    try {
+      const output = execSyncImported(
+        `pgrep -f 'Electron.*apps/desktop|electron.*apps/desktop' 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 3000 }
+      ).trim()
+      if (output) {
+        const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
+        for (const pid of pids) {
+          try {
+            execSyncImported(`kill ${pid} 2>/dev/null`)
+            killed = true
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  return killed
 }
 
 // ============================================
@@ -741,8 +812,8 @@ if (existingServer.running && !forceRestart) {
 if (existingServer.running && forceRestart) {
   console.log(yellow('Restarting...') + ' Stopping existing Haltija server.')
   killOnPort(port)
-  // Brief pause to let port release
-  await new Promise(resolve => setTimeout(resolve, 200))
+  // Pause to let port release and Electron processes fully exit
+  await new Promise(resolve => setTimeout(resolve, 500))
 }
 
 if (headlessMode) {

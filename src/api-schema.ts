@@ -961,11 +961,11 @@ export const refresh = endpoint({
   method: 'POST',
   summary: 'Refresh the page',
   description:
-    'Hard reload the current page, bypassing cache. Use soft: true for cache-friendly reload.',
+    'Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.',
   category: 'navigation',
   input: s.object({
     soft: s.boolean.describe(
-      'Use cached resources if available (default false = hard refresh)',
+      'Use cached resources if available (default false = hard refresh that busts all caches)',
     ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
@@ -973,7 +973,7 @@ export const refresh = endpoint({
     {
       name: 'hard',
       input: {},
-      description: 'Hard refresh (default, bypasses cache)',
+      description: 'Hard refresh (default, bypasses all caches)',
     },
     {
       name: 'soft',
@@ -1918,6 +1918,78 @@ Great for debugging test failures - call this when something goes wrong.`,
 })
 
 // ============================================
+// Dialog Handling
+// ============================================
+//
+// Native browser dialogs (alert, confirm, prompt) block execution and are invisible to agents.
+// These endpoints let agents configure auto-response policies and see dialog history.
+
+export const dialogConfigure = endpoint({
+  path: '/dialog/configure',
+  method: 'POST',
+  summary: 'Configure native dialog auto-response policy',
+  description: `Set how native browser dialogs (alert, confirm, prompt) are handled.
+
+By default, Haltija intercepts all native dialogs and auto-responds:
+- alert: dismissed immediately
+- confirm: accepted (returns true)
+- prompt: dismissed (returns null)
+
+Configure the policy **before** triggering actions that cause dialogs.
+Each dialog is logged and reported via the dialog/opened push event.
+
+Response: { policy: { alert, confirm, prompt, beforeunload } }`,
+  category: 'dialog',
+  input: s.object({
+    alert: s.string.describe('"dismiss" (only option for alerts)').optional,
+    confirm: s.string.describe('"accept" or "dismiss"').optional,
+    prompt: s.any.describe('"dismiss" or { "response": "text" } to auto-fill').optional,
+    beforeunload: s.string.describe('"allow" or "block" — controls page unload').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    {
+      name: 'accept-confirms',
+      input: { confirm: 'accept' },
+      description: 'Auto-accept all confirm dialogs',
+    },
+    {
+      name: 'dismiss-confirms',
+      input: { confirm: 'dismiss' },
+      description: 'Auto-dismiss (cancel) all confirm dialogs',
+    },
+    {
+      name: 'auto-fill-prompt',
+      input: { prompt: { response: 'my answer' } },
+      description: 'Auto-fill prompt dialogs with text',
+    },
+  ],
+  cli: {
+    name: 'dialog-configure',
+    args: [],
+    flags: ['--confirm', '--prompt', '--beforeunload'],
+  },
+})
+
+export const dialogHistory = endpoint({
+  path: '/dialog/history',
+  method: 'GET',
+  summary: 'Get recent dialog history',
+  description: `Returns a list of recently intercepted native dialogs.
+
+Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Buffer holds the last 50 dialogs.
+
+Response: { history: [{ type, message, defaultValue?, response, timestamp }] }`,
+  category: 'dialog',
+  cli: {
+    name: 'dialog-history',
+    args: [],
+    isGet: true,
+  },
+})
+
+// ============================================
 // Status & Meta
 // ============================================
 //
@@ -2175,6 +2247,10 @@ export const endpoints = {
   // Snapshots
   snapshot,
 
+  // Dialogs
+  dialogConfigure,
+  dialogHistory,
+
   // Meta
   status,
   stats,
@@ -2199,8 +2275,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-01-26T15:45:34.044Z',
-  checksum: 'af2da1cc',
+  updated: '2026-02-24T09:12:54.118Z',
+  checksum: 'd305a84a',
 }
 
 /**

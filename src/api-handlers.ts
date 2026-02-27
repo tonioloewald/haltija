@@ -718,9 +718,9 @@ registerHandler(api.navigate, async (body, ctx) => {
 
 // Refresh handler
 registerHandler(api.refresh, async (body, ctx) => {
-  const hard = body.hard ?? false
+  const soft = body.soft ?? false
   const windowId = body.window || ctx.targetWindowId
-  const response = await ctx.requestFromBrowser('navigation', 'refresh', { hard }, 5000, windowId)
+  const response = await ctx.requestFromBrowser('navigation', 'refresh', { soft }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
 
@@ -1424,6 +1424,22 @@ registerHandler(api.scroll, async (body, ctx) => {
   } else {
     return Response.json({ success: false, error: 'Must provide selector, x/y coordinates, or deltaX/deltaY' }, { status: 400, headers: ctx.headers })
   }
+})
+
+// ============================================
+// Dialog Handlers
+// ============================================
+
+registerHandler(api.dialogConfigure, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dialog', 'configure', body, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.dialogHistory, async (_body, ctx) => {
+  const windowId = ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dialog', 'history', {}, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
 })
 
 /** JSON response helper */

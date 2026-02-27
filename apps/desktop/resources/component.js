@@ -36,7 +36,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.1.22";
+  var VERSION = "1.1.23";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -1684,6 +1684,10 @@
     recording = null;
     testRecording = null;
     originalConsole = {};
+    originalDialogs = {};
+    dialogPolicy = { alert: "dismiss", confirm: "accept", prompt: "dismiss", beforeunload: "allow" };
+    dialogHistory = [];
+    _inHaltijaUI = false;
     widgetHidden = false;
     serverUrl = "wss://localhost:8700/ws/browser";
     windowId;
@@ -1869,12 +1873,14 @@
       this.style.bottom = `${this.homeBottom}px`;
       this.setupKeyboardShortcut();
       this.interceptConsole();
+      this.interceptDialogs();
       this.connect();
     }
     disconnectedCallback() {
       this.killed = true;
       this.disconnect();
       this.restoreConsole();
+      this.restoreDialogs();
       this.clearEventWatchers();
       this.stopMutationWatch();
     }
@@ -4030,6 +4036,16 @@ ${elementSummary}${moreText}`;
     addTestAssertion() {
       if (!this.testRecording)
         return;
+      this._inHaltijaUI = true;
+      try {
+        this._addTestAssertionImpl();
+      } finally {
+        this._inHaltijaUI = false;
+      }
+    }
+    _addTestAssertionImpl() {
+      if (!this.testRecording)
+        return;
       const type = prompt(`What to check?
 
 ` + `1. Element exists (selector)
@@ -4102,6 +4118,14 @@ ${elementSummary}${moreText}`;
       }
     }
     saveTest() {
+      this._inHaltijaUI = true;
+      try {
+        this._saveTestImpl();
+      } finally {
+        this._inHaltijaUI = false;
+      }
+    }
+    _saveTestImpl() {
       if (!this.testRecording || this.testRecording.steps.length === 0) {
         alert("No steps recorded!");
         return;
@@ -5053,8 +5077,31 @@ ${elementSummary}${moreText}`;
         case "interaction":
           this.handleInteractionMessage(msg2);
           break;
+        case "dialog":
+          this.handleDialogMessage(msg2);
+          break;
       }
       this.render();
+    }
+    handleDialogMessage(msg2) {
+      const { action: action2, payload: payload2 } = msg2;
+      if (action2 === "configure") {
+        if (payload2.alert !== undefined)
+          this.dialogPolicy.alert = payload2.alert;
+        if (payload2.confirm !== undefined)
+          this.dialogPolicy.confirm = payload2.confirm;
+        if (payload2.prompt !== undefined)
+          this.dialogPolicy.prompt = payload2.prompt;
+        if (payload2.beforeunload !== undefined)
+          this.dialogPolicy.beforeunload = payload2.beforeunload;
+        this.respond(msg2.id, true, { policy: this.dialogPolicy });
+      } else if (action2 === "get-config") {
+        this.respond(msg2.id, true, { policy: this.dialogPolicy });
+      } else if (action2 === "history") {
+        this.respond(msg2.id, true, { history: this.dialogHistory });
+      } else {
+        this.respond(msg2.id, false, undefined, `Unknown dialog action: ${action2}`);
+      }
     }
     handleSemanticMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
@@ -5202,16 +5249,23 @@ ${elementSummary}${moreText}`;
       if (action2 === "refresh") {
         if (payload2.soft) {
           location.reload();
+          this.respond(msg2.id, true);
         } else {
-          if (location.protocol === "blob:" || location.protocol === "data:") {
-            location.reload();
-          } else {
-            const url = new URL(location.href);
-            url.searchParams.set("_haltija_refresh", Date.now().toString());
-            location.href = url.toString();
+          const haltija = window.haltija;
+          if (haltija?.hardRefresh) {
+            haltija.hardRefresh().then(() => this.respond(msg2.id, true)).catch(() => {
+              location.reload();
+              this.respond(msg2.id, true);
+            });
+            return;
           }
+          if (typeof caches !== "undefined") {
+            caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))).then(() => location.reload()).catch(() => location.reload());
+          } else {
+            location.reload();
+          }
+          this.respond(msg2.id, true);
         }
-        this.respond(msg2.id, true);
       } else if (action2 === "goto") {
         const haltija = window.haltija;
         if (haltija?.navigate) {
@@ -7008,6 +7062,67 @@ ${elementSummary}${moreText}`;
         });
       }
       this.respond(responseId, true);
+    }
+    interceptDialogs() {
+      this.originalDialogs.alert = window.alert.bind(window);
+      this.originalDialogs.confirm = window.confirm.bind(window);
+      this.originalDialogs.prompt = window.prompt.bind(window);
+      const self = this;
+      window.alert = function(message) {
+        if (self._inHaltijaUI)
+          return self.originalDialogs.alert(message);
+        const msg2 = String(message ?? "");
+        const entry = { type: "alert", message: msg2, response: undefined, timestamp: Date.now() };
+        self.dialogHistory.push(entry);
+        if (self.dialogHistory.length > 50)
+          self.dialogHistory = self.dialogHistory.slice(-25);
+        self.send("dialog", "opened", { type: "alert", message: msg2, windowId: self.windowId });
+      };
+      window.confirm = function(message) {
+        if (self._inHaltijaUI)
+          return self.originalDialogs.confirm(message);
+        const msg2 = String(message ?? "");
+        const accept = self.dialogPolicy.confirm === "accept";
+        const entry = { type: "confirm", message: msg2, response: accept, timestamp: Date.now() };
+        self.dialogHistory.push(entry);
+        if (self.dialogHistory.length > 50)
+          self.dialogHistory = self.dialogHistory.slice(-25);
+        self.send("dialog", "opened", {
+          type: "confirm",
+          message: msg2,
+          response: accept,
+          windowId: self.windowId
+        });
+        return accept;
+      };
+      window.prompt = function(message, defaultValue) {
+        if (self._inHaltijaUI)
+          return self.originalDialogs.prompt(message, defaultValue);
+        const msg2 = String(message ?? "");
+        const policy = self.dialogPolicy.prompt;
+        const response = policy === "dismiss" ? null : policy.response;
+        const entry = { type: "prompt", message: msg2, defaultValue, response, timestamp: Date.now() };
+        self.dialogHistory.push(entry);
+        if (self.dialogHistory.length > 50)
+          self.dialogHistory = self.dialogHistory.slice(-25);
+        self.send("dialog", "opened", {
+          type: "prompt",
+          message: msg2,
+          defaultValue,
+          response,
+          windowId: self.windowId
+        });
+        return response;
+      };
+    }
+    restoreDialogs() {
+      if (this.originalDialogs.alert)
+        window.alert = this.originalDialogs.alert;
+      if (this.originalDialogs.confirm)
+        window.confirm = this.originalDialogs.confirm;
+      if (this.originalDialogs.prompt)
+        window.prompt = this.originalDialogs.prompt;
+      this.originalDialogs = {};
     }
     interceptConsole() {
       const levels = [

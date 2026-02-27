@@ -293,6 +293,19 @@ function activateTab(tabId) {
   updateNavButtons()
 }
 
+// Find a tab by its server-assigned window ID (format: hj-<instance>-<webContentsId>)
+function findTabByWindowId(windowId) {
+  if (!windowId) return null
+  // Extract webContentsId from the end of the window ID
+  const wcId = parseInt(windowId.split('-').pop(), 10)
+  if (isNaN(wcId)) return null
+  return tabs.find(t => {
+    try {
+      return t.webview && t.webview.getWebContentsId && t.webview.getWebContentsId() === wcId
+    } catch { return false }
+  }) || null
+}
+
 // Close a tab
 function closeTab(tabId) {
   const tabIndex = tabs.findIndex((t) => t.id === tabId)
@@ -539,6 +552,26 @@ function setupWebviewEvents(tab) {
   webview.addEventListener('console-message', (e) => {
     const prefix = e.level === 2 ? '[warn]' : e.level === 3 ? '[error]' : ''
     console.log(`[Tab ${tab.id}${prefix}]`, e.message)
+  })
+
+  // Handle native dialogs (alert/confirm/prompt) from the webview.
+  // The component.ts overrides handle most cases, but Electron's webview dialog event
+  // is a belt-and-suspenders catch for any dialogs that slip through (e.g., before
+  // the widget is injected, or from iframes that don't have the widget).
+  webview.addEventListener('dialog', (e) => {
+    const dialogType = e.type          // 'alert', 'confirm', 'prompt'
+    const message = e.messageText || ''
+    console.log(`[Tab ${tab.id}] Native dialog intercepted: ${dialogType} - "${message}"`)
+
+    // Auto-respond: accept confirms, dismiss prompts, dismiss alerts
+    if (dialogType === 'confirm') {
+      e.dialog.accept()
+    } else if (dialogType === 'prompt') {
+      e.dialog.dismiss()
+    } else {
+      // alert
+      e.dialog.accept()
+    }
   })
 
   // Right-click context menu with Inspect Element
@@ -917,11 +950,9 @@ window.haltija.openTab = async (url) => {
 }
 
 window.haltija.closeTab = (windowId) => {
-  // Find tab by windowId (stored in webview's window tracking)
-  // For now, we close the active tab if no specific ID
-  // TODO: implement proper windowId to tab mapping
-  if (activeTabId) {
-    closeTab(activeTabId)
+  const tab = findTabByWindowId(windowId)
+  if (tab) {
+    closeTab(tab.id)
     return true
   }
   return false
@@ -947,9 +978,11 @@ window.haltija.openAgentTab = async () => {
 }
 
 window.haltija.focusTab = (windowId) => {
-  // Find tab by windowId and activate it
-  // TODO: implement proper windowId to tab mapping
-  // For now, this is a no-op since we'd need to map window IDs to tab IDs
+  const tab = findTabByWindowId(windowId)
+  if (tab) {
+    activateTab(tab.id)
+    return true
+  }
   return false
 }
 

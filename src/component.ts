@@ -2418,6 +2418,19 @@ export class DevChannel extends HTMLElement {
     startTime: number
   } | null = null
   private originalConsole: Partial<Console> = {}
+  private originalDialogs: {
+    alert?: typeof window.alert
+    confirm?: typeof window.confirm
+    prompt?: typeof window.prompt
+  } = {}
+  private dialogPolicy: {
+    alert: 'dismiss'
+    confirm: 'accept' | 'dismiss'
+    prompt: { response: string } | 'dismiss'
+    beforeunload: 'allow' | 'block'
+  } = { alert: 'dismiss', confirm: 'accept', prompt: 'dismiss', beforeunload: 'allow' }
+  private dialogHistory: Array<{ type: string; message: string; defaultValue?: string; response: any; timestamp: number }> = []
+  private _inHaltijaUI = false // Flag to bypass dialog overrides for Haltija's own UI
   private widgetHidden = false
   private serverUrl = 'wss://localhost:8700/ws/browser'
   private windowId: string // Stable ID persisted in sessionStorage (survives refresh)
@@ -2715,6 +2728,7 @@ export class DevChannel extends HTMLElement {
     this.style.bottom = `${this.homeBottom}px`
     this.setupKeyboardShortcut()
     this.interceptConsole()
+    this.interceptDialogs()
     this.connect()
   }
 
@@ -2722,6 +2736,7 @@ export class DevChannel extends HTMLElement {
     this.killed = true // Prevent any reconnection attempts
     this.disconnect()
     this.restoreConsole()
+    this.restoreDialogs()
     this.clearEventWatchers()
     this.stopMutationWatch()
   }
@@ -5465,6 +5480,17 @@ export class DevChannel extends HTMLElement {
   private addTestAssertion() {
     if (!this.testRecording) return
 
+    this._inHaltijaUI = true
+    try {
+      this._addTestAssertionImpl()
+    } finally {
+      this._inHaltijaUI = false
+    }
+  }
+
+  private _addTestAssertionImpl() {
+    if (!this.testRecording) return
+
     // Prompt for assertion type
     const type = prompt(
       'What to check?\n\n' +
@@ -5546,6 +5572,15 @@ export class DevChannel extends HTMLElement {
    * Save the recorded test as JSON
    */
   private saveTest() {
+    this._inHaltijaUI = true
+    try {
+      this._saveTestImpl()
+    } finally {
+      this._inHaltijaUI = false
+    }
+  }
+
+  private _saveTestImpl() {
     if (!this.testRecording || this.testRecording.steps.length === 0) {
       alert('No steps recorded!')
       return
@@ -6818,9 +6853,31 @@ export class DevChannel extends HTMLElement {
       case 'interaction':
         this.handleInteractionMessage(msg)
         break
+      case 'dialog':
+        this.handleDialogMessage(msg)
+        break
     }
 
     this.render()
+  }
+
+  private handleDialogMessage(msg: DevMessage) {
+    const { action, payload } = msg
+
+    if (action === 'configure') {
+      // Update dialog policy
+      if (payload.alert !== undefined) this.dialogPolicy.alert = payload.alert
+      if (payload.confirm !== undefined) this.dialogPolicy.confirm = payload.confirm
+      if (payload.prompt !== undefined) this.dialogPolicy.prompt = payload.prompt
+      if (payload.beforeunload !== undefined) this.dialogPolicy.beforeunload = payload.beforeunload
+      this.respond(msg.id, true, { policy: this.dialogPolicy })
+    } else if (action === 'get-config') {
+      this.respond(msg.id, true, { policy: this.dialogPolicy })
+    } else if (action === 'history') {
+      this.respond(msg.id, true, { history: this.dialogHistory })
+    } else {
+      this.respond(msg.id, false, undefined, `Unknown dialog action: ${action}`)
+    }
   }
 
   private handleSemanticMessage(msg: DevMessage) {
@@ -7049,19 +7106,28 @@ export class DevChannel extends HTMLElement {
       if (payload.soft) {
         // Soft refresh - use cache
         location.reload()
+        this.respond(msg.id, true)
       } else {
-        // Hard refresh (default) - bypass cache
-        // For blob: URLs (and other non-http URLs), just reload since we can't modify the URL
-        if (location.protocol === 'blob:' || location.protocol === 'data:') {
-          location.reload()
-        } else {
-          // Use cache-busting URL parameter since location.reload(true) is deprecated
-          const url = new URL(location.href)
-          url.searchParams.set('_haltija_refresh', Date.now().toString())
-          location.href = url.toString()
+        // Hard refresh (default) - bypass all caches (CSS, JS, images, everything)
+        const haltija = (window as any).haltija
+        if (haltija?.hardRefresh) {
+          // Electron: use reloadIgnoringCache() via IPC for true cache busting
+          haltija.hardRefresh()
+            .then(() => this.respond(msg.id, true))
+            .catch(() => {
+              location.reload()
+              this.respond(msg.id, true)
+            })
+          return
         }
+        // Non-Electron: clear Cache API then reload
+        if (typeof caches !== 'undefined') {
+          caches.keys().then(names => Promise.all(names.map(n => caches.delete(n)))).then(() => location.reload()).catch(() => location.reload())
+        } else {
+          location.reload()
+        }
+        this.respond(msg.id, true)
       }
-      this.respond(msg.id, true)
     } else if (action === 'goto') {
       // Use Electron's smart navigate (with https->http fallback) if available
       const haltija = (window as any).haltija
@@ -9675,6 +9741,66 @@ export class DevChannel extends HTMLElement {
   // ==========================================
   // Console Interception
   // ==========================================
+
+  private interceptDialogs() {
+    // Store originals
+    this.originalDialogs.alert = window.alert.bind(window)
+    this.originalDialogs.confirm = window.confirm.bind(window)
+    this.originalDialogs.prompt = window.prompt.bind(window)
+
+    const self = this
+
+    window.alert = function (message?: any) {
+      // Let Haltija's own UI use native dialogs
+      if (self._inHaltijaUI) return self.originalDialogs.alert!(message)
+
+      const msg = String(message ?? '')
+      const entry = { type: 'alert' as const, message: msg, response: undefined, timestamp: Date.now() }
+      self.dialogHistory.push(entry)
+      if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
+
+      self.send('dialog', 'opened', { type: 'alert', message: msg, windowId: self.windowId })
+      // Alert always dismisses (no return value)
+    }
+
+    window.confirm = function (message?: string): boolean {
+      if (self._inHaltijaUI) return self.originalDialogs.confirm!(message)
+
+      const msg = String(message ?? '')
+      const accept = self.dialogPolicy.confirm === 'accept'
+      const entry = { type: 'confirm' as const, message: msg, response: accept, timestamp: Date.now() }
+      self.dialogHistory.push(entry)
+      if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
+
+      self.send('dialog', 'opened', {
+        type: 'confirm', message: msg, response: accept, windowId: self.windowId,
+      })
+      return accept
+    }
+
+    window.prompt = function (message?: string, defaultValue?: string): string | null {
+      if (self._inHaltijaUI) return self.originalDialogs.prompt!(message, defaultValue)
+
+      const msg = String(message ?? '')
+      const policy = self.dialogPolicy.prompt
+      const response = policy === 'dismiss' ? null : policy.response
+      const entry = { type: 'prompt' as const, message: msg, defaultValue, response, timestamp: Date.now() }
+      self.dialogHistory.push(entry)
+      if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
+
+      self.send('dialog', 'opened', {
+        type: 'prompt', message: msg, defaultValue, response, windowId: self.windowId,
+      })
+      return response
+    }
+  }
+
+  private restoreDialogs() {
+    if (this.originalDialogs.alert) window.alert = this.originalDialogs.alert
+    if (this.originalDialogs.confirm) window.confirm = this.originalDialogs.confirm
+    if (this.originalDialogs.prompt) window.prompt = this.originalDialogs.prompt
+    this.originalDialogs = {}
+  }
 
   private interceptConsole() {
     const levels: Array<'log' | 'info' | 'warn' | 'error' | 'debug'> = [

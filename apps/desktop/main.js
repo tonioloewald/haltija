@@ -680,6 +680,14 @@ function setupWebContentsInjection(wc) {
       // Ignore errors when app is closing
     }
   })
+
+  // Handle beforeunload dialogs — allow navigation by default so agents aren't blocked.
+  // The component's dialog policy (configurable via /dialog/configure) controls this,
+  // but as a safety net, Electron's will-prevent-unload always allows navigation.
+  wc.on('will-prevent-unload', (event) => {
+    console.log('[Haltija Desktop] Preventing beforeunload block for:', wc.getURL())
+    event.preventDefault() // Tells Electron to proceed with navigation despite beforeunload
+  })
 }
 
 async function injectWidget(webContents) {
@@ -865,6 +873,16 @@ function setupScreenCapture() {
     } catch (err) {
       return { success: false, error: err.message }
     }
+  })
+
+  // Hard refresh — bypasses all caches (called from widget in webview)
+  ipcMain.handle('hard-refresh', async (event) => {
+    const wc = event.sender
+    if (wc) {
+      wc.reloadIgnoringCache()
+      return { success: true }
+    }
+    return { success: false, error: 'No webContents' }
   })
 
   // Create a new agent tab (called from widget in webview)
@@ -1120,76 +1138,93 @@ async function ensureServer() {
   }
 }
 
-// App lifecycle
-app.whenReady().then(async () => {
-  console.log('[Haltija Desktop] App ready, starting initialization...')
-  
-  try {
-    // Start or connect to server first
-    const serverReady = await ensureServer()
+// Single-instance lock — prevent multiple Electron windows from launching
+const gotTheLock = app.requestSingleInstanceLock()
 
-    if (!serverReady) {
-      console.error(
-        '[Haltija Desktop] Could not start server. Install bun: https://bun.sh',
-      )
-      // Continue anyway - user might start server manually
-    }
-
-    setupMenu()
-    setupHeaderStripping()
-    setupWidgetInjection()
-    setupScreenCapture()
-    
-    console.log('[Haltija Desktop] Creating main window...')
-    createWindow()
-    console.log('[Haltija Desktop] Window created successfully')
-  } catch (err) {
-    console.error('[Haltija Desktop] Fatal error during startup:', err)
-    // Still try to create a window so user sees something
-    try {
-      createWindow()
-    } catch (windowErr) {
-      console.error('[Haltija Desktop] Failed to create window:', windowErr)
-    }
-  }
-
-  // Check for Claude Desktop MCP setup (after window is ready)
-  if (!hasSkippedMcpSetup()) {
-    // Small delay to let window fully render
-    setTimeout(() => checkAndPromptMcpSetup(), 1500)
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+if (!gotTheLock) {
+  console.log('[Haltija Desktop] Another instance is already running. Focusing existing window.')
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // Focus the existing window when user tries to launch again
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
     }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+  // App lifecycle
+  app.whenReady().then(async () => {
+    console.log('[Haltija Desktop] App ready, starting initialization...')
+    
+    try {
+      // Start or connect to server first
+      const serverReady = await ensureServer()
 
-app.on('will-quit', () => {
-  // Kill embedded server when app quits
-  if (embeddedServer) {
-    console.log('[Haltija Desktop] Stopping embedded server')
-    embeddedServer.kill()
-    embeddedServer = null
-  }
-})
+      if (!serverReady) {
+        console.error(
+          '[Haltija Desktop] Could not start server. Install bun: https://bun.sh',
+        )
+        // Continue anyway - user might start server manually
+      }
 
-// Handle certificate errors (for self-signed certs in dev)
-app.on(
-  'certificate-error',
-  (event, webContents, url, error, certificate, callback) => {
-    if (url.startsWith('https://localhost')) {
-      event.preventDefault()
-      callback(true)
-    } else {
-      callback(false)
+      setupMenu()
+      setupHeaderStripping()
+      setupWidgetInjection()
+      setupScreenCapture()
+      
+      console.log('[Haltija Desktop] Creating main window...')
+      createWindow()
+      console.log('[Haltija Desktop] Window created successfully')
+    } catch (err) {
+      console.error('[Haltija Desktop] Fatal error during startup:', err)
+      // Still try to create a window so user sees something
+      try {
+        createWindow()
+      } catch (windowErr) {
+        console.error('[Haltija Desktop] Failed to create window:', windowErr)
+      }
     }
-  },
-)
+
+    // Check for Claude Desktop MCP setup (after window is ready)
+    if (!hasSkippedMcpSetup()) {
+      // Small delay to let window fully render
+      setTimeout(() => checkAndPromptMcpSetup(), 1500)
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+
+  app.on('will-quit', () => {
+    // Kill embedded server when app quits
+    if (embeddedServer) {
+      console.log('[Haltija Desktop] Stopping embedded server')
+      embeddedServer.kill()
+      embeddedServer = null
+    }
+  })
+
+  // Handle certificate errors (for self-signed certs in dev)
+  app.on(
+    'certificate-error',
+    (event, webContents, url, error, certificate, callback) => {
+      if (url.startsWith('https://localhost')) {
+        event.preventDefault()
+        callback(true)
+      } else {
+        callback(false)
+      }
+    },
+  )
+}

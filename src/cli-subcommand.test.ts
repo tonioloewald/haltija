@@ -306,8 +306,8 @@ describe('ARG_MAPS', () => {
       expect(ARG_MAPS.refresh([])).toEqual({})
     })
 
-    test('--hard flag', () => {
-      expect(ARG_MAPS.refresh(['--hard'])).toEqual({ hard: true })
+    test('--soft flag', () => {
+      expect(ARG_MAPS.refresh(['--soft'])).toEqual({ soft: true })
     })
   })
 
@@ -589,48 +589,67 @@ describe('substituteVars', () => {
   })
 
   test('substitutes from vars object', () => {
-    const result = substituteVars('http://${HOST}:${PORT}/app', { HOST: 'example.com', PORT: '8080' })
-    expect(result).toBe('http://example.com:8080/app')
+    const { text } = substituteVars('http://${HOST}:${PORT}/app', { HOST: 'example.com', PORT: '8080' })
+    expect(text).toBe('http://example.com:8080/app')
   })
 
   test('falls back to env vars', () => {
-    const result = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', {})
-    expect(result).toBe('http://localhost:3000/app')
+    const { text } = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', {})
+    expect(text).toBe('http://localhost:3000/app')
   })
 
   test('vars object takes precedence over env vars', () => {
-    const result = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', { TEST_PORT: '5050' })
-    expect(result).toBe('http://localhost:5050/app')
+    const { text } = substituteVars('http://${TEST_HOST}:${TEST_PORT}/app', { TEST_PORT: '5050' })
+    expect(text).toBe('http://localhost:5050/app')
   })
 
   test('leaves unresolved variables as-is', () => {
-    const result = substituteVars('http://${UNKNOWN_VAR}/app', {})
-    expect(result).toBe('http://${UNKNOWN_VAR}/app')
+    const { text } = substituteVars('http://${UNKNOWN_VAR}/app', {})
+    expect(text).toBe('http://${UNKNOWN_VAR}/app')
   })
 
   test('handles multiple occurrences of same variable', () => {
-    const result = substituteVars('${X} and ${X} again', { X: 'foo' })
-    expect(result).toBe('foo and foo again')
+    const { text } = substituteVars('${X} and ${X} again', { X: 'foo' })
+    expect(text).toBe('foo and foo again')
   })
 
   test('handles whitespace in variable names', () => {
-    const result = substituteVars('${ SPACED }', { SPACED: 'works' })
-    expect(result).toBe('works')
+    const { text } = substituteVars('${ SPACED }', { SPACED: 'works' })
+    expect(text).toBe('works')
   })
 
   test('handles no variables', () => {
-    const result = substituteVars('plain text', {})
-    expect(result).toBe('plain text')
+    const { text } = substituteVars('plain text', {})
+    expect(text).toBe('plain text')
   })
 
   test('works with JSON content', () => {
     const json = '{"url": "http://${HOST}:${PORT}", "name": "${TEST_NAME}"}'
-    const result = substituteVars(json, { HOST: 'localhost', PORT: '5050', TEST_NAME: 'my-test' })
-    expect(result).toBe('{"url": "http://localhost:5050", "name": "my-test"}')
+    const { text } = substituteVars(json, { HOST: 'localhost', PORT: '5050', TEST_NAME: 'my-test' })
+    expect(text).toBe('{"url": "http://localhost:5050", "name": "my-test"}')
     // Verify it's valid JSON
-    const parsed = JSON.parse(result)
+    const parsed = JSON.parse(text)
     expect(parsed.url).toBe('http://localhost:5050')
     expect(parsed.name).toBe('my-test')
+  })
+
+  test('substitutes ${GEN.*} patterns with generated data', () => {
+    const { text, genInfo } = substituteVars('email: ${GEN.EMAIL}', {}, 42)
+    expect(text).not.toContain('${GEN.')
+    expect(text).toContain('@haltija-test.example')
+    expect(genInfo).not.toBeNull()
+    expect(genInfo.seed).toBe(42)
+  })
+
+  test('same GEN key produces same value', () => {
+    const { text } = substituteVars('${GEN.EMAIL} and ${GEN.EMAIL}', {}, 42)
+    const parts = text.split(' and ')
+    expect(parts[0]).toBe(parts[1])
+  })
+
+  test('GEN and explicit vars coexist', () => {
+    const { text } = substituteVars('${APP_URL} ${GEN.EMAIL}', { APP_URL: 'http://localhost' }, 42)
+    expect(text).toMatch(/^http:\/\/localhost .+@haltija-test\.example$/)
   })
 })
 
