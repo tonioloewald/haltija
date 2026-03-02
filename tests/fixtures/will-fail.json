@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Intentional failure",
+  "description": "Test file designed to fail — used by haltija.test.ts to verify error handling",
+  "url": "http://localhost:8700",
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "http://localhost:8700",
+      "description": "Load home page"
+    },
+    {
+      "action": "click",
+      "selector": "#nonexistent-element-xyz",
+      "description": "Click nonexistent element (should fail)"
+    }
+  ]
+}

@@ -312,7 +312,7 @@ await $`bun run scripts/embed-assets.ts`
 await $`bun build ./src/component.ts --outdir=dist --target=browser --format=iife`
 
 // 4. Build server, client, and index for Bun runtime
-await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts --outdir=dist --target=bun`
+await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts --outdir=dist --target=bun`
 
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
