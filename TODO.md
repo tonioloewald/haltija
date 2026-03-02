@@ -5,9 +5,12 @@
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
 
 ## Features
-- [ ] Widget REC button: toggle video and/or script recording (either or both)
-  - On stop: offer to open the video or reveal in Finder
-  - Record as WebM (native MediaRecorder), auto-convert to MP4 via ffmpeg if available
+- [ ] Widget REC control: `<select>` dropdown in widget
+  - Not recording: options are "REC", "Script", "Video", "Script + Video"
+  - Recording: option changes to "End Recording"
+  - On stop: use Electron `dialog.showSaveDialog()` to let user save files (video and/or test JSON)
+  - Video: record as WebM, auto-convert to MP4 via ffmpeg if available
+  - Non-Electron: hide video option (script recording still works)
 
 ## Bugs
 - [ ] Playground color buttons have zero-size bounding rect in Electron — investigate layout
