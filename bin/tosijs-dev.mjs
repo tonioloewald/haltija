@@ -413,58 +413,62 @@ function printBanner(mode, port) {
   console.log('')
 }
 
-/** Resolve the electron binary path without going through npx.
- *  This avoids ENOTEMPTY errors when npx's cache is still locked by a previous instance.
- *  Falls back to npx --yes for first-time install. */
+/** Resolve the electron binary path without spawning Electron.
+ *  IMPORTANT: Never use `npx electron -e ...` or `electron --version` here —
+ *  those launch a visible Electron window, causing UI flicker on startup. */
+let _cachedElectronBinary = undefined
 function resolveElectronBinary() {
-  // 1. Check desktop app's own node_modules
-  const desktopElectron = join(__dirname, '../apps/desktop/node_modules/electron/dist')
-  if (existsSync(desktopElectron)) {
+  if (_cachedElectronBinary !== undefined) return _cachedElectronBinary
+
+  // Helper: given an electron dist dir, return the binary path
+  const binaryInDist = (distDir) => {
     const binary = platform() === 'darwin'
-      ? join(desktopElectron, 'Electron.app/Contents/MacOS/Electron')
+      ? join(distDir, 'Electron.app/Contents/MacOS/Electron')
       : platform() === 'win32'
-        ? join(desktopElectron, 'electron.exe')
-        : join(desktopElectron, 'electron')
-    if (existsSync(binary)) return binary
+        ? join(distDir, 'electron.exe')
+        : join(distDir, 'electron')
+    return existsSync(binary) ? binary : null
   }
 
-  // 2. Ask the electron npm package for the binary path
+  // 1. Check desktop app's own node_modules
+  const desktopDist = join(__dirname, '../apps/desktop/node_modules/electron/dist')
+  const desktopBin = binaryInDist(desktopDist)
+  if (desktopBin) { _cachedElectronBinary = desktopBin; return desktopBin }
+
+  // 2. Read the electron npm package's path.txt (no process spawn needed)
   try {
-    const electronPkgPath = execSyncImported('npx --no electron -e "process.stdout.write(process.execPath)"', {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-      encoding: 'utf-8',
-    }).trim()
-    if (electronPkgPath && existsSync(electronPkgPath)) return electronPkgPath
+    const electronPkgDir = join(__dirname, '../apps/desktop/node_modules/electron')
+    const pathTxt = join(electronPkgDir, 'path.txt')
+    if (existsSync(pathTxt)) {
+      const relPath = readFileSync(pathTxt, 'utf8').trim()
+      const absPath = join(electronPkgDir, relPath)
+      if (existsSync(absPath)) { _cachedElectronBinary = absPath; return absPath }
+    }
   } catch {}
 
-  // 3. Search npx cache on macOS/Linux
+  // 3. Search npx cache for electron dist directories (no Electron launch)
   if (platform() !== 'win32') {
     try {
       const cacheHits = execSyncImported(
-        `find ${homedir()}/.npm/_npx -name "Electron" -path "*/dist/*" -type f 2>/dev/null || find ${homedir()}/.npm/_npx -name "electron" -path "*/dist/*" -type f 2>/dev/null`,
+        `find ${homedir()}/.npm/_npx -name "Electron.app" -path "*/electron/dist/*" -type d 2>/dev/null`,
         { encoding: 'utf-8', timeout: 3000 }
       ).trim().split('\n').filter(Boolean)
-      if (cacheHits.length > 0 && existsSync(cacheHits[0])) return cacheHits[0]
+      for (const hit of cacheHits) {
+        // hit is .../electron/dist/Electron.app — we want the dist dir
+        const distDir = join(hit, '..')
+        const bin = binaryInDist(distDir)
+        if (bin) { _cachedElectronBinary = bin; return bin }
+      }
     } catch {}
   }
 
+  _cachedElectronBinary = null
   return null
 }
 
 /** Check if electron is available (cached by npx or installed) */
 function isElectronAvailable() {
-  if (resolveElectronBinary()) return true
-  try {
-    // Fallback: check via npx --no (no install)
-    execSyncImported('npx --no electron --version', { 
-      stdio: 'pipe',
-      timeout: 5000 
-    })
-    return true
-  } catch {
-    return false
-  }
+  return resolveElectronBinary() !== null
 }
 
 /** Launch the Electron desktop app using npx electron */

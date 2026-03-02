@@ -267,6 +267,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
+    show: false, // Don't show until content is ready
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -276,6 +277,11 @@ function createWindow() {
     },
     titleBarStyle: 'hiddenInset', // Minimal chrome on macOS
     windowButtonPosition: { x: 12, y: 12 },
+  })
+
+  // Show window once shell UI is rendered (avoids flashing empty/intermediate states)
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show()
   })
 
   // Load the shell UI
