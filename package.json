@@ -1,6 +1,6 @@
 {
   "name": "haltija",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Browser control for AI agents - query DOM, click, type, run JS, watch mutations",
   "type": "module",
   "main": "dist/index.js",
@@ -35,6 +35,7 @@
     "docs",
     "haltija-icon.svg",
     "apps/desktop/*.js",
+    "apps/desktop/renderer/*.js",
     "apps/desktop/*.html",
     "apps/desktop/*.css",
     "apps/desktop/package.json",
