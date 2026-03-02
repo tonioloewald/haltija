@@ -16,9 +16,5 @@
 - [ ] Playground color buttons have zero-size bounding rect in Electron — investigate layout
 
 ## Testing
-- [ ] Test helper for `.test.ts` files — e.g. `import { hj } from 'haltija/test'`
-  - Wraps `DevChannelClient` with ergonomic API: `hj.click()`, `hj.type()`, `hj.screenshot()`
-  - `hj.suite()` / `hj.suite('./tests')` runs all JSON tests in a directory (default: cwd)
-  - Works with `bun test` and any test runner
-  - Replaces ad-hoc shell scripts like `screenshot-verify.sh`
+- [x] Test helper for `.test.ts` files — `import { hj } from 'haltija/test'` (src/test.ts)
 - [ ] Convert `screenshot-verify.sh` to a `.test.ts` using the test helper

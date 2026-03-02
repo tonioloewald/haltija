@@ -16,6 +16,9 @@ bun run build
 bun test                          # All unit tests
 bun test src/server.test.ts       # Single test file
 
+# Integration tests (requires running haltija server)
+bun test tests/haltija.test.ts    # Tests using haltija/test helper
+
 # E2E tests (run with Playwright on Node.js - NOT Bun)
 bun run test:e2e
 
@@ -76,6 +79,7 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/text-selector.ts` | Custom `:text()` pseudo-selector parser (shared by component + tests) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
 | `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
+| `src/test.ts` | `haltija/test` helper — `HaltijaTestClient` for use in `.test.ts` files |
 | `src/client.ts` | Typed REST client class (`DevChannelClient`) wrapping all server endpoints |
 | `src/tasks.ts` | Kanban task board persistence as Markdown (`.haltija/tasks-*.md`) |
 | `src/task-board.ts` | `<task-board>` web component — interactive kanban UI |
@@ -220,7 +224,7 @@ Located in `apps/mcp/`. Provides Model Context Protocol tools for Claude Desktop
 The build script (`scripts/build.ts`) generates:
 1. `src/version.ts` - Auto-generated from `package.json` version (do not edit)
 2. `dist/component.js` - Browser widget bundle (IIFE)
-3. `dist/server.js`, `dist/client.js`, `dist/index.js` - Bun runtime modules
+3. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules
 4. `apps/desktop/resources/component.js` - Synced copy for desktop app
 5. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 6. `API.md` - Auto-generated API reference (do not edit directly)
