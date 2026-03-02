@@ -232,20 +232,4 @@ Version is managed in `package.json` only. The build script generates `src/versi
 
 ## Issue Tracking
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` for full workflow context.
-
-**Quick reference:**
-- `bd ready` - Find unblocked work to start on
-- `bd create "Title" --type task --priority 2` - Create issue (priority 0-4, not high/medium/low)
-- `bd update <id> --status=in_progress` - Claim work
-- `bd close <id>` - Complete work
-- `bd sync` - Sync with git (run at session end)
-
-**Session close protocol** - before finishing work:
-```bash
-git status              # Check changes
-git add <files>         # Stage code
-bd sync                 # Sync beads
-git commit -m "..."     # Commit code  
-git push                # Push to remote
-```
+Issues and tasks are tracked in `TODO.md` at the project root.
