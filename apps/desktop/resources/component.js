@@ -5140,7 +5140,7 @@ ${elementSummary}${moreText}`;
         }
         haltija.stopVideoCapture().then((result2) => {
           if (result2.success) {
-            this.respond(msg2.id, true, { data: result2.data, duration: result2.duration });
+            this.respond(msg2.id, true, { path: result2.path, duration: result2.duration, size: result2.size, format: result2.format });
           } else {
             this.respond(msg2.id, false, undefined, result2.error || "Failed to stop video");
           }

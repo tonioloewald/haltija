@@ -902,13 +902,60 @@ function setupScreenCapture() {
       const { webContents } = require('electron')
       const wc = webContents.fromId(webContentsId)
       if (!wc) return null
-      return wc.getMediaSourceId()
+      // getMediaSourceId requires the requesting WebContents as argument —
+      // i.e. the renderer that will call getUserMedia with the returned ID
+      const requestingWc = event.sender
+      return wc.getMediaSourceId(requestingWc)
     } catch (err) {
       console.error('[Haltija Desktop] Failed to get media source ID:', err.message)
       return null
     }
   })
 
+  // Video file streaming — renderer sends chunks, main writes to disk
+  const activeVideoFiles = new Map() // recordingId -> { fd, path, size }
+
+  ipcMain.handle('video-file-create', async () => {
+    try {
+      const dir = '/tmp/haltija-videos'
+      fs.mkdirSync(dir, { recursive: true })
+      const shortId = Math.random().toString(36).slice(2, 6)
+      const recordingId = `vid-${Date.now().toString(36)}-${shortId}`
+      const filepath = `${dir}/hj-${Date.now()}-${shortId}.webm`
+      const fd = fs.openSync(filepath, 'w')
+      activeVideoFiles.set(recordingId, { fd, path: filepath, size: 0 })
+      return { success: true, recordingId }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.on('video-file-chunk', (event, recordingId, buffer) => {
+    const file = activeVideoFiles.get(recordingId)
+    if (!file) return
+    try {
+      const data = Buffer.from(buffer)
+      fs.writeSync(file.fd, data)
+      file.size += data.length
+    } catch (err) {
+      console.error('[Haltija Desktop] Failed to write video chunk:', err.message)
+    }
+  })
+
+  ipcMain.handle('video-file-close', async (event, recordingId, duration) => {
+    const file = activeVideoFiles.get(recordingId)
+    if (!file) return { success: false, error: 'No active recording with that ID' }
+    try {
+      fs.closeSync(file.fd)
+      activeVideoFiles.delete(recordingId)
+      return { success: true, path: file.path, duration, size: file.size, format: 'webm' }
+    } catch (err) {
+      activeVideoFiles.delete(recordingId)
+      return { success: false, error: err.message }
+    }
+  })
+
+  // Video start/stop/status — forwarded to renderer where MediaRecorder runs
   ipcMain.handle('video-start', async (event, opts) => {
     if (!mainWindow) return { success: false, error: 'No main window' }
     mainWindow.webContents.send('video-start', { ...opts, senderWebContentsId: event.sender.id })

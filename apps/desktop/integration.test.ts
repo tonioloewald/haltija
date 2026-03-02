@@ -360,8 +360,8 @@ describe('Desktop App Integration Tests', () => {
     expect(pngData.success).toBe(true)
 
     if (pngData.data.source === 'electron') {
-      // Native Electron capture succeeded
-      expect(pngData.data.image).toMatch(/^data:image\/png;base64,/)
+      // Native Electron capture — saved to disk by default
+      expect(pngData.data.path).toMatch(/\/tmp\/haltija-screenshots\/hj-.*\.png$/)
       expect(pngData.data.width).toBeGreaterThan(0)
       expect(pngData.data.height).toBeGreaterThan(0)
     } else {
@@ -394,7 +394,8 @@ describe('Desktop App Integration Tests', () => {
     expect(webpData.success).toBe(true)
 
     if (webpData.data.source === 'electron') {
-      expect(webpData.data.image).toMatch(/^data:image\/webp;base64,/)
+      // Native Electron capture — saved to disk by default
+      expect(webpData.data.path).toMatch(/\/tmp\/haltija-screenshots\/hj-.*\.webp$/)
       expect(webpData.data.format).toBe('webp')
     } else {
       // Viewport-only fallback
@@ -420,7 +421,8 @@ describe('Desktop App Integration Tests', () => {
     expect(elemData.success).toBe(true)
 
     if (elemData.data.source === 'electron') {
-      expect(elemData.data.image).toMatch(/^data:image\/png;base64,/)
+      // Native Electron capture — saved to disk by default
+      expect(elemData.data.path).toMatch(/\/tmp\/haltija-screenshots\/hj-.*\.png$/)
       // Element screenshot should be smaller than full page (accounting for 2x Retina)
       expect(elemData.data.width).toBeLessThan(3000)
       expect(elemData.data.height).toBeLessThan(400)

@@ -66,8 +66,11 @@ contextBridge.exposeInMainWorld('haltija', {
   onCloseTab: (callback) => ipcRenderer.on('close-tab', (event, data) => callback(data)),
   onFocusTab: (callback) => ipcRenderer.on('focus-tab', (event, data) => callback(data)),
 
-  // Video capture — renderer handles MediaRecorder, forwards results back via main
+  // Video capture — renderer streams chunks directly to disk via main process
   getMediaSourceId: (webContentsId) => ipcRenderer.invoke('get-media-source-id', webContentsId),
+  videoFileCreate: () => ipcRenderer.invoke('video-file-create'),
+  videoFileChunk: (recordingId, buffer) => ipcRenderer.send('video-file-chunk', recordingId, buffer),
+  videoFileClose: (recordingId, duration) => ipcRenderer.invoke('video-file-close', recordingId, duration),
   onVideoStart: (callback) => ipcRenderer.on('video-start', (event, data) => callback(data)),
   onVideoStop: (callback) => ipcRenderer.on('video-stop', (event, data) => callback(data)),
   onVideoStatus: (callback) => ipcRenderer.on('video-status', (event, data) => callback(data)),

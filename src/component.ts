@@ -6914,7 +6914,7 @@ export class DevChannel extends HTMLElement {
 
       haltija.stopVideoCapture().then((result: any) => {
         if (result.success) {
-          this.respond(msg.id, true, { data: result.data, duration: result.duration })
+          this.respond(msg.id, true, { path: result.path, duration: result.duration, size: result.size, format: result.format })
         } else {
           this.respond(msg.id, false, undefined, result.error || 'Failed to stop video')
         }

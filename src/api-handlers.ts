@@ -1461,22 +1461,15 @@ registerHandler(api.videoStop, async (body, ctx) => {
   // Long timeout — collecting and encoding video chunks can take time
   const response = await ctx.requestFromBrowser('video', 'stop', {}, 30000, windowId)
   
-  // Save video data to disk
+  // Video data is streamed directly to disk by the Electron main process.
+  // response.data contains { path, duration, size, format } — no base64.
   if (response.success && response.data) {
-    const base64 = response.data as string
-    const dir = '/tmp/haltija-videos'
-    const { mkdirSync, writeFileSync } = await import('fs')
-    mkdirSync(dir, { recursive: true })
-    const shortId = Math.random().toString(36).slice(2, 6)
-    const filename = `hj-${Date.now()}-${shortId}.webm`
-    const filepath = `${dir}/${filename}`
-    const buffer = Buffer.from(base64, 'base64')
-    writeFileSync(filepath, buffer)
     return Response.json({
       success: true,
-      path: filepath,
-      duration: response.duration,
-      size: buffer.length,
+      path: response.data.path,
+      duration: response.data.duration,
+      size: response.data.size,
+      format: response.data.format || 'webm',
     }, { headers: ctx.headers })
   }
   
