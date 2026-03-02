@@ -2486,11 +2486,14 @@ Use this when you see a blob URL in the DOM and need to access its content.
 
 **Capture a screenshot**
 
-Capture the page or a specific element as base64 PNG/WebP/JPEG.
+Capture the page or a specific element as PNG/WebP/JPEG.
 
 Works automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.
 
-Response: { success, image: "data:image/png;base64,...", width, height, source }
+When file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.
+When file=false, returns base64 data URL in response JSON.
+
+Response: { success, path?, image?, width, height, source }
 
 **Parameters:**
 
@@ -2504,6 +2507,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
 | \`window\` | string,null | Target window ID |
 | \`chyron\` | boolean,null | Burn page title, URL, timestamp into image (default true, set false for clean screenshot) |
 | \`delay\` | number,null | Wait ms before capturing (e.g. 1000 to let page settle after navigation) |
+| \`file\` | boolean,null | Save to disk and return file path instead of data URL (default true — pass false for base64) |
 
 **Examples:**
 
@@ -2558,6 +2562,76 @@ Great for debugging test failures - call this when something goes wrong.
 - **test-fail**: Capture after test failure
   \`\`\`json
   {"trigger":"test-failure","context":{"step":3,"error":"Element not found"}}
+  \`\`\`
+
+---
+
+### \`POST /video/start\`
+
+**Start video recording**
+
+Start recording the browser tab as WebM video. Requires the Haltija Desktop app.
+
+The recording saves to /tmp/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.
+
+Response: { success, recordingId }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`maxDuration\` | number,null | Max recording duration in seconds (default 60, max 300) |
+| \`window\` | string,null | Target window ID |
+
+**Examples:**
+
+- **start**: Start recording active tab
+  \`\`\`json
+  {}
+  \`\`\`
+- **long**: Record up to 2 minutes
+  \`\`\`json
+  {"maxDuration":120}
+  \`\`\`
+
+---
+
+### \`POST /video/stop\`
+
+**Stop video recording**
+
+Stop recording and save the video file.
+
+Response: { success, path, duration, size }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`window\` | string,null | Target window ID |
+
+**Examples:**
+
+- **stop**: Stop recording and get file path
+  \`\`\`json
+  {}
+  \`\`\`
+
+---
+
+### \`GET /video/status\`
+
+**Check video recording status**
+
+Check if video recording is active.
+
+Response: { recording, recordingId?, duration?, window? }
+
+**Examples:**
+
+- **check**: Check recording state
+  \`\`\`json
+  {}
   \`\`\`
 
 ---
@@ -2670,6 +2744,9 @@ hj --help              # All commands
 - \`hj fetch [url, window]\` - Fetch a URL from within the tab context
 - \`hj screenshot [ref, selector, scale, ...]\` - Capture a screenshot
 - \`hj snapshot [trigger, context]\` - Capture page snapshot
+- \`hj video-start [maxDuration, window]\` - Start video recording
+- \`hj video-stop [window]\` - Stop video recording
+- \`hj video-status\` - Check video recording status
 
 ## Tips
 

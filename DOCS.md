@@ -105,6 +105,9 @@ hj --help              # All commands
 - `hj fetch [url, window]` - Fetch a URL from within the tab context
 - `hj screenshot [ref, selector, scale, ...]` - Capture a screenshot
 - `hj snapshot [trigger, context]` - Capture page snapshot
+- `hj video-start [maxDuration, window]` - Start video recording
+- `hj video-stop [window]` - Stop video recording
+- `hj video-status` - Check video recording status
 
 ## Tips
 

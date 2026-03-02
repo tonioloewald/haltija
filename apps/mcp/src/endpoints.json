@@ -1157,7 +1157,7 @@
     "path": "/screenshot",
     "method": "POST",
     "summary": "Capture a screenshot",
-    "description": "Capture the page or a specific element as base64 PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\nResponse: { success, image: \"data:image/png;base64,...\", width, height, source }",
+    "description": "Capture the page or a specific element as PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\nWhen file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.\nWhen file=false, returns base64 data URL in response JSON.\n\nResponse: { success, path?, image?, width, height, source }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1216,6 +1216,13 @@
             "null"
           ],
           "description": "Wait ms before capturing (e.g. 1000 to let page settle after navigation)"
+        },
+        "file": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Save to disk and return file path instead of data URL (default true — pass false for base64)"
         }
       },
       "required": [],
@@ -1660,6 +1667,65 @@
           ]
         }
       },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/start",
+    "method": "POST",
+    "summary": "Start video recording",
+    "description": "Start recording the browser tab as WebM video. Requires the Haltija Desktop app.\n\nThe recording saves to /tmp/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.\n\nResponse: { success, recordingId }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "maxDuration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max recording duration in seconds (default 60, max 300)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/stop",
+    "method": "POST",
+    "summary": "Stop video recording",
+    "description": "Stop recording and save the video file.\n\nResponse: { success, path, duration, size }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/status",
+    "method": "GET",
+    "summary": "Check video recording status",
+    "description": "Check if video recording is active.\n\nResponse: { recording, recordingId?, duration?, window? }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
       "required": [],
       "additionalProperties": false
     }

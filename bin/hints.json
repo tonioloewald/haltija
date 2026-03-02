@@ -18,5 +18,8 @@
   "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
   "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
   "recording": "start, stop, list, replay <id|index> | see: test-run, events",
+  "video-start": "--maxDuration 120 | see: video-stop, video-status, screenshot",
+  "video-stop": "| see: video-start, video-status",
+  "video-status": "| see: video-start, video-stop",
   "status": "--json | see: windows, stats, console"
 }

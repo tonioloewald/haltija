@@ -3,27 +3,37 @@
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __moduleCache = /* @__PURE__ */ new WeakMap;
+  function __accessProp(key) {
+    return this[key];
+  }
   var __toCommonJS = (from) => {
-    var entry = __moduleCache.get(from), desc;
+    var entry = (__moduleCache ??= new WeakMap).get(from), desc;
     if (entry)
       return entry;
     entry = __defProp({}, "__esModule", { value: true });
-    if (from && typeof from === "object" || typeof from === "function")
-      __getOwnPropNames(from).map((key) => !__hasOwnProp.call(entry, key) && __defProp(entry, key, {
-        get: () => from[key],
-        enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
-      }));
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (var key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(entry, key))
+          __defProp(entry, key, {
+            get: __accessProp.bind(from, key),
+            enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+          });
+    }
     __moduleCache.set(from, entry);
     return entry;
   };
+  var __moduleCache;
+  var __returnValue = (v) => v;
+  function __exportSetter(name, newValue) {
+    this[name] = __returnValue.bind(null, newValue);
+  }
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, {
         get: all[name],
         enumerable: true,
         configurable: true,
-        set: (newValue) => all[name] = () => newValue
+        set: __exportSetter.bind(all, name)
       });
   };
 
@@ -5080,6 +5090,9 @@ ${elementSummary}${moreText}`;
         case "dialog":
           this.handleDialogMessage(msg2);
           break;
+        case "video":
+          this.handleVideoMessage(msg2);
+          break;
       }
       this.render();
     }
@@ -5101,6 +5114,51 @@ ${elementSummary}${moreText}`;
         this.respond(msg2.id, true, { history: this.dialogHistory });
       } else {
         this.respond(msg2.id, false, undefined, `Unknown dialog action: ${action2}`);
+      }
+    }
+    handleVideoMessage(msg2) {
+      const { action: action2, payload: payload2 } = msg2;
+      const haltija = window.haltija;
+      if (action2 === "start") {
+        if (!haltija?.startVideoCapture) {
+          this.respond(msg2.id, false, undefined, "Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f");
+          return;
+        }
+        haltija.startVideoCapture({ maxDuration: payload2.maxDuration }).then((result2) => {
+          if (result2.success) {
+            this.respond(msg2.id, true, { recordingId: result2.recordingId });
+          } else {
+            this.respond(msg2.id, false, undefined, result2.error || "Failed to start video");
+          }
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, `Failed to start video: ${err.message}`);
+        });
+      } else if (action2 === "stop") {
+        if (!haltija?.stopVideoCapture) {
+          this.respond(msg2.id, false, undefined, "Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f");
+          return;
+        }
+        haltija.stopVideoCapture().then((result2) => {
+          if (result2.success) {
+            this.respond(msg2.id, true, { data: result2.data, duration: result2.duration });
+          } else {
+            this.respond(msg2.id, false, undefined, result2.error || "Failed to stop video");
+          }
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, `Failed to stop video: ${err.message}`);
+        });
+      } else if (action2 === "status") {
+        if (!haltija?.videoStatus) {
+          this.respond(msg2.id, true, { recording: false });
+          return;
+        }
+        haltija.videoStatus().then((result2) => {
+          this.respond(msg2.id, true, result2);
+        }).catch(() => {
+          this.respond(msg2.id, true, { recording: false });
+        });
+      } else {
+        this.respond(msg2.id, false, undefined, `Unknown video action: ${action2}`);
       }
     }
     handleSemanticMessage(msg2) {
@@ -5558,44 +5616,7 @@ ${elementSummary}${moreText}`;
               return;
             }
           }
-          const html2canvas = window.html2canvas;
-          if (html2canvas) {
-            let target = document.body;
-            if (payload2?.ref || payload2?.selector) {
-              const { element, targetDesc, error } = resolveRefOrSelector(payload2?.ref, payload2?.selector);
-              if (error) {
-                this.respond(msg2.id, false, null, error);
-                return;
-              }
-              if (!element) {
-                this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
-                return;
-              }
-              target = element;
-            }
-            const canvas = await html2canvas(target, {
-              useCORS: true,
-              allowTaint: true,
-              logging: false,
-              scale: payload2?.scale || 1
-            });
-            const dataUrl = canvas.toDataURL(mimeType, quality);
-            this.respond(msg2.id, true, {
-              image: dataUrl,
-              viewport,
-              format,
-              width: canvas.width,
-              height: canvas.height,
-              source: "html2canvas"
-            });
-          } else {
-            this.respond(msg2.id, true, {
-              viewport,
-              image: null,
-              note: "Screenshot capture requires the Haltija Desktop app.",
-              source: "viewport-only"
-            });
-          }
+          this.respond(msg2.id, false, null, "Screenshots require the Haltija Desktop app. Run: npx haltija@latest -f");
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }

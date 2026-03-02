@@ -100,6 +100,51 @@
       "action": "assert",
       "assertion": { "type": "text", "selector": "#output", "text": "Check 1: false" },
       "description": "Output shows checkbox unchecked"
+    },
+    {
+      "action": "click",
+      "selector": "#bg-red",
+      "description": "Set background to red"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "text", "selector": "#output", "text": "Background: red" },
+      "description": "Output confirms red background"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "eval", "code": "getComputedStyle(document.body).backgroundColor", "expected": "rgb(239, 68, 68)" },
+      "description": "Body background is actually red"
+    },
+    {
+      "action": "click",
+      "selector": "#bg-green",
+      "description": "Set background to green"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "eval", "code": "getComputedStyle(document.body).backgroundColor", "expected": "rgb(34, 197, 94)" },
+      "description": "Body background is actually green"
+    },
+    {
+      "action": "click",
+      "selector": "#bg-blue",
+      "description": "Set background to blue"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "eval", "code": "getComputedStyle(document.body).backgroundColor", "expected": "rgb(59, 130, 246)" },
+      "description": "Body background is actually blue"
+    },
+    {
+      "action": "click",
+      "selector": "#bg-reset",
+      "description": "Reset background"
+    },
+    {
+      "action": "assert",
+      "assertion": { "type": "eval", "code": "getComputedStyle(document.body).backgroundColor", "expected": "rgb(248, 250, 252)" },
+      "description": "Body background is reset to default"
     }
   ]
 }

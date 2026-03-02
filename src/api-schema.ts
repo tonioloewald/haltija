@@ -1380,11 +1380,14 @@ export const screenshot = endpoint({
   path: '/screenshot',
   method: 'POST',
   summary: 'Capture a screenshot',
-  description: `Capture the page or a specific element as base64 PNG/WebP/JPEG.
+  description: `Capture the page or a specific element as PNG/WebP/JPEG.
 
 Works automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.
 
-Response: { success, image: "data:image/png;base64,...", width, height, source }`,
+When file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.
+When file=false, returns base64 data URL in response JSON.
+
+Response: { success, path?, image?, width, height, source }`,
   category: 'debug',
   input: s.object({
     ref: s.string.describe('Ref ID from /tree output - capture specific element').optional,
@@ -1396,6 +1399,7 @@ Response: { success, image: "data:image/png;base64,...", width, height, source }
     window: s.string.describe('Target window ID').optional,
     chyron: s.boolean.describe('Burn page title, URL, timestamp into image (default true, set false for clean screenshot)').optional,
     delay: s.number.describe('Wait ms before capturing (e.g. 1000 to let page settle after navigation)').optional,
+    file: s.boolean.describe('Save to disk and return file path instead of data URL (default true — pass false for base64)').optional,
   }),
   examples: [
     { name: 'full-page', input: {}, description: 'Capture entire page with chyron showing URL/title' },
@@ -1918,6 +1922,66 @@ Great for debugging test failures - call this when something goes wrong.`,
 })
 
 // ============================================
+// Video Capture
+// ============================================
+//
+// Record the browser tab as video (WebM). Requires the Haltija Desktop app (Electron).
+// Uses desktopCapturer + MediaRecorder for native video encoding.
+
+export const videoStart = endpoint({
+  path: '/video/start',
+  method: 'POST',
+  summary: 'Start video recording',
+  description: `Start recording the browser tab as WebM video. Requires the Haltija Desktop app.
+
+The recording saves to /tmp/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.
+
+Response: { success, recordingId }`,
+  category: 'debug',
+  input: s.object({
+    maxDuration: s.number.describe('Max recording duration in seconds (default 60, max 300)').optional,
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'start', input: {}, description: 'Start recording active tab' },
+    { name: 'long', input: { maxDuration: 120 }, description: 'Record up to 2 minutes' },
+  ],
+  hints: '--maxDuration 120 | see: video-stop, video-status, screenshot',
+})
+
+export const videoStop = endpoint({
+  path: '/video/stop',
+  method: 'POST',
+  summary: 'Stop video recording',
+  description: `Stop recording and save the video file.
+
+Response: { success, path, duration, size }`,
+  category: 'debug',
+  input: s.object({
+    window: s.string.describe('Target window ID').optional,
+  }),
+  examples: [
+    { name: 'stop', input: {}, description: 'Stop recording and get file path' },
+  ],
+  hints: '| see: video-start, video-status',
+})
+
+export const videoStatus = endpoint({
+  path: '/video/status',
+  method: 'GET',
+  summary: 'Check video recording status',
+  description: `Check if video recording is active.
+
+Response: { recording, recordingId?, duration?, window? }`,
+  category: 'debug',
+  input: s.object({}),
+  examples: [
+    { name: 'check', input: {}, description: 'Check recording state' },
+  ],
+  hints: '| see: video-start, video-stop',
+})
+
+// ============================================
 // Dialog Handling
 // ============================================
 //
@@ -2247,6 +2311,11 @@ export const endpoints = {
   // Snapshots
   snapshot,
 
+  // Video
+  videoStart,
+  videoStop,
+  videoStatus,
+
   // Dialogs
   dialogConfigure,
   dialogHistory,
@@ -2275,8 +2344,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-02-24T09:12:54.118Z',
-  checksum: 'd305a84a',
+  updated: '2026-03-02T10:27:32.623Z',
+  checksum: '32fb3808',
 }
 
 /**

@@ -24,7 +24,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "electron": "^28.0.0",
+    "electron": "^40.6.1",
     "electron-builder": "^24.9.1"
   },
   "build": {
@@ -86,7 +86,8 @@
       "index.html",
       "terminal.html",
       "styles.css",
-      "renderer.js"
+      "renderer.js",
+      "renderer/**/*.js"
     ],
     "extraResources": [
       {

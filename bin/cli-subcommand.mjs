@@ -55,6 +55,9 @@ export const COMPOUND_PATHS = {
   'tabs-open': '/tabs/open',
   'tabs-close': '/tabs/close',
   'tabs-focus': '/tabs/focus',
+  'video-start': '/video/start',
+  'video-stop': '/video/stop',
+  'video-status': '/video/status',
   'recording-start': '/recording/start',
   'recording-stop': '/recording/stop',
   'recording-generate': '/recording/generate',
@@ -68,7 +71,7 @@ export const COMPOUND_PATHS = {
 
 // GET compound endpoints
 export const GET_COMPOUND = new Set([
-  'mutations-status', 'events-stats', 'select-status', 'select-result'
+  'mutations-status', 'events-stats', 'select-status', 'select-result', 'video-status'
 ])
 
 // How to map positional args to body fields for each endpoint
@@ -91,7 +94,11 @@ export const ARG_MAPS = {
   wait: (args) => parseWaitArgs(args),
   call: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), method: args[1], args: args.slice(2).map(tryParseJSON) }),
   fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(' ') || undefined }),
-  screenshot: (args) => parseTargetArgs(args),
+  screenshot: (args) => {
+    const dataUrl = args.includes('--data-url')
+    const filtered = args.filter(a => a !== '--data-url')
+    return { ...parseTargetArgs(filtered), file: !dataUrl }
+  },
   snapshot: (args) => ({ context: args.join(' ') || undefined }),
   select: (args) => ({ action: args[0] }),
   'select-start': () => ({}),
@@ -101,6 +108,14 @@ export const ARG_MAPS = {
   'tabs-open': (args) => ({ url: args[0] }),
   'tabs-close': (args) => ({ window: args[0] }),
   'tabs-focus': (args) => ({ window: args[0] }),
+  'video-start': (args) => {
+    const body = {}
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--maxDuration' || args[i] === '--max-duration') body.maxDuration = num(args[++i])
+    }
+    return body
+  },
+  'video-stop': () => ({}),
   'events-watch': (args) => ({ preset: args[0] || 'interactive' }),
   'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
   form: (args) => parseTargetArgs(args),
@@ -491,8 +506,14 @@ async function startServerInBackground(port) {
 export async function runSubcommand(subcommand, subArgs, port = '8700') {
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
-  // Remove --json from subArgs before processing
-  const filteredArgs = subArgs.filter(a => a !== '--json')
+  // Remove --json and extract --window before processing
+  let filteredArgs = subArgs.filter(a => a !== '--json')
+  let targetWindowId = undefined
+  const windowIdx = filteredArgs.indexOf('--window')
+  if (windowIdx !== -1) {
+    targetWindowId = filteredArgs[windowIdx + 1]
+    filteredArgs = [...filteredArgs.slice(0, windowIdx), ...filteredArgs.slice(windowIdx + 2)]
+  }
 
   // Check if server is running, auto-start if not
   if (!(await isServerRunning(port))) {
@@ -546,18 +567,15 @@ export async function runSubcommand(subcommand, subArgs, port = '8700') {
     }
   }
 
-  // Handle window targeting via --window flag
-  const windowIdx = filteredArgs.indexOf('--window')
-  if (windowIdx !== -1 && filteredArgs[windowIdx + 1]) {
-    const windowId = filteredArgs[windowIdx + 1]
+  // Handle window targeting via --window flag (extracted earlier)
+  if (targetWindowId) {
     if (isGet) {
-      // Append as query param for GET
       const url = new URL(path, baseUrl)
-      url.searchParams.set('window', windowId)
+      url.searchParams.set('window', targetWindowId)
       return doRequest(url.toString(), 'GET', undefined, { subcommand, jsonOutput })
     } else {
       if (!body) body = {}
-      body.window = windowId
+      body.window = targetWindowId
     }
   }
 
@@ -589,6 +607,18 @@ async function doRequest(url, method, body, context = {}) {
         console.log(formatTestResult(json))
       } else if (!jsonOutput && subcommand === 'test-suite' && json.results) {
         console.log(formatSuiteResult(json))
+      } else if (!jsonOutput && subcommand === 'screenshot' && json.data?.path) {
+        const bold = (s) => `\x1b[1m${s}\x1b[0m`
+        const dim = (s) => `\x1b[2m${s}\x1b[0m`
+        console.log(bold(json.data.path))
+        const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
+        if (meta) console.log(dim(meta))
+      } else if (!jsonOutput && subcommand === 'video-stop' && json.data?.path) {
+        const bold = (s) => `\x1b[1m${s}\x1b[0m`
+        const dim = (s) => `\x1b[2m${s}\x1b[0m`
+        console.log(bold(json.data.path))
+        const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(', ')
+        if (meta) console.log(dim(meta))
       } else {
         console.log(JSON.stringify(json, null, 2))
       }
@@ -631,6 +661,7 @@ export const KNOWN_COMMANDS = new Set([
   'screenshot', 'snapshot', 'highlight', 'unhighlight',
   'select-start', 'select-result', 'select-cancel', 'select-clear',
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
+  'video-start', 'video-stop', 'video-status',
   'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   'send', 'send-message', 'send-selection', 'send-recording',
@@ -722,10 +753,13 @@ Subcommands (replace curl with simple commands):
     fetch <url> [prompt]           Fetch and process URL
 
   ${bold('Capture')}
-    screenshot [@ref|selector]     Take screenshot
+    screenshot [@ref|selector]     Take screenshot (saves to /tmp)
     snapshot [context]             Full page state capture
     highlight <@ref|selector>      Highlight element
     unhighlight                    Remove highlights
+    video-start [--maxDuration s]  Start video recording
+    video-stop                     Stop recording, get file path
+    video-status                   Check recording state
 
   ${bold('Selection')}
     select-start                   Begin region selection

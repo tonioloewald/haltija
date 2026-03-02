@@ -355,15 +355,15 @@ describe('ARG_MAPS', () => {
 
   describe('screenshot', () => {
     test('maps ref', () => {
-      expect(ARG_MAPS.screenshot(['10'])).toEqual({ ref: '10' })
+      expect(ARG_MAPS.screenshot(['10'])).toEqual({ ref: '10', file: true })
     })
 
     test('maps selector', () => {
-      expect(ARG_MAPS.screenshot(['#chart'])).toEqual({ selector: '#chart' })
+      expect(ARG_MAPS.screenshot(['#chart'])).toEqual({ selector: '#chart', file: true })
     })
 
     test('no args for full page', () => {
-      expect(ARG_MAPS.screenshot([])).toEqual({})
+      expect(ARG_MAPS.screenshot([])).toEqual({ file: true })
     })
   })
 

@@ -61,6 +61,20 @@ contextBridge.exposeInMainWorld('haltija', {
   // Navigation (from widget via main process) - uses renderer's smart navigate with fallback
   onNavigateUrl: (callback) => ipcRenderer.on('navigate-url', (event, data) => callback(data)),
   
+  // Tab management from widget (via main process)
+  onOpenTab: (callback) => ipcRenderer.on('open-tab', (event, data) => callback(data)),
+  onCloseTab: (callback) => ipcRenderer.on('close-tab', (event, data) => callback(data)),
+  onFocusTab: (callback) => ipcRenderer.on('focus-tab', (event, data) => callback(data)),
+
+  // Video capture — renderer handles MediaRecorder, forwards results back via main
+  getMediaSourceId: (webContentsId) => ipcRenderer.invoke('get-media-source-id', webContentsId),
+  onVideoStart: (callback) => ipcRenderer.on('video-start', (event, data) => callback(data)),
+  onVideoStop: (callback) => ipcRenderer.on('video-stop', (event, data) => callback(data)),
+  onVideoStatus: (callback) => ipcRenderer.on('video-status', (event, data) => callback(data)),
+  videoStartResult: (result) => ipcRenderer.send('video-start-result', result),
+  videoStopResult: (result) => ipcRenderer.send('video-stop-result', result),
+  videoStatusResult: (result) => ipcRenderer.send('video-status-result', result),
+  
   // Window management
   closeWindow: () => ipcRenderer.send('close-window'),
 })

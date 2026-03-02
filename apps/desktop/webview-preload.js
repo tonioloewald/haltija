@@ -24,7 +24,10 @@ contextBridge.exposeInMainWorld('haltija', {
     console.log('[Haltija] navigate called:', url)
     return ipcRenderer.invoke('navigate-url', url)
   },
-  // Create a new agent tab and return its info
+  // Tab management — routed through main process to renderer
+  openTab: (url) => ipcRenderer.invoke('open-tab', url),
+  closeTab: (windowId) => ipcRenderer.invoke('close-tab', windowId),
+  focusTab: (windowId) => ipcRenderer.invoke('focus-tab', windowId),
   openAgentTab: () => {
     console.log('[Haltija] openAgentTab called')
     return ipcRenderer.invoke('open-agent-tab')
@@ -33,6 +36,16 @@ contextBridge.exposeInMainWorld('haltija', {
   hardRefresh: () => {
     console.log('[Haltija] hardRefresh called')
     return ipcRenderer.invoke('hard-refresh')
+  },
+  // Video capture — forwarded to renderer via main process
+  startVideoCapture: (opts) => {
+    return ipcRenderer.invoke('video-start', opts || {})
+  },
+  stopVideoCapture: () => {
+    return ipcRenderer.invoke('video-stop')
+  },
+  videoStatus: () => {
+    return ipcRenderer.invoke('video-status')
   },
 })
 

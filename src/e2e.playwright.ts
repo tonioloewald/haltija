@@ -1535,7 +1535,7 @@ test.describe('haltija-dev screenshot endpoint', () => {
     await page.waitForTimeout(500)
   })
   
-  test('screenshot returns viewport info', async ({ page }) => {
+  test('screenshot returns clear error in non-Electron browser', async ({ page }) => {
     const res = await fetch(`${SERVER_URL}/screenshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1543,12 +1543,9 @@ test.describe('haltija-dev screenshot endpoint', () => {
     })
     
     const data = await res.json()
-    expect(data.success).toBe(true)
-    expect(data.data.viewport).toBeDefined()
-    expect(data.data.viewport.width).toBeGreaterThan(0)
-    expect(data.data.viewport.height).toBeGreaterThan(0)
-    expect(data.data.viewport.url).toBeDefined()
-    expect(data.data.viewport.title).toBeDefined()
+    // Screenshots require the Electron desktop app — regular browsers get a clear error
+    expect(data.success).toBe(false)
+    expect(data.error).toContain('Haltija Desktop app')
   })
 })
 

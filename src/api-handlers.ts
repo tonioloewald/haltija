@@ -768,6 +768,25 @@ registerHandler(api.screenshot, async (body, ctx) => {
     window: windowInfo || { id: windowId || 'unknown', url: 'unknown', title: 'unknown' },
   }
   
+  // Save to disk by default (file defaults to true, pass file=false for base64)
+  if (body.file !== false && enrichedResponse.data?.image) {
+    const dataUrl = enrichedResponse.data.image as string
+    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+    if (match) {
+      const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
+      const base64 = match[2]
+      const dir = '/tmp/haltija-screenshots'
+      const { mkdirSync, writeFileSync } = await import('fs')
+      mkdirSync(dir, { recursive: true })
+      const shortId = Math.random().toString(36).slice(2, 6)
+      const filename = `hj-${Date.now()}-${shortId}.${ext}`
+      const filepath = `${dir}/${filename}`
+      writeFileSync(filepath, Buffer.from(base64, 'base64'))
+      enrichedResponse.data.path = filepath
+      delete enrichedResponse.data.image
+    }
+  }
+  
   return Response.json(enrichedResponse, { headers: ctx.headers })
 })
 
@@ -1424,6 +1443,50 @@ registerHandler(api.scroll, async (body, ctx) => {
   } else {
     return Response.json({ success: false, error: 'Must provide selector, x/y coordinates, or deltaX/deltaY' }, { status: 400, headers: ctx.headers })
   }
+})
+
+// ============================================
+// Video Handlers
+// ============================================
+
+registerHandler(api.videoStart, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const maxDuration = Math.min(body.maxDuration || 60, 300) // cap at 5 min
+  const response = await ctx.requestFromBrowser('video', 'start', { maxDuration }, 10000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.videoStop, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  // Long timeout — collecting and encoding video chunks can take time
+  const response = await ctx.requestFromBrowser('video', 'stop', {}, 30000, windowId)
+  
+  // Save video data to disk
+  if (response.success && response.data) {
+    const base64 = response.data as string
+    const dir = '/tmp/haltija-videos'
+    const { mkdirSync, writeFileSync } = await import('fs')
+    mkdirSync(dir, { recursive: true })
+    const shortId = Math.random().toString(36).slice(2, 6)
+    const filename = `hj-${Date.now()}-${shortId}.webm`
+    const filepath = `${dir}/${filename}`
+    const buffer = Buffer.from(base64, 'base64')
+    writeFileSync(filepath, buffer)
+    return Response.json({
+      success: true,
+      path: filepath,
+      duration: response.duration,
+      size: buffer.length,
+    }, { headers: ctx.headers })
+  }
+  
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.videoStatus, async (_body, ctx) => {
+  const windowId = ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('video', 'status', {}, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
 })
 
 // ============================================

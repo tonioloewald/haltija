@@ -151,6 +151,15 @@ function getPlaygroundHtml(): string {
       <button id="btn-danger" class="btn-test danger" onclick="showOutput('Danger button clicked!')">Danger Button</button>
     </div>
     
+    <h3>Background Colors</h3>
+    <p>Set the page background to a solid color. Useful for verifying screenshots and video capture.</p>
+    <div class="test-buttons">
+      <button id="bg-red" class="btn-test" style="background:#ef4444;color:white" onclick="document.body.style.backgroundColor='#ef4444';showOutput('Background: red')">Red</button>
+      <button id="bg-green" class="btn-test" style="background:#22c55e;color:white" onclick="document.body.style.backgroundColor='#22c55e';showOutput('Background: green')">Green</button>
+      <button id="bg-blue" class="btn-test" style="background:#3b82f6;color:white" onclick="document.body.style.backgroundColor='#3b82f6';showOutput('Background: blue')">Blue</button>
+      <button id="bg-reset" class="btn-test" style="background:#f8fafc;border:1px solid #cbd5e1" onclick="document.body.style.backgroundColor='#f8fafc';showOutput('Background: reset')">Reset</button>
+    </div>
+    
     <h3>Form Inputs</h3>
     <div class="test-form">
       <div class="form-row">
@@ -211,6 +220,12 @@ function getPlaygroundHtml(): string {
     <div class="code-block">
       <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
       <pre><code>hj query "#output"</code></pre>
+    </div>
+    
+    <p>Set background to red and take a screenshot:</p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy-type="command" onclick="copyCode(this)">Copy</button>
+      <pre><code>hj click "#bg-red" && hj screenshot</code></pre>
     </div>
     
     <p>Get the page tree:</p>

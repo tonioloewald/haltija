@@ -2431,6 +2431,8 @@ export class DevChannel extends HTMLElement {
   } = { alert: 'dismiss', confirm: 'accept', prompt: 'dismiss', beforeunload: 'allow' }
   private dialogHistory: Array<{ type: string; message: string; defaultValue?: string; response: any; timestamp: number }> = []
   private _inHaltijaUI = false // Flag to bypass dialog overrides for Haltija's own UI
+  // Video capture state lives in the Electron renderer (renderer.js)
+  // Component just forwards messages via IPC
   private widgetHidden = false
   private serverUrl = 'wss://localhost:8700/ws/browser'
   private windowId: string // Stable ID persisted in sessionStorage (survives refresh)
@@ -6856,6 +6858,9 @@ export class DevChannel extends HTMLElement {
       case 'dialog':
         this.handleDialogMessage(msg)
         break
+      case 'video':
+        this.handleVideoMessage(msg)
+        break
     }
 
     this.render()
@@ -6877,6 +6882,58 @@ export class DevChannel extends HTMLElement {
       this.respond(msg.id, true, { history: this.dialogHistory })
     } else {
       this.respond(msg.id, false, undefined, `Unknown dialog action: ${action}`)
+    }
+  }
+
+  private handleVideoMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    const haltija = (window as any).haltija
+
+    if (action === 'start') {
+      // Video capture runs in the Electron renderer (not the webview)
+      // via webview.getMediaSourceId() + MediaRecorder
+      if (!haltija?.startVideoCapture) {
+        this.respond(msg.id, false, undefined, 'Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f')
+        return
+      }
+
+      haltija.startVideoCapture({ maxDuration: payload.maxDuration }).then((result: any) => {
+        if (result.success) {
+          this.respond(msg.id, true, { recordingId: result.recordingId })
+        } else {
+          this.respond(msg.id, false, undefined, result.error || 'Failed to start video')
+        }
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, `Failed to start video: ${err.message}`)
+      })
+    } else if (action === 'stop') {
+      if (!haltija?.stopVideoCapture) {
+        this.respond(msg.id, false, undefined, 'Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f')
+        return
+      }
+
+      haltija.stopVideoCapture().then((result: any) => {
+        if (result.success) {
+          this.respond(msg.id, true, { data: result.data, duration: result.duration })
+        } else {
+          this.respond(msg.id, false, undefined, result.error || 'Failed to stop video')
+        }
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, `Failed to stop video: ${err.message}`)
+      })
+    } else if (action === 'status') {
+      if (!haltija?.videoStatus) {
+        this.respond(msg.id, true, { recording: false })
+        return
+      }
+
+      haltija.videoStatus().then((result: any) => {
+        this.respond(msg.id, true, result)
+      }).catch(() => {
+        this.respond(msg.id, true, { recording: false })
+      })
+    } else {
+      this.respond(msg.id, false, undefined, `Unknown video action: ${action}`)
     }
   }
 
@@ -7534,47 +7591,8 @@ export class DevChannel extends HTMLElement {
           }
         }
 
-        // Try html2canvas if available (user-provided)
-        const html2canvas = (window as any).html2canvas
-        if (html2canvas) {
-          let target: Element | null = document.body
-          if (payload?.ref || payload?.selector) {
-            const { element, targetDesc, error } = resolveRefOrSelector(payload?.ref, payload?.selector)
-            if (error) {
-              this.respond(msg.id, false, null, error)
-              return
-            }
-            if (!element) {
-              this.respond(msg.id, false, null, `Element not found: ${targetDesc}`)
-              return
-            }
-            target = element
-          }
-
-          const canvas = await html2canvas(target, {
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            scale: payload?.scale || 1,
-          })
-          const dataUrl = canvas.toDataURL(mimeType, quality)
-          this.respond(msg.id, true, {
-            image: dataUrl,
-            viewport,
-            format,
-            width: canvas.width,
-            height: canvas.height,
-            source: 'html2canvas',
-          })
-        } else {
-          // No capture method available - return viewport info only
-          this.respond(msg.id, true, {
-            viewport,
-            image: null,
-            note: 'Screenshot capture requires the Haltija Desktop app.',
-            source: 'viewport-only',
-          })
-        }
+        // No capture method available — screenshots require the Electron desktop app
+        this.respond(msg.id, false, null, 'Screenshots require the Haltija Desktop app. Run: npx haltija@latest -f')
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }

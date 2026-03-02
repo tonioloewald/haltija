@@ -13,7 +13,7 @@ const {
   BrowserWindow,
   session,
   ipcMain,
-  desktopCapturer,
+
   Menu,
   dialog,
   clipboard,
@@ -275,7 +275,7 @@ function createWindow() {
       webviewTag: true, // Enable <webview> tag
     },
     titleBarStyle: 'hiddenInset', // Minimal chrome on macOS
-    trafficLightPosition: { x: 12, y: 12 },
+    windowButtonPosition: { x: 12, y: 12 },
   })
 
   // Load the shell UI
@@ -652,10 +652,10 @@ function setupWebContentsInjection(wc) {
   })
 
   // Capture console messages from the webview
-  wc.on('console-message', (event, level, message, line, sourceId) => {
+  wc.on('console-message', (event) => {
     try {
-      const prefix = level === 2 ? 'WARN' : level === 3 ? 'ERROR' : 'LOG'
-      console.log(`[Webview ${prefix}] ${message}`)
+      const prefix = event.level === 2 ? 'WARN' : event.level === 3 ? 'ERROR' : 'LOG'
+      console.log(`[Webview ${prefix}] ${event.message}`)
     } catch (e) {
       // Ignore write errors when app is closing
     }
@@ -873,6 +873,76 @@ function setupScreenCapture() {
     } catch (err) {
       return { success: false, error: err.message }
     }
+  })
+
+  // Tab management — forwarded to renderer
+  ipcMain.handle('open-tab', async (event, url) => {
+    if (!mainWindow) return false
+    mainWindow.webContents.send('open-tab', { url })
+    return true
+  })
+
+  ipcMain.handle('close-tab', async (event, windowId) => {
+    if (!mainWindow) return false
+    mainWindow.webContents.send('close-tab', { windowId })
+    return true
+  })
+
+  ipcMain.handle('focus-tab', async (event, windowId) => {
+    if (!mainWindow) return false
+    mainWindow.webContents.send('focus-tab', { windowId })
+    return true
+  })
+
+  // Video capture — forwarded to renderer where MediaRecorder runs
+  // Widget (webview) → main → renderer → main → widget
+  // Main also provides media source ID from webContents (not available on webview DOM element)
+  ipcMain.handle('get-media-source-id', async (event, webContentsId) => {
+    try {
+      const { webContents } = require('electron')
+      const wc = webContents.fromId(webContentsId)
+      if (!wc) return null
+      return wc.getMediaSourceId()
+    } catch (err) {
+      console.error('[Haltija Desktop] Failed to get media source ID:', err.message)
+      return null
+    }
+  })
+
+  ipcMain.handle('video-start', async (event, opts) => {
+    if (!mainWindow) return { success: false, error: 'No main window' }
+    mainWindow.webContents.send('video-start', { ...opts, senderWebContentsId: event.sender.id })
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ success: false, error: 'Video start timed out' }), 10000)
+      ipcMain.once('video-start-result', (_, result) => {
+        clearTimeout(timeout)
+        resolve(result)
+      })
+    })
+  })
+
+  ipcMain.handle('video-stop', async (event) => {
+    if (!mainWindow) return { success: false, error: 'No main window' }
+    mainWindow.webContents.send('video-stop', { senderWebContentsId: event.sender.id })
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ success: false, error: 'Video stop timed out' }), 30000)
+      ipcMain.once('video-stop-result', (_, result) => {
+        clearTimeout(timeout)
+        resolve(result)
+      })
+    })
+  })
+
+  ipcMain.handle('video-status', async (event) => {
+    if (!mainWindow) return { recording: false }
+    mainWindow.webContents.send('video-status', { senderWebContentsId: event.sender.id })
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ recording: false }), 5000)
+      ipcMain.once('video-status-result', (_, result) => {
+        clearTimeout(timeout)
+        resolve(result)
+      })
+    })
   })
 
   // Hard refresh — bypasses all caches (called from widget in webview)
