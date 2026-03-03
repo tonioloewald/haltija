@@ -317,4 +317,15 @@ await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts -
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 
+// 6. Bundle hj CLI as standalone file (no relative imports needed)
+await $`bun build ./bin/hj.mjs --outfile=dist/hj.js --target=node --format=esm`
+// Replace shebang with bun — the extensionless copy at ~/.local/bin/hj needs
+// ESM support, and bun handles that natively regardless of file extension.
+// (bun build preserves the original #!/usr/bin/env node from hj.mjs)
+const hjBundle = readFileSync('dist/hj.js', 'utf-8')
+const hjWithShebang = hjBundle.startsWith('#!')
+  ? '#!/usr/bin/env bun\n' + hjBundle.slice(hjBundle.indexOf('\n') + 1)
+  : '#!/usr/bin/env bun\n' + hjBundle
+writeFileSync('dist/hj.js', hjWithShebang)
+
 console.log('Build complete')

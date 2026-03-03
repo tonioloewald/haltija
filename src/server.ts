@@ -3747,30 +3747,38 @@ const primaryUrl = httpsUrl || httpUrl
         copyFileSync(hjBundled, hjTarget)
         chmodSync(hjTarget, 0o755) // Make executable
         console.log(`  [hj] Installed: ${hjTarget} (from bundled binary)`)
-        
-        // Check if ~/.local/bin is in PATH
-        const pathDirs = (process.env.PATH || '').split(':')
-        if (!pathDirs.includes(localBin)) {
-          console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
-        }
       }
     } else {
       // Running from source (bunx or development)
+      // Prefer standalone bundle (dist/hj.js) — works even if source tree is gone
+      const hjBundle = join(__dirname, 'hj.js')
       const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
+      const useBundle = existsSync(hjBundle)
+      const source = useBundle ? hjBundle : hjSource
       
-      if (!existsSync(hjSource)) {
-        console.log(`  [hj] Source not found: ${hjSource}`)
+      if (!existsSync(source)) {
+        console.log(`  [hj] Source not found: ${hjBundle} or ${hjSource}`)
         return
       }
       
-      // Check if symlink already points to our hj.mjs
+      // Check if target already matches source
       let needsInstall = true
       if (existsSync(hjTarget)) {
         try {
-          const resolved = realpathSync(hjTarget)
-          const expectedResolved = realpathSync(hjSource)
-          if (resolved === expectedResolved) {
-            needsInstall = false
+          if (useBundle) {
+            // Compare file sizes for bundle copy
+            const sourceSize = Bun.file(source).size
+            const targetSize = Bun.file(hjTarget).size
+            if (sourceSize === targetSize) {
+              needsInstall = false
+            }
+          } else {
+            // Compare symlink target for dev mode
+            const resolved = realpathSync(hjTarget)
+            const expectedResolved = realpathSync(source)
+            if (resolved === expectedResolved) {
+              needsInstall = false
+            }
           }
         } catch {
           // Broken symlink or can't resolve - reinstall
@@ -3778,19 +3786,27 @@ const primaryUrl = httpsUrl || httpUrl
       }
       
       if (needsInstall) {
-        // Create or update symlink
         if (existsSync(hjTarget)) {
           unlinkSync(hjTarget)
         }
-        symlinkSync(hjSource, hjTarget)
-        console.log(`  [hj] Installed: ${hjTarget} -> ${hjSource}`)
-        
-        // Check if ~/.local/bin is in PATH
-        const pathDirs = (process.env.PATH || '').split(':')
-        if (!pathDirs.includes(localBin)) {
-          console.log(`  [hj] Note: Add ~/.local/bin to your PATH for 'hj' command`)
+        if (useBundle) {
+          // Copy standalone bundle — works from any location
+          copyFileSync(source, hjTarget)
+          chmodSync(hjTarget, 0o755)
+          console.log(`  [hj] Installed: ${hjTarget} (standalone bundle)`)
+        } else {
+          // Fallback: symlink to source (dev mode only)
+          symlinkSync(source, hjTarget)
+          console.log(`  [hj] Installed: ${hjTarget} -> ${source}`)
         }
       }
+    }
+    
+    // Ensure ~/.local/bin is in PATH for this process and its children
+    const pathDirs = (process.env.PATH || '').split(':')
+    if (!pathDirs.includes(localBin)) {
+      process.env.PATH = `${localBin}:${process.env.PATH}`
+      console.log(`  [hj] Added ~/.local/bin to PATH for this session`)
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

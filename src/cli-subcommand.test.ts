@@ -728,3 +728,45 @@ describe('parseTestArgs', () => {
     expect(options).toEqual({})
   })
 })
+
+// ============================================================================
+// Standalone hj bundle (dist/hj.js)
+// ============================================================================
+
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
+import { spawnSync } from 'child_process'
+
+describe('standalone hj bundle', () => {
+  const hjPath = join(import.meta.dir, '..', 'dist', 'hj.js')
+
+  test('dist/hj.js exists', () => {
+    expect(existsSync(hjPath)).toBe(true)
+  })
+
+  test('has bun shebang', () => {
+    const content = readFileSync(hjPath, 'utf-8')
+    expect(content.startsWith('#!/usr/bin/env bun\n')).toBe(true)
+  })
+
+  test('runs --help from isolated directory', () => {
+    const result = spawnSync('bun', [hjPath, '--help'], {
+      cwd: '/tmp',
+      timeout: 10000,
+      encoding: 'utf-8',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('hj')
+    expect(result.stdout).toContain('Usage:')
+  })
+
+  test('contains inlined subcommand logic', () => {
+    const content = readFileSync(hjPath, 'utf-8')
+    // Should contain key functions from cli-subcommand.mjs
+    expect(content).toContain('isSubcommand')
+    expect(content).toContain('runSubcommand')
+    // Should NOT have relative imports to sibling files
+    expect(content).not.toContain("from './cli-subcommand.mjs'")
+    expect(content).not.toContain("from './format-tree.mjs'")
+  })
+})
