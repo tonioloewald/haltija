@@ -1350,51 +1350,26 @@ async function handleRest(req: Request): Promise<Response> {
       ? `echo "hj should have been installed automatically. Try restarting the app."` 
       : `mkdir -p "${localBin}" && ln -sf "${hjSource}" "${hjTarget}"`
     
+    // Quick check: if ~/.local/bin/hj exists, it's installed.
+    // The server process already has ~/.local/bin in PATH (added during auto-install),
+    // so terminal/agent tabs can use it even if the user's login shell doesn't have it.
+    if (existsSync(hjTarget)) {
+      // Verify it's in the server process's PATH (it should be after auto-install)
+      const pathDirs = (process.env.PATH || '').split(':')
+      if (!pathDirs.includes(localBin)) {
+        process.env.PATH = `${localBin}:${process.env.PATH}`
+      }
+      return Response.json({ installed: true }, { headers })
+    }
+    
+    // Also check via which (covers cases where hj is installed elsewhere)
     try {
       const whichResult = execSync('which hj', { stdio: 'pipe' }).toString().trim()
-      
-      // Check if hj is available in PATH
       if (whichResult) {
-        // For compiled binary, just check that it exists and is executable
-        if (isCompiledBinary) {
-          return Response.json({ installed: true }, { headers })
-        }
-        
-        // For source installs, verify it points to our source
-        try {
-          const resolved = realpathSync(whichResult)
-          const expectedResolved = realpathSync(hjSource)
-          
-          if (resolved === expectedResolved) {
-            return Response.json({ installed: true }, { headers })
-          } else {
-            // Installed but points elsewhere - offer to update
-            return Response.json({
-              installed: false,
-              outdated: true,
-              currentPath: whichResult,
-              installCommand: installCmd,
-              message: `hj exists at ${whichResult} but doesn't point to this Haltija installation. Update it?`
-            }, { headers })
-          }
-        } catch {
-          // Can't resolve - assume it's fine
-          return Response.json({ installed: true }, { headers })
-        }
+        return Response.json({ installed: true }, { headers })
       }
     } catch {
       // hj not in PATH
-    }
-    
-    // Check if binary/symlink exists but isn't in PATH
-    const targetExists = existsSync(hjTarget)
-    if (targetExists) {
-      return Response.json({ 
-        installed: false, 
-        notInPath: true,
-        installCommand: `export PATH="$HOME/.local/bin:$PATH"`,
-        message: 'hj is installed but ~/.local/bin is not in your PATH. Add it to your shell profile (~/.zshrc or ~/.bashrc).'
-      }, { headers })
     }
     
     return Response.json({ 
