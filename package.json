@@ -1,6 +1,6 @@
 {
   "name": "haltija",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Browser control for AI agents - query DOM, click, type, run JS, watch mutations",
   "type": "module",
   "main": "dist/index.js",
@@ -54,12 +54,13 @@
     "electron": "bun run build && rm -f apps/desktop/resources/haltija-server-* && cd apps/desktop && npx electron .",
     "electron:quick": "cd apps/desktop && npx electron .",
     "start": "bun run electron",
-    "test": "bun test",
+    "test": "bun test src/",
+    "test:integration": "bun test tests/",
     "test:server": "bun test src/server.test.ts",
     "test:https": "bun test src/https.test.ts",
     "test:both": "bun test src/both-mode.test.ts",
     "test:e2e": "bunx playwright test",
-    "test:all": "bun test && bunx playwright test"
+    "test:all": "bun test src/ && bun test tests/ && bunx playwright test"
   },
   "keywords": [
     "devtools",

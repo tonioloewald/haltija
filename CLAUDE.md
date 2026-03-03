@@ -13,8 +13,9 @@ Haltija gives AI agents eyes and hands in the browser. Instead of guessing what'
 bun run build
 
 # Unit tests (run with Bun)
-bun test                          # All unit tests
+bun test                          # All unit tests (src/ only)
 bun test src/server.test.ts       # Single test file
+bun run test:integration          # Integration tests (needs running desktop app)
 
 # Integration tests (requires running haltija server)
 bun test tests/haltija.test.ts    # Tests using haltija/test helper
