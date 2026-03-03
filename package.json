@@ -52,6 +52,7 @@
     "build:bookmarklet": "bun run bin/build-bookmarklet.ts",
     "dev": "bun run bin/server.ts",
     "electron": "bun run build && rm -f apps/desktop/resources/haltija-server-* && cd apps/desktop && npx electron .",
+    "electron:quick": "cd apps/desktop && npx electron .",
     "start": "bun run electron",
     "test": "bun test",
     "test:server": "bun test src/server.test.ts",
