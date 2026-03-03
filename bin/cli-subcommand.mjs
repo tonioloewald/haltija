@@ -95,9 +95,19 @@ export const ARG_MAPS = {
   call: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), method: args[1], args: args.slice(2).map(tryParseJSON) }),
   fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(' ') || undefined }),
   screenshot: (args) => {
-    const dataUrl = args.includes('--data-url')
-    const filtered = args.filter(a => a !== '--data-url')
-    return { ...parseTargetArgs(filtered), file: !dataUrl }
+    const body = { file: true }
+    const positional = []
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i]
+      if (a === '--data-url') { body.file = false; continue }
+      if (a === '--scale') { body.scale = num(args[++i]); continue }
+      if (a === '--maxWidth' || a === '--max-width') { body.maxWidth = num(args[++i]); continue }
+      if (a === '--maxHeight' || a === '--max-height') { body.maxHeight = num(args[++i]); continue }
+      if (a === '--delay') { body.delay = num(args[++i]); continue }
+      if (a === '--no-chyron') { body.chyron = false; continue }
+      if (!a.startsWith('-')) { positional.push(a) }
+    }
+    return { ...body, ...parseTargetArgs(positional) }
   },
   snapshot: (args) => ({ context: args.join(' ') || undefined }),
   select: (args) => ({ action: args[0] }),

@@ -555,7 +555,7 @@ async function requestFromBrowser(
       if (activeWindows.length > 0) {
         activeWindows[0].ws.send(JSON.stringify(msg))
       } else if (windows.size > 0) {
-        // No active windows, pick most recently seen
+        // No active windows — pick most recently seen
         const mostRecent = Array.from(windows.values())
           .sort((a, b) => b.lastSeen - a.lastSeen)[0]
         mostRecent.ws.send(JSON.stringify(msg))
@@ -3294,6 +3294,17 @@ Run 'hj --help' for all commands.`
     }, { headers })
   }
   
+  // POST /windows/blur - Clear focused window (e.g. when desktop app switches to terminal/agent tab)
+  if (path === '/windows/blur' && req.method === 'POST') {
+    const previousFocused = focusedWindowId
+    focusedWindowId = null
+    return Response.json({ 
+      success: true, 
+      previousFocused,
+      message: 'No window focused — commands require explicit ?window= parameter'
+    }, { headers })
+  }
+
   // POST /windows/:id/focus - Focus a window (bring to front and make active)
   if (path.match(/^\/windows\/[^/]+\/focus$/) && req.method === 'POST') {
     const windowId = path.split('/')[2]

@@ -365,6 +365,40 @@ describe('ARG_MAPS', () => {
     test('no args for full page', () => {
       expect(ARG_MAPS.screenshot([])).toEqual({ file: true })
     })
+
+    test('--scale flag', () => {
+      expect(ARG_MAPS.screenshot(['--scale', '0.5'])).toEqual({ scale: 0.5, file: true })
+    })
+
+    test('--scale with selector', () => {
+      expect(ARG_MAPS.screenshot(['#chart', '--scale', '0.5'])).toEqual({ selector: '#chart', scale: 0.5, file: true })
+    })
+
+    test('--maxWidth and --maxHeight', () => {
+      expect(ARG_MAPS.screenshot(['--maxWidth', '800', '--maxHeight', '600'])).toEqual({ maxWidth: 800, maxHeight: 600, file: true })
+    })
+
+    test('--max-width kebab-case', () => {
+      expect(ARG_MAPS.screenshot(['--max-width', '400'])).toEqual({ maxWidth: 400, file: true })
+    })
+
+    test('--delay flag', () => {
+      expect(ARG_MAPS.screenshot(['--delay', '1000'])).toEqual({ delay: 1000, file: true })
+    })
+
+    test('--no-chyron flag', () => {
+      expect(ARG_MAPS.screenshot(['--no-chyron'])).toEqual({ chyron: false, file: true })
+    })
+
+    test('--data-url flag', () => {
+      expect(ARG_MAPS.screenshot(['--data-url'])).toEqual({ file: false })
+    })
+
+    test('all flags combined', () => {
+      expect(ARG_MAPS.screenshot(['#chart', '--scale', '0.5', '--maxWidth', '400', '--delay', '500', '--no-chyron'])).toEqual({
+        selector: '#chart', scale: 0.5, maxWidth: 400, delay: 500, chyron: false, file: true
+      })
+    })
   })
 
   describe('snapshot', () => {

@@ -715,3 +715,123 @@ describe('schema-driven self-documenting endpoints', () => {
     expect(res.status).not.toBe(400)
   })
 })
+
+describe('window focus management', () => {
+  // Helper: connect a fake browser widget and register it as a window
+  async function connectBrowserWindow(windowId: string): Promise<WebSocket> {
+    const ws = new WebSocket(`ws://localhost:${PORT}/ws/browser`)
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve()
+      ws.onerror = reject
+      setTimeout(() => reject(new Error('Connection timeout')), 2000)
+    })
+    // Register as a window (simulates widget's system:connected message)
+    ws.send(JSON.stringify({
+      channel: 'system',
+      action: 'connected',
+      payload: {
+        windowId,
+        browserId: `browser-${windowId}`,
+        url: 'http://example.com',
+        title: 'Test Page',
+        active: true,
+        windowType: 'tab',
+      },
+      timestamp: Date.now(),
+    }))
+    // Give server time to process
+    await new Promise(r => setTimeout(r, 100))
+    return ws
+  }
+
+  it('POST /windows/blur clears focused window', async () => {
+    const ws = await connectBrowserWindow('test-blur-win')
+    try {
+      // Verify window is registered
+      const statusRes = await fetch(`${BASE_URL}/windows`)
+      const statusData = await statusRes.json()
+      const windows = statusData.data?.windows || statusData.windows || []
+      expect(windows.some((w: any) => w.id === 'test-blur-win')).toBe(true)
+
+      // Blur
+      const blurRes = await fetch(`${BASE_URL}/windows/blur`, { method: 'POST' })
+      expect(blurRes.status).toBe(200)
+      const blurData = await blurRes.json()
+      expect(blurData.success).toBe(true)
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('POST /windows/:id/focus restores focus after blur', async () => {
+    const ws = await connectBrowserWindow('test-focus-win')
+    try {
+      // Blur all
+      await fetch(`${BASE_URL}/windows/blur`, { method: 'POST' })
+
+      // Focus specific window
+      const focusRes = await fetch(`${BASE_URL}/windows/test-focus-win/focus`, { method: 'POST' })
+      expect(focusRes.status).toBe(200)
+      const focusData = await focusRes.json()
+      expect(focusData.success).toBe(true)
+      expect(focusData.focused).toBe(true)
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('focused window still receives commands after deactivate (webview stays visible)', async () => {
+    const ws = await connectBrowserWindow('test-still-routes-win')
+    try {
+      // Focus the window, then deactivate it (simulates terminal tab overlay,
+      // but the webview stays visible underneath so commands still work)
+      await fetch(`${BASE_URL}/windows/test-still-routes-win/focus`, { method: 'POST' })
+      await fetch(`${BASE_URL}/windows/test-still-routes-win/deactivate`, { method: 'POST' })
+
+      // Command should still be routed to the focused window (even though inactive)
+      // because in the desktop app the webview stays visible behind the terminal frame.
+      // The command will timeout since our fake browser doesn't respond, but it
+      // should be *sent* — verify by checking the WebSocket receives the message.
+      const received = new Promise<any>((resolve) => {
+        ws.onmessage = (e) => resolve(JSON.parse(e.data))
+        setTimeout(() => resolve(null), 2000)
+      })
+
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+
+      const msg = await received
+      expect(msg).not.toBeNull()
+      expect(msg.channel).toBe('dom')
+      expect(msg.action).toBe('tree')
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('POST /windows/:id/deactivate and /activate toggle active state', async () => {
+    const ws = await connectBrowserWindow('test-toggle-win')
+    try {
+      // Deactivate
+      const deactivateRes = await fetch(`${BASE_URL}/windows/test-toggle-win/deactivate`, { method: 'POST' })
+      expect(deactivateRes.status).toBe(200)
+      const deactivateData = await deactivateRes.json()
+      expect(deactivateData.active).toBe(false)
+
+      // Reactivate
+      const activateRes = await fetch(`${BASE_URL}/windows/test-toggle-win/activate`, { method: 'POST' })
+      expect(activateRes.status).toBe(200)
+      const activateData = await activateRes.json()
+      expect(activateData.active).toBe(true)
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+})

@@ -154,9 +154,19 @@ export function activateTab(tabId) {
   const tab = tabs.find((t) => t.id === tabId)
   if (!tab) return
 
+  // When switching to a terminal/agent tab, keep the last content webview
+  // visible underneath so Electron's capturePage() still works and hj commands
+  // (screenshot, navigate, etc.) continue to target the right content.
+  const isTerminalTab = tab.isTerminal || tab.url === 'terminal'
+  const previousActiveId = activeTabId
+
   tabs.forEach((t) => {
     t.element.classList.remove('active')
-    t.webview.classList.remove('active')
+    if (isTerminalTab && t.id === previousActiveId && !t.isTerminal && t.url !== 'terminal') {
+      // Keep the previously active content webview visible behind the terminal iframe
+    } else {
+      t.webview.classList.remove('active')
+    }
   })
 
   tab.element.classList.add('active')

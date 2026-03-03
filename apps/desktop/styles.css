@@ -640,9 +640,15 @@ body {
   display: none;
 }
 
-#webview-container webview.active,
+#webview-container webview.active {
+  display: flex;
+  z-index: 0;
+}
+
 #webview-container .terminal-frame.active {
   display: flex;
+  z-index: 1;
+  opacity: 0.88;
 }
 
 #webview-container .terminal-frame {
