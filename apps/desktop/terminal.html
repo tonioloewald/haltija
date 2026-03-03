@@ -1192,7 +1192,12 @@
         outputPreview.className = 'tool-output-preview'
         const lines = (output || '').split('\n')
         const previewText = lines.slice(0, 3).join('\n')
-        outputPreview.textContent = previewText + (lines.length > 3 ? `\n... (${lines.length} lines)` : '')
+        const previewFull = previewText + (lines.length > 3 ? `\n... (${lines.length} lines)` : '')
+        if (/\x1b\[/.test(previewFull)) {
+          outputPreview.innerHTML = ansiToHtml(previewFull)
+        } else {
+          outputPreview.textContent = previewFull
+        }
         card.appendChild(outputPreview)
         
         // Add full output to expandable body
@@ -1205,10 +1210,13 @@
         outputDiv.appendChild(outputLabel)
         const outputPre = document.createElement('pre')
         outputPre.style.cssText = 'margin: 0; white-space: pre-wrap;'
-        if (lines.length > 20) {
-          outputPre.textContent = lines.slice(0, 20).join('\n') + `\n... (${lines.length} lines total)`
+        const fullText = lines.length > 20
+          ? lines.slice(0, 20).join('\n') + `\n... (${lines.length} lines total)`
+          : (output || '')
+        if (/\x1b\[/.test(fullText)) {
+          outputPre.innerHTML = ansiToHtml(fullText)
         } else {
-          outputPre.textContent = output || ''
+          outputPre.textContent = fullText
         }
         outputDiv.appendChild(outputPre)
         body.appendChild(outputDiv)
@@ -1277,6 +1285,8 @@
         div.textContent = text
       } else if (type === 'summary') {
         div.textContent = text
+      } else if (/\x1b\[/.test(text)) {
+        div.innerHTML = ansiToHtml(text)
       } else {
         div.textContent = text
       }
@@ -1294,6 +1304,30 @@
     function escapeHtml(str) {
       if (str == null) return ''
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+
+    /** Convert ANSI escape codes to HTML spans */
+    function ansiToHtml(str) {
+      if (str == null) return ''
+      const escaped = escapeHtml(str)
+      // Map SGR codes to CSS styles
+      const styles = {
+        '1': 'font-weight:bold',
+        '2': 'opacity:0.6',
+        '3': 'font-style:italic',
+        '4': 'text-decoration:underline',
+        '31': 'color:#f87171', '32': 'color:#4ade80', '33': 'color:#fbbf24',
+        '34': 'color:#60a5fa', '35': 'color:#c084fc', '36': 'color:#22d3ee',
+        '90': 'color:#6b7280', '91': 'color:#f87171', '92': 'color:#4ade80',
+        '93': 'color:#fbbf24', '94': 'color:#60a5fa', '95': 'color:#c084fc',
+        '96': 'color:#22d3ee',
+      }
+      // Replace \e[...m sequences with styled spans
+      return escaped.replace(/\x1b\[([0-9;]*)m/g, (_, codes) => {
+        if (!codes || codes === '0') return '</span>'
+        const css = codes.split(';').map(c => styles[c] || '').filter(Boolean).join(';')
+        return css ? `<span style="${css}">` : ''
+      })
     }
 
     // ==========================================
