@@ -150,20 +150,21 @@ export function renameTerminalTab(tab, name) {
   }
 }
 
+// Track the last active content (non-terminal) tab so it stays visible
+// behind terminal/agent overlays for screenshot/hj command support
+let lastContentTabId = null
+
 export function activateTab(tabId) {
   const tab = tabs.find((t) => t.id === tabId)
   if (!tab) return
 
-  // When switching to a terminal/agent tab, keep the last content webview
-  // visible underneath so Electron's capturePage() still works and hj commands
-  // (screenshot, navigate, etc.) continue to target the right content.
   const isTerminalTab = tab.isTerminal || tab.url === 'terminal'
-  const previousActiveId = activeTabId
+  if (!isTerminalTab) lastContentTabId = tabId
 
   tabs.forEach((t) => {
     t.element.classList.remove('active')
-    if (isTerminalTab && t.id === previousActiveId && !t.isTerminal && t.url !== 'terminal') {
-      // Keep the previously active content webview visible behind the terminal iframe
+    if (isTerminalTab && t.id === lastContentTabId) {
+      // Keep the last content webview visible behind the terminal iframe
     } else {
       t.webview.classList.remove('active')
     }
