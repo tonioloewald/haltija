@@ -433,6 +433,17 @@ export function clean(obj) {
 }
 
 // ============================================
+// Session ID for multi-agent isolation
+// ============================================
+
+export function getSessionId() {
+  if (process.env.HALTIJA_SESSION) return process.env.HALTIJA_SESSION
+  const id = `hj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  process.env.HALTIJA_SESSION = id
+  return id
+}
+
+// ============================================
 // Server auto-start
 // ============================================
 
@@ -510,12 +521,87 @@ async function startServerInBackground(port) {
 }
 
 // ============================================
+// Auto-launch Electron app when no browser windows connected
+// ============================================
+
+async function launchElectronApp() {
+  const { execSync, spawn: spawnChild } = await import('child_process')
+  
+  if (process.platform === 'darwin') {
+    // Check common locations for Haltija.app
+    const appPaths = [
+      '/Applications/Haltija.app',
+      `${process.env.HOME}/Applications/Haltija.app`,
+    ]
+    for (const p of appPaths) {
+      if (existsSync(p)) {
+        spawnChild('open', ['-a', p], { stdio: 'ignore', detached: true }).unref()
+        return true
+      }
+    }
+    // Try spotlight search as fallback
+    try {
+      const result = execSync('mdfind "kMDItemCFBundleIdentifier == com.electron.haltija" | head -1', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim()
+      if (result) {
+        spawnChild('open', ['-a', result], { stdio: 'ignore', detached: true }).unref()
+        return true
+      }
+    } catch {}
+    return false
+  }
+  
+  // Linux/Windows: not yet supported
+  return false
+}
+
+async function ensureBrowserConnected(port) {
+  try {
+    const resp = await fetch(`http://localhost:${port}/status`, {
+      signal: AbortSignal.timeout(2000)
+    })
+    const status = await resp.json()
+    if (status.windows && status.windows.length > 0) return true
+  } catch { return false }
+  
+  // No windows connected — try to launch Electron app
+  process.stderr.write('\x1b[2mLaunching Haltija browser...\x1b[0m')
+  const launched = await launchElectronApp()
+  if (!launched) {
+    process.stderr.write('\x1b[2m not found\x1b[0m\n')
+    return false
+  }
+  
+  // Wait for a window to connect (up to 10s)
+  const maxWait = 10000
+  const start = Date.now()
+  while (Date.now() - start < maxWait) {
+    try {
+      const resp = await fetch(`http://localhost:${port}/status`, {
+        signal: AbortSignal.timeout(1000)
+      })
+      const status = await resp.json()
+      if (status.windows && status.windows.length > 0) {
+        process.stderr.write('\x1b[2m ready\x1b[0m\n')
+        return true
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 500))
+  }
+  process.stderr.write('\x1b[2m timeout\x1b[0m\n')
+  return false
+}
+
+// Commands that don't need a browser window to be connected
+const INFO_COMMANDS = new Set(['status', 'windows', 'version', 'help'])
+
+// ============================================
 // Main subcommand execution
 // ============================================
 
-export async function runSubcommand(subcommand, subArgs, port = '8700') {
+export async function runSubcommand(subcommand, subArgs, port = '8700', options = {}) {
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
+  const noLaunch = options.noLaunch || false
   // Remove --json and extract --window before processing
   let filteredArgs = subArgs.filter(a => a !== '--json')
   let targetWindowId = undefined
@@ -536,6 +622,11 @@ export async function runSubcommand(subcommand, subArgs, port = '8700') {
       console.error('Error: Could not start server. Run `haltija --server` in another terminal.')
       process.exit(1)
     }
+  }
+
+  // Auto-launch browser if no windows connected (skip for info commands and --no-launch)
+  if (!noLaunch && !INFO_COMMANDS.has(subcommand)) {
+    await ensureBrowserConnected(port)
   }
 
   // Special handling for 'send' command - route to appropriate endpoint
@@ -596,9 +687,10 @@ export async function runSubcommand(subcommand, subArgs, port = '8700') {
 async function doRequest(url, method, body, context = {}) {
   const { subcommand, jsonOutput } = context
   try {
-    const opts = { method }
+    const sessionId = getSessionId()
+    const opts = { method, headers: { 'X-Haltija-Session': sessionId } }
     if (body) {
-      opts.headers = { 'Content-Type': 'application/json' }
+      opts.headers['Content-Type'] = 'application/json'
       opts.body = JSON.stringify(body)
     }
 

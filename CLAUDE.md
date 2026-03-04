@@ -148,6 +148,26 @@ Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSel
 - `windows` Map tracks all connected windows with their state
 - Window types: `tab`, `popup`, `iframe` (tracked via `windowType`)
 
+### Multi-Agent Session Isolation
+
+Multiple agents sharing one server get automatic window isolation via sticky sessions:
+
+- `hj` CLI generates a session ID per shell (stored in `$HALTIJA_SESSION` env var)
+- Every request includes `X-Haltija-Session` header
+- Windows get `claimedBy` set on first interaction — first-come-first-served
+- `sessionAwareRequest` wrapper in `createHandlerContext()` filters candidate windows: own claimed + unclaimed only
+- `/windows` and `/status` filter by session when header is present
+- `POST /windows/:id/unclaim` releases a claimed window
+- No session header = legacy mode (all windows visible, no claiming)
+- Agent window affinity (`agentWindowAffinity` Map) tracks session→window for routing preference
+
+### Auto-Launch
+
+- `hj` auto-launches the Haltija Electron app when no browser windows are connected
+- Only triggers for action commands (tree, click, etc.), not info commands (status, windows)
+- `--no-launch` flag to disable
+- macOS only currently (`open -a Haltija`), checks `/Applications`, `~/Applications`, and Spotlight
+
 ### Schema-Driven API
 
 Endpoints are defined in `api-schema.ts` using `tosijs-schema`:

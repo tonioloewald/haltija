@@ -36,6 +36,14 @@ if (portIdx !== -1 && args[portIdx + 1]) {
   args.splice(portIdx, 2)
 }
 
+// Parse --no-launch option (skip auto-launching Electron app)
+let noLaunch = false
+const noLaunchIdx = args.indexOf('--no-launch')
+if (noLaunchIdx !== -1) {
+  noLaunch = true
+  args.splice(noLaunchIdx, 1)
+}
+
 const subcommand = args[0]
 const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all args
 
@@ -61,7 +69,7 @@ if (!isSubcommand(subcommand)) {
   console.error(`Run 'hj' for docs.`)
   process.exit(1)
 } else {
-  runSubcommand(subcommand, subArgs, port)
+  runSubcommand(subcommand, subArgs, port, { noLaunch })
 }
 
 function filterHelp(topic) {

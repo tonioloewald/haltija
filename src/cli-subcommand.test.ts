@@ -14,6 +14,7 @@ import {
   resolveServerPath,
   substituteVars,
   parseTestArgs,
+  getSessionId,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -802,5 +803,38 @@ describe('standalone hj bundle', () => {
     // Should NOT have relative imports to sibling files
     expect(content).not.toContain("from './cli-subcommand.mjs'")
     expect(content).not.toContain("from './format-tree.mjs'")
+  })
+})
+
+describe('getSessionId', () => {
+  const originalSession = process.env.HALTIJA_SESSION
+
+  afterAll(() => {
+    // Restore original env
+    if (originalSession !== undefined) {
+      process.env.HALTIJA_SESSION = originalSession
+    } else {
+      delete process.env.HALTIJA_SESSION
+    }
+  })
+
+  test('returns existing HALTIJA_SESSION env var if set', () => {
+    process.env.HALTIJA_SESSION = 'my-custom-session'
+    expect(getSessionId()).toBe('my-custom-session')
+  })
+
+  test('generates session ID with correct format when env not set', () => {
+    delete process.env.HALTIJA_SESSION
+    const id = getSessionId()
+    expect(id).toMatch(/^hj_[a-z0-9]+_[a-z0-9]+$/)
+    // Should have been persisted to env
+    expect(process.env.HALTIJA_SESSION).toBe(id)
+  })
+
+  test('returns same ID on subsequent calls', () => {
+    delete process.env.HALTIJA_SESSION
+    const id1 = getSessionId()
+    const id2 = getSessionId()
+    expect(id1).toBe(id2)
   })
 })

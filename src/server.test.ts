@@ -835,3 +835,214 @@ describe('window focus management', () => {
     }
   })
 })
+
+describe('session-based window claiming', () => {
+  // Helper: connect a fake browser widget and register it as a window
+  async function connectBrowserWindow(windowId: string): Promise<WebSocket> {
+    const ws = new WebSocket(`ws://localhost:${PORT}/ws/browser`)
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve()
+      ws.onerror = reject
+      setTimeout(() => reject(new Error('Connection timeout')), 2000)
+    })
+    ws.send(JSON.stringify({
+      channel: 'system',
+      action: 'connected',
+      payload: {
+        windowId,
+        browserId: `browser-${windowId}`,
+        url: 'http://example.com',
+        title: 'Test Page',
+        active: true,
+        windowType: 'tab',
+      },
+      timestamp: Date.now(),
+    }))
+    await new Promise(r => setTimeout(r, 100))
+    return ws
+  }
+
+  it('window is claimed after session interacts with it', async () => {
+    const ws = await connectBrowserWindow('test-claim-win')
+    try {
+      // Focus the window first
+      await fetch(`${BASE_URL}/windows/test-claim-win/focus`, { method: 'POST' })
+
+      // Send a request with session header — claiming happens on routing (before response)
+      // Fire and forget — don't await since fake browser won't respond
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-a' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      // Give server time to process the request and claim the window
+      await new Promise(r => setTimeout(r, 300))
+
+      // Check that window shows claimedBy in /windows response
+      const windowsRes = await fetch(`${BASE_URL}/windows`)
+      const windowsData = await windowsRes.json()
+      const windows = windowsData.data?.windows || windowsData.windows || []
+      const claimed = windows.find((w: any) => w.id === 'test-claim-win')
+      expect(claimed).toBeDefined()
+      expect(claimed.claimedBy).toBe('session-a')
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('/windows filters by session — other sessions claimed windows are hidden', async () => {
+    const ws1 = await connectBrowserWindow('test-filter-win-a')
+    const ws2 = await connectBrowserWindow('test-filter-win-b')
+    try {
+      // Focus and claim window A for session-x
+      await fetch(`${BASE_URL}/windows/test-filter-win-a/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-x' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Focus and claim window B for session-y
+      await fetch(`${BASE_URL}/windows/test-filter-win-b/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-y' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Session-x should see its own window but NOT session-y's window
+      const xWindowsRes = await fetch(`${BASE_URL}/windows`, {
+        headers: { 'X-Haltija-Session': 'session-x' },
+      })
+      const xData = await xWindowsRes.json()
+      const xWindows = xData.data?.windows || xData.windows || []
+      const xIds = xWindows.map((w: any) => w.id)
+      expect(xIds).toContain('test-filter-win-a')
+      expect(xIds).not.toContain('test-filter-win-b')
+
+      // Session-y should see its own window but NOT session-x's window
+      const yWindowsRes = await fetch(`${BASE_URL}/windows`, {
+        headers: { 'X-Haltija-Session': 'session-y' },
+      })
+      const yData = await yWindowsRes.json()
+      const yWindows = yData.data?.windows || yData.windows || []
+      const yIds = yWindows.map((w: any) => w.id)
+      expect(yIds).toContain('test-filter-win-b')
+      expect(yIds).not.toContain('test-filter-win-a')
+    } finally {
+      ws1.close()
+      ws2.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('request without session header sees all windows (legacy mode)', async () => {
+    const ws1 = await connectBrowserWindow('test-legacy-win-a')
+    const ws2 = await connectBrowserWindow('test-legacy-win-b')
+    try {
+      // Claim window A for some session
+      await fetch(`${BASE_URL}/windows/test-legacy-win-a/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-legacy' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Request without session header should see ALL windows
+      const windowsRes = await fetch(`${BASE_URL}/windows`)
+      const windowsData = await windowsRes.json()
+      const windows = windowsData.data?.windows || windowsData.windows || []
+      const ids = windows.map((w: any) => w.id)
+      expect(ids).toContain('test-legacy-win-a')
+      expect(ids).toContain('test-legacy-win-b')
+    } finally {
+      ws1.close()
+      ws2.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('/status filters windows by session', async () => {
+    const ws1 = await connectBrowserWindow('test-status-win-a')
+    const ws2 = await connectBrowserWindow('test-status-win-b')
+    try {
+      // Claim window A for session-status
+      await fetch(`${BASE_URL}/windows/test-status-win-a/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-status' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Claim window B for different session
+      await fetch(`${BASE_URL}/windows/test-status-win-b/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-status-other' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Status with session should only show accessible windows
+      const statusRes = await fetch(`${BASE_URL}/status`, {
+        headers: { 'X-Haltija-Session': 'session-status' },
+      })
+      const statusData = await statusRes.json()
+      const ids = statusData.windows.map((w: any) => w.id)
+      expect(ids).toContain('test-status-win-a')
+      expect(ids).not.toContain('test-status-win-b')
+    } finally {
+      ws1.close()
+      ws2.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('POST /windows/:id/unclaim releases a claimed window', async () => {
+    const ws = await connectBrowserWindow('test-unclaim-win')
+    try {
+      // Claim the window
+      await fetch(`${BASE_URL}/windows/test-unclaim-win/focus`, { method: 'POST' })
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Haltija-Session': 'session-unclaim' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      await new Promise(r => setTimeout(r, 300))
+
+      // Verify it's claimed
+      let windowsRes = await fetch(`${BASE_URL}/windows`)
+      let windowsData = await windowsRes.json()
+      let windows = windowsData.data?.windows || windowsData.windows || []
+      let win = windows.find((w: any) => w.id === 'test-unclaim-win')
+      expect(win?.claimedBy).toBe('session-unclaim')
+
+      // Unclaim
+      const unclaimRes = await fetch(`${BASE_URL}/windows/test-unclaim-win/unclaim`, { method: 'POST' })
+      expect(unclaimRes.status).toBe(200)
+      const unclaimData = await unclaimRes.json()
+      expect(unclaimData.success).toBe(true)
+      expect(unclaimData.previousClaim).toBe('session-unclaim')
+
+      // Verify it's unclaimed now
+      windowsRes = await fetch(`${BASE_URL}/windows`)
+      windowsData = await windowsRes.json()
+      windows = windowsData.data?.windows || windowsData.windows || []
+      win = windows.find((w: any) => w.id === 'test-unclaim-win')
+      expect(win?.claimedBy).toBeNull()
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('unclaim returns 404 for unknown window', async () => {
+    const res = await fetch(`${BASE_URL}/windows/nonexistent-window/unclaim`, { method: 'POST' })
+    expect(res.status).toBe(404)
+  })
+})

@@ -119,6 +119,43 @@ hj --help              # All commands
 6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
 7. `hj api` for the full API reference with all parameters
 
+## Multi-Agent Sessions
+
+When multiple agents share one Haltija server, each agent automatically gets
+its own **session**. Windows are claimed on first interaction — once an agent
+uses a tab, other agents won't accidentally target it.
+
+**How it works:**
+- `hj` generates a session ID per shell (stored in `$HALTIJA_SESSION`)
+- Every request sends `X-Haltija-Session` header automatically
+- First command that routes to a window claims it for that session
+- `hj windows` and `hj status` only show your own + unclaimed windows
+- Commands without a session header see all windows (backward compatible)
+
+```bash
+# Agent A claims a window by interacting with it
+hj tree                                    # Claims first available window
+
+# Agent B (different shell) gets its own window
+hj tree                                    # Claims a different unclaimed window
+
+# Explicit session control
+export HALTIJA_SESSION=my-session           # Set custom session ID
+hj windows                                  # See only your windows
+curl -X POST localhost:8700/windows/WIN_ID/unclaim  # Release a window
+```
+
+## Auto-Launch
+
+If no browser windows are connected, `hj` automatically launches the Haltija
+desktop app (macOS). Use `--no-launch` to disable this behavior.
+
+```bash
+hj tree                   # Auto-launches Haltija.app if needed
+hj tree --no-launch       # Skip auto-launch
+hj status                 # Info commands never trigger auto-launch
+```
+
 ## CI / Headless
 
 ```bash

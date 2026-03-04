@@ -160,6 +160,7 @@ interface TrackedWindow {
   lastSeen: number     // Last message time
   label?: string       // Optional agent-assigned label
   windowType?: string  // 'tab', 'popup', or 'iframe'
+  claimedBy?: string   // Session ID that claimed this window (for multi-agent isolation)
 }
 const windows = new Map<string, TrackedWindow>()
 
@@ -671,6 +672,11 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const updateSessionAffinity = (windowId: string) => {
     if (sessionId && windowId) {
       agentWindowAffinity.set(sessionId, windowId)
+      // Claim window for this session (first-come-first-served)
+      const win = windows.get(windowId)
+      if (win && !win.claimedBy) {
+        win.claimedBy = sessionId
+      }
     }
   }
   
@@ -728,8 +734,58 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     return recordings.get(id)
   }
   
+  // Session-aware requestFromBrowser wrapper for multi-agent isolation
+  const sessionAwareRequest: typeof requestFromBrowser = async (
+    channel, action, payload, timeoutMs?, windowId?
+  ) => {
+    const effectiveWindowId = windowId || targetWindowId
+    
+    // If we have a specific target, use it directly (explicit targeting overrides isolation)
+    if (effectiveWindowId) {
+      // Claim on routing (before awaiting result) — first-come-first-served
+      if (sessionId) {
+        const win = windows.get(effectiveWindowId)
+        if (win && !win.claimedBy) {
+          win.claimedBy = sessionId
+          agentWindowAffinity.set(sessionId, effectiveWindowId)
+        }
+      }
+      return requestFromBrowser(channel, action, payload, timeoutMs, effectiveWindowId)
+    }
+    
+    // No explicit target — find best window respecting session isolation
+    if (sessionId) {
+      const candidates = Array.from(windows.values())
+        .filter(w => !w.claimedBy || w.claimedBy === sessionId)
+        .sort((a, b) => {
+          // Prefer focused (if accessible), then own claimed, then most recent
+          const aFocused = a.id === focusedWindowId ? 1 : 0
+          const bFocused = b.id === focusedWindowId ? 1 : 0
+          if (aFocused !== bFocused) return bFocused - aFocused
+          const aOwned = a.claimedBy === sessionId ? 1 : 0
+          const bOwned = b.claimedBy === sessionId ? 1 : 0
+          if (aOwned !== bOwned) return bOwned - aOwned
+          return b.lastSeen - a.lastSeen
+        })
+      
+      if (candidates.length > 0) {
+        const chosen = candidates[0]
+        // Claim on routing (before awaiting result)
+        if (!chosen.claimedBy) {
+          chosen.claimedBy = sessionId
+          agentWindowAffinity.set(sessionId, chosen.id)
+        }
+        return requestFromBrowser(channel, action, payload, timeoutMs, chosen.id)
+      }
+      return { id: '', success: false, error: 'No windows available for this session', timestamp: Date.now() }
+    }
+    
+    // No session header — legacy behavior (route to focused or most recent)
+    return requestFromBrowser(channel, action, payload, timeoutMs)
+  }
+  
   return {
-    requestFromBrowser,
+    requestFromBrowser: sessionAwareRequest,
     targetWindowId,
     headers,
     url,
@@ -1037,21 +1093,30 @@ async function handleRest(req: Request): Promise<Response> {
   // Status endpoint - includes window summary to avoid follow-up /windows call
   if (path === '/status') {
     const mcpStatus = getMcpStatus()
+    const reqSession = req.headers.get('X-Haltija-Session') || undefined
     
     // Include compact window list with recording status
-    const windowList = Array.from(windows.values()).map(w => ({
+    let allWindows = Array.from(windows.values())
+    
+    // Session filtering: only show own + unclaimed windows
+    if (reqSession) {
+      allWindows = allWindows.filter(w => !w.claimedBy || w.claimedBy === reqSession)
+    }
+    
+    const windowList = allWindows.map(w => ({
       id: w.id,
       title: w.title?.slice(0, 50) || '(untitled)',
       url: w.url,
       focused: w.id === focusedWindowId,
       recording: activeRecordingSessions.has(w.id),
+      claimedBy: w.claimedBy || null,
     }))
     
     // Count active recordings
     const activeRecordings = activeRecordingSessions.size
     
     return Response.json({
-      ok: windows.size > 0,
+      ok: allWindows.length > 0,
       windows: windowList,
       serverVersion: SERVER_VERSION,
       recording: activeRecordings > 0,
@@ -3225,7 +3290,15 @@ Run 'hj --help' for all commands.`
   
   // GET /windows - List all connected windows
   if (path === '/windows' && req.method === 'GET') {
-    const windowList = Array.from(windows.values()).map(w => ({
+    const reqSession = req.headers.get('X-Haltija-Session') || undefined
+    let allWindows = Array.from(windows.values())
+    
+    // Session filtering: only show own + unclaimed windows
+    if (reqSession) {
+      allWindows = allWindows.filter(w => !w.claimedBy || w.claimedBy === reqSession)
+    }
+    
+    const windowList = allWindows.map(w => ({
       id: w.id,
       url: w.url,
       title: w.title,
@@ -3235,6 +3308,7 @@ Run 'hj --help' for all commands.`
       lastSeen: w.lastSeen,
       label: w.label,
       windowType: w.windowType || 'tab',
+      claimedBy: w.claimedBy || null,
     }))
     return Response.json({
       windows: windowList,
@@ -3278,6 +3352,18 @@ Run 'hj --help' for all commands.`
       previousFocused,
       message: 'No window focused — commands require explicit ?window= parameter'
     }, { headers })
+  }
+
+  // POST /windows/:id/unclaim - Release a window so other sessions can use it
+  if (path.match(/^\/windows\/[^/]+\/unclaim$/) && req.method === 'POST') {
+    const windowId = path.split('/')[2]
+    const win = windows.get(windowId)
+    if (!win) {
+      return Response.json({ error: 'Window not found' }, { status: 404, headers })
+    }
+    const previousClaim = win.claimedBy
+    win.claimedBy = undefined
+    return Response.json({ success: true, windowId, previousClaim: previousClaim || null }, { headers })
   }
 
   // POST /windows/:id/focus - Focus a window (bring to front and make active)
