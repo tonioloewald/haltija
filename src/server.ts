@@ -1116,7 +1116,7 @@ async function handleRest(req: Request): Promise<Response> {
     const activeRecordings = activeRecordingSessions.size
     
     return Response.json({
-      ok: allWindows.length > 0,
+      ok: windows.size > 0,
       windows: windowList,
       serverVersion: SERVER_VERSION,
       recording: activeRecordings > 0,

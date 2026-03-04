@@ -560,10 +560,13 @@ async function ensureBrowserConnected(port) {
       signal: AbortSignal.timeout(2000)
     })
     const status = await resp.json()
-    if (status.windows && status.windows.length > 0) return true
+    // Use status.ok (global, not session-filtered) to check if any browser is connected
+    if (status.ok) return true
   } catch { return false }
   
-  // No windows connected — try to launch Electron app
+  // No windows connected — try to launch Electron app (macOS only)
+  if (process.platform !== 'darwin') return false
+  
   process.stderr.write('\x1b[2mLaunching Haltija browser...\x1b[0m')
   const launched = await launchElectronApp()
   if (!launched) {
@@ -580,7 +583,7 @@ async function ensureBrowserConnected(port) {
         signal: AbortSignal.timeout(1000)
       })
       const status = await resp.json()
-      if (status.windows && status.windows.length > 0) {
+      if (status.ok) {
         process.stderr.write('\x1b[2m ready\x1b[0m\n')
         return true
       }
