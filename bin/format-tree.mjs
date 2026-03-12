@@ -27,15 +27,17 @@ const MAX_TEXT_LEN = 80
  * @param {number} indent - current indentation level (internal)
  * @returns {string} formatted text output with footer
  */
-export function formatTree(node, indent = 0) {
+export function formatTree(node, indent = 0, { depth } = {}) {
   if (!node) return ''
 
   const lines = []
   formatNode(node, indent, lines)
 
-  // Footer: JSON escape hatch
+  // Footer: depth and options hint
+  const d = depth ?? 5
+  const isDefault = depth === undefined || depth === null
   lines.push('---')
-  lines.push('hj tree --json')
+  lines.push(`depth=${d}${isDefault ? ' (default)' : d === -1 ? ' (unlimited)' : ''} | -d N | --all | --json`)
 
   return lines.join('\n')
 }

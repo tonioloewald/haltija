@@ -893,7 +893,7 @@ export interface NotableMutation {
 export interface DomTreeRequest {
   /** Root element selector */
   selector: string
-  /** Maximum depth to traverse (default: 3, -1 for unlimited) */
+  /** Maximum depth to traverse (default: 5, -1 for unlimited) */
   depth?: number
   /** Include text content of leaf nodes (default: true) */
   includeText?: boolean

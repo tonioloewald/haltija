@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('haltija', {
     return ipcRenderer.invoke('navigate-url', url)
   },
   // Tab management — routed through main process to renderer
-  openTab: (url) => ipcRenderer.invoke('open-tab', url),
+  openTab: (url, session) => ipcRenderer.invoke('open-tab', url, session),
   closeTab: (windowId) => ipcRenderer.invoke('close-tab', windowId),
   focusTab: (windowId) => ipcRenderer.invoke('focus-tab', windowId),
   openAgentTab: () => {

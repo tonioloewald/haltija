@@ -73,6 +73,8 @@ export interface HandlerContext {
   startRecordingSession: (windowId: string, url: string, name?: string) => void
   stopRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
   getRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
+  // Wait for browser widget to reconnect (e.g., after navigate/refresh)
+  waitForReconnect: (windowId?: string, timeoutMs?: number) => Promise<boolean>
   // Recording storage
   saveRecording: (recording: StoredRecording) => void
   listRecordings: () => Array<{id: string; url: string; title: string; startTime: number; endTime: number; eventCount: number; createdAt: number}>
@@ -709,18 +711,44 @@ registerHandler(api.unhighlight, async (_body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
-// Navigate handler
+// Navigate handler — waits for widget to reconnect after page load
 registerHandler(api.navigate, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
+  if (!response.success) {
+    return Response.json(response, { headers: ctx.headers })
+  }
+  // Navigation triggers page unload → widget disconnects → reconnects on new page.
+  // Wait for reconnection so the caller knows the page is ready.
+  const reconnected = await ctx.waitForReconnect(windowId, 10000)
+  if (!reconnected) {
+    return Response.json({
+      ...response,
+      success: false,
+      error: `Navigation sent but page did not reconnect within 10s. The page may have loaded without the Haltija widget.`,
+    }, { headers: ctx.headers })
+  }
   return Response.json(response, { headers: ctx.headers })
 })
 
-// Refresh handler
+// Refresh handler — waits for widget to reconnect after reload
 registerHandler(api.refresh, async (body, ctx) => {
   const soft = body.soft ?? false
   const windowId = body.window || ctx.targetWindowId
   const response = await ctx.requestFromBrowser('navigation', 'refresh', { soft }, 5000, windowId)
+  if (!response.success) {
+    return Response.json(response, { headers: ctx.headers })
+  }
+  // Refresh causes page reload → widget reconnects with new browserId.
+  // Wait for reconnection so the caller knows the page is ready.
+  const reconnected = await ctx.waitForReconnect(windowId, 8000)
+  if (!reconnected) {
+    return Response.json({
+      ...response,
+      success: false,
+      error: `Refresh sent but page did not reconnect within 8s. The page may have loaded without the Haltija widget.`,
+    }, { headers: ctx.headers })
+  }
   return Response.json(response, { headers: ctx.headers })
 })
 
@@ -792,7 +820,8 @@ registerHandler(api.screenshot, async (body, ctx) => {
 
 // Tabs handlers
 registerHandler(api.tabsOpen, async (body, ctx) => {
-  const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url })
+  // Pass agent's session so the new tab inherits it
+  const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url, session: ctx.sessionId })
   return Response.json(response, { headers: ctx.headers })
 })
 

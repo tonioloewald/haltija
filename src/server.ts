@@ -119,6 +119,9 @@ const USE_HTTP = WANT_HTTP
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+// Secure mode: when enabled, all requests must include X-Haltija-Session header
+const isSecureMode = process.env.HALTIJA_SECURE === '1'
+
 // Component.js paths for dynamic loading (try multiple locations for compiled binary support)
 const componentJsPaths = [
   join(__dirname, '../dist/component.js'),           // Dev mode: relative to src/
@@ -160,7 +163,7 @@ interface TrackedWindow {
   lastSeen: number     // Last message time
   label?: string       // Optional agent-assigned label
   windowType?: string  // 'tab', 'popup', or 'iframe'
-  claimedBy?: string   // Session ID that claimed this window (for multi-agent isolation)
+  session?: string     // Session token from widget (set on connect)
 }
 const windows = new Map<string, TrackedWindow>()
 
@@ -507,7 +510,7 @@ async function requestFromBrowser(
   windowId?: string
 ): Promise<DevResponse> {
   if (browsers.size === 0) {
-    return { id: '', success: false, error: 'No browser connected', timestamp: Date.now() }
+    return { id: '', success: false, error: 'No browser connected. Start a browser and visit the Haltija server URL, or launch the Haltija desktop app.', timestamp: Date.now() }
   }
   
   const id = uid()
@@ -564,7 +567,7 @@ async function requestFromBrowser(
         // No windows at all
         clearTimeout(timeout)
         pendingResponses.delete(id)
-        resolve({ id, success: false, error: 'No windows connected', timestamp: Date.now() })
+        resolve({ id, success: false, error: 'No browser windows connected. Open a page in the Haltija desktop app or inject the widget into your page.', timestamp: Date.now() })
       }
     }
   })
@@ -672,11 +675,6 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const updateSessionAffinity = (windowId: string) => {
     if (sessionId && windowId) {
       agentWindowAffinity.set(sessionId, windowId)
-      // Claim window for this session (first-come-first-served)
-      const win = windows.get(windowId)
-      if (win && !win.claimedBy) {
-        win.claimedBy = sessionId
-      }
     }
   }
   
@@ -734,64 +732,122 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     return recordings.get(id)
   }
   
-  // Session-aware requestFromBrowser wrapper for multi-agent isolation
-  const sessionAwareRequest: typeof requestFromBrowser = async (
+  // Session-filtered requestFromBrowser wrapper for multi-agent isolation.
+  // Also waits briefly for a browser to connect if none are present yet
+  // (covers the common startup race where hj runs before the widget connects).
+  const sessionFilteredRequest: typeof requestFromBrowser = async (
     channel, action, payload, timeoutMs?, windowId?
   ) => {
+    // When a session is active (i.e., request from hj CLI), wait briefly for a
+    // browser to connect. This covers the common startup race where the agent
+    // runs `hj navigate` right after `bunx haltija` before the widget connects.
+    if (sessionId && browsers.size === 0) {
+      const waitStart = Date.now()
+      while (Date.now() - waitStart < 5000) {
+        await new Promise(r => setTimeout(r, 250))
+        if (browsers.size > 0) break
+      }
+    }
+    
     const effectiveWindowId = windowId || targetWindowId
     
-    // If we have a specific target, use it directly (explicit targeting overrides isolation)
+    // Explicit window target — use directly
     if (effectiveWindowId) {
-      // Claim on routing (before awaiting result) — first-come-first-served
-      if (sessionId) {
-        const win = windows.get(effectiveWindowId)
-        if (win && !win.claimedBy) {
-          win.claimedBy = sessionId
-          agentWindowAffinity.set(sessionId, effectiveWindowId)
-        }
-      }
+      if (sessionId) agentWindowAffinity.set(sessionId, effectiveWindowId)
       return requestFromBrowser(channel, action, payload, timeoutMs, effectiveWindowId)
     }
     
-    // No explicit target — find best window respecting session isolation
+    // Find window matching session
     if (sessionId) {
-      const candidates = Array.from(windows.values())
-        .filter(w => !w.claimedBy || w.claimedBy === sessionId)
+      const matching = Array.from(windows.values())
+        .filter(w => w.session === sessionId)
         .sort((a, b) => {
-          // Prefer focused (if accessible), then own claimed, then most recent
-          const aFocused = a.id === focusedWindowId ? 1 : 0
-          const bFocused = b.id === focusedWindowId ? 1 : 0
-          if (aFocused !== bFocused) return bFocused - aFocused
-          const aOwned = a.claimedBy === sessionId ? 1 : 0
-          const bOwned = b.claimedBy === sessionId ? 1 : 0
-          if (aOwned !== bOwned) return bOwned - aOwned
+          if (a.id === focusedWindowId) return -1
+          if (b.id === focusedWindowId) return 1
           return b.lastSeen - a.lastSeen
         })
       
-      if (candidates.length > 0) {
-        const chosen = candidates[0]
-        // Claim on routing (before awaiting result)
-        if (!chosen.claimedBy) {
-          chosen.claimedBy = sessionId
-          agentWindowAffinity.set(sessionId, chosen.id)
-        }
-        return requestFromBrowser(channel, action, payload, timeoutMs, chosen.id)
+      if (matching.length > 0) {
+        agentWindowAffinity.set(sessionId, matching[0].id)
+        return requestFromBrowser(channel, action, payload, timeoutMs, matching[0].id)
       }
-      return { id: '', success: false, error: 'No windows available for this session', timestamp: Date.now() }
+      
+      // No matching windows — try to open a new tab with this session
+      if (windows.size > 0) {
+        // Electron is running with tabs — open a new one for this session
+        const anyWindow = Array.from(windows.values())[0]
+        try {
+          const openResult = await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, anyWindow.id)
+          if (openResult.success) {
+            // Wait for new tab to connect with our session (up to 5s)
+            const waitStart = Date.now()
+            while (Date.now() - waitStart < 5000) {
+              const nowMatching = Array.from(windows.values()).filter(w => w.session === sessionId)
+              if (nowMatching.length > 0) {
+                agentWindowAffinity.set(sessionId, nowMatching[0].id)
+                return requestFromBrowser(channel, action, payload, timeoutMs, nowMatching[0].id)
+              }
+              await new Promise(r => setTimeout(r, 200))
+            }
+          }
+        } catch {
+          // Fall through to error
+        }
+      }
+      
+      // Still no matching windows — helpful error
+      const allSessions = new Set(
+        Array.from(windows.values()).map(w => w.session).filter(Boolean)
+      )
+      const hint = allSessions.size > 0
+        ? `Available sessions: ${[...allSessions].map(s => s!.slice(0, 8) + '…').join(', ')}. Check the widget UI for the full token.`
+        : 'No widgets have session tokens. Connect a browser tab first.'
+      return { id: '', success: false, error: `No windows in session ${sessionId.slice(0, 8)}…. ${hint}`, timestamp: Date.now() }
     }
     
-    // No session header — legacy behavior (route to focused or most recent)
+    // No session header
+    if (isSecureMode) {
+      return { id: '', success: false, error: 'Secure mode: X-Haltija-Session header required. Set HALTIJA_SESSION or use hj --session <token>. Copy the session token from the widget UI.', timestamp: Date.now() }
+    }
+    
+    // Legacy — route to focused/most recent (any session)
     return requestFromBrowser(channel, action, payload, timeoutMs)
   }
   
+  // Wait for a browser widget to reconnect after navigation/refresh.
+  // Detects reconnection by watching for the window's browserId to change
+  // (each page load gets a new browserId).
+  const waitForReconnect = async (windowId?: string, timeoutMs = 8000): Promise<boolean> => {
+    const id = windowId || targetWindowId || focusedWindowId
+    const prevBrowserId = id ? windows.get(id)?.browserId : undefined
+    const start = Date.now()
+    // Brief pause for disconnect to happen
+    await new Promise(r => setTimeout(r, 100))
+    while (Date.now() - start < timeoutMs) {
+      if (id) {
+        const w = windows.get(id)
+        if (w && w.browserId !== prevBrowserId) {
+          await new Promise(r => setTimeout(r, 300)) // widget init
+          return true
+        }
+      } else if (browsers.size > 0) {
+        await new Promise(r => setTimeout(r, 300))
+        return true
+      }
+      await new Promise(r => setTimeout(r, 100))
+    }
+    return false
+  }
+  
   return {
-    requestFromBrowser: sessionAwareRequest,
+    requestFromBrowser: sessionFilteredRequest,
     targetWindowId,
     headers,
     url,
     sessionId,
     getWindowInfo,
     updateSessionAffinity,
+    waitForReconnect,
     startRecordingSession,
     stopRecordingSession,
     getRecordingSession,
@@ -818,7 +874,7 @@ async function handleRest(req: Request): Promise<Response> {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Session',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
@@ -1098,9 +1154,18 @@ async function handleRest(req: Request): Promise<Response> {
     // Include compact window list with recording status
     let allWindows = Array.from(windows.values())
     
-    // Session filtering: only show own + unclaimed windows
+    // Session filtering: only show windows matching this session
     if (reqSession) {
-      allWindows = allWindows.filter(w => !w.claimedBy || w.claimedBy === reqSession)
+      allWindows = allWindows.filter(w => w.session === reqSession)
+    } else if (isSecureMode) {
+      // Secure mode without session: show nothing but provide helpful message
+      return Response.json({
+        ok: windows.size > 0,
+        windows: [],
+        serverVersion: SERVER_VERSION,
+        secure: true,
+        error: `Secure mode: ${windows.size} window(s) connected but X-Haltija-Session header required. Copy the session token from the widget UI.`,
+      }, { headers })
     }
     
     const windowList = allWindows.map(w => ({
@@ -1109,7 +1174,7 @@ async function handleRest(req: Request): Promise<Response> {
       url: w.url,
       focused: w.id === focusedWindowId,
       recording: activeRecordingSessions.has(w.id),
-      claimedBy: w.claimedBy || null,
+      session: w.session?.slice(0, 8) || null,
     }))
     
     // Count active recordings
@@ -3293,9 +3358,19 @@ Run 'hj --help' for all commands.`
     const reqSession = req.headers.get('X-Haltija-Session') || undefined
     let allWindows = Array.from(windows.values())
     
-    // Session filtering: only show own + unclaimed windows
+    // Session filtering: only show windows matching this session
     if (reqSession) {
-      allWindows = allWindows.filter(w => !w.claimedBy || w.claimedBy === reqSession)
+      allWindows = allWindows.filter(w => w.session === reqSession)
+    } else if (isSecureMode) {
+      const totalWindows = windows.size
+      return Response.json({
+        windows: [],
+        focused: null,
+        count: 0,
+        error: totalWindows > 0
+          ? `Secure mode: ${totalWindows} window(s) connected in other sessions. Set HALTIJA_SESSION to match your widget's token.`
+          : 'No tabs connected. Inject the widget into a browser tab.',
+      }, { headers })
     }
     
     const windowList = allWindows.map(w => ({
@@ -3308,17 +3383,29 @@ Run 'hj --help' for all commands.`
       lastSeen: w.lastSeen,
       label: w.label,
       windowType: w.windowType || 'tab',
-      claimedBy: w.claimedBy || null,
+      session: w.session?.slice(0, 8) || null,
     }))
+    
+    // Provide helpful hints about session context
+    let hint: string
+    if (windowList.length > 1) {
+      hint = 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
+    } else if (windowList.length === 1) {
+      hint = 'One tab connected. Commands automatically target it.'
+    } else if (reqSession) {
+      const totalWindows = windows.size
+      hint = totalWindows > 0
+        ? `No windows in session ${reqSession.slice(0, 8)}…. ${totalWindows} window(s) in other sessions. Check the widget UI for the correct token.`
+        : 'No tabs connected. Inject the widget into a browser tab.'
+    } else {
+      hint = 'No tabs connected. Inject the widget into a browser tab.'
+    }
+    
     return Response.json({
       windows: windowList,
       focused: focusedWindowId,
       count: windowList.length,
-      hint: windowList.length > 1 
-        ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
-        : windowList.length === 1
-        ? 'One tab connected. Commands automatically target it.'
-        : 'No tabs connected. Inject the widget into a browser tab.',
+      hint,
     }, { headers })
   }
   
@@ -3352,18 +3439,6 @@ Run 'hj --help' for all commands.`
       previousFocused,
       message: 'No window focused — commands require explicit ?window= parameter'
     }, { headers })
-  }
-
-  // POST /windows/:id/unclaim - Release a window so other sessions can use it
-  if (path.match(/^\/windows\/[^/]+\/unclaim$/) && req.method === 'POST') {
-    const windowId = path.split('/')[2]
-    const win = windows.get(windowId)
-    if (!win) {
-      return Response.json({ error: 'Window not found' }, { status: 404, headers })
-    }
-    const previousClaim = win.claimedBy
-    win.claimedBy = undefined
-    return Response.json({ success: true, windowId, previousClaim: previousClaim || null }, { headers })
   }
 
   // POST /windows/:id/focus - Focus a window (bring to front and make active)
@@ -3539,7 +3614,7 @@ const serverConfig = {
         try {
           const data = JSON.parse(message.toString())
           if (data.channel === 'system' && data.action === 'connected' && data.payload?.browserId) {
-            const { windowId, browserId, url, title, active, windowType } = data.payload
+            const { windowId, browserId, url, title, active, windowType, session } = data.payload
             
             browsers.set(wsTyped, browserId)
             activeBrowserId = browserId
@@ -3565,6 +3640,7 @@ const serverConfig = {
                 lastSeen: now,
                 label: existingWindow?.label,
                 windowType: windowType || 'tab', // 'tab', 'popup', or 'iframe'
+                session: session || undefined,
               })
               
               // Set as focused if no window is focused, or if this was previously focused

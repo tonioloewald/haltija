@@ -177,9 +177,8 @@ test.describe('haltija-dev CLI', () => {
     const data = await res.json()
     expect(data).toHaveProperty('browsers')
     expect(data).toHaveProperty('agents')
-    expect(data).toHaveProperty('serverSessionId')
-    expect(typeof data.serverSessionId).toBe('string')
-    expect(data.serverSessionId.length).toBeGreaterThan(10)
+    expect(data).toHaveProperty('serverVersion')
+    expect(typeof data.serverVersion).toBe('string')
   })
   
   // CRITICAL: These tests verify the single source of truth pattern works.

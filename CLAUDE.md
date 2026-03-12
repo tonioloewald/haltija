@@ -148,18 +148,21 @@ Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSel
 - `windows` Map tracks all connected windows with their state
 - Window types: `tab`, `popup`, `iframe` (tracked via `windowType`)
 
-### Multi-Agent Session Isolation
+### Widget-Side Session Tokens
 
-Multiple agents sharing one server get automatic window isolation via sticky sessions:
+Every widget is born with a session token for multi-agent isolation and security:
 
-- `hj` CLI generates a session ID per shell (stored in `$HALTIJA_SESSION` env var)
-- Every request includes `X-Haltija-Session` header
-- Windows get `claimedBy` set on first interaction — first-come-first-served
-- `sessionAwareRequest` wrapper in `createHandlerContext()` filters candidate windows: own claimed + unclaimed only
+- Widget gets a `session` attribute (auto-generated UUID if not provided)
+- Session token sent in `system:connected` WebSocket payload, stored on `TrackedWindow.session`
+- `hj` CLI auto-generates a session ID per shell (stored in `$HALTIJA_SESSION`) and always sends `X-Haltija-Session` header
+- Server auto-opens a new tab for the agent's session if Electron is running but no windows match
+- `hj --session <token> tree` for one-off session targeting
+- `sessionFilteredRequest` in `createHandlerContext()` matches `w.session === sessionId`
 - `/windows` and `/status` filter by session when header is present
-- `POST /windows/:id/unclaim` releases a claimed window
-- No session header = legacy mode (all windows visible, no claiming)
-- Agent window affinity (`agentWindowAffinity` Map) tracks session→window for routing preference
+- No session header = legacy mode (all windows visible, backward compatible)
+- `haltija --secure` requires session token on all requests (`HALTIJA_SECURE=1`)
+- Widget UI shows session badge with click-to-copy (`export HALTIJA_SESSION=<token>`)
+- `inject(url, { session })` for developers embedding haltija in their apps
 
 ### Auto-Launch
 

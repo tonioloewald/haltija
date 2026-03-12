@@ -100,7 +100,7 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('Root element selector').optional,
-    depth: s.number.describe('Max depth (-1 = unlimited, default 3)').optional,
+    depth: s.number.describe('Max depth (-1 = unlimited, default 5)').optional,
     includeText: s.boolean.describe('Include text content (default true)')
       .optional,
     visibleOnly: s.boolean.describe('Only visible elements (default false)')

@@ -36,6 +36,10 @@ const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 // Combined with webContents.id to create globally unique tab identifiers
 const APP_INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 
+// Pending session: when an agent opens a tab with a session, store it here
+// so injectWidget can include it in the widget config for the next new tab
+let pendingTabSession = null
+
 // ============================================
 // Preferences
 // ============================================
@@ -741,8 +745,16 @@ async function injectWidget(webContents) {
     // This is stable across navigations (even cross-origin) enabling cross-page recording
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
     const windowId = `hj-${APP_INSTANCE_ID}-${webContents.id}`
+    const configObj = { serverUrl: wsUrl, windowId }
+    // Session priority: pending session from agent's tabs/open > env var
+    if (pendingTabSession) {
+      configObj.session = pendingTabSession
+      pendingTabSession = null // Consume — only applies to the next tab
+    } else if (process.env.HALTIJA_SESSION) {
+      configObj.session = process.env.HALTIJA_SESSION
+    }
     await webContents.executeJavaScript(
-      `window.__haltija_config__ = { serverUrl: '${wsUrl}', windowId: '${windowId}' };`,
+      `window.__haltija_config__ = ${JSON.stringify(configObj)};`,
     )
     await webContents.executeJavaScript(componentCode)
 
@@ -882,9 +894,10 @@ function setupScreenCapture() {
   })
 
   // Tab management — forwarded to renderer
-  ipcMain.handle('open-tab', async (event, url) => {
+  ipcMain.handle('open-tab', async (event, url, session) => {
     if (!mainWindow) return false
-    mainWindow.webContents.send('open-tab', { url })
+    if (session) pendingTabSession = session
+    mainWindow.webContents.send('open-tab', { url, session })
     return true
   })
 

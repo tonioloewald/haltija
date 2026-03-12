@@ -36,6 +36,13 @@ if (portIdx !== -1 && args[portIdx + 1]) {
   args.splice(portIdx, 2)
 }
 
+// Parse --session option (set session token)
+const sessionIdx = args.indexOf('--session')
+if (sessionIdx !== -1 && args[sessionIdx + 1]) {
+  process.env.HALTIJA_SESSION = args[sessionIdx + 1]
+  args.splice(sessionIdx, 2)
+}
+
 // Parse --no-launch option (skip auto-launching Electron app)
 let noLaunch = false
 const noLaunchIdx = args.indexOf('--no-launch')

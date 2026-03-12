@@ -98,7 +98,7 @@ Use ancestors:true to see parent elements when inspecting deep elements.
 | Name | Type | Description |
 |------|------|-------------|
 | `selector` | string,null | Root element selector |
-| `depth` | number,null | Max depth (-1 = unlimited, default 3) |
+| `depth` | number,null | Max depth (-1 = unlimited, default 5) |
 | `includeText` | boolean,null | Include text content (default true) |
 | `visibleOnly` | boolean,null | Only visible elements (default false) |
 | `pierceShadow` | boolean,null | Pierce shadow DOM (default true) |

@@ -119,30 +119,35 @@ hj --help              # All commands
 6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
 7. `hj api` for the full API reference with all parameters
 
-## Multi-Agent Sessions
+## Sessions
 
-When multiple agents share one Haltija server, each agent automatically gets
-its own **session**. Windows are claimed on first interaction — once an agent
-uses a tab, other agents won't accidentally target it.
+Every Haltija widget runs in a **session** — a private namespace for your browser tabs.
+Widgets auto-generate a session token, or you can set one explicitly.
 
-**How it works:**
-- `hj` generates a session ID per shell (stored in `$HALTIJA_SESSION`)
-- Every request sends `X-Haltija-Session` header automatically
-- First command that routes to a window claims it for that session
-- `hj windows` and `hj status` only show your own + unclaimed windows
-- Commands without a session header see all windows (backward compatible)
+To connect `hj` to your session, copy the token from the widget UI (click the
+token badge in the header) or set it:
 
 ```bash
-# Agent A claims a window by interacting with it
-hj tree                                    # Claims first available window
+export HALTIJA_SESSION=<token>        # Copy from widget UI
+hj tree                                # Only sees widgets in your session
 
-# Agent B (different shell) gets its own window
-hj tree                                    # Claims a different unclaimed window
+hj --session <token> tree              # One-off session override
+```
 
-# Explicit session control
-export HALTIJA_SESSION=my-session           # Set custom session ID
-hj windows                                  # See only your windows
-curl -X POST localhost:8700/windows/WIN_ID/unclaim  # Release a window
+Without a session, `hj` sees all widgets (backward compatible). In secure mode
+(`haltija --secure`), a session token is required.
+
+**For developers** — inject haltija into your app with an explicit session:
+
+```js
+import { inject } from 'haltija/component'
+inject('ws://localhost:8700/ws/browser', { session: 'my-debug-token' })
+```
+
+Or via HTML:
+
+```html
+<haltija-dev server="ws://localhost:8700/ws/browser" session="my-debug-token"></haltija-dev>
 ```
 
 ## Auto-Launch

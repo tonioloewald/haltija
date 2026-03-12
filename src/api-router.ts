@@ -55,7 +55,7 @@ async function wrapWithDeprecation(response: Response, endpoint: EndpointDef): P
 // Other POST endpoints return self-documenting schema on GET.
 
 const GET_DEFAULTS: Record<string, Record<string, any>> = {
-  '/tree': { selector: 'body', depth: 3 },
+  '/tree': { selector: 'body', depth: 5 },
   '/screenshot': {},  // Full page capture
   '/click': {},  // selector required via query param
   '/type': {},   // selector and text required via query params

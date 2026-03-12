@@ -130,7 +130,7 @@ document.addEventListener('keydown', (e) => {
 // ============================================
 
 // Tab management from widget (via main process IPC)
-window.haltija?.onOpenTab?.((data) => createTab(data.url))
+window.haltija?.onOpenTab?.((data) => createTab(data.url, { session: data.session }))
 window.haltija?.onCloseTab?.((data) => {
   const tab = findTabByWindowId(data.windowId)
   if (tab) closeTab(tab.id)

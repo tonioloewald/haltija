@@ -1878,7 +1878,7 @@ function buildDomTree(
   currentDepth = 0,
 ): DomTreeNode | null {
   const {
-    depth = 3,
+    depth = 5,
     includeText = true,
     allAttributes = false,
     includeStyles = false,
@@ -2438,6 +2438,7 @@ export class DevChannel extends HTMLElement {
   private windowId: string // Stable ID persisted in sessionStorage (survives refresh)
   private isElectron = false // True when running in the desktop app
   private browserId = uid() // Unique ID for this browser instance (changes each page load)
+  private sessionToken: string = '' // Session token for multi-agent isolation
   private killed = false // Prevents reconnection after kill()
   private isActive = true // Whether this window is active (responding to commands)
   private homeLeft = 0 // Store home position for restore
@@ -2587,7 +2588,7 @@ export class DevChannel extends HTMLElement {
   private highlightedElements: HTMLDivElement[] = []
 
   static get observedAttributes() {
-    return ['server', 'hidden']
+    return ['server', 'hidden', 'session']
   }
 
   /**
@@ -2714,6 +2715,13 @@ export class DevChannel extends HTMLElement {
       }
       this.windowId = storedWindowId
     }
+
+    // Session token: explicit config > auto-generated
+    if (config?.session) {
+      this.sessionToken = config.session
+    } else {
+      this.sessionToken = uid()
+    }
   }
 
   connectedCallback() {
@@ -2721,6 +2729,7 @@ export class DevChannel extends HTMLElement {
     // (e.g., framework re-renders that temporarily remove/re-add the element)
     this.killed = false
     this.serverUrl = this.getAttribute('server') || this.serverUrl
+    this.sessionToken = this.getAttribute('session') || this.sessionToken
     this.render()
     // Set initial position using left (calculate from right: 16px after render so we know width)
     const rect = this.getBoundingClientRect()
@@ -2750,6 +2759,12 @@ export class DevChannel extends HTMLElement {
         this.disconnect()
         this.connect()
       }
+    }
+    if (name === 'session') {
+      this.sessionToken = value
+      // Reconnect with new session
+      this.disconnect()
+      this.connect()
     }
   }
 
@@ -2943,6 +2958,25 @@ export class DevChannel extends HTMLElement {
         }
         .btn.info-btn:hover {
           background: #2563eb;
+        }
+        .session-badge {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          font-size: 9px;
+          color: #666;
+          background: rgba(255,255,255,0.05);
+          padding: 2px 4px;
+          border-radius: 3px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .session-badge:hover {
+          background: rgba(255,255,255,0.1);
+          color: #aaa;
+        }
+        .session-badge.copied {
+          color: #22c55e;
         }
         @keyframes pulse {
           0%, 100% { opacity: 1; }
@@ -3306,6 +3340,7 @@ export class DevChannel extends HTMLElement {
             <span class="logo">🧝</span>
           </div>
           <div class="title">${PRODUCT_NAME}</div>
+          <span class="session-badge" data-action="copy-session" title="Session: ${this.sessionToken}\nClick to copy session command">${this.sessionToken.slice(0, 8)}</span>
           <div class="controls">
             <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">👆</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
@@ -3391,6 +3426,7 @@ export class DevChannel extends HTMLElement {
         if (action === 'record') this.toggleRecording()
         if (action === 'select') this.startSelection()
         if (action === 'stats') this.copyStatsToClipboard()
+        if (action === 'copy-session') this.copySessionToken(e.currentTarget as HTMLElement)
         if (action === 'close-modal') this.closeTestModal()
         if (action === 'copy-test') this.copyTest()
         if (action === 'download-test') this.downloadTest()
@@ -4260,6 +4296,30 @@ export class DevChannel extends HTMLElement {
           }, 2000)
         }
       })
+    }
+  }
+
+  private async copySessionToken(badge: HTMLElement) {
+    const cmd = `export HALTIJA_SESSION=${this.sessionToken}`
+    try {
+      await navigator.clipboard.writeText(cmd)
+      badge.textContent = 'copied!'
+      badge.classList.add('copied')
+      setTimeout(() => {
+        badge.textContent = this.sessionToken.slice(0, 8)
+        badge.classList.remove('copied')
+      }, 1500)
+    } catch {
+      // Fallback: just copy the token
+      try {
+        await navigator.clipboard.writeText(this.sessionToken)
+        badge.textContent = 'copied!'
+        badge.classList.add('copied')
+        setTimeout(() => {
+          badge.textContent = this.sessionToken.slice(0, 8)
+          badge.classList.remove('copied')
+        }, 1500)
+      } catch {}
     }
   }
 
@@ -6644,6 +6704,7 @@ export class DevChannel extends HTMLElement {
         this.send('system', 'connected', {
           windowId: this.windowId,
           browserId: this.browserId,
+          session: this.sessionToken,
           version: VERSION,
           serverSessionId: SERVER_SESSION_ID,
           url: location.href,
@@ -7221,7 +7282,7 @@ export class DevChannel extends HTMLElement {
     if (action === 'open') {
       if (haltija?.openTab) {
         haltija
-          .openTab(payload.url)
+          .openTab(payload.url, payload.session)
           .then((opened: boolean) => {
             this.respond(msg.id, true, { opened })
           })
@@ -9916,6 +9977,7 @@ const WIDGET_ID = 'haltija-widget'
  */
 export function inject(
   serverUrl = 'wss://localhost:8700/ws/browser',
+  options?: { session?: string },
 ): DevChannel | null {
   // Check for existing widget by fixed ID
   const existing = document.getElementById(WIDGET_ID) as DevChannel | null
@@ -9938,6 +10000,7 @@ export function inject(
   const el = DevChannel.elementCreator()()
   el.id = WIDGET_ID
   el.setAttribute('server', serverUrl)
+  if (options?.session) el.setAttribute('session', options.session)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
   console.log(`${LOG_PREFIX} Injected`)
@@ -9962,7 +10025,7 @@ function autoInject() {
   if (config?.autoInject !== false) {
     // If config exists and doesn't explicitly disable, inject
     if (config) {
-      inject(config.serverUrl || config.wsUrl)
+      inject(config.serverUrl || config.wsUrl, { session: config.session })
       return
     }
   }

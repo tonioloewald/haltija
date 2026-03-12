@@ -362,6 +362,8 @@ if (docsDirIdx !== -1 && args[docsDirIdx + 1]) {
 // ============================================
 
 const ciMode = args.includes('--ci')
+const secureMode = args.includes('--secure')
+if (secureMode) process.env.HALTIJA_SECURE = '1'
 const headlessMode = args.includes('--headless')  // Playwright headless (separate from CI)
 const headlessUrlIdx = args.indexOf('--headless-url')
 const headlessUrl = headlessUrlIdx !== -1 ? args[headlessUrlIdx + 1] : null

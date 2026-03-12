@@ -202,6 +202,7 @@ export function parseTreeArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
     if (a === '--depth' || a === '-d') { body.depth = num(args[++i]); continue }
+    if (a === '--all' || a === '-a') { body.depth = -1; continue }
     if (a === '--selector' || a === '-s') { body.selector = args[++i]; continue }
     if (a === '--compact' || a === '-c') { body.compact = true; continue }
     if (a === '--visible') { body.visibleOnly = true; continue }
@@ -438,6 +439,7 @@ export function clean(obj) {
 
 export function getSessionId() {
   if (process.env.HALTIJA_SESSION) return process.env.HALTIJA_SESSION
+  // Auto-generate a session ID for this shell — persisted in env for subsequent calls
   const id = `hj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   process.env.HALTIJA_SESSION = id
   return id
@@ -605,13 +607,18 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
   const noLaunch = options.noLaunch || false
-  // Remove --json and extract --window before processing
+  // Remove --json and extract --window/--session before processing
   let filteredArgs = subArgs.filter(a => a !== '--json')
   let targetWindowId = undefined
   const windowIdx = filteredArgs.indexOf('--window')
   if (windowIdx !== -1) {
     targetWindowId = filteredArgs[windowIdx + 1]
     filteredArgs = [...filteredArgs.slice(0, windowIdx), ...filteredArgs.slice(windowIdx + 2)]
+  }
+  const sessionIdx = filteredArgs.indexOf('--session')
+  if (sessionIdx !== -1) {
+    process.env.HALTIJA_SESSION = filteredArgs[sessionIdx + 1]
+    filteredArgs = [...filteredArgs.slice(0, sessionIdx), ...filteredArgs.slice(sessionIdx + 2)]
   }
 
   // Check if server is running, auto-start if not
@@ -705,7 +712,7 @@ async function doRequest(url, method, body, context = {}) {
 
       // Text format for supported subcommands (unless --json)
       if (!jsonOutput && subcommand === 'tree' && json.success && json.data) {
-        console.log(formatTree(json.data))
+        console.log(formatTree(json.data, 0, { depth: body?.depth }))
       } else if (!jsonOutput && subcommand === 'events' && (json.events || Array.isArray(json))) {
         console.log(formatEvents(json))
       } else if (!jsonOutput && subcommand === 'test-run' && json.test) {
@@ -825,7 +832,7 @@ export function listSubcommands() {
   return `
 Subcommands (replace curl with simple commands):
   ${bold('Inspect')}
-    tree [selector] [-d depth]     DOM tree with ref IDs
+    tree [selector] [-d N] [-a]    DOM tree with ref IDs (default depth 5, -a = all)
     query <selector>               Find elements matching selector
     inspect <@ref|selector>        Detailed element info
     inspectAll <selector>          Deep inspect all matches

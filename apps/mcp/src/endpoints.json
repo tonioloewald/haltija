@@ -19,7 +19,7 @@
             "number",
             "null"
           ],
-          "description": "Max depth (-1 = unlimited, default 3)"
+          "description": "Max depth (-1 = unlimited, default 5)"
         },
         "includeText": {
           "type": [
