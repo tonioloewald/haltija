@@ -945,18 +945,17 @@ describe('widget-side session tokens', () => {
     }
   })
 
-  it('mismatched session returns helpful error with available sessions', async () => {
+  it('single session: mismatched agent still sees window (no conflict)', async () => {
     const ws = await connectBrowserWindow('test-mismatch-win', 'real-token-123')
     try {
-      // Request with wrong session — should get helpful error listing available sessions
+      // Only one session exists — no multi-agent conflict, so show all
       const windowsRes = await fetch(`${BASE_URL}/windows`, {
         headers: { 'X-Haltija-Session': 'wrong-token' },
       })
       const windowsData = await windowsRes.json()
       const windows = windowsData.data?.windows || windowsData.windows || []
-      expect(windows.length).toBe(0)
-      // Hint should mention other sessions exist
-      expect(windowsData.hint).toContain('other sessions')
+      expect(windows.length).toBe(1)
+      expect(windows[0].id).toBe('test-mismatch-win')
     } finally {
       ws.close()
       await new Promise(r => setTimeout(r, 100))
@@ -1000,14 +999,14 @@ describe('widget-side session tokens', () => {
       expect(allIds).toContain('test-has-session')
       expect(allIds).toContain('test-no-session')
 
-      // With session header — only sees matching
+      // With session header — only 1 distinct session, so sees all (no conflict)
       const filteredRes = await fetch(`${BASE_URL}/windows`, {
         headers: { 'X-Haltija-Session': 'my-session' },
       })
       const filteredData = await filteredRes.json()
       const filteredIds = (filteredData.data?.windows || filteredData.windows || []).map((w: any) => w.id)
       expect(filteredIds).toContain('test-has-session')
-      expect(filteredIds).not.toContain('test-no-session')
+      expect(filteredIds).toContain('test-no-session')
     } finally {
       wsWithSession.close()
       wsNoSession.close()
@@ -1019,12 +1018,13 @@ describe('widget-side session tokens', () => {
     const ws = await connectBrowserWindow('test-ok-win', 'some-session')
     try {
       // Status with a different session — ok should still be true (global)
+      // With single session, agent still sees all windows (no conflict)
       const res = await fetch(`${BASE_URL}/status`, {
         headers: { 'X-Haltija-Session': 'different-session' },
       })
       const data = await res.json()
       expect(data.ok).toBe(true) // Global: windows exist
-      expect(data.windows.length).toBe(0) // Filtered: none match
+      expect(data.windows.length).toBe(1) // Single session: no filtering
     } finally {
       ws.close()
       await new Promise(r => setTimeout(r, 100))
@@ -1094,18 +1094,46 @@ describe('widget-side session tokens', () => {
     }
   })
 
-  it('session miss on action command returns helpful error, not a hang', { timeout: 15000 }, async () => {
-    // The server tries to auto-open a tab for the mismatched session (5s wait),
-    // then returns an error. Allow enough time for that attempt to complete.
-    const ws = await connectBrowserWindow('test-miss-win', 'existing-token')
+  it('single session: mismatched agent adopts existing window (no conflict)', async () => {
+    const ws = await connectBrowserWindow('test-adopt-win', 'existing-token')
     try {
-      // Agent with wrong session sends /tree — should get an error quickly, not hang
+      // Only 1 distinct session — agent with different token should still
+      // route to the existing window (no multi-agent conflict to isolate).
+      const received = new Promise<any>((resolve) => {
+        ws.onmessage = (e) => resolve(JSON.parse(e.data))
+        setTimeout(() => resolve(null), 3000)
+      })
+
+      fetch(`${BASE_URL}/tree`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Haltija-Session': 'different-token',
+        },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+
+      const msg = await received
+      expect(msg).not.toBeNull()
+      expect(msg.channel).toBe('dom')
+      expect(msg.action).toBe('tree')
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('multi-session: mismatched agent gets error, not hang', { timeout: 15000 }, async () => {
+    // Two distinct sessions — a third agent should get an error
+    const ws1 = await connectBrowserWindow('test-multi-a', 'session-alpha')
+    const ws2 = await connectBrowserWindow('test-multi-b', 'session-beta')
+    try {
       const start = Date.now()
       const res = await fetch(`${BASE_URL}/tree`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Haltija-Session': 'nonexistent-token',
+          'X-Haltija-Session': 'session-gamma',
         },
         body: JSON.stringify({}),
       })
@@ -1113,11 +1141,11 @@ describe('widget-side session tokens', () => {
       const data = await res.json()
 
       expect(data.success).toBe(false)
-      expect(data.error).toContain('nonexist') // truncated session ID in error
-      // Should complete within ~6s (auto-open attempt takes ~5s, then returns error)
+      expect(data.error).toContain('No windows in session')
       expect(elapsed).toBeLessThan(12000)
     } finally {
-      ws.close()
+      ws1.close()
+      ws2.close()
       await new Promise(r => setTimeout(r, 100))
     }
   })

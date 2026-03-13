@@ -759,27 +759,45 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     
     // Find window matching session
     if (sessionId) {
-      const matching = Array.from(windows.values())
+      const allWins = Array.from(windows.values())
+      const matching = allWins
         .filter(w => w.session === sessionId)
         .sort((a, b) => {
           if (a.id === focusedWindowId) return -1
           if (b.id === focusedWindowId) return 1
           return b.lastSeen - a.lastSeen
         })
-      
+
       if (matching.length > 0) {
         agentWindowAffinity.set(sessionId, matching[0].id)
         return requestFromBrowser(channel, action, payload, timeoutMs, matching[0].id)
       }
-      
-      // No matching windows — try to open a new tab with this session
+
+      // No exact match — check if isolation is actually needed
+      const distinctSessions = new Set(allWins.map(w => w.session).filter(Boolean))
+
+      if (distinctSessions.size <= 1 && !isSecureMode) {
+        // Single session (or no sessions) across all windows — no multi-agent
+        // conflict. Adopt the existing window (like legacy mode) instead of
+        // blocking the agent from controlling a perfectly good tab.
+        const best = allWins.sort((a, b) => {
+          if (a.id === focusedWindowId) return -1
+          if (b.id === focusedWindowId) return 1
+          return b.lastSeen - a.lastSeen
+        })[0]
+        if (best) {
+          agentWindowAffinity.set(sessionId, best.id)
+          return requestFromBrowser(channel, action, payload, timeoutMs, best.id)
+        }
+      }
+
+      // Multiple sessions exist — real multi-agent scenario. Try to open a
+      // new tab with this agent's session (Electron only).
       if (windows.size > 0) {
-        // Electron is running with tabs — open a new one for this session
-        const anyWindow = Array.from(windows.values())[0]
+        const anyWindow = allWins[0]
         try {
           const openResult = await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, anyWindow.id)
           if (openResult.success) {
-            // Wait for new tab to connect with our session (up to 5s)
             const waitStart = Date.now()
             while (Date.now() - waitStart < 5000) {
               const nowMatching = Array.from(windows.values()).filter(w => w.session === sessionId)
@@ -794,13 +812,10 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
           // Fall through to error
         }
       }
-      
+
       // Still no matching windows — helpful error
-      const allSessions = new Set(
-        Array.from(windows.values()).map(w => w.session).filter(Boolean)
-      )
-      const hint = allSessions.size > 0
-        ? `Available sessions: ${[...allSessions].map(s => s!.slice(0, 8) + '…').join(', ')}. Check the widget UI for the full token.`
+      const hint = distinctSessions.size > 0
+        ? `Available sessions: ${[...distinctSessions].map(s => s!.slice(0, 8) + '…').join(', ')}. Check the widget UI for the full token.`
         : 'No widgets have session tokens. Connect a browser tab first.'
       return { id: '', success: false, error: `No windows in session ${sessionId.slice(0, 8)}…. ${hint}`, timestamp: Date.now() }
     }
@@ -816,10 +831,12 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   
   // Wait for a browser widget to reconnect after navigation/refresh.
   // Detects reconnection by watching for the window's browserId to change
-  // (each page load gets a new browserId).
+  // (each page load gets a new browserId). Also handles cross-origin navigation
+  // where sessionStorage is lost and the widget gets a new windowId.
   const waitForReconnect = async (windowId?: string, timeoutMs = 8000): Promise<boolean> => {
     const id = windowId || targetWindowId || focusedWindowId
     const prevBrowserId = id ? windows.get(id)?.browserId : undefined
+    const prevWindowCount = windows.size
     const start = Date.now()
     // Brief pause for disconnect to happen
     await new Promise(r => setTimeout(r, 100))
@@ -828,6 +845,13 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
         const w = windows.get(id)
         if (w && w.browserId !== prevBrowserId) {
           await new Promise(r => setTimeout(r, 300)) // widget init
+          return true
+        }
+        // Cross-origin navigation: old windowId is gone (sessionStorage is
+        // per-origin), but a new window appeared. Detect by checking if a
+        // new window connected after the old one disconnected.
+        if (!w && windows.size >= prevWindowCount) {
+          await new Promise(r => setTimeout(r, 300))
           return true
         }
       } else if (browsers.size > 0) {
@@ -1154,9 +1178,14 @@ async function handleRest(req: Request): Promise<Response> {
     // Include compact window list with recording status
     let allWindows = Array.from(windows.values())
     
-    // Session filtering: only show windows matching this session
+    // Session filtering: only strict when multiple sessions exist
     if (reqSession) {
-      allWindows = allWindows.filter(w => w.session === reqSession)
+      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
+      if (distinctSessions.size > 1) {
+        // Multi-agent: strict filter to own session only
+        allWindows = allWindows.filter(w => w.session === reqSession)
+      }
+      // Single session or no sessions: show all (no conflict to isolate)
     } else if (isSecureMode) {
       // Secure mode without session: show nothing but provide helpful message
       return Response.json({
@@ -3358,9 +3387,12 @@ Run 'hj --help' for all commands.`
     const reqSession = req.headers.get('X-Haltija-Session') || undefined
     let allWindows = Array.from(windows.values())
     
-    // Session filtering: only show windows matching this session
+    // Session filtering: only strict when multiple sessions exist
     if (reqSession) {
-      allWindows = allWindows.filter(w => w.session === reqSession)
+      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
+      if (distinctSessions.size > 1) {
+        allWindows = allWindows.filter(w => w.session === reqSession)
+      }
     } else if (isSecureMode) {
       const totalWindows = windows.size
       return Response.json({
