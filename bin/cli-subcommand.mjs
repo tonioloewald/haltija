@@ -202,10 +202,10 @@ export function parseTreeArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
     if (a === '--depth' || a === '-d') { body.depth = num(args[++i]); continue }
-    if (a === '--all' || a === '-a') { body.depth = -1; continue }
     if (a === '--selector' || a === '-s') { body.selector = args[++i]; continue }
     if (a === '--compact' || a === '-c') { body.compact = true; continue }
-    if (a === '--visible') { body.visibleOnly = true; continue }
+    if (a === '--interactive' || a === '-i') { body.interactiveOnly = true; continue }
+    if (a === '--visible' || a === '-v') { body.visibleOnly = true; continue }
     if (a === '--text') { body.includeText = true; continue }
     if (a === '--no-text') { body.includeText = false; continue }
     if (a === '--shadow') { body.pierceShadow = true; continue }
@@ -832,7 +832,7 @@ export function listSubcommands() {
   return `
 Subcommands (replace curl with simple commands):
   ${bold('Inspect')}
-    tree [selector] [-d N] [-a]    DOM tree with ref IDs (default depth 5, -a = all)
+    tree [selector] [-d N] [-i] [-v] DOM tree (full depth, -i=interactive, -v=visible)
     query <selector>               Find elements matching selector
     inspect <@ref|selector>        Detailed element info
     inspectAll <selector>          Deep inspect all matches

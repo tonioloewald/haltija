@@ -1,5 +1,5 @@
 {
-  "tree": "-d 5 (deeper), --compact, \"#selector\" | see: inspect, query, click",
+  "tree": "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   "query": "@ref or \"selector\", --all | see: tree, inspect",
   "inspect": "@ref or \"selector\", --styles, --rules, --ancestors | see: tree, query",
   "click": "@ref or \"selector\", :text(Button), --diff | see: tree, wait, type",

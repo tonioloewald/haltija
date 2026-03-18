@@ -201,7 +201,7 @@ describe('formatTree', () => {
     expect(lines[15]).toBe(')')
     // Footer
     expect(lines[16]).toBe('---')
-    expect(lines[17]).toBe('hj tree --json')
+    expect(lines[17]).toContain('--json')
   })
 
   test('formats form values and checkboxes', () => {
@@ -270,7 +270,7 @@ describe('formatTree', () => {
     // Leaf node, no parens
     expect(output).toContain('1 div.container')
     expect(output).toContain('---')
-    expect(output).toContain('hj tree --json')
+    expect(output).toContain('--json')
   })
 
   test('handles deeply nested structure', () => {
@@ -317,7 +317,7 @@ describe('formatTree', () => {
 
   test('footer is always present', () => {
     const output = formatTree({ tag: 'div', ref: '1' })
-    expect(output).toEndWith('---\nhj tree --json')
+    expect(output).toContain('---\ndepth=unlimited')
   })
 
   test('no colon after ref numbers', () => {

@@ -98,9 +98,10 @@ Use ancestors:true to see parent elements when inspecting deep elements.
 | Name | Type | Description |
 |------|------|-------------|
 | `selector` | string,null | Root element selector |
-| `depth` | number,null | Max depth (-1 = unlimited, default 5) |
+| `depth` | number,null | Max depth (-1 = unlimited). Default: unlimited |
 | `includeText` | boolean,null | Include text content (default true) |
 | `visibleOnly` | boolean,null | Only visible elements (default false) |
+| `interactiveOnly` | boolean,null | Only interactive elements and their ancestors (default false) |
 | `pierceShadow` | boolean,null | Pierce shadow DOM (default true) |
 | `pierceFrames` | boolean,null | Pierce same-origin iframes (default true) |
 | `compact` | boolean,null | Minimal output (default false) |
@@ -109,17 +110,17 @@ Use ancestors:true to see parent elements when inspecting deep elements.
 
 **Examples:**
 
-- **overview**: Quick page overview
+- **overview**: Quick page overview (shallow)
   ```json
-  {"depth":2}
+  {"depth":3}
   ```
 - **form-only**: Full form structure
   ```json
-  {"selector":"form","depth":-1}
+  {"selector":"form"}
   ```
-- **visible-buttons**: Find visible interactive elements
+- **interactive**: Only buttons, inputs, links, and their containers
   ```json
-  {"selector":"body","visibleOnly":true,"depth":4}
+  {"interactiveOnly":true}
   ```
 - **with-context**: See element with parent context
   ```json

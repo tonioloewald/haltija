@@ -19,7 +19,7 @@
             "number",
             "null"
           ],
-          "description": "Max depth (-1 = unlimited, default 5)"
+          "description": "Max depth (-1 = unlimited). Default: unlimited"
         },
         "includeText": {
           "type": [
@@ -34,6 +34,13 @@
             "null"
           ],
           "description": "Only visible elements (default false)"
+        },
+        "interactiveOnly": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only interactive elements and their ancestors (default false)"
         },
         "pierceShadow": {
           "type": [

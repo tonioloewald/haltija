@@ -893,7 +893,7 @@ export interface NotableMutation {
 export interface DomTreeRequest {
   /** Root element selector */
   selector: string
-  /** Maximum depth to traverse (default: 5, -1 for unlimited) */
+  /** Maximum depth to traverse (default: -1 unlimited) */
   depth?: number
   /** Include text content of leaf nodes (default: true) */
   includeText?: boolean
@@ -917,6 +917,8 @@ export interface DomTreeRequest {
   pierceFrames?: boolean
   /** Filter out hidden elements (default: false). When true, elements that are not visible are excluded from the tree. */
   visibleOnly?: boolean
+  /** Only interactive elements (buttons, inputs, links, selects) and their ancestors (default: false) */
+  interactiveOnly?: boolean
   /** Return actionable summary instead of full tree (buttons, links, inputs, headings) */
   mode?: 'tree' | 'actionable'
   /** Include ancestor path from document root (default: false) */

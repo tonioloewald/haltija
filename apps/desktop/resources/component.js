@@ -1310,9 +1310,22 @@
     }
     return summary;
   }
+  function pruneNonInteractive(node) {
+    const isInteractive = node.flags?.interactive || node.flags?.hasEvents;
+    const children = node.children?.map((c) => pruneNonInteractive(c)).filter((c) => c !== null);
+    const shadowChildren = node.shadowChildren?.map((c) => pruneNonInteractive(c)).filter((c) => c !== null);
+    const hasInteractiveDescendant = children && children.length > 0 || shadowChildren && shadowChildren.length > 0;
+    if (!isInteractive && !hasInteractiveDescendant)
+      return null;
+    return {
+      ...node,
+      children: children?.length ? children : undefined,
+      shadowChildren: shadowChildren?.length ? shadowChildren : undefined
+    };
+  }
   function buildDomTree(el, options, currentDepth = 0) {
     const {
-      depth = 5,
+      depth = -1,
       includeText = true,
       allAttributes = false,
       includeStyles = false,
@@ -5529,7 +5542,10 @@ ${elementSummary}${moreText}`;
             const summary = buildActionableSummary(el);
             this.respond(msg2.id, true, summary);
           } else {
-            const tree = buildDomTree(el, request);
+            let tree = buildDomTree(el, request);
+            if (request.interactiveOnly && tree) {
+              tree = pruneNonInteractive(tree);
+            }
             if (request.ancestors && tree) {
               const ancestors = [];
               let parent = el.parentElement;

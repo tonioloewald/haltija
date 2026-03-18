@@ -1870,6 +1870,34 @@ function buildActionableSummary(root: Element): ActionableSummary {
 }
 
 /**
+ * Prune tree to only interactive nodes and their ancestors.
+ * A node is kept if it has flags.interactive, flags.hasEvents, or has a
+ * descendant that does. This gives agents a focused view of actionable elements.
+ */
+function pruneNonInteractive(node: DomTreeNode): DomTreeNode | null {
+  const isInteractive = node.flags?.interactive || node.flags?.hasEvents
+
+  // Recursively prune children
+  const children = node.children
+    ?.map(c => pruneNonInteractive(c))
+    .filter((c): c is DomTreeNode => c !== null)
+  const shadowChildren = node.shadowChildren
+    ?.map(c => pruneNonInteractive(c))
+    .filter((c): c is DomTreeNode => c !== null)
+
+  const hasInteractiveDescendant = (children && children.length > 0) ||
+    (shadowChildren && shadowChildren.length > 0)
+
+  if (!isInteractive && !hasInteractiveDescendant) return null
+
+  return {
+    ...node,
+    children: children?.length ? children : undefined,
+    shadowChildren: shadowChildren?.length ? shadowChildren : undefined,
+  }
+}
+
+/**
  * Build a DOM tree representation
  */
 function buildDomTree(
@@ -1878,7 +1906,7 @@ function buildDomTree(
   currentDepth = 0,
 ): DomTreeNode | null {
   const {
-    depth = 5,
+    depth = -1,
     includeText = true,
     allAttributes = false,
     includeStyles = false,
@@ -7437,7 +7465,12 @@ export class DevChannel extends HTMLElement {
           const summary = buildActionableSummary(el)
           this.respond(msg.id, true, summary)
         } else {
-          const tree = buildDomTree(el, request)
+          let tree = buildDomTree(el, request)
+
+          // Filter to interactive elements and their ancestors
+          if (request.interactiveOnly && tree) {
+            tree = pruneNonInteractive(tree)
+          }
 
           // Add ancestor context if requested
           if (request.ancestors && tree) {

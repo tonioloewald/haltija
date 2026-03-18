@@ -33,11 +33,11 @@ export function formatTree(node, indent = 0, { depth } = {}) {
   const lines = []
   formatNode(node, indent, lines)
 
-  // Footer: depth and options hint
-  const d = depth ?? 5
-  const isDefault = depth === undefined || depth === null
+  // Footer: options hint
+  const d = depth ?? -1
+  const depthLabel = d === -1 ? 'unlimited' : String(d)
   lines.push('---')
-  lines.push(`depth=${d}${isDefault ? ' (default)' : d === -1 ? ' (unlimited)' : ''} | -d N | --all | --json`)
+  lines.push(`depth=${depthLabel} | -d N | -i (interactive) | --visible | --json`)
 
   return lines.join('\n')
 }

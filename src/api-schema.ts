@@ -100,10 +100,12 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
   category: 'dom',
   input: s.object({
     selector: s.string.describe('Root element selector').optional,
-    depth: s.number.describe('Max depth (-1 = unlimited, default 5)').optional,
+    depth: s.number.describe('Max depth (-1 = unlimited). Default: unlimited').optional,
     includeText: s.boolean.describe('Include text content (default true)')
       .optional,
     visibleOnly: s.boolean.describe('Only visible elements (default false)')
+      .optional,
+    interactiveOnly: s.boolean.describe('Only interactive elements and their ancestors (default false)')
       .optional,
     pierceShadow: s.boolean.describe('Pierce shadow DOM (default true)')
       .optional,
@@ -119,18 +121,18 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
   examples: [
     {
       name: 'overview',
-      input: { depth: 2 },
-      description: 'Quick page overview',
+      input: { depth: 3 },
+      description: 'Quick page overview (shallow)',
     },
     {
       name: 'form-only',
-      input: { selector: 'form', depth: -1 },
+      input: { selector: 'form' },
       description: 'Full form structure',
     },
     {
-      name: 'visible-buttons',
-      input: { selector: 'body', visibleOnly: true, depth: 4 },
-      description: 'Find visible interactive elements',
+      name: 'interactive',
+      input: { interactiveOnly: true },
+      description: 'Only buttons, inputs, links, and their containers',
     },
     {
       name: 'with-context',
@@ -138,7 +140,7 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
       description: 'See element with parent context',
     },
   ],
-  hints: '-d 5 (deeper), --compact, "#selector" | see: inspect, query, click',
+  hints: '-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click',
 })
 
 export const query = endpoint({

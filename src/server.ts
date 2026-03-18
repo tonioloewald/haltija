@@ -738,14 +738,14 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const sessionFilteredRequest: typeof requestFromBrowser = async (
     channel, action, payload, timeoutMs?, windowId?
   ) => {
-    // When a session is active (i.e., request from hj CLI), wait briefly for a
-    // browser to connect. This covers the common startup race where the agent
-    // runs `hj navigate` right after `bunx haltija` before the widget connects.
-    if (sessionId && browsers.size === 0) {
+    // When a session is active, wait briefly for a browser window to be
+    // available. Covers: startup race (no browsers yet), and post-navigate
+    // race (old connection closing, new page loading).
+    if (sessionId && (browsers.size === 0 || windows.size === 0)) {
       const waitStart = Date.now()
       while (Date.now() - waitStart < 5000) {
+        if (browsers.size > 0 && windows.size > 0) break
         await new Promise(r => setTimeout(r, 250))
-        if (browsers.size > 0) break
       }
     }
     
@@ -829,40 +829,6 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     return requestFromBrowser(channel, action, payload, timeoutMs)
   }
   
-  // Wait for a browser widget to reconnect after navigation/refresh.
-  // Detects reconnection by watching for the window's browserId to change
-  // (each page load gets a new browserId). Also handles cross-origin navigation
-  // where sessionStorage is lost and the widget gets a new windowId.
-  const waitForReconnect = async (windowId?: string, timeoutMs = 8000): Promise<boolean> => {
-    const id = windowId || targetWindowId || focusedWindowId
-    const prevBrowserId = id ? windows.get(id)?.browserId : undefined
-    const prevWindowCount = windows.size
-    const start = Date.now()
-    // Brief pause for disconnect to happen
-    await new Promise(r => setTimeout(r, 100))
-    while (Date.now() - start < timeoutMs) {
-      if (id) {
-        const w = windows.get(id)
-        if (w && w.browserId !== prevBrowserId) {
-          await new Promise(r => setTimeout(r, 300)) // widget init
-          return true
-        }
-        // Cross-origin navigation: old windowId is gone (sessionStorage is
-        // per-origin), but a new window appeared. Detect by checking if a
-        // new window connected after the old one disconnected.
-        if (!w && windows.size >= prevWindowCount) {
-          await new Promise(r => setTimeout(r, 300))
-          return true
-        }
-      } else if (browsers.size > 0) {
-        await new Promise(r => setTimeout(r, 300))
-        return true
-      }
-      await new Promise(r => setTimeout(r, 100))
-    }
-    return false
-  }
-  
   return {
     requestFromBrowser: sessionFilteredRequest,
     targetWindowId,
@@ -871,7 +837,6 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     sessionId,
     getWindowInfo,
     updateSessionAffinity,
-    waitForReconnect,
     startRecordingSession,
     stopRecordingSession,
     getRecordingSession,
