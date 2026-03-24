@@ -836,6 +836,33 @@ registerHandler(api.mutationsUnwatch, async (_body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
+// Network handlers (CDP-based, routed through widget bridge)
+registerHandler(api.networkWatch, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('network', 'watch', {
+    preset: body.preset,
+    includePatterns: body.includePatterns,
+    excludePatterns: body.excludePatterns,
+    maxBuffer: body.maxBuffer,
+  }, 5000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.networkUnwatch, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('network', 'unwatch', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.network, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('network', 'get', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
+registerHandler(api.networkStats, async (_body, ctx) => {
+  const response = await ctx.requestFromBrowser('network', 'stats', {})
+  return Response.json(response, { headers: ctx.headers })
+})
+
 // Events handlers
 registerHandler(api.eventsWatch, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('semantic', 'watch', {

@@ -6950,6 +6950,9 @@ export class DevChannel extends HTMLElement {
       case 'video':
         this.handleVideoMessage(msg)
         break
+      case 'network':
+        this.handleNetworkMessage(msg)
+        break
     }
 
     this.render()
@@ -7023,6 +7026,66 @@ export class DevChannel extends HTMLElement {
       })
     } else {
       this.respond(msg.id, false, undefined, `Unknown video action: ${action}`)
+    }
+  }
+
+  private handleNetworkMessage(msg: DevMessage) {
+    const { action, payload } = msg
+    const haltija = (window as any).haltija
+    const notAvailable = 'Network monitoring requires the Haltija Desktop app (CDP access)'
+
+    if (action === 'watch') {
+      if (!haltija?.networkWatch) {
+        this.respond(msg.id, false, undefined, notAvailable)
+        return
+      }
+      haltija.networkWatch(payload || {}).then((result: any) => {
+        this.respond(msg.id, result.success !== false, result)
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, err.message)
+      })
+    } else if (action === 'unwatch') {
+      if (!haltija?.networkUnwatch) {
+        this.respond(msg.id, false, undefined, notAvailable)
+        return
+      }
+      haltija.networkUnwatch().then((result: any) => {
+        this.respond(msg.id, true, result)
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, err.message)
+      })
+    } else if (action === 'get') {
+      if (!haltija?.networkLog) {
+        this.respond(msg.id, false, undefined, notAvailable)
+        return
+      }
+      haltija.networkLog(payload || {}).then((result: any) => {
+        this.respond(msg.id, true, result)
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, err.message)
+      })
+    } else if (action === 'stats') {
+      if (!haltija?.networkStats) {
+        this.respond(msg.id, false, undefined, notAvailable)
+        return
+      }
+      haltija.networkStats().then((result: any) => {
+        this.respond(msg.id, true, result)
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, err.message)
+      })
+    } else if (action === 'clear') {
+      if (!haltija?.networkClear) {
+        this.respond(msg.id, false, undefined, notAvailable)
+        return
+      }
+      haltija.networkClear().then((result: any) => {
+        this.respond(msg.id, true, result)
+      }).catch((err: any) => {
+        this.respond(msg.id, false, undefined, err.message)
+      })
+    } else {
+      this.respond(msg.id, false, undefined, `Unknown network action: ${action}`)
     }
   }
 

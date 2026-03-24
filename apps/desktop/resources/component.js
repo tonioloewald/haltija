@@ -5164,6 +5164,9 @@ ${elementSummary}${moreText}`;
         case "video":
           this.handleVideoMessage(msg2);
           break;
+        case "network":
+          this.handleNetworkMessage(msg2);
+          break;
       }
       this.render();
     }
@@ -5230,6 +5233,64 @@ ${elementSummary}${moreText}`;
         });
       } else {
         this.respond(msg2.id, false, undefined, `Unknown video action: ${action2}`);
+      }
+    }
+    handleNetworkMessage(msg2) {
+      const { action: action2, payload: payload2 } = msg2;
+      const haltija = window.haltija;
+      const notAvailable = "Network monitoring requires the Haltija Desktop app (CDP access)";
+      if (action2 === "watch") {
+        if (!haltija?.networkWatch) {
+          this.respond(msg2.id, false, undefined, notAvailable);
+          return;
+        }
+        haltija.networkWatch(payload2 || {}).then((result2) => {
+          this.respond(msg2.id, result2.success !== false, result2);
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, err.message);
+        });
+      } else if (action2 === "unwatch") {
+        if (!haltija?.networkUnwatch) {
+          this.respond(msg2.id, false, undefined, notAvailable);
+          return;
+        }
+        haltija.networkUnwatch().then((result2) => {
+          this.respond(msg2.id, true, result2);
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, err.message);
+        });
+      } else if (action2 === "get") {
+        if (!haltija?.networkLog) {
+          this.respond(msg2.id, false, undefined, notAvailable);
+          return;
+        }
+        haltija.networkLog(payload2 || {}).then((result2) => {
+          this.respond(msg2.id, true, result2);
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, err.message);
+        });
+      } else if (action2 === "stats") {
+        if (!haltija?.networkStats) {
+          this.respond(msg2.id, false, undefined, notAvailable);
+          return;
+        }
+        haltija.networkStats().then((result2) => {
+          this.respond(msg2.id, true, result2);
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, err.message);
+        });
+      } else if (action2 === "clear") {
+        if (!haltija?.networkClear) {
+          this.respond(msg2.id, false, undefined, notAvailable);
+          return;
+        }
+        haltija.networkClear().then((result2) => {
+          this.respond(msg2.id, true, result2);
+        }).catch((err) => {
+          this.respond(msg2.id, false, undefined, err.message);
+        });
+      } else {
+        this.respond(msg2.id, false, undefined, `Unknown network action: ${action2}`);
       }
     }
     handleSemanticMessage(msg2) {

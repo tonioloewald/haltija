@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld('haltija', {
   videoStatus: () => {
     return ipcRenderer.invoke('video-status')
   },
+  // CDP Network monitoring — direct IPC to main process (no renderer hop needed)
+  networkWatch: (opts) => ipcRenderer.invoke('network-watch', opts || {}),
+  networkUnwatch: () => ipcRenderer.invoke('network-unwatch'),
+  networkLog: (opts) => ipcRenderer.invoke('network-log', opts || {}),
+  networkStats: () => ipcRenderer.invoke('network-stats'),
+  networkClear: () => ipcRenderer.invoke('network-clear'),
 })
 
 console.log('[Haltija] Webview preload complete, window.haltija exposed')

@@ -1081,6 +1081,63 @@ Response: { watching: boolean, mutations: [...], summary: { added, removed, chan
 })
 
 // ============================================
+// Network Monitoring (CDP)
+// ============================================
+
+export const networkWatch = endpoint({
+  path: '/network/watch',
+  method: 'POST',
+  summary: 'Start capturing network traffic',
+  description: `Begin monitoring HTTP requests and responses via Chrome DevTools Protocol.
+Requires the Haltija Desktop app (uses Electron's CDP access).
+
+Presets control what's captured:
+- errors: only 4xx, 5xx, timeouts, CORS failures
+- minimal: errors + XHR/fetch requests (no images, scripts, CSS)
+- standard: all requests except analytics/tracking noise (default)
+- verbose: everything including preflights and tracking
+
+Output is token-optimized: ~10 tokens per request vs 200+ for raw HAR.`,
+  category: 'network',
+  input: s.object({
+    preset: s.string.describe('Filter preset: errors, minimal, standard, verbose').optional,
+    includePatterns: s.array(s.string).describe('URL regex patterns to always include').optional,
+    excludePatterns: s.array(s.string).describe('URL regex patterns to exclude').optional,
+    maxBuffer: s.number.describe('Max entries to buffer (default 200)').optional,
+  }),
+})
+
+export const networkUnwatch = endpoint({
+  path: '/network/unwatch',
+  method: 'POST',
+  summary: 'Stop capturing network traffic',
+  description: 'Stop monitoring network requests. Clears the capture buffer.',
+  category: 'network',
+  input: s.object({}),
+})
+
+export const network = endpoint({
+  path: '/network',
+  method: 'GET',
+  summary: 'Get captured network requests',
+  description: `Returns buffered network entries in compact format.
+
+Each entry: { m: method, s: status, url: trimmed_url, t: time_ms, sz: human_size, type: resource_type }
+Status -1 means failed (timeout, CORS, canceled). Summary line always included.
+
+Use preset parameter to override the watch preset for this query.`,
+  category: 'network',
+})
+
+export const networkStats = endpoint({
+  path: '/network/stats',
+  method: 'GET',
+  summary: 'Network traffic summary',
+  description: 'Returns: total requests, failures, pending, average latency, total bytes, and a one-line summary string.',
+  category: 'network',
+})
+
+// ============================================
 // Event Watching
 // ============================================
 
@@ -2267,6 +2324,12 @@ export const endpoints = {
   mutationsUnwatch,
   mutationsStatus,
 
+  // Network (CDP)
+  network,
+  networkWatch,
+  networkUnwatch,
+  networkStats,
+
   // Events
   eventsWatch,
   eventsUnwatch,
@@ -2346,8 +2409,8 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-03-02T10:27:32.623Z',
-  checksum: '32fb3808',
+  updated: '2026-03-20T00:00:00.000Z',
+  checksum: 'eb76d515',
 }
 
 /**

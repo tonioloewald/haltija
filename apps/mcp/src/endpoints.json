@@ -1001,6 +1001,77 @@
     "description": "Check if mutation watching is active and get captured mutations.\n\nResponse: { watching: boolean, mutations: [...], summary: { added, removed, changed } }"
   },
   {
+    "path": "/network",
+    "method": "GET",
+    "summary": "Get captured network requests",
+    "description": "Returns buffered network entries in compact format.\n\nEach entry: { m: method, s: status, url: trimmed_url, t: time_ms, sz: human_size, type: resource_type }\nStatus -1 means failed (timeout, CORS, canceled). Summary line always included.\n\nUse preset parameter to override the watch preset for this query."
+  },
+  {
+    "path": "/network/watch",
+    "method": "POST",
+    "summary": "Start capturing network traffic",
+    "description": "Begin monitoring HTTP requests and responses via Chrome DevTools Protocol.\nRequires the Haltija Desktop app (uses Electron's CDP access).\n\nPresets control what's captured:\n- errors: only 4xx, 5xx, timeouts, CORS failures\n- minimal: errors + XHR/fetch requests (no images, scripts, CSS)\n- standard: all requests except analytics/tracking noise (default)\n- verbose: everything including preflights and tracking\n\nOutput is token-optimized: ~10 tokens per request vs 200+ for raw HAR.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Filter preset: errors, minimal, standard, verbose"
+        },
+        "includePatterns": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "URL regex patterns to always include"
+        },
+        "excludePatterns": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "URL regex patterns to exclude"
+        },
+        "maxBuffer": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max entries to buffer (default 200)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/network/unwatch",
+    "method": "POST",
+    "summary": "Stop capturing network traffic",
+    "description": "Stop monitoring network requests. Clears the capture buffer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/network/stats",
+    "method": "GET",
+    "summary": "Network traffic summary",
+    "description": "Returns: total requests, failures, pending, average latency, total bytes, and a one-line summary string."
+  },
+  {
     "path": "/events/watch",
     "method": "POST",
     "summary": "Start watching semantic events",
