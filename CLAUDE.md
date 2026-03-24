@@ -11,6 +11,11 @@ Haltija gives AI agents eyes and hands in the browser. Instead of guessing what'
 ```bash
 # Build (compiles TypeScript, embeds assets, bundles component.js)
 bun run build
+bun run build:assets              # Regenerate src/embedded-assets.ts only
+
+# Desktop app (Electron)
+bun run electron                  # Full build + launch Electron
+bun run electron:quick            # Launch Electron without rebuilding
 
 # Unit tests (run with Bun)
 bun test                          # All unit tests (src/ only)
@@ -35,7 +40,10 @@ bunx haltija
 haltija --https              # HTTPS mode (auto-generates certs)
 haltija --both               # HTTP + HTTPS simultaneously
 haltija --port 3000          # Custom port
-haltija --headless           # Playwright mode for CI
+haltija --headless           # Playwright headless Chromium with auto-injection
+haltija --ci                 # CI mode (Electron + wait + sandbox disabled)
+haltija --wait-ready         # Block until server + browser fully connected
+haltija --secure             # Require session token on all requests
 haltija --docs-dir ./docs    # Custom reference docs directory
 
 # hj CLI (agent-facing commands)
@@ -80,12 +88,13 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/text-selector.ts` | Custom `:text()` pseudo-selector parser (shared by component + tests) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
 | `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
-| `src/test.ts` | `haltija/test` helper — `HaltijaTestClient` for use in `.test.ts` files |
+| `src/test.ts` | `haltija/test` helper — `HaltijaTestClient` for integration tests (requires running server) |
 | `src/client.ts` | Typed REST client class (`DevChannelClient`) wrapping all server endpoints |
 | `src/tasks.ts` | Kanban task board persistence as Markdown (`.haltija/tasks-*.md`) |
 | `src/task-board.ts` | `<task-board>` web component — interactive kanban UI |
 | `src/agent-shell.ts` | Spawns `claude -p` subprocesses, parses stream-JSON output |
 | `src/terminal.ts` | Status registry, push notification buffer, command dispatch to tools |
+| `src/codemirror-bundle.ts` | CodeMirror 6 entry point, bundled as IIFE for terminal file viewer |
 | `src/embedded-assets.ts` | Auto-generated asset embeds (do not edit — run `bun run build:assets`) |
 
 ### `hj` CLI Architecture
@@ -192,6 +201,7 @@ The "hindsight buffer" - aggregated events that capture user intent:
 2. Add to `endpoints` registry at bottom of file
 3. Add handler in `src/api-handlers.ts` if using schema-driven routing
 4. For complex endpoints, may need fallback handling in `src/server.ts`
+5. To deprecate: prefix summary with `[Deprecated]` and start description with `Deprecated: Use X instead` — the router auto-detects and adds deprecation headers
 
 ## Test JSON Format
 
@@ -251,12 +261,35 @@ The build script (`scripts/build.ts`) generates:
 3. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules
 4. `apps/desktop/resources/component.js` - Synced copy for desktop app
 5. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
-6. `API.md` - Auto-generated API reference (do not edit directly)
-7. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
+6. `bin/hints.json` - CLI command hints generated from schema endpoints
+7. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`)
+8. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
+9. `API.md` - Auto-generated API reference (do not edit directly)
+10. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
 
 ## Version Management
 
 Version is managed in `package.json` only. The build script generates `src/version.ts` automatically. Never edit `version.ts` directly.
+
+## Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DEV_CHANNEL_PORT` | HTTP server port | `8700` |
+| `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
+| `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
+| `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
+| `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
+| `HALTIJA_SECURE` | Require session token on all requests | — |
+| `HALTIJA_SESSION` | Session token for multi-agent isolation (`hj` CLI) | — |
+
+## CI / QA
+
+The GitHub Actions workflow (`.github/workflows/test-qa.yml`) runs on push/PR to main:
+- Builds, launches Electron under xvfb, waits for server + browser connection
+- Runs test JSON fixtures via `POST /test/run` (not `bun test`): `tests/playground.json`, `tests/homepage.json`
+- `tests/xinjs-spa.json` is non-blocking (external site)
+- On failure, captures snapshot + screenshot as artifacts
 
 ## Issue Tracking
 

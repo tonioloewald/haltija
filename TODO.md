@@ -4,6 +4,15 @@
 - [ ] Drop Intel macOS builds, add Windows and Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
 
+## Agentic IDE
+- [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment
+  - Phase 1: File viewer/editor in widget
+  - Phase 2: Touch stream (activity-based navigation)
+  - Phase 3: Notification buffer (human-to-agent signals via widget)
+  - Phase 4: Plan as first-class UI
+  - Phase 5: Context proxy (anti-lobotomy)
+  - Phase 6: Verification loop
+
 ## Features
 - [ ] Widget REC control: `<select>` dropdown in widget
   - Not recording: options are "REC", "Script", "Video", "Script + Video"
