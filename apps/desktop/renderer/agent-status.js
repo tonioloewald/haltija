@@ -52,7 +52,9 @@ function handleAgentStatusMessage(msg) {
       break
     case 'shell-renamed':
       if (connectedShells.has(msg.shellId)) {
-        connectedShells.get(msg.shellId).name = msg.name
+        const info = connectedShells.get(msg.shellId)
+        info.name = msg.name
+        info.isAgent = msg.name?.includes('agent')
         updateAgentSelector()
       }
       break
@@ -186,6 +188,12 @@ function updateAgentSelector() {
   const agents = Array.from(connectedShells.entries())
     .filter(([_, info]) => info.isAgent)
 
+  // Hide the selector unless there are multiple agents to choose between
+  const selectorEl = el.agentSelect?.parentElement
+  if (selectorEl) {
+    selectorEl.style.display = agents.length > 1 ? '' : 'none'
+  }
+
   if (agents.length === 0) {
     el.agentSelect.innerHTML = '<option value="">No agents</option>'
   } else {
@@ -196,6 +204,10 @@ function updateAgentSelector() {
 }
 
 export async function initAgentStatusBar() {
+  // Hide agent selector by default (only shown when multiple agents connected)
+  const selectorEl = el.agentSelect?.parentElement
+  if (selectorEl) selectorEl.style.display = 'none'
+
   try {
     const response = await fetch(`${getServerUrl()}/terminal/status`)
     if (response.ok) {
@@ -205,6 +217,18 @@ export async function initAgentStatusBar() {
   } catch (err) {
     console.log('[Agent Status] Could not fetch initial status:', err.message)
   }
+
+  // Seed agent list from existing sessions (may have connected before this WS)
+  try {
+    const res = await fetch(`${getServerUrl()}/terminal/agents`)
+    if (res.ok) {
+      const data = await res.json()
+      for (const agent of data.agents || []) {
+        connectedShells.set(agent.id, { name: agent.name, isAgent: true })
+      }
+      updateAgentSelector()
+    }
+  } catch {}
 
   connectAgentStatusWs()
 }

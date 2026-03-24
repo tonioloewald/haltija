@@ -258,6 +258,14 @@ export function navigate(url, tabId = activeTabId) {
   const tab = tabs.find((t) => t.id === tabId)
   if (!tab) return
 
+  // Never navigate terminal/agent iframes — they aren't browser tabs
+  if (tab.isTerminal) {
+    console.warn('[Haltija] Refusing to navigate terminal tab, finding content tab instead')
+    const contentTab = tabs.find(t => !t.isTerminal)
+    if (contentTab) return navigate(url, contentTab.id)
+    return
+  }
+
   let addedHttps = false
 
   if (url && !url.match(/^(https?|blob|data|file|about|javascript):\/?\/?/i)) {

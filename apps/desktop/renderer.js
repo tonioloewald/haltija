@@ -202,8 +202,24 @@ if (window.haltija) {
   })
 
   window.haltija.onNavigateUrl?.((data) => {
-    console.log('[Haltija Desktop] Navigate request from widget:', data.url)
-    navigate(data.url)
+    console.log('[Haltija Desktop] Navigate request from widget:', data.url, 'wcId:', data.webContentsId)
+    // Find the tab that owns the webview that sent the navigate request
+    // so we navigate the correct tab, not the active (possibly terminal) tab
+    let targetTabId = undefined
+    if (data.webContentsId) {
+      const match = tabs.find(t => {
+        try {
+          return t.webview?.getWebContentsId && t.webview.getWebContentsId() === data.webContentsId
+        } catch { return false }
+      })
+      if (match) targetTabId = match.id
+    }
+    // Fallback: navigate the first non-terminal tab (never navigate a terminal/agent iframe)
+    if (!targetTabId) {
+      const contentTab = tabs.find(t => !t.isTerminal)
+      if (contentTab) targetTabId = contentTab.id
+    }
+    navigate(data.url, targetTabId)
   })
 }
 

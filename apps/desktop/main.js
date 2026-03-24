@@ -23,6 +23,7 @@ const fs = require('fs')
 const os = require('os')
 const { spawn } = require('child_process')
 const http = require('http')
+const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
 
 // Suppress EIO errors when stdout/stderr pipes break during shutdown
 process.stdout.on('error', () => {})
@@ -700,6 +701,19 @@ function setupWebContentsInjection(wc) {
   })
 }
 
+/**
+ * Find the webview webContents for a given IPC sender.
+ * If sender IS a webview, return it directly.
+ * If sender is the renderer (main window), return null (caller should use explicit wcId).
+ */
+function findWebContentsForSender(sender) {
+  if (!sender) return null
+  // webview-preload.js IPC: sender is the webview itself
+  if (sender.getType() === 'webview') return sender
+  // renderer preload.js IPC: sender is the main window, not useful for targeting a specific webview
+  return null
+}
+
 async function injectWidget(webContents) {
   const url = webContents.getURL()
   console.log('[Haltija Desktop] Injecting widget into:', url)
@@ -881,12 +895,13 @@ function setupScreenCapture() {
 
   // Navigate URL with smart fallback (called from widget in webview)
   // Routes through renderer's navigate() which has https->http fallback
+  // Passes the sender's webContentsId so the renderer navigates the correct tab
   ipcMain.handle('navigate-url', async (event, url) => {
     if (!mainWindow) return { success: false, error: 'No window' }
 
     try {
-      // Send to renderer which has the smart navigate function
-      mainWindow.webContents.send('navigate-url', { url })
+      const senderWcId = event.sender.id
+      mainWindow.webContents.send('navigate-url', { url, webContentsId: senderWcId })
       return { success: true }
     } catch (err) {
       return { success: false, error: err.message }
@@ -911,6 +926,48 @@ function setupScreenCapture() {
     if (!mainWindow) return false
     mainWindow.webContents.send('focus-tab', { windowId })
     return true
+  })
+
+  // CDP Network monitoring — manages per-webContents debugger sessions
+  // Accepts explicit wcId for renderer-routed calls, falls back to sender for direct webview calls
+  const resolveNetworkWc = (event, wcId) => {
+    if (wcId) {
+      const { webContents: wcModule } = require('electron')
+      return wcModule.fromId(wcId)
+    }
+    return findWebContentsForSender(event.sender)
+  }
+
+  ipcMain.handle('network-watch', async (event, opts = {}) => {
+    const wc = resolveNetworkWc(event, opts.wcId)
+    if (!wc) return { success: false, error: 'No webview found' }
+    return attachNetwork(wc, opts)
+  })
+
+  ipcMain.handle('network-unwatch', async (event, wcId) => {
+    const wc = resolveNetworkWc(event, wcId)
+    if (!wc) return { success: false, error: 'No webview found' }
+    detachNetwork(wc)
+    return { success: true }
+  })
+
+  ipcMain.handle('network-log', async (event, opts = {}) => {
+    const wc = resolveNetworkWc(event, opts.wcId)
+    if (!wc) return { entries: [], summary: 'no webview' }
+    return getNetworkLog(wc.id, opts)
+  })
+
+  ipcMain.handle('network-stats', async (event, wcId) => {
+    const wc = resolveNetworkWc(event, wcId)
+    if (!wc) return { watching: false }
+    return getNetworkStats(wc.id)
+  })
+
+  ipcMain.handle('network-clear', async (event, wcId) => {
+    const wc = resolveNetworkWc(event, wcId)
+    if (!wc) return { success: false }
+    clearNetwork(wc.id)
+    return { success: true }
   })
 
   // Video capture — forwarded to renderer where MediaRecorder runs
