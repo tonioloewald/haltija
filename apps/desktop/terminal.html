@@ -5,7 +5,7 @@
   <title>Agent Terminal</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    
+
     /* Shared base colors */
     :root {
       --bg-base: #1a1a2e;
@@ -13,19 +13,19 @@
       --bg-surface: #252540;
       --border: #2d2d4a;
     }
-    
+
     /* Human terminal: blue accent */
     body.mode-human {
       --accent: #6366f1;
       --accent-light: #a5b4fc;
     }
-    
+
     /* Agent terminal: green accent */
     body.mode-agent {
       --accent: #22c55e;
       --accent-light: #86efac;
     }
-    
+
     body {
       font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
       background: var(--bg-base);
@@ -440,6 +440,300 @@
       color: white;
       border-color: var(--accent);
     }
+    /* Files toggle button */
+    #files-toggle {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--accent-light, #a5b4fc);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    #files-toggle:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    #files-toggle.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    /* Split pane layout */
+    #main-split {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    #console-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 200px;
+      overflow: hidden;
+    }
+    #split-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: var(--border, #2d2d4a);
+      flex-shrink: 0;
+      display: none;
+      transition: background 0.15s;
+    }
+    #split-handle:hover,
+    #split-handle.dragging {
+      background: var(--accent, #6366f1);
+    }
+    #file-pane {
+      width: 50%;
+      display: flex;
+      min-width: 250px;
+      max-width: 80%;
+      border-left: 1px solid var(--border, #2d2d4a);
+    }
+    #file-pane.hidden {
+      display: none;
+    }
+
+    /* File sidebar */
+    #file-sidebar {
+      width: 180px;
+      min-width: 120px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border, #2d2d4a);
+      background: var(--bg-dark, #0f0f1e);
+      flex-shrink: 0;
+    }
+    .acc-header {
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid var(--border, #2d2d4a);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .acc-header::before {
+      content: '▸';
+      font-size: 10px;
+      transition: transform 0.15s;
+    }
+    .acc-header.open::before {
+      transform: rotate(90deg);
+    }
+    .acc-body {
+      display: none;
+      overflow-y: auto;
+    }
+    .acc-header.open + .acc-body {
+      display: block;
+    }
+    .file-item {
+      padding: 3px 10px 3px 16px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .file-item:hover {
+      background: var(--bg-surface, #252540);
+      color: #e2e8f0;
+    }
+    .file-item.active {
+      background: var(--accent, #6366f1);
+      color: white;
+    }
+    .file-item .op-badge {
+      font-size: 9px;
+      margin-right: 4px;
+      opacity: 0.6;
+    }
+    .file-item .op-badge.write { color: #f59e0b; }
+    .file-item .op-badge.read { color: #6366f1; }
+
+    /* File tree */
+    .tree-dir, .tree-file {
+      padding: 2px 0;
+      font-size: 12px;
+    }
+    .tree-dir > .tree-label {
+      cursor: pointer;
+      padding: 2px 8px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .tree-dir > .tree-label:hover {
+      color: #e2e8f0;
+    }
+    .tree-dir > .tree-label::before {
+      content: '▸';
+      font-size: 10px;
+      transition: transform 0.15s;
+      display: inline-block;
+      width: 12px;
+    }
+    .tree-dir.open > .tree-label::before {
+      transform: rotate(90deg);
+    }
+    .tree-dir > .tree-children {
+      display: none;
+      padding-left: 12px;
+    }
+    .tree-dir.open > .tree-children {
+      display: block;
+    }
+    .tree-file {
+      cursor: pointer;
+      padding: 2px 8px 2px 22px;
+      color: #94a3b8;
+    }
+    .tree-file:hover {
+      background: var(--bg-surface, #252540);
+      color: #e2e8f0;
+    }
+
+    /* File main area */
+    #file-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+    #file-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #64748b;
+      background: var(--bg-dark, #0f0f1e);
+      border-bottom: 1px solid var(--border, #2d2d4a);
+      min-height: 28px;
+    }
+    #file-path-display {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #94a3b8;
+    }
+    #file-edit-btn, #file-save-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--accent-light, #a5b4fc);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+    #file-edit-btn:hover, #file-save-btn:hover {
+      background: var(--accent);
+      color: white;
+    }
+    #file-save-btn {
+      color: #4ade80;
+      border-color: #22c55e33;
+    }
+    #file-editor {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    #file-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #475569;
+      font-size: 14px;
+    }
+    /* CodeMirror fills the editor pane */
+    #file-editor .cm-editor {
+      height: 100%;
+    }
+    #file-editor .cm-scroller {
+      overflow: auto;
+    }
+    /* Image preview */
+    #file-editor .image-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 20px;
+      background: #111;
+    }
+    #file-editor .image-preview img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    /* SVGs scale up to fill the preview (icons can be tiny) */
+    #file-editor .image-preview img.svg-preview {
+      min-width: 50%;
+      min-height: 50%;
+    }
+    /* Markdown preview */
+    #file-editor .markdown-preview {
+      padding: 20px;
+      overflow-y: auto;
+      height: 100%;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+    #file-editor .markdown-preview h1,
+    #file-editor .markdown-preview h2,
+    #file-editor .markdown-preview h3 {
+      color: #f1f5f9;
+      margin: 1em 0 0.5em;
+    }
+    #file-editor .markdown-preview code {
+      background: var(--bg-surface, #252540);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    #file-editor .markdown-preview pre {
+      background: var(--bg-surface, #252540);
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    #file-editor .markdown-preview pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Responsive: stack on narrow viewports */
+    @media (max-width: 700px) {
+      #main-split {
+        flex-direction: column;
+      }
+      #split-handle {
+        width: auto;
+        height: 4px;
+        cursor: row-resize;
+      }
+      #file-pane {
+        width: 100%;
+        max-width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border, #2d2d4a);
+      }
+    }
   </style>
 </head>
 <body>
@@ -448,14 +742,43 @@
     <span id="shell-id"></span>
     <span id="status-text">connecting...</span>
     <span style="flex:1"></span>
+    <button id="files-toggle" title="Toggle file viewer (⌘E)">Files</button>
     <button id="copy-btn" title="Copy transcript">Copy</button>
   </div>
-  <div id="messages">
-    <div class="msg msg-system" id="welcome-msg"></div>
-  </div>
-  <div id="input-area">
-    <textarea id="input" rows="1" placeholder="tool command..." autofocus></textarea>
-    <button id="stop-btn">Stop</button>
+  <div id="main-split">
+    <div id="console-pane">
+      <div id="messages">
+        <div class="msg msg-system" id="welcome-msg"></div>
+      </div>
+      <div id="input-area">
+        <textarea id="input" rows="1" placeholder="tool command..." autofocus></textarea>
+        <button id="stop-btn">Stop</button>
+      </div>
+    </div>
+    <div id="split-handle"></div>
+    <div id="file-pane" class="hidden">
+      <div id="file-sidebar">
+        <div class="acc" id="acc-touched">
+          <div class="acc-header" data-acc="touched">Recently Touched</div>
+          <div class="acc-body" id="touched-list"></div>
+        </div>
+        <div class="acc" id="acc-tree">
+          <div class="acc-header" data-acc="tree">File Tree</div>
+          <div class="acc-body" id="file-tree"></div>
+        </div>
+      </div>
+      <div id="file-main">
+        <div id="file-breadcrumb">
+          <span id="file-path-display"></span>
+          <span style="flex:1"></span>
+          <button id="file-edit-btn" class="hidden" title="Toggle edit mode">Edit</button>
+          <button id="file-save-btn" class="hidden" title="Save changes (⌘S)">Save</button>
+        </div>
+        <div id="file-editor">
+          <div id="file-empty">Select a file to view</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -630,7 +953,7 @@
                 // Prefix with source info if from browser or other shell
                 const prefix = msg.from && msg.from !== 'user' ? `[from ${msg.from}] ` : ''
                 const fullText = prefix + msg.text
-                
+
                 // If input is empty, just set it; otherwise append with newline
                 if (inputEl.value.trim()) {
                   inputEl.value = inputEl.value + '\n' + fullText
@@ -638,7 +961,7 @@
                   inputEl.value = fullText
                 }
                 inputEl.focus()
-                
+
                 // If submit flag is set, auto-submit (CLI sends use this)
                 if (msg.submit) {
                   addMessage('system', `Message from ${msg.from} submitted`)
@@ -659,6 +982,9 @@
               // Only auto-send if there's content in the input and agent is idle
               // This gives user a chance to review/edit the pasted message
               // Skip auto-resume - user will send when ready
+              break
+            case 'file-touched':
+              if (typeof refreshTouches === 'function') refreshTouches()
               break
           }
         } catch {}
@@ -724,10 +1050,10 @@
 
     function showContextMenu(x, y, item, currentCol) {
       hideContextMenu()
-      
+
       const menu = document.createElement('div')
       menu.className = 'context-menu'
-      
+
       const actions = [
         { label: 'Claim', cmd: `tasks claim ${item.id}`, show: currentCol !== 'done' },
         { label: 'Done', cmd: `tasks done ${item.id}`, show: currentCol !== 'done' },
@@ -740,7 +1066,7 @@
         { label: 'Detail', cmd: `tasks detail ${item.id}` },
         { label: 'Trash', cmd: `tasks trash ${item.id}`, show: currentCol !== 'trash' },
       ]
-      
+
       for (const action of actions) {
         if (action.show === false) continue
         if (action.divider) {
@@ -759,11 +1085,11 @@
           menu.appendChild(item)
         }
       }
-      
+
       menu.style.left = `${x}px`
       menu.style.top = `${y}px`
       document.body.appendChild(menu)
-      
+
       // Adjust if off-screen
       const rect = menu.getBoundingClientRect()
       if (rect.right > window.innerWidth) {
@@ -772,7 +1098,7 @@
       if (rect.bottom > window.innerHeight) {
         menu.style.top = `${window.innerHeight - rect.height - 8}px`
       }
-      
+
       activeContextMenu = menu
     }
 
@@ -799,7 +1125,7 @@
     function renderBoard(boardData) {
       const container = document.createElement('div')
       container.className = 'board'
-      
+
       // Quick-add input
       const addRow = document.createElement('div')
       addRow.className = 'board-add'
@@ -810,7 +1136,7 @@
       addBtn.textContent = '+'
       addRow.appendChild(addInput)
       addRow.appendChild(addBtn)
-      
+
       const doAdd = () => {
         const title = addInput.value.trim()
         if (title) {
@@ -822,9 +1148,9 @@
         if (e.key === 'Enter') doAdd()
       })
       addBtn.addEventListener('click', doAdd)
-      
+
       container.appendChild(addRow)
-      
+
       // Columns container
       const colsContainer = document.createElement('div')
       colsContainer.style.display = 'flex'
@@ -839,7 +1165,7 @@
         const colEl = document.createElement('div')
         colEl.className = 'board-col'
         colEl.dataset.column = col
-        
+
         // Drag-drop target
         colEl.addEventListener('dragover', (e) => {
           e.preventDefault()
@@ -868,7 +1194,7 @@
           itemEl.draggable = true
           itemEl.innerHTML = `<span class="item-id">#${item.id}</span>${escapeHtml(item.title)}`
           itemEl.title = item.claimed ? `claimed: ${item.claimed}` : item.title
-          
+
           // Drag start
           itemEl.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text/plain', item.id)
@@ -877,24 +1203,24 @@
           itemEl.addEventListener('dragend', () => {
             itemEl.classList.remove('dragging')
           })
-          
+
           // Click for detail
           itemEl.addEventListener('click', () => {
             runCommand(`tasks detail ${item.id}`)
           })
-          
+
           // Right-click for context menu
           itemEl.addEventListener('contextmenu', (e) => {
             e.preventDefault()
             showContextMenu(e.clientX, e.clientY, item, col)
           })
-          
+
           colEl.appendChild(itemEl)
         }
 
         colsContainer.appendChild(colEl)
       }
-      
+
       container.appendChild(colsContainer)
 
       return container
@@ -907,7 +1233,7 @@
     inputEl.addEventListener('keydown', async (e) => {
       // Simple and consistent: Enter sends, Shift+Enter inserts newline
       // Works the same in both human and agent modes
-      
+
       if (e.key === 'Enter' && !e.shiftKey && inputEl.value.trim()) {
         e.preventDefault()
         const command = inputEl.value.trim()
@@ -1009,7 +1335,7 @@
       // Notify parent for tab status indicator
       window.parent.postMessage({ type: 'agent-status', status: thinking ? 'thinking' : 'ready' }, '*')
     }
-    
+
     function setAgentError() {
       window.parent.postMessage({ type: 'agent-status', status: 'error' }, '*')
     }
@@ -1066,7 +1392,7 @@
     async function sendAgentPrompt(prompt) {
       // Always show user prompt immediately
       addMessage('prompt', prompt)
-      
+
       // If not already thinking, show thinking indicator
       if (!isAgentThinking) {
         showThinking()
@@ -1130,26 +1456,26 @@
       try {
         // DEBUG: Log what we received
         console.log('[tool-card] render:', { tool, input: input?.slice?.(0, 100), id })
-        
+
         const card = document.createElement('div')
         card.className = 'tool-card running'
         card.dataset.toolId = id || `unknown-${Date.now()}`
 
         const header = document.createElement('div')
         header.className = 'tool-card-header'
-        
+
         // Handle missing data gracefully
         const toolName = tool || 'unknown'
         const toolInput = input || ''
         const toolId = id || 'no-id'
-        
+
         const summary = summarizeInput(toolName, toolInput)
         const { name, server } = formatToolName(toolName)
         const serverTag = server ? ` <span style="opacity:0.5;font-size:10px">(${server})</span>` : ''
-        
+
         // If no tool name, show debug info
         const displayName = toolName === 'unknown' ? `DEBUG: ${JSON.stringify({tool, id})}` : name
-        
+
         header.innerHTML = `
           <span class="tool-name"><span class="tool-chevron">&gt;</span> ${escapeHtml(displayName)}${serverTag}</span>
           <span class="tool-summary">${escapeHtml(summary || '(no input)')}</span>
@@ -1186,7 +1512,7 @@
       const card = pendingTools.get(id)
       if (card) {
         card.classList.remove('running')
-        
+
         // Show brief output preview directly visible (not hidden)
         const outputPreview = document.createElement('div')
         outputPreview.className = 'tool-output-preview'
@@ -1199,7 +1525,7 @@
           outputPreview.textContent = previewFull
         }
         card.appendChild(outputPreview)
-        
+
         // Add full output to expandable body
         const body = card.querySelector('.tool-card-body')
         const outputDiv = document.createElement('div')
@@ -1229,7 +1555,7 @@
     function summarizeInput(tool, input) {
       // Show a short summary based on tool type
       if (!input || input.trim() === '') return '(no input)'
-      
+
       try {
         const parsed = JSON.parse(input)
         // File operations
@@ -1359,7 +1685,7 @@
           shellIdEl.textContent = event.data.name
         })
       }
-      
+
     })
 
     fetch(`${BASE_URL}/terminal/status`)
@@ -1368,6 +1694,338 @@
       .catch(() => {})
 
     connect()
+
+    // ==========================================
+    // File Viewer
+    // ==========================================
+
+    const filesToggle = document.getElementById('files-toggle')
+    const filePane = document.getElementById('file-pane')
+    const splitHandle = document.getElementById('split-handle')
+    const fileSidebar = document.getElementById('file-sidebar')
+    const touchedList = document.getElementById('touched-list')
+    const fileTreeEl = document.getElementById('file-tree')
+    const fileEditorEl = document.getElementById('file-editor')
+    const fileEmptyEl = document.getElementById('file-empty')
+    const filePathDisplay = document.getElementById('file-path-display')
+    const fileEditBtn = document.getElementById('file-edit-btn')
+    const fileSaveBtn = document.getElementById('file-save-btn')
+
+    let filePaneOpen = false
+    let currentFilePath = null
+    let currentEditor = null
+    let cmLoaded = false
+    let isEditing = false
+
+    // Toggle file pane
+    filesToggle.addEventListener('click', () => {
+      filePaneOpen = !filePaneOpen
+      filePane.classList.toggle('hidden', !filePaneOpen)
+      splitHandle.style.display = filePaneOpen ? 'block' : 'none'
+      filesToggle.classList.toggle('active', filePaneOpen)
+      if (filePaneOpen) {
+        loadCM()
+        loadFileTree()
+        refreshTouches()
+        // Open accordion sections by default
+        document.querySelectorAll('.acc-header').forEach(h => h.classList.add('open'))
+      }
+    })
+
+    // Keyboard shortcut: Cmd+E to toggle files
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault()
+        filesToggle.click()
+      }
+      // Cmd+S to save when editing
+      if ((e.metaKey || e.ctrlKey) && e.key === 's' && isEditing && currentFilePath) {
+        e.preventDefault()
+        saveCurrentFile()
+      }
+    })
+
+    // Accordion toggle
+    fileSidebar.addEventListener('click', (e) => {
+      const header = e.target.closest('.acc-header')
+      if (header) header.classList.toggle('open')
+    })
+
+    // Split handle drag
+    let splitDragging = false
+    splitHandle.addEventListener('mousedown', (e) => {
+      splitDragging = true
+      splitHandle.classList.add('dragging')
+      e.preventDefault()
+    })
+    document.addEventListener('mousemove', (e) => {
+      if (!splitDragging) return
+      const splitRect = document.getElementById('main-split').getBoundingClientRect()
+      const pct = ((e.clientX - splitRect.left) / splitRect.width) * 100
+      const consolePct = Math.max(20, Math.min(80, pct))
+      document.getElementById('console-pane').style.flex = `0 0 ${consolePct}%`
+      filePane.style.width = `${100 - consolePct}%`
+    })
+    document.addEventListener('mouseup', () => {
+      if (splitDragging) {
+        splitDragging = false
+        splitHandle.classList.remove('dragging')
+      }
+    })
+
+    // Lazy-load CodeMirror
+    function loadCM() {
+      if (cmLoaded || window.CM) { cmLoaded = true; return Promise.resolve() }
+      return new Promise((resolve) => {
+        const script = document.createElement('script')
+        script.src = `${BASE_URL}/assets/codemirror.js`
+        script.onload = () => { cmLoaded = true; resolve() }
+        script.onerror = () => {
+          console.error('Failed to load CodeMirror')
+          resolve()
+        }
+        document.head.appendChild(script)
+      })
+    }
+
+    // Load file tree
+    async function loadFileTree() {
+      try {
+        const res = await fetch(`${BASE_URL}/files/tree?depth=3${shellId ? '&shellId=' + shellId : ''}`)
+        const data = await res.json()
+        fileTreeEl.innerHTML = ''
+        renderTree(data.tree, fileTreeEl)
+      } catch (err) {
+        fileTreeEl.innerHTML = `<div class="file-item" style="color:#f87171">Error loading tree</div>`
+      }
+    }
+
+    function renderTree(nodes, container) {
+      for (const node of nodes) {
+        if (node.type === 'dir') {
+          const dir = document.createElement('div')
+          dir.className = 'tree-dir'
+          const label = document.createElement('div')
+          label.className = 'tree-label'
+          label.textContent = node.name
+          label.addEventListener('click', () => dir.classList.toggle('open'))
+          dir.appendChild(label)
+          if (node.children && node.children.length) {
+            const children = document.createElement('div')
+            children.className = 'tree-children'
+            renderTree(node.children, children)
+            dir.appendChild(children)
+          }
+          container.appendChild(dir)
+        } else {
+          const file = document.createElement('div')
+          file.className = 'tree-file'
+          file.textContent = node.name
+          file.title = node.path
+          file.addEventListener('click', () => openFile(node.path))
+          container.appendChild(file)
+        }
+      }
+    }
+
+    // Refresh recently touched files
+    async function refreshTouches() {
+      if (!filePaneOpen) return
+      try {
+        const res = await fetch(`${BASE_URL}/files/touches?shellId=${shellId || '_global'}`)
+        const data = await res.json()
+        touchedList.innerHTML = ''
+        if (!data.touches.length) {
+          touchedList.innerHTML = '<div class="file-item" style="color:#475569">No files touched yet</div>'
+          return
+        }
+        // Dedupe by path, keeping the most recent
+        const seen = new Map()
+        for (const t of data.touches) {
+          seen.set(t.path, t)
+        }
+        for (const [path, touch] of seen) {
+          const item = document.createElement('div')
+          item.className = 'file-item' + (path === currentFilePath ? ' active' : '')
+          const badge = touch.op === 'write' ? '<span class="op-badge write">W</span>' : '<span class="op-badge read">R</span>'
+          const fileName = path.split('/').pop()
+          item.innerHTML = `${badge}${fileName}`
+          item.title = path
+          item.addEventListener('click', () => openFile(path))
+          touchedList.appendChild(item)
+        }
+      } catch {}
+    }
+
+    // Open a file in the viewer
+    async function openFile(filePath) {
+      await loadCM()
+      currentFilePath = filePath
+      isEditing = false
+      fileEditBtn.classList.remove('hidden')
+      fileSaveBtn.classList.add('hidden')
+
+      // Update sidebar highlights
+      document.querySelectorAll('.file-item.active, .tree-file.active').forEach(el => el.classList.remove('active'))
+
+      try {
+        const res = await fetch(`${BASE_URL}/files/read?path=${encodeURIComponent(filePath)}${shellId ? '&shellId=' + shellId : ''}`)
+        const data = await res.json()
+
+        if (data.error) {
+          showFileError(data.error)
+          return
+        }
+
+        // Update breadcrumb
+        filePathDisplay.textContent = data.path || filePath
+
+        if (data.tooLarge) {
+          showFileError(`File too large (${(data.size / 1024 / 1024).toFixed(1)}MB)`)
+          return
+        }
+
+        if (data.binary) {
+          showFileError('Binary file — cannot display')
+          fileEditBtn.classList.add('hidden')
+          return
+        }
+
+        if (data.image) {
+          const isSvg = data.path.endsWith('.svg')
+          fileEditorEl.innerHTML = `<div class="image-preview"><img class="${isSvg ? 'svg-preview' : ''}" src="${BASE_URL}/files/image?path=${encodeURIComponent(data.path)}"></div>`
+          fileEditBtn.classList.add('hidden')
+          return
+        }
+
+        // Markdown preview
+        if (data.language === 'markdown') {
+          showMarkdownPreview(data.content)
+          return
+        }
+
+        // Code: use CodeMirror
+        showCodeEditor(data.content, data.language, true)
+      } catch (err) {
+        showFileError(`Failed to load: ${err.message}`)
+      }
+
+      refreshTouches()
+    }
+
+    function showFileError(msg) {
+      fileEditorEl.innerHTML = `<div id="file-empty" style="color:#f87171">${msg}</div>`
+      fileEditBtn.classList.add('hidden')
+      fileSaveBtn.classList.add('hidden')
+    }
+
+    function showMarkdownPreview(content) {
+      // Simple markdown → HTML (headers, bold, code, lists)
+      let html = content
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/^\- (.+)$/gm, '<li>$1</li>')
+        .replace(/\n\n/g, '<br><br>')
+      fileEditorEl.innerHTML = `<div class="markdown-preview">${html}</div>`
+    }
+
+    function showCodeEditor(content, language, readOnly) {
+      if (!window.CM) {
+        // Fallback: plain pre
+        fileEditorEl.innerHTML = `<pre style="padding:12px;overflow:auto;height:100%;margin:0;color:#e2e8f0">${content.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre>`
+        return
+      }
+
+      const { EditorState, EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection,
+              defaultKeymap, history, historyKeymap, indentWithTab,
+              syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching, foldGutter, foldKeymap,
+              oneDark, javascript, html, css, json, markdown, python } = window.CM
+
+      // Map language string to CodeMirror language extension
+      const langMap = {
+        javascript: () => javascript({ jsx: true, typescript: false }),
+        typescript: () => javascript({ jsx: true, typescript: true }),
+        html: () => html(),
+        css: () => css(),
+        json: () => json(),
+        markdown: () => markdown(),
+        python: () => python(),
+      }
+
+      const extensions = [
+        lineNumbers(),
+        highlightActiveLine(),
+        drawSelection(),
+        bracketMatching(),
+        foldGutter(),
+        history(),
+        indentOnInput(),
+        syntaxHighlighting(defaultHighlightStyle),
+        oneDark,
+        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+      ]
+
+      const langFn = langMap[language]
+      if (langFn) extensions.push(langFn())
+
+      if (readOnly) {
+        extensions.push(EditorState.readOnly.of(true))
+      }
+
+      // Clean up previous editor
+      fileEditorEl.innerHTML = ''
+      if (fileEmptyEl) fileEmptyEl.remove()
+
+      currentEditor = new EditorView({
+        state: EditorState.create({ doc: content, extensions }),
+        parent: fileEditorEl,
+      })
+    }
+
+    // Edit / Save
+    fileEditBtn.addEventListener('click', () => {
+      if (!currentFilePath || !currentEditor) return
+      isEditing = true
+      const content = currentEditor.state.doc.toString()
+      const lang = filePathDisplay.textContent.split('.').pop()
+      const langGuess = { js: 'javascript', ts: 'typescript', mjs: 'javascript', mts: 'typescript',
+                          jsx: 'javascript', tsx: 'typescript', html: 'html', htm: 'html',
+                          css: 'css', scss: 'css', json: 'json', md: 'markdown', py: 'python' }
+      showCodeEditor(content, langGuess[lang] || 'text', false)
+      fileEditBtn.classList.add('hidden')
+      fileSaveBtn.classList.remove('hidden')
+    })
+
+    fileSaveBtn.addEventListener('click', saveCurrentFile)
+
+    async function saveCurrentFile() {
+      if (!currentFilePath || !currentEditor) return
+      const content = currentEditor.state.doc.toString()
+      try {
+        const res = await fetch(`${BASE_URL}/files/write`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: currentFilePath, content, shellId }),
+        })
+        const data = await res.json()
+        if (data.success) {
+          fileSaveBtn.textContent = 'Saved!'
+          setTimeout(() => { fileSaveBtn.textContent = 'Save' }, 1500)
+        } else {
+          fileSaveBtn.textContent = 'Error!'
+          setTimeout(() => { fileSaveBtn.textContent = 'Save' }, 1500)
+        }
+      } catch {
+        fileSaveBtn.textContent = 'Error!'
+        setTimeout(() => { fileSaveBtn.textContent = 'Save' }, 1500)
+      }
+    }
+    console.log('BOOJAH')
   </script>
 </body>
 </html>

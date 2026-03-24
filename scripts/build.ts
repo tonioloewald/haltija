@@ -359,6 +359,33 @@ await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts -
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 
+// 5b. Bundle CodeMirror 6 as IIFE for terminal.html file viewer
+const cmBuild = await Bun.build({
+  entrypoints: ['src/codemirror-bundle.ts'],
+  outdir: 'dist',
+  naming: 'codemirror-raw.js',
+  format: 'esm',
+  target: 'browser',
+  minify: true,
+})
+// Wrap as IIFE with global assignment (Bun's globalName doesn't work reliably with IIFE)
+if (cmBuild.outputs.length > 0) {
+  const cmCode = await cmBuild.outputs[0].text()
+  // Convert ESM exports to global assignment
+  // The ESM bundle has export { ... } at the end — we capture them as window.CM
+  const wrappedCode = `(function(){var _m={};${cmCode.replace(/export\s*\{([^}]+)\}/g, (_, exports) => {
+    const assignments = exports.split(',').map((e: string) => {
+      const parts = e.trim().split(/\s+as\s+/)
+      const local = parts[0].trim()
+      const exported = (parts[1] || parts[0]).trim()
+      return `_m.${exported}=${local}`
+    }).join(';')
+    return assignments
+  })};window.CM=_m;})()`
+  writeFileSync('dist/codemirror.js', wrappedCode)
+}
+await $`cp dist/codemirror.js apps/desktop/resources/codemirror.js`.quiet().nothrow()
+
 // 6. Bundle hj CLI as standalone file (no relative imports needed)
 await $`bun build ./bin/hj.mjs --outfile=dist/hj.js --target=node --format=esm`
 // Replace shebang with bun — the extensionless copy at ~/.local/bin/hj needs

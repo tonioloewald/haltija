@@ -209,6 +209,57 @@ try {
   if (summary !== 'empty') updateStatus(terminalState, 'todos', summary)
 } catch { /* no task board yet — created on first tasks command */ }
 
+// ==========================================
+// File Viewer State
+// ==========================================
+
+interface TouchEntry {
+  path: string
+  op: 'read' | 'write' | 'diff'
+  timestamp: number
+}
+
+let fileTouches: Map<string, TouchEntry[]> | null = null
+
+function logTouch(shellId: string, filePath: string, op: TouchEntry['op']) {
+  if (!fileTouches) fileTouches = new Map()
+  if (!fileTouches.has(shellId)) fileTouches.set(shellId, [])
+  const touches = fileTouches.get(shellId)!
+  // Dedupe: if same path+op is the most recent, just update timestamp
+  const last = touches[touches.length - 1]
+  if (last?.path === filePath && last?.op === op) {
+    last.timestamp = Date.now()
+  } else {
+    touches.push({ path: filePath, op, timestamp: Date.now() })
+  }
+  // Cap at 200 entries
+  if (touches.length > 200) touches.splice(0, touches.length - 200)
+  // Broadcast to terminals
+  broadcastToTerminals({ type: 'file-touched', path: filePath, op, shellId, timestamp: Date.now() })
+}
+
+function extToLanguage(ext: string): string {
+  const map: Record<string, string> = {
+    '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+    '.ts': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
+    '.jsx': 'javascript', '.tsx': 'typescript',
+    '.html': 'html', '.htm': 'html',
+    '.css': 'css', '.scss': 'css', '.less': 'css',
+    '.json': 'json', '.jsonc': 'json',
+    '.md': 'markdown', '.mdx': 'markdown',
+    '.py': 'python',
+    '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
+    '.yaml': 'yaml', '.yml': 'yaml',
+    '.xml': 'xml', '.svg': 'xml',
+    '.toml': 'toml',
+    '.rs': 'rust', '.go': 'go', '.java': 'java',
+    '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.hpp': 'cpp',
+    '.rb': 'ruby', '.php': 'php', '.swift': 'swift',
+    '.sql': 'sql', '.graphql': 'graphql', '.gql': 'graphql',
+  }
+  return map[ext] || 'text'
+}
+
 // Helper: Update hj (browser) status for terminals
 function updateHjStatus() {
   const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
@@ -1592,6 +1643,21 @@ Run 'hj --help' for all commands.`
 
     // Event handler: forward events to the shell's WebSocket
     const onEvent = (event: AgentEvent) => {
+      // Track file touches from agent tool calls (Read, Write, Edit)
+      if (event.type === 'agent-tool' && event.tool) {
+        const toolName = event.tool
+        if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit') {
+          try {
+            const input = typeof event.input === 'string' ? JSON.parse(event.input) : event.input
+            const filePath = input?.file_path
+            if (filePath) {
+              const op = toolName === 'Read' ? 'read' as const : 'write' as const
+              logTouch(body.shellId, filePath, op)
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
       if (shell.ws && (shell.ws as any).readyState === WebSocket.OPEN) {
         try {
           (shell.ws as any).send(JSON.stringify(event))
@@ -1933,6 +1999,214 @@ Run 'hj --help' for all commands.`
     return respond(output)
   }
   
+  // ==========================================
+  // File Viewer Endpoints (internal, for desktop app UI)
+  // ==========================================
+
+  // Read a file
+  if (path === '/files/read' && req.method === 'GET') {
+    const filePath = url.searchParams.get('path')
+    const shellId = url.searchParams.get('shellId')
+    if (!filePath) {
+      return Response.json({ error: 'path is required' }, { status: 400, headers })
+    }
+
+    const shell = shellId ? terminalState.shells.get(shellId) : undefined
+    const baseCwd = shell?.cwd || process.cwd()
+
+    const { resolve, extname, relative } = await import('path')
+    const { readFileSync, statSync } = await import('fs')
+
+    const resolved = filePath.startsWith('/') ? filePath : resolve(baseCwd, filePath)
+
+    // Security: reject paths outside cwd
+    const rel = relative(baseCwd, resolved)
+    if (rel.startsWith('..') && !filePath.startsWith('/')) {
+      return Response.json({ error: 'path escapes working directory' }, { status: 403, headers })
+    }
+
+    try {
+      const stat = statSync(resolved)
+      if (stat.isDirectory()) {
+        return Response.json({ error: 'path is a directory' }, { status: 400, headers })
+      }
+
+      // Size cap: 1MB
+      if (stat.size > 1_048_576) {
+        return Response.json({ tooLarge: true, size: stat.size, path: resolved }, { headers })
+      }
+
+      const ext = extname(resolved).toLowerCase()
+      const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico']
+      if (imageExts.includes(ext)) {
+        return Response.json({
+          image: true,
+          mimeType: ext === '.svg' ? 'image/svg+xml' : `image/${ext.slice(1).replace('jpg', 'jpeg')}`,
+          size: stat.size,
+          path: resolved,
+          // Base64 encode for inline display
+          data: readFileSync(resolved).toString('base64'),
+        }, { headers })
+      }
+
+      // Binary detection: check for null bytes in first 8KB
+      const buf = readFileSync(resolved)
+      const sample = buf.subarray(0, 8192)
+      if (sample.includes(0)) {
+        return Response.json({ binary: true, size: stat.size, path: resolved }, { headers })
+      }
+
+      const content = buf.toString('utf-8')
+      const language = extToLanguage(ext)
+
+      // Log touch
+      logTouch(shellId || '_global', resolved, 'read')
+
+      return Response.json({ content, language, size: stat.size, mtime: stat.mtimeMs, path: resolved }, { headers })
+    } catch (err: any) {
+      return Response.json({ error: err.message }, { status: 404, headers })
+    }
+  }
+
+  // Write a file
+  if (path === '/files/write' && req.method === 'POST') {
+    const body = await req.json() as { path: string; content: string; shellId?: string }
+    if (!body.path || body.content === undefined) {
+      return Response.json({ error: 'path and content are required' }, { status: 400, headers })
+    }
+
+    const shell = body.shellId ? terminalState.shells.get(body.shellId) : undefined
+    const baseCwd = shell?.cwd || process.cwd()
+
+    const { resolve, relative } = await import('path')
+    const { writeFileSync } = await import('fs')
+
+    const resolved = body.path.startsWith('/') ? body.path : resolve(baseCwd, body.path)
+    const rel = relative(baseCwd, resolved)
+    if (rel.startsWith('..') && !body.path.startsWith('/')) {
+      return Response.json({ error: 'path escapes working directory' }, { status: 403, headers })
+    }
+
+    try {
+      writeFileSync(resolved, body.content, 'utf-8')
+      logTouch(body.shellId || '_global', resolved, 'write')
+      return Response.json({ success: true, size: Buffer.byteLength(body.content), path: resolved }, { headers })
+    } catch (err: any) {
+      return Response.json({ error: err.message }, { status: 500, headers })
+    }
+  }
+
+  // Directory tree
+  if (path === '/files/tree' && req.method === 'GET') {
+    const root = url.searchParams.get('root') || '.'
+    const depth = parseInt(url.searchParams.get('depth') || '3')
+    const shellId = url.searchParams.get('shellId')
+    const shell = shellId ? terminalState.shells.get(shellId) : undefined
+    const baseCwd = shell?.cwd || process.cwd()
+
+    const { resolve, join, relative, basename } = await import('path')
+    const { readdirSync, statSync } = await import('fs')
+
+    const rootDir = root.startsWith('/') ? root : resolve(baseCwd, root)
+
+    // Get gitignored files (best-effort)
+    let ignoredSet: Set<string> | null = null
+    try {
+      const proc = Bun.spawnSync(['git', 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'], { cwd: rootDir })
+      if (proc.exitCode === 0) {
+        ignoredSet = new Set(proc.stdout.toString().trim().split('\n').filter(Boolean).map(f => f.replace(/\/$/, '')))
+      }
+    } catch { /* not a git repo */ }
+
+    const alwaysSkip = new Set(['node_modules', '.git', '.DS_Store'])
+
+    interface TreeNode {
+      name: string
+      type: 'file' | 'dir'
+      path: string
+      children?: TreeNode[]
+    }
+
+    function walkDir(dir: string, currentDepth: number): TreeNode[] {
+      if (currentDepth > depth) return []
+      try {
+        const entries = readdirSync(dir, { withFileTypes: true })
+          .filter(e => !alwaysSkip.has(e.name))
+          .sort((a, b) => {
+            // Dirs first, then alphabetical
+            if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+            return a.name.localeCompare(b.name)
+          })
+
+        const nodes: TreeNode[] = []
+        for (const entry of entries) {
+          const relPath = relative(rootDir, join(dir, entry.name))
+          if (ignoredSet?.has(relPath)) continue
+
+          if (entry.isDirectory()) {
+            const children = walkDir(join(dir, entry.name), currentDepth + 1)
+            nodes.push({ name: entry.name, type: 'dir', path: relPath, children })
+          } else {
+            nodes.push({ name: entry.name, type: 'file', path: relPath })
+          }
+        }
+        return nodes
+      } catch { return [] }
+    }
+
+    const tree = walkDir(rootDir, 1)
+    return Response.json({ root: rootDir, tree }, { headers })
+  }
+
+  // Touch stream
+  if (path === '/files/touches' && req.method === 'GET') {
+    const shellId = url.searchParams.get('shellId') || '_global'
+    const touches = fileTouches.get(shellId) || []
+    return Response.json({ touches: [...touches].reverse() }, { headers })
+  }
+
+  // Serve CodeMirror bundle
+  if (path === '/assets/codemirror.js' && req.method === 'GET') {
+    try {
+      // Try dist/ first (development), then resources/ (packaged app)
+      const { readFileSync } = await import('fs')
+      const { join } = await import('path')
+      let cmCode: string
+      try {
+        cmCode = readFileSync(join(import.meta.dir, '../dist/codemirror.js'), 'utf-8')
+      } catch {
+        try {
+          cmCode = readFileSync(join(import.meta.dir, '../apps/desktop/resources/codemirror.js'), 'utf-8')
+        } catch {
+          return new Response('CodeMirror bundle not found — run bun run build', { status: 404, headers })
+        }
+      }
+      return new Response(cmCode, { headers: { ...headers, 'Content-Type': 'application/javascript', 'Cache-Control': 'public, max-age=86400' } })
+    } catch (err: any) {
+      return new Response(`Error: ${err.message}`, { status: 500, headers })
+    }
+  }
+
+  // Serve image files for the file viewer
+  if (path === '/files/image' && req.method === 'GET') {
+    const filePath = url.searchParams.get('path')
+    if (!filePath) return new Response('path required', { status: 400, headers })
+
+    const { readFileSync } = await import('fs')
+    const { extname } = await import('path')
+    try {
+      const data = readFileSync(filePath)
+      const ext = extname(filePath).toLowerCase()
+      const mimeMap: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon',
+      }
+      return new Response(data, { headers: { ...headers, 'Content-Type': mimeMap[ext] || 'application/octet-stream' } })
+    } catch (err: any) {
+      return new Response(err.message, { status: 404, headers })
+    }
+  }
+
   // ==========================================
   // Test Runner Endpoints
   // ==========================================
