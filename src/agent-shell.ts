@@ -596,7 +596,16 @@ export function runAgentPrompt(
     })
 
     child.stderr?.on('data', (data: Buffer) => {
-      stderrBuffer += data.toString()
+      const chunk = data.toString()
+      stderrBuffer += chunk
+      // Stream stderr lines in real-time (bun test, build output, etc.)
+      const lines = stderrBuffer.split('\n')
+      stderrBuffer = lines.pop() || '' // Keep incomplete last line
+      for (const line of lines) {
+        if (line.trim()) {
+          onEvent({ type: 'agent-tool-output', shellId, text: line })
+        }
+      }
     })
 
     child.on('error', (err) => {
@@ -616,10 +625,14 @@ export function runAgentPrompt(
         }
       }
 
+      // Flush any remaining stderr
+      if (stderrBuffer.trim()) {
+        onEvent({ type: 'agent-tool-output', shellId, text: stderrBuffer.trim() })
+      }
+
       session.process = null
-      if (code !== 0 && stderrBuffer.trim()) {
+      if (code !== 0) {
         session.status = 'error'
-        onEvent({ type: 'agent-error', shellId, error: stderrBuffer.trim() })
       } else {
         session.status = 'idle'
       }
