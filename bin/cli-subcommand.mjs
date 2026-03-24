@@ -23,6 +23,7 @@ import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
 import { formatEvents } from './format-events.mjs'
 import { formatTestResult, formatSuiteResult } from './format-test.mjs'
+import { formatNetwork, formatNetworkStats } from './format-network.mjs'
 import { substituteGeneratedVars } from './test-data.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -35,7 +36,7 @@ export const COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hin
 // Endpoints that use GET (everything else is POST)
 export const GET_ENDPOINTS = new Set([
   'location', 'events', 'console', 'windows', 'recordings',
-  'status', 'version', 'docs', 'api', 'stats'
+  'status', 'version', 'docs', 'api', 'stats', 'network'
 ])
 
 // Compound paths (subcommand contains slash) or aliases to different endpoint
@@ -67,11 +68,15 @@ export const COMPOUND_PATHS = {
   'send-message': '/send/message',
   'send-selection': '/send/selection',
   'send-recording': '/send/recording',
+  'network-watch': '/network/watch',
+  'network-unwatch': '/network/unwatch',
+  'network-stats': '/network/stats',
 }
 
 // GET compound endpoints
 export const GET_COMPOUND = new Set([
-  'mutations-status', 'events-stats', 'select-status', 'select-result', 'video-status'
+  'mutations-status', 'events-stats', 'select-status', 'select-result', 'video-status',
+  'network-stats'
 ])
 
 // How to map positional args to body fields for each endpoint
@@ -128,6 +133,7 @@ export const ARG_MAPS = {
   'video-stop': () => ({}),
   'events-watch': (args) => ({ preset: args[0] || 'interactive' }),
   'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
+  'network-watch': (args) => ({ preset: args[0] || 'standard' }),
   form: (args) => parseTargetArgs(args),
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
@@ -725,6 +731,10 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path))
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
         if (meta) console.log(dim(meta))
+      } else if (!jsonOutput && (subcommand === 'network' || subcommand === 'network-watch') && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
+        console.log(formatNetwork(json))
+      } else if (!jsonOutput && subcommand === 'network-stats') {
+        console.log(formatNetworkStats(json))
       } else if (!jsonOutput && subcommand === 'video-stop' && json.data?.path) {
         const bold = (s) => `\x1b[1m${s}\x1b[0m`
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
@@ -774,6 +784,7 @@ export const KNOWN_COMMANDS = new Set([
   'select-start', 'select-result', 'select-cancel', 'select-clear',
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
   'video-start', 'video-stop', 'video-status',
+  'network', 'network-watch', 'network-unwatch', 'network-stats',
   'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   'send', 'send-message', 'send-selection', 'send-recording',
@@ -797,12 +808,19 @@ const COMMAND_ALIASES = {
   'run': 'eval',
   'js': 'eval',
   'exec': 'eval',
+  'evaluate': 'eval',
+  'execute': 'eval',
   'shot': 'screenshot',
   'capture': 'screenshot',
   'ls': 'tree',
   'list': 'tree',
   'show': 'tree',
   'help': '--help',
+  'nav': 'navigate',
+  'reload': 'refresh',
+  'snap': 'snapshot',
+  'log': 'console',
+  'logs': 'console',
 }
 
 /** Check if a string is a valid subcommand */
@@ -818,124 +836,101 @@ export function getSuggestion(cmd) {
   if (COMMAND_ALIASES[cmd]) {
     return COMMAND_ALIASES[cmd]
   }
-  // Simple prefix match
+  const lower = cmd.toLowerCase()
+  // Check aliases case-insensitively
+  for (const [alias, target] of Object.entries(COMMAND_ALIASES)) {
+    if (alias.toLowerCase() === lower) return target
+  }
+  // Exact prefix match (e.g., "screensho" → "screenshot")
+  const prefixMatches = [...KNOWN_COMMANDS].filter(k => k.startsWith(lower))
+  if (prefixMatches.length === 1) return prefixMatches[0]
+  // Levenshtein distance for close typos (max distance 2)
+  let bestMatch = null
+  let bestDist = 3
   for (const known of KNOWN_COMMANDS) {
-    if (known.startsWith(cmd) || cmd.startsWith(known.slice(0, 3))) {
-      return known
+    const d = levenshtein(lower, known)
+    if (d < bestDist) {
+      bestDist = d
+      bestMatch = known
+    }
+  }
+  if (bestMatch) return bestMatch
+  // Prefix of 3+ chars
+  if (lower.length >= 3) {
+    for (const known of KNOWN_COMMANDS) {
+      if (known.startsWith(lower.slice(0, 3))) return known
     }
   }
   return null
 }
 
+function levenshtein(a, b) {
+  if (a.length === 0) return b.length
+  if (b.length === 0) return a.length
+  const matrix = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  )
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost)
+    }
+  }
+  return matrix[a.length][b.length]
+}
+
 /** List available subcommands for --help */
 export function listSubcommands() {
   return `
-Subcommands (replace curl with simple commands):
-  ${bold('Inspect')}
-    tree [selector] [-d N] [-i] [-v] DOM tree (full depth, -i=interactive, -v=visible)
-    query <selector>               Find elements matching selector
-    inspect <@ref|selector>        Detailed element info
-    inspectAll <selector>          Deep inspect all matches
-    find <text>                    Find elements by text content
+  ${bold('See the page')}
+    tree [selector] [-d N] [-i] [-v]  DOM tree (-i=interactive, -v=visible)
+    screenshot [@ref|selector]        Screenshot (saves to /tmp)
+    inspect <@ref|selector>           Detailed element info
+    console                           Console output
 
   ${bold('Interact')}
-    click <@ref|selector|"text">   Click an element
-    type <@ref|selector> <text>    Type text into element
-    key <key> [--ctrl --shift]     Press a key
-    drag <@ref|selector> <dx> <dy> Drag element
-    scroll [selector|dy]           Scroll page or element
-    call <@ref|selector> <method>  Call element method/get property
+    click <@ref|selector|"text">      Click element
+    type <@ref|selector> <text>       Type text
+    key <key> [--ctrl --shift]        Press key
+    drag <@ref|selector> <dx> <dy>    Drag element
+    scroll [selector|dy]              Scroll page or element
 
-  ${bold('Navigate')}
-    navigate <url>                 Go to URL
-    refresh [--soft]               Reload page (hard by default)
-    location                       Current URL and title
+  ${bold('Watch')}
+    events ${dim('watch|unwatch|stats')}       Semantic events (default: show recent)
+    mutations ${dim('watch|unwatch|status')}   DOM changes
+    network ${dim('watch|unwatch|stats')}      HTTP requests (CDP, desktop only)
+    console                           Console output
 
-  ${bold('Observe')}
-    events                         Get semantic events
-    events-watch [preset]          Start watching events
-    events-unwatch                 Stop watching events
-    console                        Get console output
-    mutations-watch [preset]       Start watching DOM changes
-    mutations-unwatch              Stop watching
-    mutations-status               Check mutation watcher
+  ${bold('Control')}
+    navigate <url>                    Go to URL
+    refresh [--soft]                  Reload page
+    tabs ${dim('open|close|focus')}            Tab management (default: list)
+    eval <code>                       Run JS in browser
 
-  ${bold('Evaluate')}
-    eval <code>                    Run JavaScript in browser
-    fetch <url> [prompt]           Fetch and process URL
+  ${bold('Test')}
+    test ${dim('run|suite|validate')} <file>   Run tests (default: run)
+    recording ${dim('start|stop|generate')}    Record user actions
+    select ${dim('start|cancel|status|result|clear')}
 
-  ${bold('Capture')}
-    screenshot [@ref|selector]     Take screenshot (saves to /tmp)
-    snapshot [context]             Full page state capture
-    highlight <@ref|selector>      Highlight element
-    unhighlight                    Remove highlights
-    video-start [--maxDuration s]  Start video recording
-    video-stop                     Stop recording, get file path
-    video-status                   Check recording state
-
-  ${bold('Selection')}
-    select-start                   Begin region selection
-    select-result                  Get selection result
-    select-cancel                  Cancel selection
-    select-clear                   Clear selection
-
-  ${bold('Windows')}
-    windows                        List browser windows
-    tabs-open <url>                Open new tab
-    tabs-close <windowId>          Close tab
-    tabs-focus <windowId>          Focus tab
-
-  ${bold('Recording')}
-    recording start [name]         Start recording (survives page navigations)
-    recording stop                 Stop recording and save
-    recording list                 List saved recordings
-    recording replay <id|index>    Replay a saved recording
-    recording generate [name]      Generate test from last recording
-
-  ${bold('Send to Agent')}
-    send <agent> <message>         Send message to agent (auto-submits)
-    send selection [agent]         Send browser selection to agent
-    send recording [agent]         Send last recording to agent
-    --no-submit                    Paste only, don't auto-submit
-
-  ${bold('Testing')}
-    test-run <json> [options]      Run a test
-    test-suite <dir|files...>      Run all tests in dir (alphabetical)
-    test-validate <json>           Validate test format
-    
-    Test options:
-      --vars <json>                Template variables: '{"APP_URL": "http://localhost:5050"}'
-                                   Replaces \${VAR_NAME} in test files. Falls back to env vars.
-      --timeoutMs <ms>             Step timeout (default 5000)
-      --allow-failures <n>         Total failures before giving up (0=stop on first)
-      --allow-failures-streak <n>  Consecutive failures to bail (default 2)
-      --step-delay <ms>            Delay between steps (default 100)
+  ${bold('More')}
+    find <text>                       Find elements by text
+    highlight <@ref> [label]          Highlight element
+    snapshot [context]                Full page state
+    video ${dim('start|stop|status')}          Video capture
+    fetch <url> [prompt]              Fetch and process URL
+    send <agent> <message>            Message an agent
 
   ${bold('Info')}
-    status                         Server status
-    version                        Server version
-    docs                           API documentation
-    api                            Full API reference
-    stats                          Usage statistics
+    status | version | docs | api
 
   ${bold('Options')}
-    --window <id>                  Target specific window
-    --port <n>                     Server port (default: 8700)
+    --window <id>    Target specific window
+    --port <n>       Server port (default: 8700)
 
-  ${bold('Examples')}
-    hj tree                        # See the page
-    hj tree -d 5                   # Deeper tree
-    hj click 42                    # Click by ref
-    hj click "#submit"             # Click by selector
-    hj type 10 Hello world         # Type text
-    hj key Enter                   # Press Enter
-    hj key a --ctrl                # Ctrl+A
-    hj eval document.title         # Get page title
-    hj navigate https://example.com
-    hj events                      # See what happened
-    hj send claude "check this"    # Message an agent
-    hj send selection              # Send selection to agent
+  Space-separated sub-commands work: ${dim('hj test run = hj test-run')}
+  Fuzzy matching: ${dim('hj evaluate = hj eval, hj screensho = hj screenshot')}
 `
 }
 
 function bold(s) { return `\x1b[1m${s}\x1b[0m` }
+function dim(s) { return `\x1b[2m${s}\x1b[0m` }

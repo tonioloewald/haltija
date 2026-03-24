@@ -51,6 +51,31 @@ if (noLaunchIdx !== -1) {
   args.splice(noLaunchIdx, 1)
 }
 
+// --- Space-to-hyphen sub-command resolution ---
+// "hj test run foo.json" → "hj test-run foo.json"
+// "hj events watch" → "hj events-watch"
+// "hj recording start" → "hj recording-start"
+// Works even when args[0] is a known command (e.g., "events" is valid, but "events watch" → "events-watch")
+if (args.length >= 2 && isSubcommand(`${args[0]}-${args[1]}`)) {
+  args.splice(0, 2, `${args[0]}-${args[1]}`)
+}
+
+// --- Bare noun defaults ---
+// "hj test" → "hj test-run", "hj mutations" → "hj mutations-status", etc.
+const NOUN_DEFAULTS = {
+  'test': 'test-run',
+  'events': 'events',       // already a command (GET /events)
+  'mutations': 'mutations-status',
+  'network': 'network',     // already a command (GET /network)
+  'select': 'select-status',
+  'tabs': 'windows',        // show tab list
+  'video': 'video-status',
+  'send': 'send',           // already a command
+}
+if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
+  args[0] = NOUN_DEFAULTS[args[0]]
+}
+
 const subcommand = args[0]
 const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all args
 
@@ -66,15 +91,16 @@ if (!isSubcommand(subcommand)) {
     }
     process.exit(0)
   }
-  
-  let msg = `Unknown command: '${subcommand}'`
+
+  // Auto-execute if there's exactly one fuzzy match
   if (suggestion) {
-    msg += ` — did you mean '${suggestion}'?`
+    runSubcommand(suggestion, subArgs, port, { noLaunch })
+  } else {
+    console.error(`Unknown command: '${subcommand}'`)
+    console.error(`\nExamples: hj tree, hj navigate <url>, hj click @42`)
+    console.error(`Run 'hj' for docs.`)
+    process.exit(1)
   }
-  console.error(msg)
-  console.error(`\nExamples: hj tree, hj navigate <url>, hj click @42`)
-  console.error(`Run 'hj' for docs.`)
-  process.exit(1)
 } else {
   runSubcommand(subcommand, subArgs, port, { noLaunch })
 }
