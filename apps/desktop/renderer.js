@@ -34,6 +34,40 @@ createTab()
 // Periodic status check
 setInterval(checkHaltija, 5000)
 
+// Inject outer widget (headless) into the renderer for persistence + self-inspection
+// Lives in the Electron chrome, survives page navigations, can inspect the app's own UI
+;(async function injectOuterWidget() {
+  const serverUrl = getServerUrl()
+  try {
+    const resp = await fetch(`${serverUrl}/component.js`)
+    if (!resp.ok) throw new Error(`${resp.status}`)
+    const wsUrl = serverUrl.replace('http:', 'ws:') + '/ws/browser'
+    window.__haltija_config__ = { serverUrl: wsUrl, windowId: 'hj-chrome', mode: 'headless', session: 'chrome' }
+    const code = await resp.text()
+    const script = document.createElement('script')
+    script.textContent = code
+    document.head.appendChild(script)
+    console.log('[Haltija Desktop] Outer widget injected (headless, windowId: hj-chrome)')
+  } catch (err) {
+    console.log('[Haltija Desktop] Outer widget deferred — server not yet ready:', err.message)
+    // Retry once after server comes up (checkHaltija runs every 5s)
+    const retry = setInterval(async () => {
+      try {
+        const resp = await fetch(`${serverUrl}/component.js`)
+        if (!resp.ok) return
+        const wsUrl = serverUrl.replace('http:', 'ws:') + '/ws/browser'
+        window.__haltija_config__ = { serverUrl: wsUrl, windowId: 'hj-chrome', mode: 'headless', session: 'chrome' }
+        const code = await resp.text()
+        const script = document.createElement('script')
+        script.textContent = code
+        document.head.appendChild(script)
+        console.log('[Haltija Desktop] Outer widget injected (retry)')
+        clearInterval(retry)
+      } catch { /* keep retrying */ }
+    }, 5000)
+  }
+})()
+
 // ============================================
 // Event Listeners
 // ============================================

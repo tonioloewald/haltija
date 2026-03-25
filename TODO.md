@@ -6,9 +6,15 @@
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment
-  - Phase 1: File viewer/editor in widget
-  - Phase 2: Touch stream (activity-based navigation)
-  - Phase 3: Notification buffer (human-to-agent signals via widget)
+  - [x] Phase 1: File viewer/editor in widget
+  - [ ] **Phase 1.5: Headless widget & app-owned UI** ← current
+    - [ ] `mode="headless"` attribute — skip shadow DOM rendering
+    - [ ] `window._haltija` global API (tree, click, type, eval, status, etc.)
+    - [ ] Outer widget in Electron renderer (persists across navigations, self-inspection)
+    - [ ] Inner widget hidden in desktop app context
+    - [ ] App chrome surfaces widget state (connection, recording, events)
+    - [ ] Record controls in tab bar → pipe to agent as notification
+  - Phase 3: Notification buffer (human-to-agent signals via app chrome)
   - Phase 4: Plan as first-class UI
   - Phase 5: Context proxy (anti-lobotomy)
   - Phase 6: Verification loop

@@ -1721,6 +1721,8 @@
     isActive = true;
     homeLeft = 0;
     homeBottom = 16;
+    headless = false;
+    localPending = new Map;
     cursorOverlay = null;
     subtitleOverlay = null;
     cursorHideTimeout = null;
@@ -1789,7 +1791,7 @@
     selectionBox = null;
     highlightedElements = [];
     static get observedAttributes() {
-      return ["server", "hidden", "session"];
+      return ["server", "hidden", "session", "mode"];
     }
     static async runTests() {
       const el = document.querySelector(TAG_NAME);
@@ -1890,18 +1892,28 @@
       } else {
         this.sessionToken = uid();
       }
+      if (config?.mode === "headless") {
+        this.headless = true;
+      }
     }
     connectedCallback() {
       this.killed = false;
       this.serverUrl = this.getAttribute("server") || this.serverUrl;
       this.sessionToken = this.getAttribute("session") || this.sessionToken;
-      this.render();
-      const rect = this.getBoundingClientRect();
-      this.homeLeft = window.innerWidth - rect.width - 16;
-      this.homeBottom = 16;
-      this.style.left = `${this.homeLeft}px`;
-      this.style.bottom = `${this.homeBottom}px`;
-      this.setupKeyboardShortcut();
+      if (this.getAttribute("mode") === "headless") {
+        this.headless = true;
+      }
+      if (!this.headless) {
+        this.render();
+        const rect = this.getBoundingClientRect();
+        this.homeLeft = window.innerWidth - rect.width - 16;
+        this.homeBottom = 16;
+        this.style.left = `${this.homeLeft}px`;
+        this.style.bottom = `${this.homeBottom}px`;
+        this.setupKeyboardShortcut();
+      } else {
+        this.style.display = "none";
+      }
       this.interceptConsole();
       this.interceptDialogs();
       this.connect();
@@ -1927,8 +1939,16 @@
         this.disconnect();
         this.connect();
       }
+      if (name === "mode") {
+        this.headless = value === "headless";
+        if (this.headless) {
+          this.style.display = "none";
+        }
+      }
     }
     render() {
+      if (this.headless)
+        return;
       if (this.shadowRoot.querySelector(".widget")) {
         this.updateUI();
         return;
@@ -3819,21 +3839,29 @@ ${elementSummary}${moreText}`;
       });
     }
     flash() {
+      if (this.headless)
+        return;
       const widget = this.shadowRoot?.querySelector(".widget");
       widget?.classList.add("flash");
       setTimeout(() => widget?.classList.remove("flash"), 500);
     }
     show() {
+      if (this.headless)
+        return;
       this.widgetHidden = false;
       this.classList.remove("widget-hidden");
       this.render();
       this.flash();
     }
     hide() {
+      if (this.headless)
+        return;
       this.widgetHidden = true;
       this.classList.add("widget-hidden");
     }
     toggleHidden() {
+      if (this.headless)
+        return;
       if (this.widgetHidden) {
         this.show();
       } else {
@@ -3841,6 +3869,8 @@ ${elementSummary}${moreText}`;
       }
     }
     toggleMinimize() {
+      if (this.headless)
+        return;
       const isMinimized = this.classList.contains("minimized");
       const rect = this.getBoundingClientRect();
       const currentLeft = rect.left;
@@ -5096,6 +5126,16 @@ ${elementSummary}${moreText}`;
       this.ws.send(JSON.stringify(msg2));
     }
     respond(requestId, success, data, error) {
+      const local = this.localPending.get(requestId);
+      if (local) {
+        this.localPending.delete(requestId);
+        if (success) {
+          local.resolve(data);
+        } else {
+          local.reject(new Error(error || "Unknown error"));
+        }
+        return;
+      }
       const response = {
         id: requestId,
         success,
@@ -5104,6 +5144,20 @@ ${elementSummary}${moreText}`;
         timestamp: Date.now()
       };
       this.ws?.send(JSON.stringify(response));
+    }
+    dispatchLocal(channel, action2, payload2 = {}) {
+      return new Promise((resolve, reject) => {
+        const id = `local-${uid()}`;
+        this.localPending.set(id, { resolve, reject });
+        this.handleMessage({
+          id,
+          channel,
+          action: action2,
+          payload: { ...payload2, windowId: this.windowId },
+          source: "agent",
+          timestamp: Date.now()
+        });
+      });
     }
     handleMessage(msg2) {
       if (msg2.source === "agent" || msg2.source === "server") {
@@ -7359,9 +7413,11 @@ ${elementSummary}${moreText}`;
     el.setAttribute("server", serverUrl2);
     if (options?.session)
       el.setAttribute("session", options.session);
+    if (options?.mode)
+      el.setAttribute("mode", options.mode);
     el.setAttribute("data-version", VERSION2);
     document.body.appendChild(el);
-    console.log(`${LOG_PREFIX} Injected`);
+    console.log(`${LOG_PREFIX} Injected${options?.mode === "headless" ? " (headless)" : ""}`);
     return el;
   }
   function autoInject() {
@@ -7370,7 +7426,7 @@ ${elementSummary}${moreText}`;
     const config = window.__haltija_config__;
     if (config?.autoInject !== false) {
       if (config) {
-        inject(config.serverUrl || config.wsUrl, { session: config.session });
+        inject(config.serverUrl || config.wsUrl, { session: config.session, mode: config.mode });
         return;
       }
     }
@@ -7433,6 +7489,40 @@ ${elementSummary}${moreText}`;
       },
       resolveRef: (ref) => refRegistry.resolve(ref),
       version: VERSION2
+    };
+    const getWidget = () => document.getElementById(WIDGET_ID);
+    window._haltija = {
+      get connected() {
+        return getWidget()?.state === "connected";
+      },
+      get version() {
+        return VERSION2;
+      },
+      tree: (opts) => getWidget()?.dispatchLocal("dom", "tree", opts),
+      click: (refOrSelector, opts) => getWidget()?.dispatchLocal("interaction", "click", {
+        ...typeof refOrSelector === "number" || /^\d+$/.test(String(refOrSelector)) ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) },
+        ...opts
+      }),
+      type: (refOrSelector, text, opts) => getWidget()?.dispatchLocal("interaction", "type", {
+        ...typeof refOrSelector === "number" || /^\d+$/.test(String(refOrSelector)) ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) },
+        text,
+        ...opts
+      }),
+      key: (key, opts) => getWidget()?.dispatchLocal("interaction", "key", { key, ...opts }),
+      eval: (code2) => getWidget()?.dispatchLocal("debug", "eval", { code: code2 }),
+      screenshot: (opts) => getWidget()?.dispatchLocal("dom", "screenshot", opts),
+      events: (opts) => getWidget()?.dispatchLocal("semantic", "get", opts),
+      console: (opts) => getWidget()?.dispatchLocal("console", "get", opts),
+      inspect: (refOrSelector) => getWidget()?.dispatchLocal("dom", "inspect", {
+        ...typeof refOrSelector === "number" || /^\d+$/.test(String(refOrSelector)) ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) }
+      }),
+      status: () => {
+        const w = getWidget();
+        return { connected: w?.state === "connected", state: w?.state, windowId: w?.windowId };
+      },
+      get widget() {
+        return getWidget();
+      }
     };
   }
 })();

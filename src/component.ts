@@ -2471,6 +2471,8 @@ export class DevChannel extends HTMLElement {
   private isActive = true // Whether this window is active (responding to commands)
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
+  private headless = false // When true, skip all rendering — pure WebSocket bridge
+  private localPending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>()
 
   // Visual cursor overlay (for showing agent actions)
   private cursorOverlay: HTMLDivElement | null = null
@@ -2616,7 +2618,7 @@ export class DevChannel extends HTMLElement {
   private highlightedElements: HTMLDivElement[] = []
 
   static get observedAttributes() {
-    return ['server', 'hidden', 'session']
+    return ['server', 'hidden', 'session', 'mode']
   }
 
   /**
@@ -2750,6 +2752,11 @@ export class DevChannel extends HTMLElement {
     } else {
       this.sessionToken = uid()
     }
+
+    // Headless mode: from config (desktop app sets this)
+    if (config?.mode === 'headless') {
+      this.headless = true
+    }
   }
 
   connectedCallback() {
@@ -2758,14 +2765,26 @@ export class DevChannel extends HTMLElement {
     this.killed = false
     this.serverUrl = this.getAttribute('server') || this.serverUrl
     this.sessionToken = this.getAttribute('session') || this.sessionToken
-    this.render()
-    // Set initial position using left (calculate from right: 16px after render so we know width)
-    const rect = this.getBoundingClientRect()
-    this.homeLeft = window.innerWidth - rect.width - 16
-    this.homeBottom = 16
-    this.style.left = `${this.homeLeft}px`
-    this.style.bottom = `${this.homeBottom}px`
-    this.setupKeyboardShortcut()
+
+    // Headless from attribute (takes precedence over config if set)
+    if (this.getAttribute('mode') === 'headless') {
+      this.headless = true
+    }
+
+    if (!this.headless) {
+      this.render()
+      // Set initial position using left (calculate from right: 16px after render so we know width)
+      const rect = this.getBoundingClientRect()
+      this.homeLeft = window.innerWidth - rect.width - 16
+      this.homeBottom = 16
+      this.style.left = `${this.homeLeft}px`
+      this.style.bottom = `${this.homeBottom}px`
+      this.setupKeyboardShortcut()
+    } else {
+      // Headless: hide element entirely
+      this.style.display = 'none'
+    }
+
     this.interceptConsole()
     this.interceptDialogs()
     this.connect()
@@ -2794,6 +2813,12 @@ export class DevChannel extends HTMLElement {
       this.disconnect()
       this.connect()
     }
+    if (name === 'mode') {
+      this.headless = value === 'headless'
+      if (this.headless) {
+        this.style.display = 'none'
+      }
+    }
   }
 
   // ==========================================
@@ -2801,6 +2826,7 @@ export class DevChannel extends HTMLElement {
   // ==========================================
 
   private render() {
+    if (this.headless) return
     // Only do full render once
     if (this.shadowRoot!.querySelector('.widget')) {
       this.updateUI()
@@ -5131,12 +5157,14 @@ export class DevChannel extends HTMLElement {
   }
 
   private flash() {
+    if (this.headless) return
     const widget = this.shadowRoot?.querySelector('.widget')
     widget?.classList.add('flash')
     setTimeout(() => widget?.classList.remove('flash'), 500)
   }
 
   private show() {
+    if (this.headless) return
     this.widgetHidden = false
     this.classList.remove('widget-hidden')
     this.render()
@@ -5144,11 +5172,13 @@ export class DevChannel extends HTMLElement {
   }
 
   private hide() {
+    if (this.headless) return
     this.widgetHidden = true
     this.classList.add('widget-hidden')
   }
 
   private toggleHidden() {
+    if (this.headless) return
     if (this.widgetHidden) {
       this.show()
     } else {
@@ -5157,6 +5187,7 @@ export class DevChannel extends HTMLElement {
   }
 
   private toggleMinimize() {
+    if (this.headless) return
     const isMinimized = this.classList.contains('minimized')
 
     // Capture current position before any changes
@@ -6868,6 +6899,18 @@ export class DevChannel extends HTMLElement {
     data?: any,
     error?: string,
   ) {
+    // Check if this is a local (programmatic) request
+    const local = this.localPending.get(requestId)
+    if (local) {
+      this.localPending.delete(requestId)
+      if (success) {
+        local.resolve(data)
+      } else {
+        local.reject(new Error(error || 'Unknown error'))
+      }
+      return
+    }
+
     const response: DevResponse = {
       id: requestId,
       success,
@@ -6876,6 +6919,25 @@ export class DevChannel extends HTMLElement {
       timestamp: Date.now(),
     }
     this.ws?.send(JSON.stringify(response))
+  }
+
+  /**
+   * Dispatch a command locally (bypasses WebSocket round-trip).
+   * Used by window._haltija programmatic API.
+   */
+  dispatchLocal(channel: string, action: string, payload: any = {}): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const id = `local-${uid()}`
+      this.localPending.set(id, { resolve, reject })
+      this.handleMessage({
+        id,
+        channel,
+        action,
+        payload: { ...payload, windowId: this.windowId },
+        source: 'agent',
+        timestamp: Date.now(),
+      } as DevMessage)
+    })
   }
 
   // ==========================================
@@ -10073,7 +10135,7 @@ const WIDGET_ID = 'haltija-widget'
  */
 export function inject(
   serverUrl = 'wss://localhost:8700/ws/browser',
-  options?: { session?: string },
+  options?: { session?: string; mode?: string },
 ): DevChannel | null {
   // Check for existing widget by fixed ID
   const existing = document.getElementById(WIDGET_ID) as DevChannel | null
@@ -10097,9 +10159,10 @@ export function inject(
   el.id = WIDGET_ID
   el.setAttribute('server', serverUrl)
   if (options?.session) el.setAttribute('session', options.session)
+  if (options?.mode) el.setAttribute('mode', options.mode)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
-  console.log(`${LOG_PREFIX} Injected`)
+  console.log(`${LOG_PREFIX} Injected${options?.mode === 'headless' ? ' (headless)' : ''}`)
   return el
 }
 
@@ -10121,7 +10184,7 @@ function autoInject() {
   if (config?.autoInject !== false) {
     // If config exists and doesn't explicitly disable, inject
     if (config) {
-      inject(config.serverUrl || config.wsUrl, { session: config.session })
+      inject(config.serverUrl || config.wsUrl, { session: config.session, mode: config.mode })
       return
     }
   }
@@ -10213,5 +10276,70 @@ if (typeof window !== 'undefined') {
 
     /** Version info */
     version: VERSION,
+  }
+
+  // Expose _haltija programmatic API (underscore distinguishes from Electron's window.haltija)
+  // Provides a typed, promise-based interface for console access and app chrome integration.
+  // Methods dispatch locally through the widget — no WebSocket round-trip.
+  const getWidget = () => document.getElementById(WIDGET_ID) as DevChannel | null
+  ;(window as any)._haltija = {
+    get connected() { return (getWidget() as any)?.state === 'connected' },
+    get version() { return VERSION },
+
+    /** DOM tree */
+    tree: (opts?: { selector?: string; mode?: string; depth?: number }) =>
+      getWidget()?.dispatchLocal('dom', 'tree', opts),
+
+    /** Click element by ref ID or selector */
+    click: (refOrSelector: string | number, opts?: { diff?: boolean }) =>
+      getWidget()?.dispatchLocal('interaction', 'click', {
+        ...(typeof refOrSelector === 'number' || /^\d+$/.test(String(refOrSelector))
+          ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) }),
+        ...opts,
+      }),
+
+    /** Type text into element */
+    type: (refOrSelector: string | number, text: string, opts?: { paste?: boolean }) =>
+      getWidget()?.dispatchLocal('interaction', 'type', {
+        ...(typeof refOrSelector === 'number' || /^\d+$/.test(String(refOrSelector))
+          ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) }),
+        text, ...opts,
+      }),
+
+    /** Press a key */
+    key: (key: string, opts?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }) =>
+      getWidget()?.dispatchLocal('interaction', 'key', { key, ...opts }),
+
+    /** Run JavaScript in the page */
+    eval: (code: string) =>
+      getWidget()?.dispatchLocal('debug', 'eval', { code }),
+
+    /** Take screenshot */
+    screenshot: (opts?: { selector?: string; ref?: string; chyron?: boolean }) =>
+      getWidget()?.dispatchLocal('dom', 'screenshot', opts),
+
+    /** Get semantic events */
+    events: (opts?: { last?: number }) =>
+      getWidget()?.dispatchLocal('semantic', 'get', opts),
+
+    /** Get console output */
+    console: (opts?: { last?: number }) =>
+      getWidget()?.dispatchLocal('console', 'get', opts),
+
+    /** Inspect element */
+    inspect: (refOrSelector: string | number) =>
+      getWidget()?.dispatchLocal('dom', 'inspect', {
+        ...(typeof refOrSelector === 'number' || /^\d+$/.test(String(refOrSelector))
+          ? { ref: String(refOrSelector) } : { selector: String(refOrSelector) }),
+      }),
+
+    /** Connection status */
+    status: () => {
+      const w = getWidget() as any
+      return { connected: w?.state === 'connected', state: w?.state, windowId: w?.windowId }
+    },
+
+    /** Direct access to the widget element */
+    get widget() { return getWidget() },
   }
 }

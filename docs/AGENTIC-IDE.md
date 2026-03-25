@@ -79,6 +79,85 @@ than a separate tab) means the file context is always tied to the agent that tou
 
 ---
 
+## Phase 1.5: Headless Widget & App-Owned UI
+
+**Goal:** Make the widget invisible. The Electron app's chrome becomes the sole UI surface.
+The widget becomes a pure WebSocket bridge with a programmatic API.
+
+### Headless mode for `<haltija-dev>`
+
+Add a `mode="headless"` attribute that skips all shadow DOM rendering. The element still:
+- Connects via WebSocket
+- Handles all incoming messages (click, type, tree, etc.)
+- Tracks refs, manages event/mutation watchers
+- Responds to server requests identically
+
+But renders nothing. Zero visual footprint in the page.
+
+### `window._haltija` global
+
+In headless mode, expose a typed API on `window._haltija`:
+
+```js
+_haltija.tree()                    // returns DOM tree
+_haltija.click(42)                 // click by ref
+_haltija.type(10, 'hello')        // type into element
+_haltija.eval('document.title')   // run JS
+_haltija.status()                 // connection state
+_haltija.screenshot()             // capture
+_haltija.events()                 // recent semantic events
+```
+
+This is useful for:
+- Console debugging (inspect from devtools)
+- App chrome JS calling widget methods directly (no REST round-trip)
+- Tests and scripting
+
+### Two widget instances in the desktop app
+
+1. **Outer widget** — lives in Electron's renderer document (not inside any webview).
+   Persists forever — page navigations don't touch it. Can inspect the Electron app's
+   own UI (tab bar, terminal, agent status) for self-debugging. Connected with a stable
+   `windowId` like `hj-chrome-{instance}`.
+
+2. **Inner widget** — lives in the webview DOM as today, but headless. No visible UI.
+   Handles all page-level commands (tree, click, type, etc.).
+
+Both connect to the same server. The server distinguishes them by windowId.
+
+### App chrome owns the UI
+
+With the widget hidden, the Electron app's existing UI surfaces widget state:
+- **Tab bar** — shows connection status, page title/URL (already does this)
+- **Status bar** — session info, event counts, recording state
+- **Record button** — in the tab bar, not in the page. Controls recording via the
+  inner widget. Survives navigation. Can pipe recordings directly to the agent as
+  notifications (Phase 3).
+- **Agent selector** — already exists in the app chrome
+
+The widget's current visible UI (header bar, session badge, hamburger menu) becomes
+unnecessary in the desktop app context. It remains available for non-desktop use
+(bookmarklet injection into a regular browser) where there's no app chrome.
+
+### "Show the agent what I mean"
+
+With record controls in the app chrome and the inner widget headless:
+1. User clicks Record in the tab bar
+2. User performs actions on the page (inner widget captures them as semantic events)
+3. User clicks Stop
+4. App chrome pipes the recording to the agent as a notification
+5. Agent receives a structured action sequence, not a vague description
+
+No copy-paste. No "I clicked the button that says Submit". Just the recording.
+
+### Why Phase 1.5
+
+This is foundational for everything after it. Phases 3–6 all assume the app chrome is
+the primary UI surface. Doing this now means we build those features once (in the app
+chrome) rather than building them in the widget and then migrating them out.
+
+---
+
 ## Phase 3: Notification Buffer — Human-to-Agent Signals
 
 **Goal:** Let the human proactively send context to the agent via the widget UI.

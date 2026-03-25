@@ -759,7 +759,7 @@ async function injectWidget(webContents) {
     // This is stable across navigations (even cross-origin) enabling cross-page recording
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
     const windowId = `hj-${APP_INSTANCE_ID}-${webContents.id}`
-    const configObj = { serverUrl: wsUrl, windowId }
+    const configObj = { serverUrl: wsUrl, windowId, mode: 'headless' }
     // Session priority: pending session from agent's tabs/open > env var
     if (pendingTabSession) {
       configObj.session = pendingTabSession
