@@ -7,6 +7,7 @@
  */
 
 import { getServerUrl } from './state.js'
+import { showNotification } from './ui-utils.js'
 
 // DOM refs
 const outerBtn = document.getElementById('ws-outer')
@@ -48,15 +49,14 @@ function chromeApi(path, body = {}) {
   return api('POST', path, { ...body, window: outerWindowId })
 }
 
-/** Copy text to clipboard and briefly flash the indicator */
-async function copyToClipboard(text, indicator) {
+/** Copy text to clipboard and show a toast */
+async function copyToClipboard(text, message) {
   try {
     await navigator.clipboard.writeText(text)
-    if (indicator) {
-      indicator.style.outline = '2px solid #22c55e'
-      setTimeout(() => indicator.style.outline = '', 600)
-    }
-  } catch { /* clipboard not available */ }
+    showNotification(message || 'Copied to clipboard')
+  } catch {
+    showNotification('Clipboard not available')
+  }
 }
 
 // ==========================================
@@ -126,7 +126,9 @@ async function handleAction(action) {
     case 'screenshot': {
       const data = await pageApi('/screenshot')
       if (data?.data?.path) {
-        await copyToClipboard(data.data.path, innerBtn)
+        await copyToClipboard(data.data.path, `Screenshot saved: ${data.data.path}`)
+      } else {
+        showNotification('Screenshot failed')
       }
       break
     }
@@ -134,16 +136,18 @@ async function handleAction(action) {
       if (isRecordingActions) {
         const data = await pageApi('/recording/stop')
         isRecordingActions = false
-        // Generate test JSON and save
         if (data?.success !== false) {
           const gen = await pageApi('/recording/generate')
           if (gen?.data?.path) {
-            await copyToClipboard(gen.data.path, innerBtn)
+            await copyToClipboard(gen.data.path, `Test saved: ${gen.data.path}`)
+          } else {
+            showNotification('Recording stopped')
           }
         }
       } else {
         await pageApi('/recording/start')
         isRecordingActions = true
+        showNotification('Recording actions…')
       }
       break
     }
@@ -152,11 +156,14 @@ async function handleAction(action) {
         const data = await pageApi('/video/stop')
         isRecordingVideo = false
         if (data?.data?.path) {
-          await copyToClipboard(data.data.path, innerBtn)
+          await copyToClipboard(data.data.path, `Video saved: ${data.data.path}`)
+        } else {
+          showNotification('Video stopped')
         }
       } else {
         await pageApi('/video/start')
         isRecordingVideo = true
+        showNotification('Recording video…')
       }
       break
     }
@@ -164,10 +171,11 @@ async function handleAction(action) {
       if (isSelecting) {
         await pageApi('/select/cancel')
         isSelecting = false
+        showNotification('Selection cancelled')
       } else {
         await pageApi('/select/start')
         isSelecting = true
-        // Poll for result
+        showNotification('Click an element to select it')
         pollSelection()
       }
       break
@@ -175,42 +183,35 @@ async function handleAction(action) {
     case 'console': {
       const data = await api('GET', `/console?window=${innerWindowId}`)
       if (data?.data) {
-        const path = `/tmp/haltija-console-${Date.now()}.json`
-        // Write via file endpoint if available, otherwise just copy the JSON
-        const json = JSON.stringify(data.data, null, 2)
-        await copyToClipboard(json, innerBtn)
+        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Console output copied')
       }
       break
     }
     case 'events': {
       const data = await api('GET', `/events?window=${innerWindowId}`)
       if (data?.data) {
-        const json = JSON.stringify(data.data, null, 2)
-        await copyToClipboard(json, innerBtn)
+        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Events copied')
       }
       break
     }
     case 'snapshot': {
       const data = await pageApi('/snapshot')
       if (data?.data) {
-        const json = JSON.stringify(data.data, null, 2)
-        await copyToClipboard(json, innerBtn)
+        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Snapshot copied')
       }
       break
     }
     case 'console-chrome': {
       const data = await api('GET', `/console?window=${outerWindowId}`)
       if (data?.data) {
-        const json = JSON.stringify(data.data, null, 2)
-        await copyToClipboard(json, outerBtn)
+        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Chrome console copied')
       }
       break
     }
     case 'tree-chrome': {
       const data = await api('GET', `/tree?window=${outerWindowId}`)
       if (data?.data) {
-        const json = JSON.stringify(data.data, null, 2)
-        await copyToClipboard(json, outerBtn)
+        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Chrome DOM tree copied')
       }
       break
     }
@@ -240,8 +241,7 @@ async function pollSelection() {
         isSelecting = false
         const result = await api('GET', `/select/result?window=${innerWindowId}`)
         if (result?.data) {
-          const json = JSON.stringify(result.data, null, 2)
-          await copyToClipboard(json, innerBtn)
+          await copyToClipboard(JSON.stringify(result.data, null, 2), 'Selection copied')
         }
         return
       }
