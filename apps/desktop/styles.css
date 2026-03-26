@@ -56,7 +56,8 @@ body {
 .tab,
 #new-tab,
 #new-terminal,
-#new-agent {
+#new-agent,
+#widget-status {
   -webkit-app-region: no-drag;
 }
 
@@ -252,6 +253,69 @@ body {
 #new-agent:hover {
   background: #2a2a4a;
   color: #86efac;
+}
+
+/* Widget status indicators in tab bar */
+#widget-status {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid #333;
+}
+
+.ws-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #666;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  cursor: pointer;
+  transition: all 0.15s;
+  height: 22px;
+}
+
+.ws-indicator:hover {
+  background: #2a2a4a;
+  color: #ccc;
+}
+
+.ws-indicator .ws-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.ws-indicator .ws-dot.connected {
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+
+.ws-indicator .ws-dot.disconnected {
+  background: #555;
+}
+
+.ws-indicator .ws-dot.recording {
+  background: #ef4444;
+  box-shadow: 0 0 4px #ef4444;
+  animation: pulse 1s infinite;
+}
+
+.ws-indicator.active {
+  color: #ccc;
+}
+
+.ws-indicator .ws-extra {
+  color: #888;
+  font-size: 9px;
 }
 
 /* Toolbar */

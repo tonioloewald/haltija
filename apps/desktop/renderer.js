@@ -15,6 +15,7 @@ import { checkHaltija } from './renderer/status.js'
 import { initSettingsListeners, hideSettings, hideNewTabDialog } from './renderer/settings.js'
 import { initAgentStatusBar } from './renderer/agent-status.js'
 import { initVideoCapture } from './renderer/video-capture.js'
+import { initWidgetStatus } from './renderer/widget-status.js'
 
 // ============================================
 // Initialize
@@ -312,3 +313,4 @@ window.addEventListener('message', (event) => {
 
 setTimeout(() => initAgentStatusBar(), 1000)
 initVideoCapture()
+initWidgetStatus()

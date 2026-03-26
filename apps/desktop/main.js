@@ -893,6 +893,11 @@ function setupScreenCapture() {
     return dialog.showOpenDialog(mainWindow, options)
   })
 
+  ipcMain.handle('open-renderer-devtools', async () => {
+    if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' })
+    return true
+  })
+
   // Navigate URL with smart fallback (called from widget in webview)
   // Routes through renderer's navigate() which has https->http fallback
   // Passes the sender's webContentsId so the renderer navigates the correct tab

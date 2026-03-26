@@ -80,6 +80,9 @@ contextBridge.exposeInMainWorld('haltija', {
   
   // Window management
   closeWindow: () => ipcRenderer.send('close-window'),
+
+  // DevTools
+  openRendererDevTools: () => ipcRenderer.invoke('open-renderer-devtools'),
 })
 
 console.log('[Haltija] Renderer preload complete, exposed:', Object.keys(window.haltija || {}))
