@@ -13,14 +13,20 @@
     <button id="new-terminal" title="Terminal">&gt;_</button>
     <button id="new-agent" title="Agent Shell">&gt;*</button>
     <div id="widget-status">
-      <button id="ws-outer" class="ws-indicator" title="App shell (outer widget)">
-        <span class="ws-dot disconnected"></span>
-        <span class="ws-label">chrome</span>
-      </button>
-      <button id="ws-inner" class="ws-indicator" title="Page (inner widget)">
-        <span class="ws-dot disconnected"></span>
-        <span class="ws-label">page</span>
-      </button>
+      <div class="ws-dropdown" id="ws-outer-wrap">
+        <button id="ws-outer" class="ws-indicator" title="App shell (outer widget)">
+          <span class="ws-dot disconnected"></span>
+          <span class="ws-label">chrome</span>
+        </button>
+        <div class="ws-menu" id="ws-outer-menu"></div>
+      </div>
+      <div class="ws-dropdown" id="ws-inner-wrap">
+        <button id="ws-inner" class="ws-indicator" title="Page (inner widget)">
+          <span class="ws-dot disconnected"></span>
+          <span class="ws-label">page</span>
+        </button>
+        <div class="ws-menu" id="ws-inner-menu"></div>
+      </div>
     </div>
   </div>
   
