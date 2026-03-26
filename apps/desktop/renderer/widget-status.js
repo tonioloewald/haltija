@@ -121,12 +121,18 @@ function renderMenu(menuEl, items) {
 // Actions
 // ==========================================
 
+/** Find a path in a response — handlers are inconsistent about nesting */
+function findPath(resp) {
+  return resp?.path || resp?.data?.path || null
+}
+
 async function handleAction(action) {
   switch (action) {
     case 'screenshot': {
-      const data = await pageApi('/screenshot')
-      if (data?.data?.path) {
-        await copyToClipboard(data.data.path, `Screenshot saved: ${data.data.path}`)
+      const resp = await pageApi('/screenshot')
+      const path = findPath(resp)
+      if (path) {
+        await copyToClipboard(path, `Screenshot saved: ${path}`)
       } else {
         showNotification('Screenshot failed')
       }
@@ -134,15 +140,18 @@ async function handleAction(action) {
     }
     case 'toggle-record': {
       if (isRecordingActions) {
-        const data = await pageApi('/recording/stop')
+        await pageApi('/recording/stop')
         isRecordingActions = false
-        if (data?.success !== false) {
-          const gen = await pageApi('/recording/generate')
-          if (gen?.data?.path) {
-            await copyToClipboard(gen.data.path, `Test saved: ${gen.data.path}`)
-          } else {
-            showNotification('Recording stopped')
-          }
+        const gen = await pageApi('/recording/generate')
+        const path = findPath(gen)
+        if (path) {
+          await copyToClipboard(path, `Test saved: ${path}`)
+        } else if (gen?.test || gen?.data?.test) {
+          // Generate returns test JSON directly, not a file path
+          const test = gen.test || gen.data?.test || gen.data
+          await copyToClipboard(JSON.stringify(test, null, 2), 'Test JSON copied')
+        } else {
+          showNotification('Recording stopped')
         }
       } else {
         await pageApi('/recording/start')
@@ -153,10 +162,11 @@ async function handleAction(action) {
     }
     case 'toggle-video': {
       if (isRecordingVideo) {
-        const data = await pageApi('/video/stop')
+        const resp = await pageApi('/video/stop')
         isRecordingVideo = false
-        if (data?.data?.path) {
-          await copyToClipboard(data.data.path, `Video saved: ${data.data.path}`)
+        const path = findPath(resp)
+        if (path) {
+          await copyToClipboard(path, `Video saved: ${path}`)
         } else {
           showNotification('Video stopped')
         }
@@ -181,38 +191,28 @@ async function handleAction(action) {
       break
     }
     case 'console': {
-      const data = await api('GET', `/console?window=${innerWindowId}`)
-      if (data?.data) {
-        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Console output copied')
-      }
+      const resp = await api('GET', `/console?window=${innerWindowId}`)
+      if (resp) await copyToClipboard(JSON.stringify(resp.data || resp, null, 2), 'Console output copied')
       break
     }
     case 'events': {
-      const data = await api('GET', `/events?window=${innerWindowId}`)
-      if (data?.data) {
-        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Events copied')
-      }
+      const resp = await api('GET', `/events?window=${innerWindowId}`)
+      if (resp) await copyToClipboard(JSON.stringify(resp.data || resp, null, 2), 'Events copied')
       break
     }
     case 'snapshot': {
-      const data = await pageApi('/snapshot')
-      if (data?.data) {
-        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Snapshot copied')
-      }
+      const resp = await pageApi('/snapshot')
+      if (resp) await copyToClipboard(JSON.stringify(resp.data || resp, null, 2), 'Snapshot copied')
       break
     }
     case 'console-chrome': {
-      const data = await api('GET', `/console?window=${outerWindowId}`)
-      if (data?.data) {
-        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Chrome console copied')
-      }
+      const resp = await api('GET', `/console?window=${outerWindowId}`)
+      if (resp) await copyToClipboard(JSON.stringify(resp.data || resp, null, 2), 'Chrome console copied')
       break
     }
     case 'tree-chrome': {
-      const data = await api('GET', `/tree?window=${outerWindowId}`)
-      if (data?.data) {
-        await copyToClipboard(JSON.stringify(data.data, null, 2), 'Chrome DOM tree copied')
-      }
+      const resp = await api('GET', `/tree?window=${outerWindowId}`)
+      if (resp) await copyToClipboard(JSON.stringify(resp.data || resp, null, 2), 'Chrome DOM tree copied')
       break
     }
     case 'devtools-inner': {
@@ -237,15 +237,16 @@ async function pollSelection() {
     if (!isSelecting) return
     try {
       const data = await api('GET', `/select/status?window=${innerWindowId}`)
-      if (data?.data?.status === 'completed') {
+      const status = data?.data?.status || data?.status
+      if (status === 'completed') {
         isSelecting = false
         const result = await api('GET', `/select/result?window=${innerWindowId}`)
-        if (result?.data) {
-          await copyToClipboard(JSON.stringify(result.data, null, 2), 'Selection copied')
+        if (result) {
+          await copyToClipboard(JSON.stringify(result.data || result, null, 2), 'Selection copied')
         }
         return
       }
-      if (data?.data?.status !== 'selecting') {
+      if (status !== 'selecting') {
         isSelecting = false
         return
       }
