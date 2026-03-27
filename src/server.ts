@@ -825,13 +825,15 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
       }
 
       // No exact match — check if isolation is actually needed
-      const distinctSessions = new Set(allWins.map(w => w.session).filter(Boolean))
+      // Exclude the chrome shell window (outer widget) — it's not a competing agent
+      const contentWindows = allWins.filter(w => w.id !== 'hj-chrome')
+      const distinctSessions = new Set(contentWindows.map(w => w.session).filter(Boolean))
 
       if (distinctSessions.size <= 1 && !isSecureMode) {
         // Single session (or no sessions) across all windows — no multi-agent
         // conflict. Adopt the existing window (like legacy mode) instead of
         // blocking the agent from controlling a perfectly good tab.
-        const best = allWins.sort((a, b) => {
+        const best = contentWindows.sort((a, b) => {
           if (a.id === focusedWindowId) return -1
           if (b.id === focusedWindowId) return 1
           return b.lastSeen - a.lastSeen
@@ -844,8 +846,8 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
 
       // Multiple sessions exist — real multi-agent scenario. Try to open a
       // new tab with this agent's session (Electron only).
-      if (windows.size > 0) {
-        const anyWindow = allWins[0]
+      if (contentWindows.length > 0) {
+        const anyWindow = contentWindows[0]
         try {
           const openResult = await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, anyWindow.id)
           if (openResult.success) {
