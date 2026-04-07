@@ -56,8 +56,7 @@ body {
 .tab,
 #new-tab,
 #new-terminal,
-#new-agent,
-#widget-status {
+#new-agent {
   -webkit-app-region: no-drag;
 }
 
@@ -171,24 +170,32 @@ body {
   white-space: nowrap;
 }
 
-.tab-close {
+.tab-menu {
   width: 16px;
   height: 16px;
   border: none;
   border-radius: 3px;
   background: transparent;
-  color: #666;
-  font-size: 14px;
+  color: #555;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
 }
 
-.tab-close:hover {
-  background: #ef4444;
-  color: #fff;
+.tab:hover .tab-menu,
+.tab.active .tab-menu {
+  opacity: 1;
+}
+
+.tab-menu:hover {
+  background: #2a2a4a;
+  color: #ccc;
 }
 
 #new-tab {
@@ -255,85 +262,15 @@ body {
   color: #86efac;
 }
 
-/* Widget status indicators in tab bar */
-#widget-status {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 8px;
-  padding-left: 8px;
-  border-left: 1px solid #333;
-}
-
-.ws-indicator {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #666;
-  font-size: 10px;
-  font-family: 'SF Mono', 'Menlo', monospace;
-  cursor: pointer;
-  transition: all 0.15s;
-  height: 22px;
-}
-
-.ws-indicator:hover {
-  background: #2a2a4a;
-  color: #ccc;
-}
-
-.ws-indicator .ws-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  transition: background 0.3s;
-}
-
-.ws-indicator .ws-dot.connected {
-  background: #22c55e;
-  box-shadow: 0 0 4px #22c55e;
-}
-
-.ws-indicator .ws-dot.disconnected {
-  background: #555;
-}
-
-.ws-indicator .ws-dot.recording {
-  background: #ef4444;
-  box-shadow: 0 0 4px #ef4444;
-  animation: pulse 1s infinite;
-}
-
-.ws-indicator.active {
-  color: #ccc;
-}
-
-.ws-indicator .ws-extra {
-  color: #888;
-  font-size: 9px;
-}
-
-/* Dropdown wrapper */
-.ws-dropdown {
-  position: relative;
-}
-
+/* Tab action dropdown menu */
 .ws-menu {
   display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
+  position: fixed;
   background: #1a1a2e;
   border: 1px solid #444;
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  min-width: 180px;
+  min-width: 190px;
   padding: 4px 0;
   z-index: 9999;
   font-size: 12px;
@@ -397,6 +334,19 @@ body {
   height: 1px;
   background: #333;
   margin: 4px 0;
+}
+
+.ws-menu-item.danger {
+  color: #f87171;
+}
+
+.ws-menu-item.danger:hover {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.ws-menu-item.recording {
+  color: #ef4444;
 }
 
 /* Toolbar */

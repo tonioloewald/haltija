@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('haltija', {
   onMenuReloadTab: (callback) => ipcRenderer.on('menu-reload-tab', callback),
   onMenuForceReloadTab: (callback) => ipcRenderer.on('menu-force-reload-tab', callback),
   onMenuDevToolsTab: (callback) => ipcRenderer.on('menu-devtools-tab', callback),
+  onMenuChromeConsole: (callback) => ipcRenderer.on('menu-chrome-console', callback),
+  onMenuChromeTree: (callback) => ipcRenderer.on('menu-chrome-tree', callback),
   onMenuBack: (callback) => ipcRenderer.on('menu-back', callback),
   onMenuForward: (callback) => ipcRenderer.on('menu-forward', callback),
   onMenuFocusUrl: (callback) => ipcRenderer.on('menu-focus-url', callback),

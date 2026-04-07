@@ -3396,7 +3396,7 @@ export class DevChannel extends HTMLElement {
           <div class="title">${PRODUCT_NAME}</div>
           <span class="session-badge" data-action="copy-session" title="Session: ${this.sessionToken}\nClick to copy session command">${this.sessionToken.slice(0, 8)}</span>
           <div class="controls">
-            <button class="btn" data-action="select" title="Select elements (drag to select area)" aria-label="Select elements">👆</button>
+            <button class="btn" data-action="select" title="Click or drag to select elements" aria-label="Select elements">👆</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">LOG</button>
             <button class="btn info-btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">i</button>
@@ -4457,6 +4457,11 @@ export class DevChannel extends HTMLElement {
   // ============================================
 
   private startSelection() {
+    // The outer Chrome-shell widget (hj-chrome) has no meaningful page to select — ignore.
+    // Note: webview widgets are also headless (no UI panel) but they DO have a page, so
+    // we check the windowId specifically rather than the headless flag.
+    if (this.windowId === 'hj-chrome') return
+
     if (this.selectionActive) {
       this.cancelSelection()
       return
@@ -4503,7 +4508,14 @@ export class DevChannel extends HTMLElement {
     const onMouseDown = (e: MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      // Clear any previous selection indicator immediately when a new gesture starts
+      this.clearHighlights()
+      if (this.selectionIndicator) {
+        this.selectionIndicator.remove()
+        this.selectionIndicator = null
+      }
       this.selectionStart = { x: e.clientX, y: e.clientY }
+      this.selectionRect = null
       this.selectionBox!.style.display = 'block'
       this.selectionBox!.style.left = `${e.clientX}px`
       this.selectionBox!.style.top = `${e.clientY}px`
@@ -4531,13 +4543,42 @@ export class DevChannel extends HTMLElement {
     }
 
     const onMouseUp = (e: MouseEvent) => {
-      if (!this.selectionStart || !this.selectionRect) {
+      if (!this.selectionStart) {
         this.cancelSelection()
         return
       }
 
-      // Finalize selection
-      this.finalizeSelection()
+      const dx = e.clientX - this.selectionStart.x
+      const dy = e.clientY - this.selectionStart.y
+      const isClick = Math.abs(dx) < 5 && Math.abs(dy) < 5
+
+      if (isClick) {
+        // Click: select the element directly under the cursor.
+        // Temporarily hide the overlay so elementFromPoint sees through it.
+        this.selectionBox!.style.display = 'none'
+        this.selectionOverlay!.style.visibility = 'hidden'
+        const target = document.elementFromPoint(e.clientX, e.clientY)
+        this.selectionOverlay!.style.visibility = 'visible'
+
+        if (target && target !== document.body && !target.closest(TAG_NAME)) {
+          const rect = target.getBoundingClientRect()
+          this.selectionRect = {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+          }
+          this.finalizeSelection()
+        } else {
+          this.cancelSelection()
+        }
+      } else {
+        if (!this.selectionRect) {
+          this.cancelSelection()
+          return
+        }
+        this.finalizeSelection()
+      }
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -4817,7 +4858,7 @@ export class DevChannel extends HTMLElement {
     const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
     if (selectBtn) {
       selectBtn.classList.remove('has-selection')
-      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+      selectBtn.setAttribute('title', 'Click or drag to select elements')
     }
   }
 
@@ -4840,7 +4881,7 @@ export class DevChannel extends HTMLElement {
     const selectBtn = this.shadowRoot?.querySelector('[data-action="select"]')
     if (selectBtn) {
       selectBtn.classList.remove('active')
-      selectBtn.setAttribute('title', 'Select elements (drag to select area)')
+      selectBtn.setAttribute('title', 'Click or drag to select elements')
     }
   }
 

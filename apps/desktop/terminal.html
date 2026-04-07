@@ -628,7 +628,7 @@
       white-space: nowrap;
       color: #94a3b8;
     }
-    #file-edit-btn, #file-save-btn {
+    #file-edit-btn, #file-save-btn, #file-discard-btn {
       background: var(--bg-surface);
       border: 1px solid var(--border);
       color: var(--accent-light, #a5b4fc);
@@ -644,6 +644,30 @@
     #file-save-btn {
       color: #4ade80;
       border-color: #22c55e33;
+    }
+    #file-discard-btn {
+      color: #f87171;
+      border-color: #ef444433;
+    }
+    #file-discard-btn:hover {
+      background: #ef4444;
+      color: white;
+    }
+    #file-dirty-indicator {
+      color: #f59e0b;
+      font-size: 10px;
+      line-height: 1;
+      margin-right: 2px;
+    }
+    .file-item.dirty, .tree-file.dirty {
+      color: #f59e0b;
+    }
+    .status-item[data-action] {
+      cursor: pointer;
+      text-decoration: underline dotted;
+    }
+    .status-item[data-action]:hover {
+      opacity: 0.8;
     }
     #file-editor {
       flex: 1;
@@ -771,8 +795,10 @@
         <div id="file-breadcrumb">
           <span id="file-path-display"></span>
           <span style="flex:1"></span>
+          <span id="file-dirty-indicator" class="hidden" title="Unsaved changes">●</span>
           <button id="file-edit-btn" class="hidden" title="Toggle edit mode">Edit</button>
           <button id="file-save-btn" class="hidden" title="Save changes (⌘S)">Save</button>
+          <button id="file-discard-btn" class="hidden" title="Discard unsaved changes">Discard</button>
         </div>
         <div id="file-editor">
           <div id="file-empty">Select a file to view</div>
@@ -1010,22 +1036,38 @@
         statusTextEl.textContent = 'idle'
         return
       }
-      // Format: "hj > localhost:8700 'title' | todos empty | messages none"
-      // Split by | and render each segment
       const segments = line.split(' | ')
       let html = ''
       for (const segment of segments) {
         const trimmed = segment.trim()
         if (!trimmed) continue
         let cls = 'status-item'
+        let action = ''
         // Color coding based on content
         if (/fail|error|no browser/i.test(trimmed)) cls += ' error'
         else if (/warn|blocked|pending/i.test(trimmed)) cls += ' alert'
         else if (/ready|connected|pass/i.test(trimmed)) cls += ' ok'
-        html += `<span class="${cls}">${escapeHtml(trimmed)}</span>`
+        // Clickable segments
+        if (/^hj tasks/.test(trimmed)) action = ' data-action="open-tasks"'
+        html += `<span class="${cls}"${action}>${escapeHtml(trimmed)}</span>`
       }
       statusTextEl.innerHTML = html || escapeHtml(line)
     }
+
+    statusTextEl.addEventListener('click', async (e) => {
+      const span = e.target.closest('[data-action]')
+      if (!span) return
+      if (span.dataset.action === 'open-tasks') {
+        try {
+          const res = await fetch(`${BASE_URL}/terminal/tasks-path`)
+          const data = await res.json()
+          if (data.path) {
+            if (!filePaneOpen) filesToggle.click()
+            openFile(data.path)
+          }
+        } catch {}
+      }
+    })
 
     // ==========================================
     // Board View Rendering
@@ -1710,12 +1752,27 @@
     const filePathDisplay = document.getElementById('file-path-display')
     const fileEditBtn = document.getElementById('file-edit-btn')
     const fileSaveBtn = document.getElementById('file-save-btn')
+    const fileDiscardBtn = document.getElementById('file-discard-btn')
+    const fileDirtyIndicator = document.getElementById('file-dirty-indicator')
 
     let filePaneOpen = false
     let currentFilePath = null
     let currentEditor = null
     let cmLoaded = false
     let isEditing = false
+    // dirtyBuffers: filePath → pending content not yet saved to disk
+    const dirtyBuffers = new Map()
+
+    function setDirtyIndicator(dirty) {
+      fileDirtyIndicator.classList.toggle('hidden', !dirty)
+    }
+
+    function markSidebarDirty() {
+      document.querySelectorAll('.file-item, .tree-file').forEach(el => {
+        const path = el.title
+        el.classList.toggle('dirty', dirtyBuffers.has(path))
+      })
+    }
 
     // Toggle file pane
     filesToggle.addEventListener('click', () => {
@@ -1860,10 +1917,19 @@
     // Open a file in the viewer
     async function openFile(filePath) {
       await loadCM()
+
+      // Preserve dirty edits for the current file before switching
+      if (isEditing && currentFilePath && currentEditor) {
+        dirtyBuffers.set(currentFilePath, currentEditor.state.doc.toString())
+      }
+
       currentFilePath = filePath
+      currentEditor = null
       isEditing = false
       fileEditBtn.classList.remove('hidden')
       fileSaveBtn.classList.add('hidden')
+      fileDiscardBtn.classList.add('hidden')
+      setDirtyIndicator(dirtyBuffers.has(filePath))
 
       // Update sidebar highlights
       document.querySelectorAll('.file-item.active, .tree-file.active').forEach(el => el.classList.remove('active'))
@@ -1898,6 +1964,20 @@
           return
         }
 
+        // If there's a dirty buffer for this file, restore it in edit mode
+        if (dirtyBuffers.has(filePath)) {
+          const dirtyContent = dirtyBuffers.get(filePath)
+          showCodeEditor(dirtyContent, data.language || 'text', false)
+          isEditing = true
+          fileEditBtn.classList.add('hidden')
+          fileSaveBtn.classList.remove('hidden')
+          fileDiscardBtn.classList.remove('hidden')
+          setDirtyIndicator(true)
+          markSidebarDirty()
+          refreshTouches()
+          return
+        }
+
         // Markdown preview
         if (data.language === 'markdown') {
           showMarkdownPreview(data.content)
@@ -1917,6 +1997,7 @@
       fileEditorEl.innerHTML = `<div id="file-empty" style="color:#f87171">${msg}</div>`
       fileEditBtn.classList.add('hidden')
       fileSaveBtn.classList.add('hidden')
+      fileDiscardBtn.classList.add('hidden')
     }
 
     function showMarkdownPreview(content) {
@@ -1987,21 +2068,41 @@
       })
     }
 
-    // Edit / Save
-    fileEditBtn.addEventListener('click', () => {
-      if (!currentFilePath || !currentEditor) return
+    // Edit / Save / Discard
+    fileEditBtn.addEventListener('click', async () => {
+      if (!currentFilePath) return
       isEditing = true
-      const content = currentEditor.state.doc.toString()
-      const lang = filePathDisplay.textContent.split('.').pop()
       const langGuess = { js: 'javascript', ts: 'typescript', mjs: 'javascript', mts: 'typescript',
                           jsx: 'javascript', tsx: 'typescript', html: 'html', htm: 'html',
                           css: 'css', scss: 'css', json: 'json', md: 'markdown', py: 'python' }
-      showCodeEditor(content, langGuess[lang] || 'text', false)
+      const lang = filePathDisplay.textContent.split('.').pop()
+      if (currentEditor) {
+        // Code editor (read-only) — recreate as editable
+        const content = currentEditor.state.doc.toString()
+        showCodeEditor(content, langGuess[lang] || 'text', false)
+      } else {
+        // Markdown preview — fetch raw content and open in editor
+        const res = await fetch(`${BASE_URL}/files/read?path=${encodeURIComponent(currentFilePath)}${shellId ? '&shellId=' + shellId : ''}`)
+        const data = await res.json()
+        showCodeEditor(data.content || '', langGuess[lang] || 'text', false)
+      }
       fileEditBtn.classList.add('hidden')
       fileSaveBtn.classList.remove('hidden')
+      fileDiscardBtn.classList.remove('hidden')
     })
 
     fileSaveBtn.addEventListener('click', saveCurrentFile)
+
+    fileDiscardBtn.addEventListener('click', () => {
+      if (!currentFilePath) return
+      dirtyBuffers.delete(currentFilePath)
+      setDirtyIndicator(false)
+      markSidebarDirty()
+      // Re-open the file fresh from disk
+      const path = currentFilePath
+      currentFilePath = null
+      openFile(path)
+    })
 
     async function saveCurrentFile() {
       if (!currentFilePath || !currentEditor) return
@@ -2014,8 +2115,17 @@
         })
         const data = await res.json()
         if (data.success) {
-          fileSaveBtn.textContent = 'Saved!'
-          setTimeout(() => { fileSaveBtn.textContent = 'Save' }, 1500)
+          dirtyBuffers.delete(currentFilePath)
+          setDirtyIndicator(false)
+          markSidebarDirty()
+          isEditing = false
+          fileSaveBtn.classList.add('hidden')
+          fileDiscardBtn.classList.add('hidden')
+          fileEditBtn.classList.remove('hidden')
+          // Re-open in read-only view
+          const path = currentFilePath
+          currentFilePath = null
+          openFile(path)
         } else {
           fileSaveBtn.textContent = 'Error!'
           setTimeout(() => { fileSaveBtn.textContent = 'Save' }, 1500)

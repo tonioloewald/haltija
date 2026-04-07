@@ -385,14 +385,28 @@ function setupMenu() {
         },
         { type: 'separator' },
         {
-          label: 'Developer Tools (Shell)',
-          accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
-          click: () => mainWindow?.webContents.toggleDevTools(),
-        },
-        {
-          label: 'Developer Tools (Tab)',
-          accelerator: isMac ? 'Alt+Cmd+J' : 'Ctrl+Shift+J',
-          click: () => mainWindow?.webContents.send('menu-devtools-tab'),
+          label: 'Developer Tools',
+          submenu: [
+            {
+              label: 'Shell DevTools',
+              accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+              click: () => mainWindow?.webContents.toggleDevTools(),
+            },
+            {
+              label: 'Tab DevTools',
+              accelerator: isMac ? 'Alt+Cmd+J' : 'Ctrl+Shift+J',
+              click: () => mainWindow?.webContents.send('menu-devtools-tab'),
+            },
+            { type: 'separator' },
+            {
+              label: 'Chrome Console',
+              click: () => mainWindow?.webContents.send('menu-chrome-console'),
+            },
+            {
+              label: 'Chrome DOM Tree',
+              click: () => mainWindow?.webContents.send('menu-chrome-tree'),
+            },
+          ],
         },
         { type: 'separator' },
         { role: 'togglefullscreen' },

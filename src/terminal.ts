@@ -63,7 +63,7 @@ export interface TerminalState {
 /** Status line items with their default states */
 export const STATUS_ITEMS = {
   hj: { default: 'no browser' },
-  memos: { default: 'empty' },
+  tasks: { default: 'empty' },
 } as const
 
 export type StatusItemKey = keyof typeof STATUS_ITEMS
@@ -198,7 +198,7 @@ export function removeStatus(state: TerminalState, tool: string): void {
 /**
  * Get the status line as a compact string.
  * Each segment is a runnable hj command showing current state.
- * Format: hj localhost:8700 "title" | hj memos 2 active
+ * Format: hj localhost:8700 | hj tasks 2 active
  */
 export function getStatusLine(state: TerminalState): string {
   if (state.statuses.size === 0) return ''

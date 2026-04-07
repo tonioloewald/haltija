@@ -6,6 +6,104 @@ import { tabs, activeTabId, setActiveTabId, nextTabId, el, getServerUrl, lastCwd
 import { showNotification } from './ui-utils.js'
 import { setupWebviewEvents } from './webview-events.js'
 import { checkHaltija, updateNavButtons } from './status.js'
+import { handleAction, getIsRecordingActions, getIsRecordingVideo, getIsSelecting } from './widget-status.js'
+
+// ==========================================
+// Tab dropdown menu
+// ==========================================
+
+let openTabMenu = null
+
+function closeTabMenus() {
+  if (openTabMenu) {
+    openTabMenu.remove()
+    openTabMenu = null
+  }
+}
+
+document.addEventListener('click', closeTabMenus)
+
+function openBrowserTabMenu(tabId, anchorEl) {
+  closeTabMenus()
+
+  const connected = true // actions always available; handlers no-op if disconnected
+  const items = [
+    { icon: '📷', label: 'Screenshot', action: 'screenshot' },
+    { sep: true },
+    { icon: '⏺', label: getIsRecordingActions() ? 'Stop Recording' : 'Record Actions',
+      action: 'toggle-record', cls: getIsRecordingActions() ? 'recording' : '' },
+    { icon: '🎥', label: getIsRecordingVideo() ? 'Stop Video' : 'Record Video',
+      action: 'toggle-video', cls: getIsRecordingVideo() ? 'recording' : '' },
+    { sep: true },
+    { icon: '🎯', label: getIsSelecting() ? 'Cancel Selection' : 'Select Element',
+      action: 'toggle-select', cls: getIsSelecting() ? 'active' : '' },
+    { icon: '📋', label: 'Console', action: 'console' },
+    { icon: '📊', label: 'Events', action: 'events' },
+    { icon: '📸', label: 'Snapshot', action: 'snapshot' },
+    { sep: true },
+    { icon: '🔍', label: 'Inspect (DevTools)', action: 'devtools-inner' },
+    { sep: true },
+    { icon: '✕', label: 'Close Tab', action: 'close', cls: 'danger' },
+  ]
+
+  const menu = buildMenu(items, (action) => {
+    if (action === 'close') closeTab(tabId)
+    else handleAction(action)
+  })
+
+  positionMenu(menu, anchorEl)
+  document.body.appendChild(menu)
+  openTabMenu = menu
+}
+
+function openTerminalTabMenu(tabId, anchorEl) {
+  closeTabMenus()
+  const items = [
+    { icon: '✕', label: 'Close Tab', action: 'close', cls: 'danger' },
+  ]
+  const menu = buildMenu(items, (action) => {
+    if (action === 'close') closeTab(tabId)
+  })
+  positionMenu(menu, anchorEl)
+  document.body.appendChild(menu)
+  openTabMenu = menu
+}
+
+function buildMenu(items, onAction) {
+  const menu = document.createElement('div')
+  menu.className = 'ws-menu'
+  menu.style.display = 'block'
+
+  for (const item of items) {
+    if (item.sep) {
+      const sep = document.createElement('div')
+      sep.className = 'ws-menu-sep'
+      menu.appendChild(sep)
+      continue
+    }
+    const btn = document.createElement('button')
+    btn.className = 'ws-menu-item' + (item.cls ? ` ${item.cls}` : '')
+    btn.innerHTML = `<span class="mi-icon">${item.icon}</span><span class="mi-label">${item.label}</span>`
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      closeTabMenus()
+      onAction(item.action)
+    })
+    menu.appendChild(btn)
+  }
+
+  return menu
+}
+
+function positionMenu(menu, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect()
+  menu.style.top = `${rect.bottom + 4}px`
+  // Align right edge of menu with right edge of anchor button
+  const menuWidth = 190
+  let left = rect.right - menuWidth
+  if (left < 4) left = 4
+  menu.style.left = `${left}px`
+}
 
 export function getDefaultUrl() {
   return `${getServerUrl()}/test`
@@ -20,18 +118,19 @@ export function createTab(url, activate = true) {
   tabEl.dataset.tabId = tabId
   tabEl.innerHTML = `
     <span class="tab-title">New Tab</span>
-    <button class="tab-close" title="Close tab">×</button>
+    <button class="tab-menu" title="Tab actions">⋯</button>
   `
 
   tabEl.addEventListener('click', (e) => {
-    if (!e.target.classList.contains('tab-close')) {
+    if (!e.target.classList.contains('tab-menu')) {
       activateTab(tabId)
     }
   })
 
-  tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
+  tabEl.querySelector('.tab-menu').addEventListener('click', (e) => {
     e.stopPropagation()
-    closeTab(tabId)
+    activateTab(tabId)
+    openBrowserTabMenu(tabId, e.currentTarget)
   })
 
   el.tabBar.appendChild(tabEl)
@@ -98,18 +197,19 @@ export async function createTerminalTab(mode = 'human') {
   tabEl.dataset.tabId = tabId
   tabEl.innerHTML = `
     <span class="tab-title">${prefix} ${label}</span>
-    <button class="tab-close" title="Close tab">×</button>
+    <button class="tab-menu" title="Tab actions">⋯</button>
   `
 
   tabEl.addEventListener('click', (e) => {
-    if (!e.target.classList.contains('tab-close')) {
+    if (!e.target.classList.contains('tab-menu')) {
       activateTab(tabId)
     }
   })
 
-  tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
+  tabEl.querySelector('.tab-menu').addEventListener('click', (e) => {
     e.stopPropagation()
-    closeTab(tabId)
+    activateTab(tabId)
+    openTerminalTabMenu(tabId, e.currentTarget)
   })
 
   el.tabBar.appendChild(tabEl)

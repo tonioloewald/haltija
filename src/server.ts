@@ -267,9 +267,12 @@ function updateHjStatus() {
   if (focusedWindow) {
     try {
       const urlObj = new URL(focusedWindow.url)
-      const host = urlObj.host || 'localhost'
-      const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
-      hjStatus = `${host}${title}`
+      // file:// URLs are the Haltija chrome window itself — show the server address instead
+      if (urlObj.protocol === 'file:') {
+        hjStatus = `localhost:${PORT}`
+      } else {
+        hjStatus = urlObj.host || `localhost:${PORT}`
+      }
     } catch {
       hjStatus = 'connected'
     }
@@ -1629,16 +1632,16 @@ async function handleRest(req: Request): Promise<Response> {
     if (!agentConfig.systemPrompt) {
       agentConfig.systemPrompt = `You have browser control via the 'hj' CLI. Use it to see and interact with web pages.
 
-Each message starts with a status line like: hj localhost:8700 "Page Title" | hj memos 2 active
+Each message starts with a status line like: hj localhost:8700 | hj tasks 2 active
 Each segment is a runnable command showing current state.
 
 Key commands:
 - hj status - check connection
-- hj tree - see page structure  
+- hj tree - see page structure
 - hj click "selector" - click elements
 - hj type "selector" "text" - type in inputs
 - hj screenshot - capture the page
-- hj memos - view the shared memo board (NOT your built-in TodoWrite tool)
+- hj tasks - view the shared task board (NOT your built-in TodoWrite tool)
 
 Run 'hj --help' for all commands.`
     }
@@ -1671,24 +1674,24 @@ Run 'hj --help' for all commands.`
     const agentCwd = shell.cwd || process.env.HOME || process.cwd()
 
     // Build compact UI state line to prepend to prompt
-    // Each segment is a runnable hj command: hj localhost:8700 "title" | hj memos 2 active
+    // Each segment is a runnable hj command: hj localhost:8700 | hj tasks 2 active
     const focusedWindow = focusedWindowId ? windows.get(focusedWindowId) : null
     let browserStatus: string
     if (focusedWindow) {
       try {
         const urlObj = new URL(focusedWindow.url)
-        const host = urlObj.host || 'localhost'
-        const title = focusedWindow.title ? ` "${focusedWindow.title.slice(0, 30)}"` : ''
-        browserStatus = `hj ${host}${title}`
+        // file:// URLs are the Haltija chrome window itself — show the server address instead
+        const host = urlObj.protocol === 'file:' ? `localhost:${PORT}` : (urlObj.host || `localhost:${PORT}`)
+        browserStatus = `hj ${host}`
       } catch {
         browserStatus = 'hj connected'
       }
     } else {
       browserStatus = `hj ${STATUS_ITEMS.hj.default}`
     }
-    const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.memos.default
-    
-    const uiState = `${browserStatus} | hj memos ${taskStatus}
+    const taskStatus = taskBoard ? getBoardSummary(taskBoard) : STATUS_ITEMS.tasks.default
+
+    const uiState = `${browserStatus} | hj tasks ${taskStatus}
 
 `
     // Inject any pending messages before the user's prompt
@@ -1775,6 +1778,11 @@ Run 'hj --help' for all commands.`
       setLastActiveAgent(body.shellId)
     }
     return Response.json({ ok: true }, { headers })
+  }
+
+  // Return the current task board file path (for opening in the file viewer)
+  if (path === '/terminal/tasks-path' && req.method === 'GET') {
+    return Response.json({ path: taskBoard?.filePath || null }, { headers })
   }
 
   // Dispatch a command to a tool

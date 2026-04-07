@@ -15,7 +15,7 @@ import { checkHaltija } from './renderer/status.js'
 import { initSettingsListeners, hideSettings, hideNewTabDialog } from './renderer/settings.js'
 import { initAgentStatusBar } from './renderer/agent-status.js'
 import { initVideoCapture } from './renderer/video-capture.js'
-import { initWidgetStatus } from './renderer/widget-status.js'
+import { initWidgetStatus, handleAction } from './renderer/widget-status.js'
 
 // ============================================
 // Initialize
@@ -204,6 +204,8 @@ if (window.haltija) {
   window.haltija.onMenuDevToolsTab?.(() => {
     const wv = getActiveWebview(); if (wv) wv.openDevTools()
   })
+  window.haltija.onMenuChromeConsole?.(() => handleAction('console-chrome'))
+  window.haltija.onMenuChromeTree?.(() => handleAction('tree-chrome'))
   window.haltija.onMenuBack?.(() => {
     const wv = getActiveWebview(); if (wv && wv.canGoBack()) wv.goBack()
   })

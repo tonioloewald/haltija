@@ -1,30 +1,28 @@
 /**
- * Widget status indicators + action menus.
+ * Widget status — polls server state and handles page/chrome widget actions.
  *
- * Tab bar indicators for outer (chrome) and inner (page) widgets.
- * Click opens a dropdown with actions (screenshot, record, select, etc.).
- * Outputs save to /tmp and copy the path to clipboard.
+ * The chrome/outer menu was removed from the tab bar; those actions live in
+ * the app menu (View → Developer Tools). The inner (page) actions live in
+ * the per-tab ⋯ menu. This module owns the shared state and action logic.
  */
 
 import { getServerUrl } from './state.js'
 import { showNotification } from './ui-utils.js'
 
-// DOM refs
-const outerBtn = document.getElementById('ws-outer')
-const innerBtn = document.getElementById('ws-inner')
-const outerDot = outerBtn?.querySelector('.ws-dot')
-const innerDot = innerBtn?.querySelector('.ws-dot')
-const innerLabel = innerBtn?.querySelector('.ws-label')
-const outerMenu = document.getElementById('ws-outer-menu')
-const innerMenu = document.getElementById('ws-inner-menu')
+// ==========================================
+// State (exported as getters so tabs.js can read current values)
+// ==========================================
 
-// State
 let innerWindowId = null
-let outerWindowId = 'hj-chrome'
+const outerWindowId = 'hj-chrome'
 let isRecordingActions = false
 let isRecordingVideo = false
 let isSelecting = false
-let openMenu = null // currently open menu element
+
+export const getInnerWindowId = () => innerWindowId
+export const getIsRecordingActions = () => isRecordingActions
+export const getIsRecordingVideo = () => isRecordingVideo
+export const getIsSelecting = () => isSelecting
 
 // ==========================================
 // Helpers
@@ -39,17 +37,14 @@ async function api(method, path, body) {
   return resp.json()
 }
 
-/** POST to endpoint targeting the inner widget's window */
 function pageApi(path, body = {}) {
   return api('POST', path, { ...body, window: innerWindowId })
 }
 
-/** POST to endpoint targeting the outer widget's window */
 function chromeApi(path, body = {}) {
   return api('POST', path, { ...body, window: outerWindowId })
 }
 
-/** Copy text to clipboard and show a toast */
 async function copyToClipboard(text, message) {
   try {
     await navigator.clipboard.writeText(text)
@@ -59,74 +54,16 @@ async function copyToClipboard(text, message) {
   }
 }
 
-// ==========================================
-// Menu rendering
-// ==========================================
-
-function buildInnerMenu() {
-  if (!innerMenu) return
-  const connected = !!innerWindowId
-  const items = [
-    { icon: '📷', label: 'Screenshot', action: 'screenshot', disabled: !connected },
-    { icon: '⏺', label: isRecordingActions ? 'Stop Recording' : 'Record Actions',
-      action: 'toggle-record', cls: isRecordingActions ? 'recording' : '', disabled: !connected },
-    { icon: '🎥', label: isRecordingVideo ? 'Stop Video' : 'Record Video',
-      action: 'toggle-video', cls: isRecordingVideo ? 'recording' : '', disabled: !connected },
-    { sep: true },
-    { icon: '🎯', label: isSelecting ? 'Cancel Selection' : 'Select Element',
-      action: 'toggle-select', cls: isSelecting ? 'active' : '', disabled: !connected },
-    { icon: '📋', label: 'Console', action: 'console', disabled: !connected },
-    { icon: '📊', label: 'Events', action: 'events', disabled: !connected },
-    { icon: '📸', label: 'Snapshot', action: 'snapshot', disabled: !connected },
-    { sep: true },
-    { icon: '🔍', label: 'Inspect (DevTools)', action: 'devtools-inner' },
-  ]
-  renderMenu(innerMenu, items)
-}
-
-function buildOuterMenu() {
-  if (!outerMenu) return
-  const items = [
-    { icon: '📋', label: 'Console', action: 'console-chrome' },
-    { icon: '🌳', label: 'DOM Tree', action: 'tree-chrome' },
-    { sep: true },
-    { icon: '🔍', label: 'Inspect (DevTools)', action: 'devtools-outer' },
-  ]
-  renderMenu(outerMenu, items)
-}
-
-function renderMenu(menuEl, items) {
-  menuEl.innerHTML = ''
-  for (const item of items) {
-    if (item.sep) {
-      const sep = document.createElement('div')
-      sep.className = 'ws-menu-sep'
-      menuEl.appendChild(sep)
-      continue
-    }
-    const btn = document.createElement('button')
-    btn.className = 'ws-menu-item' + (item.cls ? ` ${item.cls}` : '') + (item.disabled ? ' disabled' : '')
-    btn.innerHTML = `<span class="mi-icon">${item.icon}</span><span class="mi-label">${item.label}</span>`
-    btn.dataset.action = item.action
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      closeMenus()
-      if (!item.disabled) handleAction(item.action)
-    })
-    menuEl.appendChild(btn)
-  }
+/** Find a path in a response — handlers are inconsistent about nesting */
+function findPath(resp) {
+  return resp?.path || resp?.data?.path || null
 }
 
 // ==========================================
 // Actions
 // ==========================================
 
-/** Find a path in a response — handlers are inconsistent about nesting */
-function findPath(resp) {
-  return resp?.path || resp?.data?.path || null
-}
-
-async function handleAction(action) {
+export async function handleAction(action) {
   switch (action) {
     case 'screenshot': {
       const resp = await pageApi('/screenshot')
@@ -147,7 +84,6 @@ async function handleAction(action) {
         if (path) {
           await copyToClipboard(path, `Test saved: ${path}`)
         } else if (gen?.test || gen?.data?.test) {
-          // Generate returns test JSON directly, not a file path
           const test = gen.test || gen.data?.test || gen.data
           await copyToClipboard(JSON.stringify(test, null, 2), 'Test JSON copied')
         } else {
@@ -179,13 +115,14 @@ async function handleAction(action) {
     }
     case 'toggle-select': {
       if (isSelecting) {
-        await pageApi('/select/cancel')
+        // Use consolidated /select endpoint so the window ID is respected
+        await api('POST', '/select', { action: 'cancel', window: innerWindowId })
         isSelecting = false
         showNotification('Selection cancelled')
       } else {
-        await pageApi('/select/start')
+        await api('POST', '/select', { action: 'start', window: innerWindowId })
         isSelecting = true
-        showNotification('Click an element to select it')
+        showNotification('Click or drag to select elements')
         pollSelection()
       }
       break
@@ -231,16 +168,15 @@ async function handleAction(action) {
 }
 
 async function pollSelection() {
-  // Check selection status until resolved or cancelled
-  for (let i = 0; i < 120; i++) { // 2 min max
+  for (let i = 0; i < 120; i++) {
     await new Promise(r => setTimeout(r, 1000))
     if (!isSelecting) return
     try {
-      const data = await api('GET', `/select/status?window=${innerWindowId}`)
+      const data = await api('POST', '/select', { action: 'status', window: innerWindowId })
       const status = data?.data?.status || data?.status
       if (status === 'completed') {
         isSelecting = false
-        const result = await api('GET', `/select/result?window=${innerWindowId}`)
+        const result = await api('POST', '/select', { action: 'result', window: innerWindowId })
         if (result) {
           await copyToClipboard(JSON.stringify(result.data || result, null, 2), 'Selection copied')
         }
@@ -256,72 +192,16 @@ async function pollSelection() {
 }
 
 // ==========================================
-// Menu open/close
-// ==========================================
-
-function toggleMenu(menuEl) {
-  if (openMenu === menuEl) {
-    closeMenus()
-  } else {
-    closeMenus()
-    // Rebuild menu to reflect current state
-    if (menuEl === innerMenu) buildInnerMenu()
-    else buildOuterMenu()
-    menuEl.classList.add('open')
-    openMenu = menuEl
-  }
-}
-
-function closeMenus() {
-  outerMenu?.classList.remove('open')
-  innerMenu?.classList.remove('open')
-  openMenu = null
-}
-
-// Click handlers
-outerBtn?.addEventListener('click', (e) => {
-  e.stopPropagation()
-  toggleMenu(outerMenu)
-})
-
-innerBtn?.addEventListener('click', (e) => {
-  e.stopPropagation()
-  toggleMenu(innerMenu)
-})
-
-// Close on outside click
-document.addEventListener('click', closeMenus)
-
-// ==========================================
 // Status polling
 // ==========================================
 
 function updateIndicators(windows) {
-  const outer = windows.find(w => w.id === 'hj-chrome')
-  if (outerDot) {
-    outerDot.className = 'ws-dot ' + (outer ? 'connected' : 'disconnected')
-  }
-
-  // Inner: focused non-chrome tab, or any non-chrome tab
   const inner = windows.find(w => w.id !== 'hj-chrome' && w.focused) ||
                 windows.find(w => w.id !== 'hj-chrome')
   innerWindowId = inner?.id || null
 
-  if (innerDot) {
-    let cls = 'disconnected'
-    if (inner) {
-      if (isRecordingActions || isRecordingVideo || inner.recording) cls = 'recording'
-      else cls = 'connected'
-    }
-    innerDot.className = 'ws-dot ' + cls
-  }
-
-  if (innerLabel && inner) {
-    const title = inner.title || inner.url || 'page'
-    innerLabel.textContent = title.length > 20 ? title.slice(0, 18) + '…' : title
-    innerLabel.title = inner.title || inner.url || ''
-  } else if (innerLabel) {
-    innerLabel.textContent = 'page'
+  if (inner) {
+    if (inner.recording) isRecordingActions = true
   }
 }
 
@@ -331,7 +211,6 @@ async function poll() {
     if (resp.ok) {
       const data = await resp.json()
       updateIndicators(data.windows || [])
-      // Sync recording state from server
       if (data.recording !== undefined) {
         isRecordingActions = data.activeRecordings > 0
       }
