@@ -800,13 +800,15 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const sessionFilteredRequest: typeof requestFromBrowser = async (
     channel, action, payload, timeoutMs?, windowId?
   ) => {
-    // When a session is active, wait briefly for a browser window to be
-    // available. Covers: startup race (no browsers yet), and post-navigate
+    // When a session is active, wait briefly for a *content* window (not just
+    // hj-chrome) to connect. Covers: startup race (no browsers yet, or only
+    // hj-chrome connected while webview tab is still loading), and post-navigate
     // race (old connection closing, new page loading).
-    if (sessionId && (browsers.size === 0 || windows.size === 0)) {
+    const hasContentWindows = () => Array.from(windows.values()).some(w => w.id !== 'hj-chrome')
+    if (sessionId && !hasContentWindows()) {
       const waitStart = Date.now()
-      while (Date.now() - waitStart < 5000) {
-        if (browsers.size > 0 && windows.size > 0) break
+      while (Date.now() - waitStart < 8000) {
+        if (hasContentWindows()) break
         await new Promise(r => setTimeout(r, 250))
       }
     }
