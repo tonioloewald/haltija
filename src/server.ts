@@ -599,24 +599,32 @@ async function requestFromBrowser(
         pendingResponses.delete(id)
         resolve({ id, success: false, error: `Window ${windowId} not found`, timestamp: Date.now() })
       }
-    } else if (focusedWindowId && windows.has(focusedWindowId)) {
-      // Send to focused window only
+    } else if (focusedWindowId && windows.has(focusedWindowId) && focusedWindowId !== 'hj-chrome') {
+      // Send to focused window only — skip the outer Chrome shell (hj-chrome) since it's
+      // a meta-window, not a page being controlled. Agents should never accidentally target it.
       const focusedWin = windows.get(focusedWindowId)!
       focusedWin.ws.send(JSON.stringify(msg))
     } else {
-      // Fallback: pick ONE active window (most recently seen) instead of broadcasting
-      // This prevents cross-traffic when multiple tabs are active
+      // Fallback: pick ONE active window (most recently seen), excluding the Chrome shell
       const activeWindows = Array.from(windows.values())
-        .filter(w => w.active)
+        .filter(w => w.active && w.id !== 'hj-chrome')
         .sort((a, b) => b.lastSeen - a.lastSeen)
       
       if (activeWindows.length > 0) {
         activeWindows[0].ws.send(JSON.stringify(msg))
       } else if (windows.size > 0) {
-        // No active windows — pick most recently seen
+        // No active windows — pick most recently seen, still excluding Chrome shell
         const mostRecent = Array.from(windows.values())
+          .filter(w => w.id !== 'hj-chrome')
           .sort((a, b) => b.lastSeen - a.lastSeen)[0]
-        mostRecent.ws.send(JSON.stringify(msg))
+        if (mostRecent) {
+          mostRecent.ws.send(JSON.stringify(msg))
+        } else {
+          // Only hj-chrome is connected — no real page window
+          clearTimeout(timeout)
+          pendingResponses.delete(id)
+          resolve({ id, success: false, error: 'No browser windows connected. Open a page in the Haltija desktop app or inject the widget into your page.', timestamp: Date.now() })
+        }
       } else {
         // No windows at all
         clearTimeout(timeout)
@@ -2436,12 +2444,20 @@ Run 'hj --help' for all commands.`
       try {
         switch (step.action) {
           case 'navigate': {
-            // Capture current window state before navigation so we can detect reconnect
-            const navWindowId = focusedWindowId
-            const navWindow = navWindowId ? windows.get(navWindowId) : null
+            // Capture current window state before navigation so we can detect reconnect.
+            // Exclude hj-chrome — it's the outer shell, never navigates with the page.
+            const contentWins = Array.from(windows.values())
+              .filter(w => w.id !== 'hj-chrome')
+              .sort((a, b) => {
+                if (a.id === focusedWindowId) return -1
+                if (b.id === focusedWindowId) return 1
+                return b.lastSeen - a.lastSeen
+              })
+            const navWindow = contentWins[0] ?? null
+            const navWindowId = navWindow?.id ?? null
             const navPrevBrowserId = navWindow?.browserId ?? null
-            
-            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout)
+
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout, navWindowId ?? undefined)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'

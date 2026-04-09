@@ -340,7 +340,8 @@ export function closeTab(tabId) {
       const newIndex = Math.max(0, tabIndex - 1)
       activateTab(tabs[newIndex].id)
     } else {
-      window.haltija.closeWindow()
+      // Open a fresh tab rather than closing the window
+      createTab()
     }
   }
 }
