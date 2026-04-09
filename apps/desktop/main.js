@@ -41,6 +41,11 @@ const APP_INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36)
 // so injectWidget can include it in the widget config for the next new tab
 let pendingTabSession = null
 
+// Stable session per webContents — persists across navigations within the same tab.
+// Without this, each page load re-injects the widget with a new random session,
+// causing agents to lose track of their tab and open duplicates.
+const tabSessions = new Map() // webContents.id → session string
+
 // ============================================
 // Preferences
 // ============================================
@@ -774,12 +779,22 @@ async function injectWidget(webContents) {
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
     const windowId = `hj-${APP_INSTANCE_ID}-${webContents.id}`
     const configObj = { serverUrl: wsUrl, windowId, mode: 'headless' }
-    // Session priority: pending session from agent's tabs/open > env var
+    // Session priority: pending session from agent's tabs/open > previously used session for this tab > env var > auto-generate
+    // Stable session per tab prevents agents from losing their window after navigation.
     if (pendingTabSession) {
       configObj.session = pendingTabSession
+      tabSessions.set(webContents.id, pendingTabSession)
       pendingTabSession = null // Consume — only applies to the next tab
+    } else if (tabSessions.has(webContents.id)) {
+      configObj.session = tabSessions.get(webContents.id)
     } else if (process.env.HALTIJA_SESSION) {
       configObj.session = process.env.HALTIJA_SESSION
+      tabSessions.set(webContents.id, process.env.HALTIJA_SESSION)
+    } else {
+      // Generate a stable session for this tab so it survives navigations
+      const generated = Math.random().toString(36).slice(2, 10)
+      configObj.session = generated
+      tabSessions.set(webContents.id, generated)
     }
     await webContents.executeJavaScript(
       `window.__haltija_config__ = ${JSON.stringify(configObj)};`,
