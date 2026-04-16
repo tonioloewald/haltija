@@ -177,6 +177,9 @@ const agentWindowAffinity = new Map<string, string>()
 // Track the currently focused window ID (for routing untargeted commands)
 let focusedWindowId: string | null = null
 
+// True once hj-chrome has connected at least once — indicates desktop app is running
+let isDesktopApp = false
+
 // Track the currently active browser ID (legacy, for backwards compatibility)
 let activeBrowserId: string | null = null
 
@@ -800,19 +803,35 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const sessionFilteredRequest: typeof requestFromBrowser = async (
     channel, action, payload, timeoutMs?, windowId?
   ) => {
-    // When a session is active, wait briefly for a *content* window (not just
-    // hj-chrome) to connect. Covers: startup race (no browsers yet, or only
-    // hj-chrome connected while webview tab is still loading), and post-navigate
-    // race (old connection closing, new page loading).
+    // Desktop app: wait for content windows and auto-open if needed.
+    // Skip entirely for plain server mode (no Electron) to avoid blocking.
     const hasContentWindows = () => Array.from(windows.values()).some(w => w.id !== 'hj-chrome')
-    if (sessionId && !hasContentWindows()) {
+    if (isDesktopApp && !hasContentWindows()) {
+      // Brief wait — tab may still be loading
       const waitStart = Date.now()
-      while (Date.now() - waitStart < 8000) {
+      while (Date.now() - waitStart < 3000) {
         if (hasContentWindows()) break
         await new Promise(r => setTimeout(r, 250))
       }
+      if (!hasContentWindows() && windows.has('hj-chrome')) {
+        // hj-chrome is up but no content tabs — open one
+        await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, 'hj-chrome')
+        const openStart = Date.now()
+        while (Date.now() - openStart < 5000) {
+          if (hasContentWindows()) break
+          await new Promise(r => setTimeout(r, 250))
+        }
+      } else if (!hasContentWindows() && windows.size === 0) {
+        // No windows at all — signal Electron main process to recreate
+        console.log('__NEED_WINDOW__')
+        const openStart = Date.now()
+        while (Date.now() - openStart < 8000) {
+          if (hasContentWindows()) break
+          await new Promise(r => setTimeout(r, 250))
+        }
+      }
     }
-    
+
     const effectiveWindowId = windowId || targetWindowId
     
     // Explicit window target — use directly
@@ -3652,13 +3671,50 @@ Run 'hj --help' for all commands.`
   // GET /windows - List all connected windows
   if (path === '/windows' && req.method === 'GET') {
     const reqSession = req.headers.get('X-Haltija-Session') || undefined
+
+    // Desktop app: wait for content windows and auto-open if needed.
+    // Skip for plain server mode to avoid blocking.
+    const hasContentWindows = () => Array.from(windows.values()).some(w => w.id !== 'hj-chrome')
+    if (isDesktopApp && !hasContentWindows()) {
+      // Brief wait — tab may still be loading
+      const waitStart = Date.now()
+      while (Date.now() - waitStart < 3000) {
+        if (hasContentWindows()) break
+        await new Promise(r => setTimeout(r, 250))
+      }
+      if (!hasContentWindows() && windows.has('hj-chrome')) {
+        // hj-chrome is up but no content tabs — open one
+        await requestFromBrowser('tabs', 'open', { url: undefined, session: reqSession }, 5000, 'hj-chrome')
+        const openStart = Date.now()
+        while (Date.now() - openStart < 5000) {
+          if (hasContentWindows()) break
+          await new Promise(r => setTimeout(r, 250))
+        }
+      } else if (!hasContentWindows() && windows.size === 0) {
+        // No windows at all — app may be alive with no BrowserWindow (macOS).
+        // Signal the Electron main process to recreate the window.
+        console.log('__NEED_WINDOW__')
+        const openStart = Date.now()
+        while (Date.now() - openStart < 8000) {
+          if (hasContentWindows()) break
+          await new Promise(r => setTimeout(r, 250))
+        }
+      }
+    }
+
     let allWindows = Array.from(windows.values())
-    
-    // Session filtering: only strict when multiple sessions exist
+
+    // Session filtering: only strict when multiple *content* sessions exist.
+    // Exclude hj-chrome — its 'chrome' session would always make the count > 1
+    // in the desktop app, causing every agent to see 0 windows.
     if (reqSession) {
-      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
+      const contentWindows = allWindows.filter(w => w.id !== 'hj-chrome')
+      const distinctSessions = new Set(contentWindows.map(w => w.session).filter(Boolean))
       if (distinctSessions.size > 1) {
         allWindows = allWindows.filter(w => w.session === reqSession)
+      } else {
+        // Single session or none — show all content windows (exclude hj-chrome)
+        allWindows = contentWindows
       }
     } else if (isSecureMode) {
       const totalWindows = windows.size
@@ -3928,6 +3984,12 @@ const serverConfig = {
                 try { existingWindow.ws.close() } catch {}
               }
               
+              // Preserve the existing session when a known window reconnects.
+              // After navigation, the widget is re-injected with a new random session,
+              // but the windowId is stable. Keeping the original session prevents agents
+              // from losing their window via session isolation.
+              const effectiveSession = existingWindow?.session || session || undefined
+
               windows.set(windowId, {
                 id: windowId,
                 browserId,
@@ -3939,9 +4001,12 @@ const serverConfig = {
                 lastSeen: now,
                 label: existingWindow?.label,
                 windowType: windowType || 'tab', // 'tab', 'popup', or 'iframe'
-                session: session || undefined,
+                session: effectiveSession,
               })
               
+              // Track desktop app presence
+              if (windowId === 'hj-chrome') isDesktopApp = true
+
               // Set as focused if no window is focused, or if this was previously focused
               if (!focusedWindowId || focusedWindowId === windowId) {
                 focusedWindowId = windowId

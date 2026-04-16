@@ -444,11 +444,11 @@ export function clean(obj) {
 // ============================================
 
 export function getSessionId() {
-  if (process.env.HALTIJA_SESSION) return process.env.HALTIJA_SESSION
-  // Auto-generate a session ID for this shell — persisted in env for subsequent calls
-  const id = `hj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-  process.env.HALTIJA_SESSION = id
-  return id
+  // Only use a session when explicitly set (e.g. export HALTIJA_SESSION=... or --session flag).
+  // Without explicit session, use legacy mode — the server routes to the best available window.
+  // Auto-generating a random session per hj invocation is wrong because each invocation is a
+  // separate process, so the session would differ between `hj tree` and `hj windows`.
+  return process.env.HALTIJA_SESSION || null
 }
 
 // ============================================
@@ -704,7 +704,9 @@ async function doRequest(url, method, body, context = {}) {
   const { subcommand, jsonOutput } = context
   try {
     const sessionId = getSessionId()
-    const opts = { method, headers: { 'X-Haltija-Session': sessionId } }
+    const headers = {}
+    if (sessionId) headers['X-Haltija-Session'] = sessionId
+    const opts = { method, headers }
     if (body) {
       opts.headers['Content-Type'] = 'application/json'
       opts.body = JSON.stringify(body)

@@ -823,18 +823,14 @@ describe('getSessionId', () => {
     expect(getSessionId()).toBe('my-custom-session')
   })
 
-  test('generates session ID with correct format when env not set', () => {
+  test('returns null when HALTIJA_SESSION not set', () => {
     delete process.env.HALTIJA_SESSION
-    const id = getSessionId()
-    expect(id).toMatch(/^hj_[a-z0-9]+_[a-z0-9]+$/)
-    // Should have been persisted to env
-    expect(process.env.HALTIJA_SESSION).toBe(id)
+    expect(getSessionId()).toBeNull()
   })
 
-  test('returns same ID on subsequent calls', () => {
+  test('returns null consistently when env not set', () => {
     delete process.env.HALTIJA_SESSION
-    const id1 = getSessionId()
-    const id2 = getSessionId()
-    expect(id1).toBe(id2)
+    expect(getSessionId()).toBeNull()
+    expect(getSessionId()).toBeNull()
   })
 })

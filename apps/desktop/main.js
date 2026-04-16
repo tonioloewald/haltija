@@ -1244,7 +1244,14 @@ async function startEmbeddedServer() {
 
   embeddedServer.stdout.on('data', (data) => {
     try {
-      console.log(`[Server] ${data.toString().trim()}`)
+      const text = data.toString().trim()
+      console.log(`[Server] ${text}`)
+      // Server signals it needs a window but none exist (app alive, all windows closed).
+      // Re-create the main window so the agent has something to work with.
+      if (text.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
+        console.log('[Haltija Desktop] Server requested window, recreating...')
+        createWindow()
+      }
     } catch (e) {
       // Ignore write errors when app is closing
     }
