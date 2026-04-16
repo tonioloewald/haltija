@@ -1225,17 +1225,15 @@ async function handleRest(req: Request): Promise<Response> {
     const mcpStatus = getMcpStatus()
     const reqSession = req.headers.get('X-Haltija-Session') || undefined
     
-    // Include compact window list with recording status
-    let allWindows = Array.from(windows.values())
-    
-    // Session filtering: only strict when multiple sessions exist
+    // Include compact window list — always exclude hj-chrome (Electron shell)
+    let allWindows = Array.from(windows.values()).filter(w => w.id !== 'hj-chrome')
+
+    // Session filtering: only strict when multiple content sessions exist
     if (reqSession) {
       const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
       if (distinctSessions.size > 1) {
-        // Multi-agent: strict filter to own session only
         allWindows = allWindows.filter(w => w.session === reqSession)
       }
-      // Single session or no sessions: show all (no conflict to isolate)
     } else if (isSecureMode) {
       // Secure mode without session: show nothing but provide helpful message
       return Response.json({
@@ -1260,7 +1258,7 @@ async function handleRest(req: Request): Promise<Response> {
     const activeRecordings = activeRecordingSessions.size
     
     return Response.json({
-      ok: windows.size > 0,
+      ok: allWindows.length > 0,
       windows: windowList,
       serverVersion: SERVER_VERSION,
       recording: activeRecordings > 0,
@@ -3702,19 +3700,15 @@ Run 'hj --help' for all commands.`
       }
     }
 
-    let allWindows = Array.from(windows.values())
+    // Always exclude hj-chrome from agent-facing window lists — it's the
+    // Electron shell, not a page being controlled
+    let allWindows = Array.from(windows.values()).filter(w => w.id !== 'hj-chrome')
 
-    // Session filtering: only strict when multiple *content* sessions exist.
-    // Exclude hj-chrome — its 'chrome' session would always make the count > 1
-    // in the desktop app, causing every agent to see 0 windows.
+    // Session filtering: only strict when multiple content sessions exist
     if (reqSession) {
-      const contentWindows = allWindows.filter(w => w.id !== 'hj-chrome')
-      const distinctSessions = new Set(contentWindows.map(w => w.session).filter(Boolean))
+      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
       if (distinctSessions.size > 1) {
         allWindows = allWindows.filter(w => w.session === reqSession)
-      } else {
-        // Single session or none — show all content windows (exclude hj-chrome)
-        allWindows = contentWindows
       }
     } else if (isSecureMode) {
       const totalWindows = windows.size
