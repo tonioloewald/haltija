@@ -51,15 +51,14 @@ The file viewer pane has its own internal layout:
 - **`GET /file?path=src/server.ts`** — returns file contents + metadata (language, size, mtime)
 - **`POST /file`** — write/patch a file `{ path, content }` or `{ path, patch }` for diffs
 - **`GET /files/tree?root=.&depth=3`** — returns directory tree as JSON (respects .gitignore)
-- **`GET /files/touches?session=xxx`** — returns touch stream for a session
+- **`GET /files/touches`** — returns recent touch stream
 
 ### Touch tracking (integrated, not a separate phase)
 
 Every file operation the agent makes through the REST API (`/file`, `/eval` that reads files,
-etc.) gets logged to a per-session touch stream:
+etc.) gets logged to an ephemeral touch stream:
 
-- `{ path, op: "read"|"write"|"diff", timestamp, session }`
-- Session-scoped, ephemeral (clears on session end)
+- `{ path, op: "read"|"write"|"diff", timestamp }`
 - Agent touches and human touches (via the editor) both appear
 - Recently touched list updates live via the existing WebSocket connection
 

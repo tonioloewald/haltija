@@ -440,18 +440,6 @@ export function clean(obj) {
 }
 
 // ============================================
-// Session ID for multi-agent isolation
-// ============================================
-
-export function getSessionId() {
-  // Only use a session when explicitly set (e.g. export HALTIJA_SESSION=... or --session flag).
-  // Without explicit session, use legacy mode — the server routes to the best available window.
-  // Auto-generating a random session per hj invocation is wrong because each invocation is a
-  // separate process, so the session would differ between `hj tree` and `hj windows`.
-  return process.env.HALTIJA_SESSION || null
-}
-
-// ============================================
 // Server auto-start
 // ============================================
 
@@ -568,7 +556,6 @@ async function ensureBrowserConnected(port) {
       signal: AbortSignal.timeout(2000)
     })
     const status = await resp.json()
-    // Use status.ok (global, not session-filtered) to check if any browser is connected
     if (status.ok) return true
   } catch { return false }
   
@@ -613,18 +600,13 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
   const noLaunch = options.noLaunch || false
-  // Remove --json and extract --window/--session before processing
+  // Remove --json and extract --window before processing
   let filteredArgs = subArgs.filter(a => a !== '--json')
   let targetWindowId = undefined
   const windowIdx = filteredArgs.indexOf('--window')
   if (windowIdx !== -1) {
     targetWindowId = filteredArgs[windowIdx + 1]
     filteredArgs = [...filteredArgs.slice(0, windowIdx), ...filteredArgs.slice(windowIdx + 2)]
-  }
-  const sessionIdx = filteredArgs.indexOf('--session')
-  if (sessionIdx !== -1) {
-    process.env.HALTIJA_SESSION = filteredArgs[sessionIdx + 1]
-    filteredArgs = [...filteredArgs.slice(0, sessionIdx), ...filteredArgs.slice(sessionIdx + 2)]
   }
 
   // Check if server is running, auto-start if not
@@ -703,9 +685,7 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
 async function doRequest(url, method, body, context = {}) {
   const { subcommand, jsonOutput } = context
   try {
-    const sessionId = getSessionId()
     const headers = {}
-    if (sessionId) headers['X-Haltija-Session'] = sessionId
     const opts = { method, headers }
     if (body) {
       opts.headers['Content-Type'] = 'application/json'

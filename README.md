@@ -141,9 +141,9 @@ Raw DOM events are noise. Haltija aggregates them into intent:
 
 Screenshots include a chyron (title, URL, timestamp) so agents always know what they're looking at. Disable with `chyron: false` for clean captures.
 
-### Multi-Window & Session Affinity
+### Multi-Window
 
-Control multiple tabs. Session headers (`X-Haltija-Session`) give agents sticky window targeting — no need to specify window ID every call.
+Control multiple tabs. The focused tab receives untargeted commands; pass `?window=<id>` (REST) or `--window <id>` (CLI) to target a specific tab.
 
 ### Selection Tool
 

@@ -66,9 +66,7 @@ export interface HandlerContext {
   targetWindowId: string | undefined
   headers: Record<string, string>
   url: URL
-  sessionId: string | undefined
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
-  updateSessionAffinity: (windowId: string) => void
   // Recording session management (for cross-page recording)
   startRecordingSession: (windowId: string, url: string, name?: string) => void
   stopRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
@@ -314,10 +312,7 @@ import * as api from './api-schema'
 // With autoWait:true, waits for element to appear first
 registerHandler(api.click, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
-  
-  // Update session affinity
-  if (windowId) ctx.updateSessionAffinity(windowId)
-  
+
   const wantDiff = body.diff === true
   const diffDelay = body.diffDelay ?? 100
   const autoWait = body.autoWait === true
@@ -744,12 +739,7 @@ registerHandler(api.tree, async (body, ctx) => {
 // Response includes window context so agent knows exactly what they captured
 registerHandler(api.screenshot, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
-  
-  // Update session affinity if targeting a specific window
-  if (windowId) {
-    ctx.updateSessionAffinity(windowId)
-  }
-  
+
   const response = await ctx.requestFromBrowser('dom', 'screenshot', {
     ref: body.ref,
     selector: body.selector,
@@ -792,8 +782,7 @@ registerHandler(api.screenshot, async (body, ctx) => {
 
 // Tabs handlers
 registerHandler(api.tabsOpen, async (body, ctx) => {
-  // Pass agent's session so the new tab inherits it
-  const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url, session: ctx.sessionId })
+  const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url })
   return Response.json(response, { headers: ctx.headers })
 })
 

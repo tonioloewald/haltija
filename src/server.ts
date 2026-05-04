@@ -119,9 +119,6 @@ const USE_HTTP = WANT_HTTP
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 
-// Secure mode: when enabled, all requests must include X-Haltija-Session header
-const isSecureMode = process.env.HALTIJA_SECURE === '1'
-
 // Component.js paths for dynamic loading (try multiple locations for compiled binary support)
 const componentJsPaths = [
   join(__dirname, '../dist/component.js'),           // Dev mode: relative to src/
@@ -163,22 +160,18 @@ interface TrackedWindow {
   lastSeen: number     // Last message time
   label?: string       // Optional agent-assigned label
   windowType?: string  // 'tab', 'popup', or 'iframe'
-  session?: string     // Session token from widget (set on connect)
 }
 const windows = new Map<string, TrackedWindow>()
 
 // Connected agent clients (could be multiple)
 const agents = new Set<WebSocket>()
 
-// Agent session affinity: maps agent ID -> last window they interacted with
-// Agent ID comes from X-Haltija-Agent header or is auto-generated per request
-const agentWindowAffinity = new Map<string, string>()
-
 // Track the currently focused window ID (for routing untargeted commands)
 let focusedWindowId: string | null = null
 
-// True once hj-chrome has connected at least once — indicates desktop app is running
-let isDesktopApp = false
+// Set by the Electron desktop app when it spawns this server. When true the
+// server emits __NEED_WINDOW__ to stdout for the parent process to react.
+const isDesktopApp = process.env.HALTIJA_DESKTOP === '1'
 
 // Track the currently active browser ID (legacy, for backwards compatibility)
 let activeBrowserId: string | null = null
@@ -602,32 +595,21 @@ async function requestFromBrowser(
         pendingResponses.delete(id)
         resolve({ id, success: false, error: `Window ${windowId} not found`, timestamp: Date.now() })
       }
-    } else if (focusedWindowId && windows.has(focusedWindowId) && focusedWindowId !== 'hj-chrome') {
-      // Send to focused window only — skip the outer Chrome shell (hj-chrome) since it's
-      // a meta-window, not a page being controlled. Agents should never accidentally target it.
+    } else if (focusedWindowId && windows.has(focusedWindowId)) {
       const focusedWin = windows.get(focusedWindowId)!
       focusedWin.ws.send(JSON.stringify(msg))
     } else {
-      // Fallback: pick ONE active window (most recently seen), excluding the Chrome shell
+      // Fallback: pick ONE active window (most recently seen)
       const activeWindows = Array.from(windows.values())
-        .filter(w => w.active && w.id !== 'hj-chrome')
+        .filter(w => w.active)
         .sort((a, b) => b.lastSeen - a.lastSeen)
-      
+
       if (activeWindows.length > 0) {
         activeWindows[0].ws.send(JSON.stringify(msg))
       } else if (windows.size > 0) {
-        // No active windows — pick most recently seen, still excluding Chrome shell
         const mostRecent = Array.from(windows.values())
-          .filter(w => w.id !== 'hj-chrome')
           .sort((a, b) => b.lastSeen - a.lastSeen)[0]
-        if (mostRecent) {
-          mostRecent.ws.send(JSON.stringify(msg))
-        } else {
-          // Only hj-chrome is connected — no real page window
-          clearTimeout(timeout)
-          pendingResponses.delete(id)
-          resolve({ id, success: false, error: 'No browser windows connected. Open a page in the Haltija desktop app or inject the widget into your page.', timestamp: Date.now() })
-        }
+        mostRecent.ws.send(JSON.stringify(msg))
       } else {
         // No windows at all
         clearTimeout(timeout)
@@ -707,26 +689,17 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
 
 // Create context factory for the router
 const createHandlerContext = (req: Request, url: URL): HandlerContext => {
-  // Session affinity: X-Haltija-Session header tracks agent sessions
-  const sessionId = req.headers.get('X-Haltija-Session') || undefined
-  
-  // Window targeting priority:
-  // 1. Explicit ?window= query param
-  // 2. Session's last-used window (if session header provided)
-  // 3. Focused window (default)
-  let targetWindowId = url.searchParams.get('window') || undefined
-  if (!targetWindowId && sessionId) {
-    targetWindowId = agentWindowAffinity.get(sessionId)
-  }
-  
+  // Window targeting: ?window=<id> query param, otherwise the focused window
+  const targetWindowId = url.searchParams.get('window') || undefined
+
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Session',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
-  
+
   // Helper to get window info for response context
   const getWindowInfo = (windowId?: string) => {
     const id = windowId || targetWindowId || focusedWindowId
@@ -735,14 +708,7 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     if (!win) return undefined
     return { id, url: win.url, title: win.title }
   }
-  
-  // Helper to update session affinity when a window is explicitly targeted
-  const updateSessionAffinity = (windowId: string) => {
-    if (sessionId && windowId) {
-      agentWindowAffinity.set(sessionId, windowId)
-    }
-  }
-  
+
   // Recording session management (for cross-page recording)
   const startRecordingSession = (windowId: string, startUrl: string, name?: string) => {
     activeRecordingSessions.set(windowId, {
@@ -797,131 +763,33 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     return recordings.get(id)
   }
   
-  // Session-filtered requestFromBrowser wrapper for multi-agent isolation.
-  // Also waits briefly for a browser to connect if none are present yet
-  // (covers the common startup race where hj runs before the widget connects).
-  const sessionFilteredRequest: typeof requestFromBrowser = async (
+  // requestFromBrowser wrapper. In desktop app mode, waits briefly for a
+  // content tab to connect if none are present (common startup race where
+  // hj runs before the widget connects, or no content tab is open yet).
+  const routedRequest: typeof requestFromBrowser = async (
     channel, action, payload, timeoutMs?, windowId?
   ) => {
-    // Desktop app: wait for content windows and auto-open if needed.
-    // Skip entirely for plain server mode (no Electron) to avoid blocking.
-    const hasContentWindows = () => Array.from(windows.values()).some(w => w.id !== 'hj-chrome')
-    if (isDesktopApp && !hasContentWindows()) {
-      // Brief wait — tab may still be loading
+    // Desktop app: if no windows are connected, signal the parent process to
+    // create one and wait briefly. Skip for plain server mode to avoid blocking.
+    if (isDesktopApp && windows.size === 0) {
+      console.log('__NEED_WINDOW__')
       const waitStart = Date.now()
-      while (Date.now() - waitStart < 3000) {
-        if (hasContentWindows()) break
+      while (Date.now() - waitStart < 8000) {
+        if (windows.size > 0) break
         await new Promise(r => setTimeout(r, 250))
-      }
-      if (!hasContentWindows() && windows.has('hj-chrome')) {
-        // hj-chrome is up but no content tabs — open one
-        await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, 'hj-chrome')
-        const openStart = Date.now()
-        while (Date.now() - openStart < 5000) {
-          if (hasContentWindows()) break
-          await new Promise(r => setTimeout(r, 250))
-        }
-      } else if (!hasContentWindows() && windows.size === 0) {
-        // No windows at all — signal Electron main process to recreate
-        console.log('__NEED_WINDOW__')
-        const openStart = Date.now()
-        while (Date.now() - openStart < 8000) {
-          if (hasContentWindows()) break
-          await new Promise(r => setTimeout(r, 250))
-        }
       }
     }
 
     const effectiveWindowId = windowId || targetWindowId
-    
-    // Explicit window target — use directly
-    if (effectiveWindowId) {
-      if (sessionId) agentWindowAffinity.set(sessionId, effectiveWindowId)
-      return requestFromBrowser(channel, action, payload, timeoutMs, effectiveWindowId)
-    }
-    
-    // Find window matching session
-    if (sessionId) {
-      const allWins = Array.from(windows.values())
-      const matching = allWins
-        .filter(w => w.session === sessionId)
-        .sort((a, b) => {
-          if (a.id === focusedWindowId) return -1
-          if (b.id === focusedWindowId) return 1
-          return b.lastSeen - a.lastSeen
-        })
-
-      if (matching.length > 0) {
-        agentWindowAffinity.set(sessionId, matching[0].id)
-        return requestFromBrowser(channel, action, payload, timeoutMs, matching[0].id)
-      }
-
-      // No exact match — check if isolation is actually needed
-      // Exclude the chrome shell window (outer widget) — it's not a competing agent
-      const contentWindows = allWins.filter(w => w.id !== 'hj-chrome')
-      const distinctSessions = new Set(contentWindows.map(w => w.session).filter(Boolean))
-
-      if (distinctSessions.size <= 1 && !isSecureMode) {
-        // Single session (or no sessions) across all windows — no multi-agent
-        // conflict. Adopt the existing window (like legacy mode) instead of
-        // blocking the agent from controlling a perfectly good tab.
-        const best = contentWindows.sort((a, b) => {
-          if (a.id === focusedWindowId) return -1
-          if (b.id === focusedWindowId) return 1
-          return b.lastSeen - a.lastSeen
-        })[0]
-        if (best) {
-          agentWindowAffinity.set(sessionId, best.id)
-          return requestFromBrowser(channel, action, payload, timeoutMs, best.id)
-        }
-      }
-
-      // Multiple sessions exist — real multi-agent scenario. Try to open a
-      // new tab with this agent's session (Electron only).
-      if (contentWindows.length > 0) {
-        const anyWindow = contentWindows[0]
-        try {
-          const openResult = await requestFromBrowser('tabs', 'open', { url: undefined, session: sessionId }, 5000, anyWindow.id)
-          if (openResult.success) {
-            const waitStart = Date.now()
-            while (Date.now() - waitStart < 5000) {
-              const nowMatching = Array.from(windows.values()).filter(w => w.session === sessionId)
-              if (nowMatching.length > 0) {
-                agentWindowAffinity.set(sessionId, nowMatching[0].id)
-                return requestFromBrowser(channel, action, payload, timeoutMs, nowMatching[0].id)
-              }
-              await new Promise(r => setTimeout(r, 200))
-            }
-          }
-        } catch {
-          // Fall through to error
-        }
-      }
-
-      // Still no matching windows — helpful error
-      const hint = distinctSessions.size > 0
-        ? `Available sessions: ${[...distinctSessions].map(s => s!.slice(0, 8) + '…').join(', ')}. Check the widget UI for the full token.`
-        : 'No widgets have session tokens. Connect a browser tab first.'
-      return { id: '', success: false, error: `No windows in session ${sessionId.slice(0, 8)}…. ${hint}`, timestamp: Date.now() }
-    }
-    
-    // No session header
-    if (isSecureMode) {
-      return { id: '', success: false, error: 'Secure mode: X-Haltija-Session header required. Set HALTIJA_SESSION or use hj --session <token>. Copy the session token from the widget UI.', timestamp: Date.now() }
-    }
-    
-    // Legacy — route to focused/most recent (any session)
-    return requestFromBrowser(channel, action, payload, timeoutMs)
+    return requestFromBrowser(channel, action, payload, timeoutMs, effectiveWindowId)
   }
-  
+
   return {
-    requestFromBrowser: sessionFilteredRequest,
+    requestFromBrowser: routedRequest,
     targetWindowId,
     headers,
     url,
-    sessionId,
     getWindowInfo,
-    updateSessionAffinity,
     startRecordingSession,
     stopRecordingSession,
     getRecordingSession,
@@ -948,11 +816,11 @@ async function handleRest(req: Request): Promise<Response> {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Session',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
-  
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers })
   }
@@ -1223,35 +1091,15 @@ async function handleRest(req: Request): Promise<Response> {
   // Status endpoint - includes window summary to avoid follow-up /windows call
   if (path === '/status') {
     const mcpStatus = getMcpStatus()
-    const reqSession = req.headers.get('X-Haltija-Session') || undefined
-    
-    // Include compact window list — always exclude hj-chrome (Electron shell)
-    let allWindows = Array.from(windows.values()).filter(w => w.id !== 'hj-chrome')
 
-    // Session filtering: only strict when multiple content sessions exist
-    if (reqSession) {
-      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
-      if (distinctSessions.size > 1) {
-        allWindows = allWindows.filter(w => w.session === reqSession)
-      }
-    } else if (isSecureMode) {
-      // Secure mode without session: show nothing but provide helpful message
-      return Response.json({
-        ok: windows.size > 0,
-        windows: [],
-        serverVersion: SERVER_VERSION,
-        secure: true,
-        error: `Secure mode: ${windows.size} window(s) connected but X-Haltija-Session header required. Copy the session token from the widget UI.`,
-      }, { headers })
-    }
-    
+    const allWindows = Array.from(windows.values())
+
     const windowList = allWindows.map(w => ({
       id: w.id,
       title: w.title?.slice(0, 50) || '(untitled)',
       url: w.url,
       focused: w.id === focusedWindowId,
       recording: activeRecordingSessions.has(w.id),
-      session: w.session?.slice(0, 8) || null,
     }))
     
     // Count active recordings
@@ -2464,9 +2312,7 @@ Run 'hj --help' for all commands.`
         switch (step.action) {
           case 'navigate': {
             // Capture current window state before navigation so we can detect reconnect.
-            // Exclude hj-chrome — it's the outer shell, never navigates with the page.
             const contentWins = Array.from(windows.values())
-              .filter(w => w.id !== 'hj-chrome')
               .sort((a, b) => {
                 if (a.id === focusedWindowId) return -1
                 if (b.id === focusedWindowId) return 1
@@ -3668,60 +3514,19 @@ Run 'hj --help' for all commands.`
   
   // GET /windows - List all connected windows
   if (path === '/windows' && req.method === 'GET') {
-    const reqSession = req.headers.get('X-Haltija-Session') || undefined
-
-    // Desktop app: wait for content windows and auto-open if needed.
-    // Skip for plain server mode to avoid blocking.
-    const hasContentWindows = () => Array.from(windows.values()).some(w => w.id !== 'hj-chrome')
-    if (isDesktopApp && !hasContentWindows()) {
-      // Brief wait — tab may still be loading
+    // Desktop app: if no windows are connected, signal the parent process to
+    // create one and wait briefly. Skip for plain server mode to avoid blocking.
+    if (isDesktopApp && windows.size === 0) {
+      console.log('__NEED_WINDOW__')
       const waitStart = Date.now()
-      while (Date.now() - waitStart < 3000) {
-        if (hasContentWindows()) break
+      while (Date.now() - waitStart < 8000) {
+        if (windows.size > 0) break
         await new Promise(r => setTimeout(r, 250))
       }
-      if (!hasContentWindows() && windows.has('hj-chrome')) {
-        // hj-chrome is up but no content tabs — open one
-        await requestFromBrowser('tabs', 'open', { url: undefined, session: reqSession }, 5000, 'hj-chrome')
-        const openStart = Date.now()
-        while (Date.now() - openStart < 5000) {
-          if (hasContentWindows()) break
-          await new Promise(r => setTimeout(r, 250))
-        }
-      } else if (!hasContentWindows() && windows.size === 0) {
-        // No windows at all — app may be alive with no BrowserWindow (macOS).
-        // Signal the Electron main process to recreate the window.
-        console.log('__NEED_WINDOW__')
-        const openStart = Date.now()
-        while (Date.now() - openStart < 8000) {
-          if (hasContentWindows()) break
-          await new Promise(r => setTimeout(r, 250))
-        }
-      }
     }
 
-    // Always exclude hj-chrome from agent-facing window lists — it's the
-    // Electron shell, not a page being controlled
-    let allWindows = Array.from(windows.values()).filter(w => w.id !== 'hj-chrome')
+    const allWindows = Array.from(windows.values())
 
-    // Session filtering: only strict when multiple content sessions exist
-    if (reqSession) {
-      const distinctSessions = new Set(allWindows.map(w => w.session).filter(Boolean))
-      if (distinctSessions.size > 1) {
-        allWindows = allWindows.filter(w => w.session === reqSession)
-      }
-    } else if (isSecureMode) {
-      const totalWindows = windows.size
-      return Response.json({
-        windows: [],
-        focused: null,
-        count: 0,
-        error: totalWindows > 0
-          ? `Secure mode: ${totalWindows} window(s) connected in other sessions. Set HALTIJA_SESSION to match your widget's token.`
-          : 'No tabs connected. Inject the widget into a browser tab.',
-      }, { headers })
-    }
-    
     const windowList = allWindows.map(w => ({
       id: w.id,
       url: w.url,
@@ -3732,24 +3537,14 @@ Run 'hj --help' for all commands.`
       lastSeen: w.lastSeen,
       label: w.label,
       windowType: w.windowType || 'tab',
-      session: w.session?.slice(0, 8) || null,
     }))
-    
-    // Provide helpful hints about session context
-    let hint: string
-    if (windowList.length > 1) {
-      hint = 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
-    } else if (windowList.length === 1) {
-      hint = 'One tab connected. Commands automatically target it.'
-    } else if (reqSession) {
-      const totalWindows = windows.size
-      hint = totalWindows > 0
-        ? `No windows in session ${reqSession.slice(0, 8)}…. ${totalWindows} window(s) in other sessions. Check the widget UI for the correct token.`
+
+    const hint = windowList.length > 1
+      ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
+      : windowList.length === 1
+        ? 'One tab connected. Commands automatically target it.'
         : 'No tabs connected. Inject the widget into a browser tab.'
-    } else {
-      hint = 'No tabs connected. Inject the widget into a browser tab.'
-    }
-    
+
     return Response.json({
       windows: windowList,
       focused: focusedWindowId,
@@ -3963,26 +3758,20 @@ const serverConfig = {
         try {
           const data = JSON.parse(message.toString())
           if (data.channel === 'system' && data.action === 'connected' && data.payload?.browserId) {
-            const { windowId, browserId, url, title, active, windowType, session } = data.payload
-            
+            const { windowId, browserId, url, title, active, windowType } = data.payload
+
             browsers.set(wsTyped, browserId)
             activeBrowserId = browserId
-            
+
             // Track window info
             if (windowId) {
               const existingWindow = windows.get(windowId)
               const now = Date.now()
-              
+
               // If window already exists with different websocket, close old one
               if (existingWindow && existingWindow.ws !== wsTyped) {
                 try { existingWindow.ws.close() } catch {}
               }
-              
-              // Preserve the existing session when a known window reconnects.
-              // After navigation, the widget is re-injected with a new random session,
-              // but the windowId is stable. Keeping the original session prevents agents
-              // from losing their window via session isolation.
-              const effectiveSession = existingWindow?.session || session || undefined
 
               windows.set(windowId, {
                 id: windowId,
@@ -3995,11 +3784,7 @@ const serverConfig = {
                 lastSeen: now,
                 label: existingWindow?.label,
                 windowType: windowType || 'tab', // 'tab', 'popup', or 'iframe'
-                session: effectiveSession,
               })
-              
-              // Track desktop app presence
-              if (windowId === 'hj-chrome') isDesktopApp = true
 
               // Set as focused if no window is focused, or if this was previously focused
               if (!focusedWindowId || focusedWindowId === windowId) {

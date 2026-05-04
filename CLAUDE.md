@@ -20,6 +20,9 @@ bun run electron:quick            # Launch Electron without rebuilding
 # Unit tests (run with Bun)
 bun test                          # All unit tests (src/ only)
 bun test src/server.test.ts       # Single test file
+bun run test:server               # Shortcut for src/server.test.ts
+bun run test:https                # Shortcut for src/https.test.ts
+bun run test:both                 # Shortcut for src/both-mode.test.ts
 bun run test:integration          # Integration tests (needs running desktop app)
 
 # Integration tests (requires running haltija server)
@@ -30,6 +33,9 @@ bun run test:e2e
 
 # Run all tests (unit + E2E)
 bun run test:all
+
+# Desktop app integration test (against a running Haltija)
+bun test apps/desktop/integration.test.ts
 
 # Run server for development
 bun run dist/server.js
@@ -43,7 +49,6 @@ haltija --port 3000          # Custom port
 haltija --headless           # Playwright headless Chromium with auto-injection
 haltija --ci                 # CI mode (Electron + wait + sandbox disabled)
 haltija --wait-ready         # Block until server + browser fully connected
-haltija --secure             # Require session token on all requests
 haltija --docs-dir ./docs    # Custom reference docs directory
 
 # hj CLI (agent-facing commands)
@@ -99,10 +104,13 @@ Browser Tab              Server (Bun)           AI Agent
 
 ### `hj` CLI Architecture
 
-The `bin/` directory contains plain `.mjs` files (Node.js, not TypeScript):
+The `bin/` directory mixes Node.js `.mjs` (runtime) and `.ts` (build-only) files:
 - `hj.mjs` — CLI entry point, parses args and delegates to subcommands
 - `cli-subcommand.mjs` — Translates subcommand invocations (e.g., `hj click 42`) into REST API calls against the running server, using a `COMMAND_HINTS` registry generated from `api-schema.ts` at build time
-- `format-tree.mjs`, `format-events.mjs`, `format-test.mjs` — Render API responses for human-readable terminal output
+- `format-tree.mjs`, `format-events.mjs`, `format-test.mjs`, `format-network.mjs` — Render API responses for human-readable terminal output
+- `tosijs-dev.mjs` — Entry point for the `haltija` binary (server launcher); `tosijs-dev.ts` is the source compiled into `dist/`
+- `mcp-setup.mjs` — Entry point for `haltija-mcp-setup` / `bunx haltija --setup-mcp`
+- `build-bookmarklet.ts`, `server.ts` — Build-time helpers, not shipped runtime
 
 ### Request Flow
 
@@ -149,6 +157,10 @@ The base CSS selector (before `:text()`) is used to narrow candidates, then text
 
 Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSelector`/`resolveSelectorAll`).
 
+### Shadow DOM & Iframe Piercing
+
+`/tree`, `/query`, and related lookups support optional `pierceShadow` and `pierceFrames` flags (CLI: `hj tree --shadow`, `hj tree --frames`). With these, the widget descends into open shadow roots and same-origin iframe documents and flattens them into the same tree / ref ID space. Use when targeting Web Components or framed content.
+
 ### Multi-Window Support
 
 - Each browser tab gets a stable `windowId` (persisted in sessionStorage)
@@ -157,21 +169,9 @@ Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSel
 - `windows` Map tracks all connected windows with their state
 - Window types: `tab`, `popup`, `iframe` (tracked via `windowType`)
 
-### Widget-Side Session Tokens
+### Chrome vs Content Windows
 
-Every widget is born with a session token for multi-agent isolation and security:
-
-- Widget gets a `session` attribute (auto-generated UUID if not provided)
-- Session token sent in `system:connected` WebSocket payload, stored on `TrackedWindow.session`
-- `hj` CLI auto-generates a session ID per shell (stored in `$HALTIJA_SESSION`) and always sends `X-Haltija-Session` header
-- Server auto-opens a new tab for the agent's session if Electron is running but no windows match
-- `hj --session <token> tree` for one-off session targeting
-- `sessionFilteredRequest` in `createHandlerContext()` matches `w.session === sessionId`
-- `/windows` and `/status` filter by session when header is present
-- No session header = legacy mode (all windows visible, backward compatible)
-- `haltija --secure` requires session token on all requests (`HALTIJA_SECURE=1`)
-- Widget UI shows session badge with click-to-copy (`export HALTIJA_SESSION=<token>`)
-- `inject(url, { session })` for developers embedding haltija in their apps
+The Electron desktop app injects an outer "chrome" widget with `windowId: 'hj-chrome'` for self-inspection of its own UI. Agent-facing endpoints (`/tree`, `/windows`, `/status`, untargeted command routing) exclude `hj-chrome` by default. Pass `?include-chrome=true` on `/windows` to inspect the outer Haltija UI.
 
 ### Auto-Launch
 
@@ -280,8 +280,6 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
-| `HALTIJA_SECURE` | Require session token on all requests | — |
-| `HALTIJA_SESSION` | Session token for multi-agent isolation (`hj` CLI) | — |
 
 ## CI / QA
 
@@ -293,4 +291,13 @@ The GitHub Actions workflow (`.github/workflows/test-qa.yml`) runs on push/PR to
 
 ## Issue Tracking
 
-Issues and tasks are tracked in `TODO.md` at the project root.
+Two complementary systems:
+
+- **`bd` (beads)** — primary issue tracker, sourced from `.beads/issues.jsonl`. Use `bd ready` to find work, `bd show <id>` to view, `bd update <id> --status in_progress` to claim, `bd close <id>` to complete, `bd sync` to commit changes. See `AGENTS.md` for the full session-completion workflow (the "landing the plane" steps culminating in `git push`).
+- **`TODO.md`** — free-form roadmap and feature notes (build/distribution items, multi-phase plans, known bugs). Not granular issues — those live in `bd`.
+
+## Related Docs
+
+- `COMPONENT-PATTERNS.md` — Required reading before editing `component.ts`, `task-board.ts`, or any custom element. Covers stable-by-default rendering, shadow DOM encapsulation, animation gotchas (transitions need start points; can't animate `left`↔`right`), drag handling, console interception, and WebSocket reconnection with kill flags.
+- `AGENTS.md` — Session workflow rules (issue tracking via `bd`, mandatory push on session end).
+- `docs/` — Hand-written reference docs (`agent-prompt.md`, `recipes.md`, `UX-CRIMES.md`, `CI-INTEGRATION.md`, `AGENTIC-IDE.md`, `REST-API.md`). Distinct from the auto-generated `API.md` and `DOCS.md` at the repo root.

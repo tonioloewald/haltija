@@ -119,37 +119,6 @@ hj --help              # All commands
 6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
 7. `hj api` for the full API reference with all parameters
 
-## Sessions
-
-Every Haltija widget runs in a **session** — a private namespace for your browser tabs.
-Widgets auto-generate a session token, or you can set one explicitly.
-
-To connect `hj` to your session, copy the token from the widget UI (click the
-token badge in the header) or set it:
-
-```bash
-export HALTIJA_SESSION=<token>        # Copy from widget UI
-hj tree                                # Only sees widgets in your session
-
-hj --session <token> tree              # One-off session override
-```
-
-Without a session, `hj` sees all widgets (backward compatible). In secure mode
-(`haltija --secure`), a session token is required.
-
-**For developers** — inject haltija into your app with an explicit session:
-
-```js
-import { inject } from 'haltija/component'
-inject('ws://localhost:8700/ws/browser', { session: 'my-debug-token' })
-```
-
-Or via HTML:
-
-```html
-<haltija-dev server="ws://localhost:8700/ws/browser" session="my-debug-token"></haltija-dev>
-```
-
 ## Auto-Launch
 
 If no browser windows are connected, `hj` automatically launches the Haltija

@@ -33,18 +33,15 @@ process.stderr.on('error', () => {})
 const HALTIJA_PORT = parseInt(process.env.HALTIJA_PORT || '8700')
 const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
+// Internal port for the chrome widget (the haltija UI inspecting itself).
+// Lives on a separate server so it never appears in agent-facing window lists
+// — agents see only content tabs unless they explicitly target this port.
+const HALTIJA_INTERNAL_PORT = parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701')
+const HALTIJA_INTERNAL_SERVER = `http://localhost:${HALTIJA_INTERNAL_PORT}`
+
 // Unique app instance ID - used to create stable window IDs across navigations
 // Combined with webContents.id to create globally unique tab identifiers
 const APP_INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-
-// Pending session: when an agent opens a tab with a session, store it here
-// so injectWidget can include it in the widget config for the next new tab
-let pendingTabSession = null
-
-// Stable session per webContents — persists across navigations within the same tab.
-// Without this, each page load re-injects the widget with a new random session,
-// causing agents to lose track of their tab and open duplicates.
-const tabSessions = new Map() // webContents.id → session string
 
 // Pending navigate-url requests: main asks renderer to route a navigation,
 // then awaits a result so the widget's promise resolves with real success/failure.
@@ -69,7 +66,7 @@ const DEFAULT_PREFS = {
 const prefs = { ...DEFAULT_PREFS }
 
 let mainWindow = null
-let embeddedServer = null
+const embeddedServers = []
 
 // ============================================
 // MCP Setup for Claude Desktop
@@ -784,23 +781,6 @@ async function injectWidget(webContents) {
     const wsUrl = HALTIJA_SERVER.replace('http:', 'ws:') + '/ws/browser'
     const windowId = `hj-${APP_INSTANCE_ID}-${webContents.id}`
     const configObj = { serverUrl: wsUrl, windowId, mode: 'headless' }
-    // Session priority: pending session from agent's tabs/open > previously used session for this tab > env var > auto-generate
-    // Stable session per tab prevents agents from losing their window after navigation.
-    if (pendingTabSession) {
-      configObj.session = pendingTabSession
-      tabSessions.set(webContents.id, pendingTabSession)
-      pendingTabSession = null // Consume — only applies to the next tab
-    } else if (tabSessions.has(webContents.id)) {
-      configObj.session = tabSessions.get(webContents.id)
-    } else if (process.env.HALTIJA_SESSION) {
-      configObj.session = process.env.HALTIJA_SESSION
-      tabSessions.set(webContents.id, process.env.HALTIJA_SESSION)
-    } else {
-      // Generate a stable session for this tab so it survives navigations
-      const generated = Math.random().toString(36).slice(2, 10)
-      configObj.session = generated
-      tabSessions.set(webContents.id, generated)
-    }
     await webContents.executeJavaScript(
       `window.__haltija_config__ = ${JSON.stringify(configObj)};`,
     )
@@ -963,10 +943,9 @@ function setupScreenCapture() {
   })
 
   // Tab management — forwarded to renderer
-  ipcMain.handle('open-tab', async (event, url, session) => {
+  ipcMain.handle('open-tab', async (event, url) => {
     if (!mainWindow) return false
-    if (session) pendingTabSession = session
-    mainWindow.webContents.send('open-tab', { url, session })
+    mainWindow.webContents.send('open-tab', { url })
     return true
   })
 
@@ -1185,6 +1164,62 @@ function checkServerRunning() {
 }
 
 /**
+ * Spawn a single haltija server subprocess on a given port.
+ * Stdout/stderr are piped to the desktop app's console with a label, and
+ * `__NEED_WINDOW__` from the public server triggers window recreation.
+ */
+function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir }) {
+  const env = { ...process.env, PORT: port.toString(), HALTIJA_DESKTOP: '1' }
+  let proc
+  if (serverPath && useCompiledBinary) {
+    proc = spawn(serverPath, [], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: componentDir || path.dirname(serverPath),
+      env,
+    })
+  } else if (serverPath) {
+    proc = spawn('bun', ['run', serverPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env,
+    })
+  } else {
+    proc = spawn('bunx', ['haltija', '--port', port.toString()], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env,
+    })
+  }
+
+  const label = `[${role} server]`
+
+  proc.stdout.on('data', (data) => {
+    try {
+      const text = data.toString().trim()
+      console.log(`${label} ${text}`)
+      if (role === 'public' && text.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
+        console.log('[Haltija Desktop] Server requested window, recreating...')
+        createWindow()
+      }
+    } catch {}
+  })
+  proc.stderr.on('data', (data) => {
+    try { console.error(`${label} ${data.toString().trim()}`) } catch {}
+  })
+  proc.stdout.on('error', () => {})
+  proc.stderr.on('error', () => {})
+  proc.on('error', (err) => {
+    console.error(`[Haltija Desktop] Failed to start ${role} server:`, err)
+  })
+  proc.on('exit', (code) => {
+    console.log(`[Haltija Desktop] ${role} server exited with code ${code}`)
+    const idx = embeddedServers.indexOf(proc)
+    if (idx !== -1) embeddedServers.splice(idx, 1)
+  })
+
+  embeddedServers.push(proc)
+  return proc
+}
+
+/**
  * Start embedded Haltija server
  */
 async function startEmbeddedServer() {
@@ -1224,7 +1259,6 @@ async function startEmbeddedServer() {
     serverPath || 'fallback to bunx',
   )
 
-  // Find component.js - server needs this to inject session ID
   const componentPaths = [
     path.join(process.resourcesPath || '', 'component.js'),
     path.join(__dirname, 'resources', 'component.js'),
@@ -1238,68 +1272,11 @@ async function startEmbeddedServer() {
     }
   }
 
-  if (serverPath && useCompiledBinary) {
-    // Run compiled standalone binary with cwd set to find component.js
-    embeddedServer = spawn(serverPath, [], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: componentDir || path.dirname(serverPath),
-      env: { ...process.env, PORT: HALTIJA_PORT.toString() },
-    })
-  } else if (serverPath) {
-    // Run with bun (development)
-    embeddedServer = spawn('bun', ['run', serverPath], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PORT: HALTIJA_PORT.toString() },
-    })
-  } else {
-    // Fallback to bunx haltija
-    embeddedServer = spawn(
-      'bunx',
-      ['haltija', '--port', HALTIJA_PORT.toString()],
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-  }
+  spawnHaltijaServer({ port: HALTIJA_PORT, role: 'public', serverPath, useCompiledBinary, componentDir })
+  spawnHaltijaServer({ port: HALTIJA_INTERNAL_PORT, role: 'internal', serverPath, useCompiledBinary, componentDir })
 
-  embeddedServer.stdout.on('data', (data) => {
-    try {
-      const text = data.toString().trim()
-      console.log(`[Server] ${text}`)
-      // Server signals it needs a window but none exist (app alive, all windows closed).
-      // Re-create the main window so the agent has something to work with.
-      if (text.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
-        console.log('[Haltija Desktop] Server requested window, recreating...')
-        createWindow()
-      }
-    } catch (e) {
-      // Ignore write errors when app is closing
-    }
-  })
-
-  embeddedServer.stderr.on('data', (data) => {
-    try {
-      console.error(`[Server] ${data.toString().trim()}`)
-    } catch (e) {
-      // Ignore write errors when app is closing
-    }
-  })
-
-  embeddedServer.stdout.on('error', () => {})
-  embeddedServer.stderr.on('error', () => {})
-
-  embeddedServer.on('error', (err) => {
-    console.error('[Haltija Desktop] Failed to start server:', err)
-  })
-
-  embeddedServer.on('exit', (code) => {
-    if (embeddedServer) {
-      console.log(`[Haltija Desktop] Server exited with code ${code}`)
-      embeddedServer = null
-    }
-  })
-
-  // Wait for server to be ready
+  // Wait for the public server to be ready (the internal one is best-effort —
+  // the chrome widget will retry until it connects).
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 200))
     if (await checkServerRunning()) {
@@ -1315,47 +1292,46 @@ async function startEmbeddedServer() {
 /**
  * Ensure Haltija server is available
  */
-async function killZombieServer() {
-  if (os.platform() === 'win32') return
+async function killZombieOnPort(port) {
+  if (os.platform() === 'win32') return true
 
   const { execSync } = require('child_process')
-  
-  // Try up to 3 times to kill the process
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const pids = execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+      const pids = execSync(`lsof -ti:${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
       if (!pids) {
-        console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} is free`)
+        console.log(`[Haltija Desktop] Port ${port} is free`)
         return true
       }
-      
-      console.log(`[Haltija Desktop] Attempt ${attempt}: Killing process(es) on port ${HALTIJA_PORT}: ${pids.replace(/\n/g, ', ')}`)
-      
-      // Use SIGTERM first, then SIGKILL if needed
+
+      console.log(`[Haltija Desktop] Attempt ${attempt}: Killing process(es) on port ${port}: ${pids.replace(/\n/g, ', ')}`)
+
       const signal = attempt < 3 ? '' : '-9'
-      execSync(`lsof -ti:${HALTIJA_PORT} | xargs kill ${signal} 2>/dev/null`, { encoding: 'utf-8' })
-      
-      // Wait for process to die
+      execSync(`lsof -ti:${port} | xargs kill ${signal} 2>/dev/null`, { encoding: 'utf-8' })
+
       await new Promise(r => setTimeout(r, 500 * attempt))
-      
-      // Check if port is now free
+
       try {
-        execSync(`lsof -ti:${HALTIJA_PORT} 2>/dev/null`, { encoding: 'utf-8' })
-        // Still occupied, continue trying
+        execSync(`lsof -ti:${port} 2>/dev/null`, { encoding: 'utf-8' })
       } catch {
-        // No process found = success
-        console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} freed successfully`)
+        console.log(`[Haltija Desktop] Port ${port} freed successfully`)
         return true
       }
     } catch {
-      // lsof found nothing = port is free
-      console.log(`[Haltija Desktop] Port ${HALTIJA_PORT} is free`)
+      console.log(`[Haltija Desktop] Port ${port} is free`)
       return true
     }
   }
-  
-  console.error(`[Haltija Desktop] Warning: Could not free port ${HALTIJA_PORT} after 3 attempts`)
+
+  console.error(`[Haltija Desktop] Warning: Could not free port ${port} after 3 attempts`)
   return false
+}
+
+async function killZombieServer() {
+  const publicOk = await killZombieOnPort(HALTIJA_PORT)
+  const internalOk = await killZombieOnPort(HALTIJA_INTERNAL_PORT)
+  return publicOk && internalOk
 }
 
 async function ensureServer() {
@@ -1461,11 +1437,12 @@ if (!gotTheLock) {
   })
 
   app.on('will-quit', () => {
-    // Kill embedded server when app quits
-    if (embeddedServer) {
-      console.log('[Haltija Desktop] Stopping embedded server')
-      embeddedServer.kill()
-      embeddedServer = null
+    if (embeddedServers.length > 0) {
+      console.log(`[Haltija Desktop] Stopping ${embeddedServers.length} embedded server(s)`)
+      for (const proc of embeddedServers) {
+        try { proc.kill() } catch {}
+      }
+      embeddedServers.length = 0
     }
   })
 

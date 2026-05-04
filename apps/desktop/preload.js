@@ -13,6 +13,8 @@ const webviewPreloadPath = __dirname + '/webview-preload.js'
 contextBridge.exposeInMainWorld('haltija', {
   // Path to webview preload script
   webviewPreloadPath: webviewPreloadPath,
+  // Internal-server port (chrome widget connects here, hidden from public agent traffic)
+  internalPort: parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701'),
   // Navigation
   navigate: (url) => ipcRenderer.send('navigate', url),
   goBack: () => ipcRenderer.send('go-back'),

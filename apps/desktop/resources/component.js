@@ -1716,7 +1716,6 @@
     windowId;
     isElectron = false;
     browserId = uid();
-    sessionToken = "";
     killed = false;
     isActive = true;
     homeLeft = 0;
@@ -1791,7 +1790,7 @@
     selectionBox = null;
     highlightedElements = [];
     static get observedAttributes() {
-      return ["server", "hidden", "session", "mode"];
+      return ["server", "hidden", "mode"];
     }
     static async runTests() {
       const el = document.querySelector(TAG_NAME);
@@ -1887,11 +1886,6 @@
         }
         this.windowId = storedWindowId;
       }
-      if (config?.session) {
-        this.sessionToken = config.session;
-      } else {
-        this.sessionToken = uid();
-      }
       if (config?.mode === "headless") {
         this.headless = true;
       }
@@ -1899,7 +1893,6 @@
     connectedCallback() {
       this.killed = false;
       this.serverUrl = this.getAttribute("server") || this.serverUrl;
-      this.sessionToken = this.getAttribute("session") || this.sessionToken;
       if (this.getAttribute("mode") === "headless") {
         this.headless = true;
       }
@@ -1933,11 +1926,6 @@
           this.disconnect();
           this.connect();
         }
-      }
-      if (name === "session") {
-        this.sessionToken = value;
-        this.disconnect();
-        this.connect();
       }
       if (name === "mode") {
         this.headless = value === "headless";
@@ -2131,25 +2119,6 @@
         }
         .btn.info-btn:hover {
           background: #2563eb;
-        }
-        .session-badge {
-          display: flex;
-          align-items: center;
-          gap: 2px;
-          font-size: 9px;
-          color: #666;
-          background: rgba(255,255,255,0.05);
-          padding: 2px 4px;
-          border-radius: 3px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .session-badge:hover {
-          background: rgba(255,255,255,0.1);
-          color: #aaa;
-        }
-        .session-badge.copied {
-          color: #22c55e;
         }
         @keyframes pulse {
           0%, 100% { opacity: 1; }
@@ -2513,8 +2482,6 @@
             <span class="logo">\uD83E\uDDDD</span>
           </div>
           <div class="title">${PRODUCT_NAME}</div>
-          <span class="session-badge" data-action="copy-session" title="Session: ${this.sessionToken}
-Click to copy session command">${this.sessionToken.slice(0, 8)}</span>
           <div class="controls">
             <button class="btn" data-action="select" title="Click or drag to select elements" aria-label="Select elements">\uD83D\uDC46</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
@@ -2601,8 +2568,6 @@ Click to copy session command">${this.sessionToken.slice(0, 8)}</span>
             this.startSelection();
           if (action2 === "stats")
             this.copyStatsToClipboard();
-          if (action2 === "copy-session")
-            this.copySessionToken(e.currentTarget);
           if (action2 === "close-modal")
             this.closeTestModal();
           if (action2 === "copy-test")
@@ -3226,28 +3191,6 @@ Click to copy session command">${this.sessionToken.slice(0, 8)}</span>
             }, 2000);
           }
         });
-      }
-    }
-    async copySessionToken(badge) {
-      const cmd = `export HALTIJA_SESSION=${this.sessionToken}`;
-      try {
-        await navigator.clipboard.writeText(cmd);
-        badge.textContent = "copied!";
-        badge.classList.add("copied");
-        setTimeout(() => {
-          badge.textContent = this.sessionToken.slice(0, 8);
-          badge.classList.remove("copied");
-        }, 1500);
-      } catch {
-        try {
-          await navigator.clipboard.writeText(this.sessionToken);
-          badge.textContent = "copied!";
-          badge.classList.add("copied");
-          setTimeout(() => {
-            badge.textContent = this.sessionToken.slice(0, 8);
-            badge.classList.remove("copied");
-          }, 1500);
-        } catch {}
       }
     }
     async copyStatsToClipboard() {
@@ -5060,7 +5003,6 @@ ${elementSummary}${moreText}`;
           this.send("system", "connected", {
             windowId: this.windowId,
             browserId: this.browserId,
-            session: this.sessionToken,
             version: VERSION2,
             serverSessionId: SERVER_SESSION_ID,
             url: location.href,
@@ -5571,7 +5513,7 @@ ${elementSummary}${moreText}`;
       const haltija = window.haltija;
       if (action2 === "open") {
         if (haltija?.openTab) {
-          haltija.openTab(payload2.url, payload2.session).then((opened) => {
+          haltija.openTab(payload2.url).then((opened) => {
             this.respond(msg2.id, true, { opened });
           }).catch((err) => {
             this.respond(msg2.id, false, null, err.message);
@@ -7445,8 +7387,6 @@ ${elementSummary}${moreText}`;
     const el = DevChannel.elementCreator()();
     el.id = WIDGET_ID;
     el.setAttribute("server", serverUrl2);
-    if (options?.session)
-      el.setAttribute("session", options.session);
     if (options?.mode)
       el.setAttribute("mode", options.mode);
     el.setAttribute("data-version", VERSION2);
@@ -7460,7 +7400,7 @@ ${elementSummary}${moreText}`;
     const config = window.__haltija_config__;
     if (config?.autoInject !== false) {
       if (config) {
-        inject(config.serverUrl || config.wsUrl, { session: config.session, mode: config.mode });
+        inject(config.serverUrl || config.wsUrl, { mode: config.mode });
         return;
       }
     }

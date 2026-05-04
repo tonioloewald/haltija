@@ -14,7 +14,6 @@ import {
   resolveServerPath,
   substituteVars,
   parseTestArgs,
-  getSessionId,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -803,34 +802,5 @@ describe('standalone hj bundle', () => {
     // Should NOT have relative imports to sibling files
     expect(content).not.toContain("from './cli-subcommand.mjs'")
     expect(content).not.toContain("from './format-tree.mjs'")
-  })
-})
-
-describe('getSessionId', () => {
-  const originalSession = process.env.HALTIJA_SESSION
-
-  afterAll(() => {
-    // Restore original env
-    if (originalSession !== undefined) {
-      process.env.HALTIJA_SESSION = originalSession
-    } else {
-      delete process.env.HALTIJA_SESSION
-    }
-  })
-
-  test('returns existing HALTIJA_SESSION env var if set', () => {
-    process.env.HALTIJA_SESSION = 'my-custom-session'
-    expect(getSessionId()).toBe('my-custom-session')
-  })
-
-  test('returns null when HALTIJA_SESSION not set', () => {
-    delete process.env.HALTIJA_SESSION
-    expect(getSessionId()).toBeNull()
-  })
-
-  test('returns null consistently when env not set', () => {
-    delete process.env.HALTIJA_SESSION
-    expect(getSessionId()).toBeNull()
-    expect(getSessionId()).toBeNull()
   })
 })

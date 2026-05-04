@@ -35,33 +35,31 @@ createTab()
 // Periodic status check
 setInterval(checkHaltija, 5000)
 
-// Inject outer widget (headless) into the renderer for persistence + self-inspection
-// Lives in the Electron chrome, survives page navigations, can inspect the app's own UI
+// Inject outer widget (headless) into the renderer for persistence + self-inspection.
+// Connects to the *internal* server (default port 8701) so it doesn't appear in
+// agent-facing window lists on the public server. To inspect the outer Haltija
+// UI from `hj`, target the internal port: HALTIJA_PORT=8701 hj tree
 ;(async function injectOuterWidget() {
-  const serverUrl = getServerUrl()
-  try {
-    const resp = await fetch(`${serverUrl}/component.js`)
+  const internalPort = window.haltija?.internalPort || 8701
+  const internalUrl = getServerUrl().replace(/:\d+/, `:${internalPort}`)
+  const wsUrl = internalUrl.replace('http:', 'ws:') + '/ws/browser'
+  const tryInject = async () => {
+    const resp = await fetch(`${internalUrl}/component.js`)
     if (!resp.ok) throw new Error(`${resp.status}`)
-    const wsUrl = serverUrl.replace('http:', 'ws:') + '/ws/browser'
-    window.__haltija_config__ = { serverUrl: wsUrl, windowId: 'hj-chrome', mode: 'headless', session: 'chrome' }
+    window.__haltija_config__ = { serverUrl: wsUrl, windowId: 'hj-chrome', mode: 'headless' }
     const code = await resp.text()
     const script = document.createElement('script')
     script.textContent = code
     document.head.appendChild(script)
-    console.log('[Haltija Desktop] Outer widget injected (headless, windowId: hj-chrome)')
+  }
+  try {
+    await tryInject()
+    console.log('[Haltija Desktop] Outer widget injected (internal port, windowId: hj-chrome)')
   } catch (err) {
-    console.log('[Haltija Desktop] Outer widget deferred — server not yet ready:', err.message)
-    // Retry once after server comes up (checkHaltija runs every 5s)
+    console.log('[Haltija Desktop] Outer widget deferred — internal server not ready:', err.message)
     const retry = setInterval(async () => {
       try {
-        const resp = await fetch(`${serverUrl}/component.js`)
-        if (!resp.ok) return
-        const wsUrl = serverUrl.replace('http:', 'ws:') + '/ws/browser'
-        window.__haltija_config__ = { serverUrl: wsUrl, windowId: 'hj-chrome', mode: 'headless', session: 'chrome' }
-        const code = await resp.text()
-        const script = document.createElement('script')
-        script.textContent = code
-        document.head.appendChild(script)
+        await tryInject()
         console.log('[Haltija Desktop] Outer widget injected (retry)')
         clearInterval(retry)
       } catch { /* keep retrying */ }
@@ -165,7 +163,7 @@ document.addEventListener('keydown', (e) => {
 // ============================================
 
 // Tab management from widget (via main process IPC)
-window.haltija?.onOpenTab?.((data) => createTab(data.url, { session: data.session }))
+window.haltija?.onOpenTab?.((data) => createTab(data.url))
 window.haltija?.onCloseTab?.((data) => {
   const tab = findTabByWindowId(data.windowId)
   if (tab) closeTab(tab.id)
