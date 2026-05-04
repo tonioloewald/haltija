@@ -46,6 +46,11 @@ let pendingTabSession = null
 // causing agents to lose track of their tab and open duplicates.
 const tabSessions = new Map() // webContents.id → session string
 
+// Pending navigate-url requests: main asks renderer to route a navigation,
+// then awaits a result so the widget's promise resolves with real success/failure.
+const pendingNavigates = new Map()
+let navigateRequestId = 0
+
 // ============================================
 // Preferences
 // ============================================
@@ -928,18 +933,33 @@ function setupScreenCapture() {
   })
 
   // Navigate URL with smart fallback (called from widget in webview)
-  // Routes through renderer's navigate() which has https->http fallback
-  // Passes the sender's webContentsId so the renderer navigates the correct tab
+  // Routes through renderer's navigate() which has https->http fallback.
+  // Awaits a result from the renderer so failures (no matching tab, terminal
+  // tab targeted, etc.) propagate back to the widget — and to `hj navigate`.
   ipcMain.handle('navigate-url', async (event, url) => {
-    if (!mainWindow) return { success: false, error: 'No window' }
+    if (!mainWindow) throw new Error('No window')
 
-    try {
-      const senderWcId = event.sender.id
-      mainWindow.webContents.send('navigate-url', { url, webContentsId: senderWcId })
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: err.message }
-    }
+    const id = ++navigateRequestId
+    const senderWcId = event.sender.id
+    const result = await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingNavigates.delete(id)
+        resolve({ success: false, error: 'navigate-url: renderer did not respond within 5s' })
+      }, 5000)
+      pendingNavigates.set(id, { resolve, timeout })
+      mainWindow.webContents.send('navigate-url', { id, url, webContentsId: senderWcId })
+    })
+
+    if (!result.success) throw new Error(result.error || 'Navigation failed')
+    return result
+  })
+
+  ipcMain.on('navigate-url-result', (event, { id, success, error }) => {
+    const pending = pendingNavigates.get(id)
+    if (!pending) return
+    clearTimeout(pending.timeout)
+    pendingNavigates.delete(id)
+    pending.resolve({ success, error })
   })
 
   // Tab management — forwarded to renderer

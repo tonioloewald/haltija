@@ -240,8 +240,9 @@ if (window.haltija) {
 
   window.haltija.onNavigateUrl?.((data) => {
     console.log('[Haltija Desktop] Navigate request from widget:', data.url, 'wcId:', data.webContentsId)
-    // Find the tab that owns the webview that sent the navigate request
-    // so we navigate the correct tab, not the active (possibly terminal) tab
+    // Resolve the tab that owns the webview which sent the navigate request.
+    // No fallback: silently routing to "some other tab" hides bugs and lets
+    // hj navigate report success when nothing actually navigated.
     let targetTabId = undefined
     if (data.webContentsId) {
       const match = tabs.find(t => {
@@ -251,12 +252,14 @@ if (window.haltija) {
       })
       if (match) targetTabId = match.id
     }
-    // Fallback: navigate the first non-terminal tab (never navigate a terminal/agent iframe)
     if (!targetTabId) {
-      const contentTab = tabs.find(t => !t.isTerminal)
-      if (contentTab) targetTabId = contentTab.id
+      const error = `navigate: could not resolve target tab (webContentsId: ${data.webContentsId})`
+      console.error('[Haltija Desktop]', error)
+      window.haltija.navigateUrlResult?.({ id: data.id, success: false, error })
+      return
     }
-    navigate(data.url, targetTabId)
+    const result = navigate(data.url, targetTabId)
+    window.haltija.navigateUrlResult?.({ id: data.id, success: result?.success !== false, error: result?.error })
   })
 }
 

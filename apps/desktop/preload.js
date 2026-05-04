@@ -62,7 +62,8 @@ contextBridge.exposeInMainWorld('haltija', {
   
   // Navigation (from widget via main process) - uses renderer's smart navigate with fallback
   onNavigateUrl: (callback) => ipcRenderer.on('navigate-url', (event, data) => callback(data)),
-  
+  navigateUrlResult: (result) => ipcRenderer.send('navigate-url-result', result),
+
   // Tab management from widget (via main process)
   onOpenTab: (callback) => ipcRenderer.on('open-tab', (event, data) => callback(data)),
   onCloseTab: (callback) => ipcRenderer.on('close-tab', (event, data) => callback(data)),

@@ -357,14 +357,16 @@ export function getActiveWebview() {
 
 export function navigate(url, tabId = activeTabId) {
   const tab = tabs.find((t) => t.id === tabId)
-  if (!tab) return
+  if (!tab) {
+    const error = `navigate: no tab found for id ${tabId}`
+    console.error('[Haltija]', error)
+    return { success: false, error }
+  }
 
-  // Never navigate terminal/agent iframes — they aren't browser tabs
   if (tab.isTerminal) {
-    console.warn('[Haltija] Refusing to navigate terminal tab, finding content tab instead')
-    const contentTab = tabs.find(t => !t.isTerminal)
-    if (contentTab) return navigate(url, contentTab.id)
-    return
+    const error = `navigate: refusing to navigate terminal/agent tab ${tabId}`
+    console.error('[Haltija]', error)
+    return { success: false, error }
   }
 
   let addedHttps = false
@@ -406,6 +408,8 @@ export function navigate(url, tabId = activeTabId) {
   if (tabId === activeTabId && !tab.isTerminal) {
     el.urlInput.value = tab.url
   }
+
+  return { success: true }
 }
 
 export async function changeTerminalDirectory(tab, path) {
