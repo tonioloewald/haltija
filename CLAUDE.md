@@ -45,7 +45,8 @@ bunx haltija
 # Server CLI options
 haltija --https              # HTTPS mode (auto-generates certs)
 haltija --both               # HTTP + HTTPS simultaneously
-haltija --port 3000          # Custom port
+haltija --port 3000          # Custom port (sets HALTIJA_PORT)
+haltija --token <secret>     # Require X-Haltija-Token on every request
 haltija --headless           # Playwright headless Chromium with auto-injection
 haltija --ci                 # CI mode (Electron + wait + sandbox disabled)
 haltija --wait-ready         # Block until server + browser fully connected
@@ -58,6 +59,12 @@ hj type 10 "hello"            # Type text into element
 hj eval "1+1"                 # Eval JS in browser
 hj status                     # Server status
 hj --help                     # List all subcommands
+
+# Targeting a project-specific server (per-shell)
+export HALTIJA_PORT=9123      # all hj calls in this shell hit port 9123
+export HALTIJA_TOKEN=secret   # required when server was started with --token
+hj --port 9123 tree           # one-off port override
+hj --token secret tree        # one-off token override
 ```
 
 ## Critical: Bun vs Playwright Test Separation
@@ -169,9 +176,17 @@ Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSel
 - `windows` Map tracks all connected windows with their state
 - Window types: `tab`, `popup`, `iframe` (tracked via `windowType`)
 
-### Chrome vs Content Windows
+### Chrome Widget on Internal Port
 
-The Electron desktop app injects an outer "chrome" widget with `windowId: 'hj-chrome'` for self-inspection of its own UI. Agent-facing endpoints (`/tree`, `/windows`, `/status`, untargeted command routing) exclude `hj-chrome` by default. Pass `?include-chrome=true` on `/windows` to inspect the outer Haltija UI.
+The Electron desktop app spawns *two* haltija servers: a public one on `HALTIJA_PORT` (default 8700) for content tabs, and an internal one on `HALTIJA_INTERNAL_PORT` (default 8701) that hosts the outer "chrome" widget — the haltija UI inspecting itself. The chrome widget never connects to the public server, so it never appears in agent listings on 8700; no exclusion logic needed.
+
+To inspect the outer Haltija UI from `hj`, target the internal port:
+
+```bash
+HALTIJA_PORT=8701 hj tree
+```
+
+Same model for embedders: each project chooses a port, agents target it via `HALTIJA_PORT`. Process boundary is the isolation primitive.
 
 ### Auto-Launch
 
@@ -275,7 +290,11 @@ Version is managed in `package.json` only. The build script generates `src/versi
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DEV_CHANNEL_PORT` | HTTP server port | `8700` |
+| `HALTIJA_PORT` | HTTP server port (also read by `hj` for targeting) | `8700` |
+| `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
+| `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
+| `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
+| `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | `8700` |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |

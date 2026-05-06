@@ -119,6 +119,32 @@ hj --help              # All commands
 6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
 7. `hj api` for the full API reference with all parameters
 
+## Targeting a Specific Server
+
+Each project should run its own haltija on a port of its choosing. Tell `hj`
+which one to talk to (per-shell):
+
+```bash
+export HALTIJA_PORT=9123        # all hj calls in this shell hit port 9123
+hj tree
+
+hj --port 9123 tree             # one-off port override
+```
+
+When the server is started with `--token <secret>`, set `HALTIJA_TOKEN` to
+match (or pass `--token <secret>` to `hj`).
+
+## Embed Haltija in Your App
+
+```js
+import { inject } from 'haltija/component'
+inject('ws://localhost:9123/ws/browser')                    // visible widget
+inject('ws://localhost:9123/ws/browser', { mode: 'headless' })  // invisible
+inject('ws://localhost:9123/ws/browser', { token: 'secret' }) // production
+```
+
+Or in HTML: `<haltija-dev server="ws://localhost:9123/ws/browser"></haltija-dev>`
+
 ## Auto-Launch
 
 If no browser windows are connected, `hj` automatically launches the Haltija

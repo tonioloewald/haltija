@@ -190,6 +190,53 @@ Your agent uses the same `hj` commands either way — it doesn't know or care wh
 
 ---
 
+## Embed Haltija in Your Own App
+
+Building a tool, dev environment, or product that wants an agent eye built in? Run a haltija server on a port you choose and import the widget directly. Two flavours:
+
+```js
+// Visible — widget renders its own UI in the corner
+import { inject } from 'haltija/component'
+inject('ws://localhost:9123/ws/browser')
+
+// Headless — widget is present but invisible; agent still has full control
+inject('ws://localhost:9123/ws/browser', { mode: 'headless' })
+```
+
+Or via HTML, no JS required:
+
+```html
+<haltija-dev server="ws://localhost:9123/ws/browser"></haltija-dev>
+```
+
+Tell `hj` which server to talk to (per-shell):
+
+```bash
+haltija --port 9123 --server         # one project
+export HALTIJA_PORT=9123              # all hj calls in this shell hit it
+hj tree
+```
+
+A different shell can target a different project — there's no global state, just port-per-project.
+
+**Production embedding.** When haltija is reachable beyond loopback, gate it with a shared-secret token:
+
+```bash
+haltija --port 9123 --token $(openssl rand -hex 16) --server
+```
+
+```js
+inject('ws://your-host:9123/ws/browser', { token: 'same-secret' })
+```
+
+```bash
+HALTIJA_TOKEN=same-secret hj tree
+```
+
+The server rejects every REST/WebSocket request without a matching `X-Haltija-Token` (or `?token=` for WebSockets). This is a stub — provide your own TLS, key rotation, and per-agent identity if you need them.
+
+---
+
 ## Installation
 
 ```bash
@@ -200,6 +247,7 @@ npm install -g haltija     # Install globally
 # Server options
 haltija --https            # HTTPS mode
 haltija --port 3000        # Custom port
+haltija --token <secret>   # Require X-Haltija-Token on every request
 haltija --headless         # For CI pipelines
 haltija --setup-mcp        # Configure Claude Desktop
 ```
