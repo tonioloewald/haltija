@@ -686,6 +686,7 @@ async function doRequest(url, method, body, context = {}) {
   const { subcommand, jsonOutput } = context
   try {
     const headers = {}
+    if (process.env.HALTIJA_TOKEN) headers['X-Haltija-Token'] = process.env.HALTIJA_TOKEN
     const opts = { method, headers }
     if (body) {
       opts.headers['Content-Type'] = 'application/json'

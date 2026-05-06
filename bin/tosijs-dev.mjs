@@ -53,6 +53,8 @@ Options:
   --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
+  --token <value> Require X-Haltija-Token header on REST and ?token= on WebSocket
+                  (default: off; sets HALTIJA_TOKEN)
   --force, -f     Restart even if server already running
   --wait-ready    Block until server + browser are ready (for scripts)
   --setup-mcp     Configure Claude Desktop MCP integration
@@ -62,6 +64,8 @@ Options:
 
 Environment Variables:
   HALTIJA_PORT             HTTP port (default: 8700) — also read by hj for targeting
+  HALTIJA_TOKEN            Shared-secret required on every REST + WebSocket request
+                           (default: unset = no auth; suitable for local dev)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
   DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')
@@ -344,6 +348,11 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 const httpsPortIdx = args.indexOf('--https-port')
 if (httpsPortIdx !== -1 && args[httpsPortIdx + 1]) {
   env.DEV_CHANNEL_HTTPS_PORT = args[httpsPortIdx + 1]
+}
+
+const tokenIdx = args.indexOf('--token')
+if (tokenIdx !== -1 && args[tokenIdx + 1]) {
+  env.HALTIJA_TOKEN = args[tokenIdx + 1]
 }
 
 // Legacy: first positional arg as port

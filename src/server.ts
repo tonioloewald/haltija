@@ -119,6 +119,13 @@ const USE_HTTP = WANT_HTTP
 // Generate unique server session ID at startup
 const SERVER_SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+// Optional shared-secret token. When set, every REST request must carry a
+// matching X-Haltija-Token header and every widget WebSocket must connect
+// with ?token=<value>. Off by default (local dev). Intended as a minimal
+// hook for projects embedding haltija in production. Not a substitute for
+// TLS or proper auth — those are the embedder's responsibility.
+const REQUIRED_TOKEN = process.env.HALTIJA_TOKEN || ''
+
 // Component.js paths for dynamic loading (try multiple locations for compiled binary support)
 const componentJsPaths = [
   join(__dirname, '../dist/component.js'),           // Dev mode: relative to src/
@@ -695,7 +702,7 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
@@ -816,7 +823,7 @@ async function handleRest(req: Request): Promise<Response> {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
     'Access-Control-Allow-Private-Network': 'true',
     'Content-Type': 'application/json',
   }
@@ -824,7 +831,17 @@ async function handleRest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers })
   }
-  
+
+  // Token check (only when REQUIRED_TOKEN is set). The /inject.js endpoint
+  // is exempt because it must be reachable to bootstrap the widget — but
+  // the widget's WebSocket connection is still gated by token below.
+  if (REQUIRED_TOKEN && path !== '/inject.js' && path !== '/component.js' && path !== '/dev.js') {
+    const provided = req.headers.get('X-Haltija-Token') || url.searchParams.get('token') || ''
+    if (provided !== REQUIRED_TOKEN) {
+      return Response.json({ error: 'Unauthorized: missing or invalid X-Haltija-Token' }, { status: 401, headers })
+    }
+  }
+
   // Static files for bookmarklet injection
   // Replace placeholders with actual URLs based on request protocol
   if (path === '/inject.js') {
@@ -3701,23 +3718,20 @@ const serverConfig = {
   idleTimeout: 30, // 30 seconds for slow operations like screenshots
   fetch(req: Request, server: any) {
     const url = new URL(req.url)
-    
-    // WebSocket upgrade
-    if (url.pathname === '/ws/browser') {
-      const upgraded = server.upgrade(req, { data: { type: 'browser' } })
+
+    // WebSocket upgrade — gated by token if REQUIRED_TOKEN is set
+    if (url.pathname === '/ws/browser' || url.pathname === '/ws/agent' || url.pathname === '/ws/terminal') {
+      if (REQUIRED_TOKEN) {
+        const provided = url.searchParams.get('token') || req.headers.get('X-Haltija-Token') || ''
+        if (provided !== REQUIRED_TOKEN) {
+          return new Response('Unauthorized', { status: 401 })
+        }
+      }
+      const type = url.pathname.slice('/ws/'.length) // 'browser' | 'agent' | 'terminal'
+      const upgraded = server.upgrade(req, { data: { type } })
       return upgraded ? undefined : new Response('Upgrade failed', { status: 500 })
     }
-    
-    if (url.pathname === '/ws/agent') {
-      const upgraded = server.upgrade(req, { data: { type: 'agent' } })
-      return upgraded ? undefined : new Response('Upgrade failed', { status: 500 })
-    }
-    
-    if (url.pathname === '/ws/terminal') {
-      const upgraded = server.upgrade(req, { data: { type: 'terminal' } })
-      return upgraded ? undefined : new Response('Upgrade failed', { status: 500 })
-    }
-    
+
     // REST API
     return handleRest(req)
   },

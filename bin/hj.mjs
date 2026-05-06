@@ -23,8 +23,10 @@ ${bold('hj')} - Haltija command-line interface
 Usage: hj <command> [args...]
 
 ${dim('Targeting a specific haltija server (per-shell):')}
-  ${dim('export HALTIJA_PORT=9123')}     # all hj calls in this shell hit port 9123
-  ${dim('hj --port 9123 tree')}          # one-off override
+  ${dim('export HALTIJA_PORT=9123')}      # all hj calls in this shell hit port 9123
+  ${dim('hj --port 9123 tree')}           # one-off override
+  ${dim('export HALTIJA_TOKEN=secret')}   # required when server was started with HALTIJA_TOKEN
+  ${dim('hj --token secret tree')}        # one-off token override
 ${listSubcommands()}
 Run ${dim('hj --help')} for this help.
 Run ${dim('haltija --help')} for server/app options.
@@ -40,6 +42,13 @@ const portIdx = args.indexOf('--port')
 if (portIdx !== -1 && args[portIdx + 1]) {
   port = args[portIdx + 1]
   args.splice(portIdx, 2)
+}
+
+// Parse --token option (sets HALTIJA_TOKEN env so cli-subcommand.mjs picks it up).
+const tokenIdx = args.indexOf('--token')
+if (tokenIdx !== -1 && args[tokenIdx + 1]) {
+  process.env.HALTIJA_TOKEN = args[tokenIdx + 1]
+  args.splice(tokenIdx, 2)
 }
 
 // Parse --no-launch option (skip auto-launching Electron app)

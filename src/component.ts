@@ -10112,11 +10112,13 @@ const WIDGET_ID = 'haltija-widget'
  *
  * @param serverUrl WebSocket server URL (default: wss://localhost:8700/ws/browser)
  * @param options.mode 'headless' to hide the widget UI entirely
+ * @param options.token shared-secret token, appended to WebSocket URL when the
+ *                     server is started with HALTIJA_TOKEN set
  * @returns The widget element, or null if already present
  */
 export function inject(
   serverUrl = 'wss://localhost:8700/ws/browser',
-  options?: { mode?: string },
+  options?: { mode?: string; token?: string },
 ): DevChannel | null {
   // Check for existing widget by fixed ID
   const existing = document.getElementById(WIDGET_ID) as DevChannel | null
@@ -10135,10 +10137,18 @@ export function inject(
     }
   }
 
+  // Append token to the WebSocket URL if provided. The server reads
+  // ?token=<value> on the upgrade request when HALTIJA_TOKEN is set.
+  let resolvedServerUrl = serverUrl
+  if (options?.token) {
+    const sep = serverUrl.includes('?') ? '&' : '?'
+    resolvedServerUrl = `${serverUrl}${sep}token=${encodeURIComponent(options.token)}`
+  }
+
   // Use the element creator to get the correct tag
   const el = DevChannel.elementCreator()()
   el.id = WIDGET_ID
-  el.setAttribute('server', serverUrl)
+  el.setAttribute('server', resolvedServerUrl)
   if (options?.mode) el.setAttribute('mode', options.mode)
   el.setAttribute('data-version', VERSION)
   document.body.appendChild(el)
@@ -10164,7 +10174,7 @@ function autoInject() {
   if (config?.autoInject !== false) {
     // If config exists and doesn't explicitly disable, inject
     if (config) {
-      inject(config.serverUrl || config.wsUrl, { mode: config.mode })
+      inject(config.serverUrl || config.wsUrl, { mode: config.mode, token: config.token })
       return
     }
   }

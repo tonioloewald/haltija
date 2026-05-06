@@ -7384,9 +7384,14 @@ ${elementSummary}${moreText}`;
         return existing;
       }
     }
+    let resolvedServerUrl = serverUrl2;
+    if (options?.token) {
+      const sep = serverUrl2.includes("?") ? "&" : "?";
+      resolvedServerUrl = `${serverUrl2}${sep}token=${encodeURIComponent(options.token)}`;
+    }
     const el = DevChannel.elementCreator()();
     el.id = WIDGET_ID;
-    el.setAttribute("server", serverUrl2);
+    el.setAttribute("server", resolvedServerUrl);
     if (options?.mode)
       el.setAttribute("mode", options.mode);
     el.setAttribute("data-version", VERSION2);
@@ -7400,7 +7405,7 @@ ${elementSummary}${moreText}`;
     const config = window.__haltija_config__;
     if (config?.autoInject !== false) {
       if (config) {
-        inject(config.serverUrl || config.wsUrl, { mode: config.mode });
+        inject(config.serverUrl || config.wsUrl, { mode: config.mode, token: config.token });
         return;
       }
     }
