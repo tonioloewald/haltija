@@ -21,6 +21,10 @@ if (!args.length || args.includes('--help') || args.includes('-h')) {
 ${bold('hj')} - Haltija command-line interface
 
 Usage: hj <command> [args...]
+
+${dim('Targeting a specific haltija server (per-shell):')}
+  ${dim('export HALTIJA_PORT=9123')}     # all hj calls in this shell hit port 9123
+  ${dim('hj --port 9123 tree')}          # one-off override
 ${listSubcommands()}
 Run ${dim('hj --help')} for this help.
 Run ${dim('haltija --help')} for server/app options.
@@ -28,8 +32,10 @@ Run ${dim('haltija --help')} for server/app options.
   process.exit(0)
 }
 
-// Parse --port option
-let port = process.env.DEV_CHANNEL_PORT || '8700'
+// Parse --port option. Priority: --port > HALTIJA_PORT > DEV_CHANNEL_PORT > 8700.
+// Set HALTIJA_PORT once per shell to target a project-specific haltija server:
+//   export HALTIJA_PORT=9123
+let port = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || '8700'
 const portIdx = args.indexOf('--port')
 if (portIdx !== -1 && args[portIdx + 1]) {
   port = args[portIdx + 1]

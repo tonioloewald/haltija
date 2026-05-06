@@ -61,7 +61,8 @@ Options:
   --help, -h      Show this help
 
 Environment Variables:
-  DEV_CHANNEL_PORT         HTTP port (default: 8700)
+  HALTIJA_PORT             HTTP port (default: 8700) — also read by hj for targeting
+  DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
   DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')
   DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)
@@ -283,8 +284,8 @@ import { isSubcommand, runSubcommand } from './cli-subcommand.mjs'
 // Check if first positional arg is a subcommand (not a flag, not a port number)
 const firstNonFlag = args.find(a => !a.startsWith('-'))
 if (firstNonFlag && isSubcommand(firstNonFlag)) {
-  // Parse --port for subcommand mode
-  let subPort = process.env.DEV_CHANNEL_PORT || '8700'
+  // Parse --port for subcommand mode. Priority: --port > HALTIJA_PORT > DEV_CHANNEL_PORT > 8700.
+  let subPort = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || '8700'
   const subPortIdx = args.indexOf('--port')
   if (subPortIdx !== -1 && args[subPortIdx + 1]) {
     subPort = args[subPortIdx + 1]
@@ -327,6 +328,12 @@ if (args.includes('--https')) {
   env.DEV_CHANNEL_MODE = 'both'
 } else {
   env.DEV_CHANNEL_MODE = env.DEV_CHANNEL_MODE || 'http'
+}
+
+// HALTIJA_PORT is preferred; promote it to DEV_CHANNEL_PORT (the var the
+// server actually reads) if --port isn't given.
+if (env.HALTIJA_PORT && !env.DEV_CHANNEL_PORT) {
+  env.DEV_CHANNEL_PORT = env.HALTIJA_PORT
 }
 
 const portIdx = args.indexOf('--port')
