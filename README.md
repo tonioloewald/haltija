@@ -212,12 +212,18 @@ Or via HTML, no JS required:
 Tell `hj` which server to talk to (per-shell):
 
 ```bash
-haltija --port 9123 --server         # one project
-export HALTIJA_PORT=9123              # all hj calls in this shell hit it
+# Named instance — recommended, no port juggling
+haltija --name dashboard --server     # in one shell: register as "dashboard"
+export HALTIJA_NAME=dashboard          # in your other shells
+hj tree                                # finds dashboard via ~/.haltija/servers/
+
+# Port-based — if you'd rather pin a number
+haltija --port 9123 --server
+export HALTIJA_PORT=9123
 hj tree
 ```
 
-A different shell can target a different project — there's no global state, just port-per-project.
+If you don't pass `--port`, haltija tries 8700 first and falls back to a kernel-assigned ephemeral port — `--name` records whichever port it ends up on so `hj` can find it. A different shell can target a different project; there's no global state, just one named instance per haltija server.
 
 **Production embedding.** When haltija is reachable beyond loopback, gate it with a shared-secret token:
 

@@ -11,8 +11,31 @@
  */
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 const args = process.argv.slice(2)
+
+/**
+ * Resolve a named haltija instance to its port by reading
+ * ~/.haltija/servers/<name>.json. Returns null if the file is missing,
+ * malformed, or the recorded pid is no longer alive.
+ */
+function lookupNamedInstance(name) {
+  const path = join(homedir(), '.haltija', 'servers', `${name}.json`)
+  if (!existsSync(path)) return null
+  let entry
+  try {
+    entry = JSON.parse(readFileSync(path, 'utf-8'))
+  } catch {
+    return null
+  }
+  if (entry?.pid) {
+    try { process.kill(entry.pid, 0) } catch { return null }
+  }
+  return entry
+}
 
 if (!args.length || args.includes('--help') || args.includes('-h')) {
   const bold = (s) => `\x1b[1m${s}\x1b[0m`
@@ -23,8 +46,11 @@ ${bold('hj')} - Haltija command-line interface
 Usage: hj <command> [args...]
 
 ${dim('Targeting a specific haltija server (per-shell):')}
-  ${dim('export HALTIJA_PORT=9123')}      # all hj calls in this shell hit port 9123
-  ${dim('hj --port 9123 tree')}           # one-off override
+  ${dim('haltija --name api --server')}   # in another shell: register as "api"
+  ${dim('export HALTIJA_NAME=api')}       # all hj calls in this shell talk to "api"
+  ${dim('hj --name api tree')}            # one-off name override
+  ${dim('export HALTIJA_PORT=9123')}      # bypass the registry; talk to a port directly
+  ${dim('hj --port 9123 tree')}           # one-off port override
   ${dim('export HALTIJA_TOKEN=secret')}   # required when server was started with HALTIJA_TOKEN
   ${dim('hj --token secret tree')}        # one-off token override
 ${listSubcommands()}
@@ -34,10 +60,29 @@ Run ${dim('haltija --help')} for server/app options.
   process.exit(0)
 }
 
-// Parse --port option. Priority: --port > HALTIJA_PORT > DEV_CHANNEL_PORT > 8700.
-// Set HALTIJA_PORT once per shell to target a project-specific haltija server:
-//   export HALTIJA_PORT=9123
+// Parse --name option (or HALTIJA_NAME env): resolve to a port via
+// ~/.haltija/servers/<name>.json, written by `haltija --name <foo>`.
+let resolvedName = process.env.HALTIJA_NAME || ''
+const nameIdx = args.indexOf('--name')
+if (nameIdx !== -1 && args[nameIdx + 1]) {
+  resolvedName = args[nameIdx + 1]
+  args.splice(nameIdx, 2)
+}
+
+// Port resolution priority:
+//   --port flag > --name/HALTIJA_NAME registry lookup > HALTIJA_PORT env
+//   > DEV_CHANNEL_PORT env > 8700 default
 let port = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || '8700'
+if (resolvedName) {
+  const entry = lookupNamedInstance(resolvedName)
+  if (entry) {
+    port = String(entry.port)
+  } else {
+    console.error(`hj: no live haltija instance named "${resolvedName}".`)
+    console.error(`Start one with:  haltija --name ${resolvedName} --server`)
+    process.exit(1)
+  }
+}
 const portIdx = args.indexOf('--port')
 if (portIdx !== -1 && args[portIdx + 1]) {
   port = args[portIdx + 1]

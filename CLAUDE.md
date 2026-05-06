@@ -46,11 +46,13 @@ bunx haltija
 haltija --https              # HTTPS mode (auto-generates certs)
 haltija --both               # HTTP + HTTPS simultaneously
 haltija --port 3000          # Custom port (sets HALTIJA_PORT)
+haltija --name dashboard     # Register in ~/.haltija/servers/ for hj resolution
 haltija --token <secret>     # Require X-Haltija-Token on every request
 haltija --headless           # Playwright headless Chromium with auto-injection
 haltija --ci                 # CI mode (Electron + wait + sandbox disabled)
 haltija --wait-ready         # Block until server + browser fully connected
 haltija --docs-dir ./docs    # Custom reference docs directory
+# Without --port: tries 8700, falls back to a kernel-assigned ephemeral port
 
 # hj CLI (agent-facing commands)
 hj tree                       # DOM tree
@@ -61,8 +63,10 @@ hj status                     # Server status
 hj --help                     # List all subcommands
 
 # Targeting a project-specific server (per-shell)
-export HALTIJA_PORT=9123      # all hj calls in this shell hit port 9123
+export HALTIJA_NAME=dashboard # resolve via ~/.haltija/servers/dashboard.json
+export HALTIJA_PORT=9123      # bypass the registry; talk to a port directly
 export HALTIJA_TOKEN=secret   # required when server was started with --token
+hj --name dashboard tree      # one-off name override
 hj --port 9123 tree           # one-off port override
 hj --token secret tree        # one-off token override
 ```
@@ -290,15 +294,20 @@ Version is managed in `package.json` only. The build script generates `src/versi
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `HALTIJA_PORT` | HTTP server port (also read by `hj` for targeting) | `8700` |
+| `HALTIJA_PORT` | HTTP server port; if unset, server tries 8700 then ephemeral. Also read by `hj`. | — |
+| `HALTIJA_NAME` | Register/look up the server under this name in `~/.haltija/servers/` | — |
 | `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
-| `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | `8700` |
+| `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
+
+### Named Instance Registry
+
+`haltija --name <foo>` writes `~/.haltija/servers/<foo>.json` containing `{ name, port, pid, cwd, startedAt }`. Cleaned up on `SIGINT`/`SIGTERM`/`exit`. `hj --name <foo>` (and `HALTIJA_NAME=foo hj`) reads the file to find the port — stale entries (pid no longer alive) are removed lazily on lookup. Implementation: `src/sessions.ts`. Validation rule: alphanumerics, dashes, underscores, dots only.
 
 ## CI / QA
 

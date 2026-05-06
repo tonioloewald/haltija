@@ -2761,14 +2761,23 @@ hj --help              # All commands
 
 ## Targeting a Specific Server
 
-Each project should run its own haltija on a port of its choosing. Tell \`hj\`
-which one to talk to (per-shell):
+Each project should run its own haltija. The friendliest way to address it
+is by name — every \`haltija --name <foo>\` registers itself in
+\`~/.haltija/servers/\` and \`hj\` resolves the name back to a port:
 
 \`\`\`bash
-export HALTIJA_PORT=9123        # all hj calls in this shell hit port 9123
+haltija --name dashboard --server      # start the server (any free port)
+export HALTIJA_NAME=dashboard           # tell hj which one to talk to
 hj tree
 
-hj --port 9123 tree             # one-off port override
+hj --name dashboard tree                # one-off override
+\`\`\`
+
+Or pin a port directly if you prefer:
+
+\`\`\`bash
+export HALTIJA_PORT=9123
+hj --port 9123 tree
 \`\`\`
 
 When the server is started with \`--token <secret>\`, set \`HALTIJA_TOKEN\` to

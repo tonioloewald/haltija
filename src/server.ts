@@ -24,6 +24,7 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
+import { register as registerNamedInstance, unregister as unregisterNamedInstance } from './sessions'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -75,8 +76,17 @@ const PRODUCT_NAME = 'Haltija'
 const TAG_NAME = 'haltija-dev'
 const LOG_PREFIX = '[haltija]'
 
-const PORT = parseInt(process.env.DEV_CHANNEL_PORT || '8700')
-const HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
+// Port resolution. When the user expresses a preference (HALTIJA_PORT or
+// DEV_CHANNEL_PORT env, or --port flag handled by the launcher) we use it
+// strictly, killing any zombie holding that port. Without a preference we
+// try the canonical default (8700) and fall back to a kernel-assigned
+// ephemeral port — `haltija --name foo` records whichever port we end up
+// on so `hj --name foo` can resolve back to it.
+const PORT_PREFERENCE = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT
+const PORT_IS_STRICT = !!PORT_PREFERENCE
+let PORT = parseInt(PORT_PREFERENCE || '8700')
+let HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
+const INSTANCE_NAME = process.env.HALTIJA_NAME || ''
 const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
 const DOCS_DIR = process.env.DEV_CHANNEL_DOCS_DIR || null
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -3948,56 +3958,71 @@ if (USE_HTTP) {
       ...serverConfig,
     })
   } catch (err: unknown) {
-    // Port in use - try to kill existing process and retry
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
-      if (killProcessOnPort(PORT)) {
-        httpServer = Bun.serve({
-          port: PORT,
-          ...serverConfig,
-        })
+      if (PORT_IS_STRICT) {
+        // User asked for a specific port — try to free it and retry.
+        if (killProcessOnPort(PORT)) {
+          httpServer = Bun.serve({ port: PORT, ...serverConfig })
+        } else {
+          throw err
+        }
       } else {
-        throw err
+        // No preference — fall back to an ephemeral port.
+        httpServer = Bun.serve({ port: 0, ...serverConfig })
       }
     } else {
       throw err
     }
   }
+  PORT = httpServer.port
 }
 
 if (USE_HTTPS) {
+  const tls = {
+    cert: readFileSync(certPath),
+    key: readFileSync(keyPath),
+  }
   try {
-    httpsServer = Bun.serve({
-      port: HTTPS_PORT,
-      tls: {
-        cert: readFileSync(certPath),
-        key: readFileSync(keyPath),
-      },
-      ...serverConfig,
-    })
+    httpsServer = Bun.serve({ port: HTTPS_PORT, tls, ...serverConfig })
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
-      if (killProcessOnPort(HTTPS_PORT)) {
-        httpsServer = Bun.serve({
-          port: HTTPS_PORT,
-          tls: {
-            cert: readFileSync(certPath),
-            key: readFileSync(keyPath),
-          },
-          ...serverConfig,
-        })
+      if (PORT_IS_STRICT) {
+        if (killProcessOnPort(HTTPS_PORT)) {
+          httpsServer = Bun.serve({ port: HTTPS_PORT, tls, ...serverConfig })
+        } else {
+          throw err
+        }
       } else {
-        throw err
+        httpsServer = Bun.serve({ port: 0, tls, ...serverConfig })
       }
     } else {
       throw err
     }
   }
+  HTTPS_PORT = httpsServer.port
 }
 
 // Build URLs for display
 const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
 const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
+
+// Register this instance so `hj --name <foo>` can resolve back to its port.
+// We register the public HTTP port (the one agents target) — HTTPS is just
+// a transport choice for the same logical server.
+if (INSTANCE_NAME) {
+  try {
+    registerNamedInstance(INSTANCE_NAME, PORT)
+    const cleanup = () => {
+      try { unregisterNamedInstance(INSTANCE_NAME) } catch {}
+    }
+    process.on('SIGINT', () => { cleanup(); process.exit(130) })
+    process.on('SIGTERM', () => { cleanup(); process.exit(143) })
+    process.on('exit', cleanup)
+  } catch (err) {
+    console.error(`${LOG_PREFIX} Failed to register named instance "${INSTANCE_NAME}":`, err instanceof Error ? err.message : err)
+  }
+}
 
 // Auto-install hj CLI to ~/.local/bin (no sudo needed)
 // For compiled binary (DMG), copies bundled binary
@@ -4130,6 +4155,9 @@ if (httpUrl) {
 }
 if (httpsUrl) {
   console.log(`  HTTPS:     ${httpsUrl}`)
+}
+if (INSTANCE_NAME) {
+  console.log(`  NAME:      ${INSTANCE_NAME}   (use HALTIJA_NAME=${INSTANCE_NAME} hj <cmd>)`)
 }
 
 console.log(`

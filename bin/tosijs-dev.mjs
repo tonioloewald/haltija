@@ -55,6 +55,8 @@ Options:
   --https-port <n> Set HTTPS port (default: 8701)
   --token <value> Require X-Haltija-Token header on REST and ?token= on WebSocket
                   (default: off; sets HALTIJA_TOKEN)
+  --name <foo>    Register this server as <foo> in ~/.haltija/servers/ so
+                  HALTIJA_NAME=foo hj <cmd> can resolve back to its port
   --force, -f     Restart even if server already running
   --wait-ready    Block until server + browser are ready (for scripts)
   --setup-mcp     Configure Claude Desktop MCP integration
@@ -63,7 +65,8 @@ Options:
   --help, -h      Show this help
 
 Environment Variables:
-  HALTIJA_PORT             HTTP port (default: 8700) — also read by hj for targeting
+  HALTIJA_PORT             HTTP port (default: try 8700, else ephemeral)
+  HALTIJA_NAME             Register this server under <name> for hj resolution
   HALTIJA_TOKEN            Shared-secret required on every REST + WebSocket request
                            (default: unset = no auth; suitable for local dev)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
@@ -353,6 +356,11 @@ if (httpsPortIdx !== -1 && args[httpsPortIdx + 1]) {
 const tokenIdx = args.indexOf('--token')
 if (tokenIdx !== -1 && args[tokenIdx + 1]) {
   env.HALTIJA_TOKEN = args[tokenIdx + 1]
+}
+
+const nameIdx = args.indexOf('--name')
+if (nameIdx !== -1 && args[nameIdx + 1]) {
+  env.HALTIJA_NAME = args[nameIdx + 1]
 }
 
 // Legacy: first positional arg as port
