@@ -295,6 +295,30 @@ hj --help                     # CLI subcommand reference
 
 ---
 
+## 1.3.0-beta.8 — change of direction
+
+Earlier 1.3 betas tried to support multiple agents on a single haltija server by issuing each widget a *session token* and routing requests by `X-Haltija-Session`. The model was load-bearing but leaky — six of the last fifteen commits before this release were firefighting session-isolation regressions.
+
+beta.8 deletes the entire mechanism and replaces it with **process boundaries**: each project runs its own haltija server, and the agent talks to the right one by **port** or by **name**.
+
+```bash
+haltija --name dashboard --server     # one project, registers itself in ~/.haltija/servers/
+HALTIJA_NAME=dashboard hj tree         # any shell can address it by name
+```
+
+What this means for you, depending on how you used 1.3.0-beta.7:
+
+- **`bunx haltija` desktop app** — works the same; no migration needed. The outer "chrome" widget that lets the app inspect itself now lives on a separate internal port (8701) so it never appears in agent-facing window listings.
+- **`HALTIJA_SESSION` / `--session` / `--secure` / the click-to-copy session badge** — gone. If you were setting `HALTIJA_SESSION` in your shell, replace it with `HALTIJA_NAME` (and start the server with `--name <foo>`) or `HALTIJA_PORT`.
+- **`inject(url, { session })`** — the `session` option is removed. If you need auth, use `inject(url, { token })` (matches `haltija --token <secret>`); for embedding without auth, just `inject(url)` or `inject(url, { mode: 'headless' })`.
+- **`hj-chrome` exclusion logic** — gone from the public REST API. To inspect the desktop app's outer UI from `hj`, target the internal port directly: `HALTIJA_PORT=8701 hj tree`.
+
+Net code change: ~830 lines removed, ~150 added back for the simpler model. Test count went up (we now have integration coverage for the token stub, named instances, and auto-port fallback that the previous betas lacked).
+
+The pre-revert state is preserved on the `multi-user-isolation` branch in case the multi-agent-on-one-server design ever needs revisiting.
+
+---
+
 ## License
 
 Apache 2.0
