@@ -1,6 +1,6 @@
 {
   "name": "haltija-desktop",
-  "version": "1.3.0-beta.7",
+  "version": "1.3.0-beta.8",
   "description": "Haltija Desktop - God Mode Browser for AI Agents",
   "homepage": "https://github.com/tonioloewald/haltija",
   "author": {
@@ -43,9 +43,7 @@
       "extendInfo": {
         "CFBundleIconName": "AppIcon"
       },
-      "notarize": {
-        "teamId": "TSAD7CQ4HH"
-      },
+      "notarize": false,
       "target": [
         {
           "target": "dmg",
