@@ -1,6 +1,7 @@
 {
   "name": "haltija-desktop",
   "version": "1.3.0-beta.8",
+  "private": true,
   "description": "Haltija Desktop - God Mode Browser for AI Agents",
   "homepage": "https://github.com/tonioloewald/haltija",
   "author": {
