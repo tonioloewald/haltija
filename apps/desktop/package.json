@@ -43,7 +43,7 @@
       "extendInfo": {
         "CFBundleIconName": "AppIcon"
       },
-      "notarize": false,
+      "notarize": true,
       "target": [
         {
           "target": "dmg",
