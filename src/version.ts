@@ -9,4 +9,4 @@
  * ⚠️  To change the version, update package.json and run: bun run build
  */
 
-export const VERSION = '1.3.0-beta.8'
+export const VERSION = '1.3.0-beta.9'
