@@ -2743,20 +2743,21 @@ Run 'hj --help' for all commands.`
                   error = `Element not found: ${assertion.selector}`
                   break
                 }
-                const styles = response.data.styles || {}
                 const box = response.data.box || {}
-                const isRendered = styles.display !== 'none'
-                  && styles.visibility !== 'hidden'
-                  && (box.w || 0) > 0
-                  && (box.h || 0) > 0
+                const display = box.display ?? response.data.styles?.display
+                const visibility = box.visibility ?? response.data.styles?.visibility
+                const isRendered = display !== 'none'
+                  && visibility !== 'hidden'
+                  && (box.width || 0) > 0
+                  && (box.height || 0) > 0
                 if (!isRendered) {
                   stepPassed = false
                   error = `Element is not visible: ${assertion.selector}`
                   context = {
-                    display: styles.display,
-                    visibility: styles.visibility,
-                    width: box.w,
-                    height: box.h,
+                    display,
+                    visibility,
+                    width: box.width,
+                    height: box.height,
                   }
                 }
                 break
@@ -2767,12 +2768,13 @@ Run 'hj --help' for all commands.`
                 // Element not existing counts as hidden
                 if (!response.success || !response.data) break
 
-                const styles = response.data.styles || {}
                 const box = response.data.box || {}
-                const isRendered = styles.display !== 'none'
-                  && styles.visibility !== 'hidden'
-                  && (box.w || 0) > 0
-                  && (box.h || 0) > 0
+                const display = box.display ?? response.data.styles?.display
+                const visibility = box.visibility ?? response.data.styles?.visibility
+                const isRendered = display !== 'none'
+                  && visibility !== 'hidden'
+                  && (box.width || 0) > 0
+                  && (box.height || 0) > 0
                 if (isRendered) {
                   stepPassed = false
                   error = `Element is visible but should be hidden: ${assertion.selector}`
