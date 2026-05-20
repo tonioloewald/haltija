@@ -2732,30 +2732,48 @@ Run 'hj --help' for all commands.`
               }
               
               case 'visible': {
+                // "visible" means rendered + not explicitly hidden + has dimensions.
+                // It does NOT require the element to be in the viewport — tests
+                // commonly assert visibility on content below the fold (especially
+                // in headless CI with a small default viewport). Use a
+                // `scrollIntoView` eval first if you actually need on-screen.
                 const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
                 if (!response.success || !response.data) {
                   stepPassed = false
                   error = `Element not found: ${assertion.selector}`
                   break
                 }
-                if (!response.data.box?.visible || response.data.styles?.visibility === 'hidden' || response.data.styles?.display === 'none') {
+                const styles = response.data.styles || {}
+                const box = response.data.box || {}
+                const isRendered = styles.display !== 'none'
+                  && styles.visibility !== 'hidden'
+                  && (box.w || 0) > 0
+                  && (box.h || 0) > 0
+                if (!isRendered) {
                   stepPassed = false
                   error = `Element is not visible: ${assertion.selector}`
-                  context = { 
-                    display: response.data.styles?.display,
-                    visibility: response.data.styles?.visibility,
-                    inViewport: response.data.box?.visible,
+                  context = {
+                    display: styles.display,
+                    visibility: styles.visibility,
+                    width: box.w,
+                    height: box.h,
                   }
                 }
                 break
               }
-              
+
               case 'hidden': {
                 const response = await requestFromBrowser('dom', 'inspect', { selector: assertion.selector })
                 // Element not existing counts as hidden
                 if (!response.success || !response.data) break
-                
-                if (response.data.box?.visible && response.data.styles?.visibility !== 'hidden' && response.data.styles?.display !== 'none') {
+
+                const styles = response.data.styles || {}
+                const box = response.data.box || {}
+                const isRendered = styles.display !== 'none'
+                  && styles.visibility !== 'hidden'
+                  && (box.w || 0) > 0
+                  && (box.h || 0) > 0
+                if (isRendered) {
                   stepPassed = false
                   error = `Element is visible but should be hidden: ${assertion.selector}`
                 }
