@@ -1387,6 +1387,13 @@ if (!gotTheLock) {
   // App lifecycle
   app.whenReady().then(async () => {
     console.log('[Haltija Desktop] App ready, starting initialization...')
+
+    // Clear the "manually quit" marker — user is explicitly starting Haltija,
+    // so hj should resume auto-launching when needed.
+    try {
+      const quitMarker = path.join(os.homedir(), '.haltija', 'last-quit')
+      if (fs.existsSync(quitMarker)) fs.rmSync(quitMarker, { force: true })
+    } catch {}
     
     try {
       // Start or connect to server first
@@ -1444,6 +1451,13 @@ if (!gotTheLock) {
       }
       embeddedServers.length = 0
     }
+    // Drop a marker so hj's auto-launch knows the user explicitly quit.
+    // Cleared next time the user manually starts Haltija.
+    try {
+      const dir = path.join(os.homedir(), '.haltija')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'last-quit'), String(Date.now()))
+    } catch {}
   })
 
   // Handle certificate errors (for self-signed certs in dev)

@@ -6113,7 +6113,7 @@ ${elementSummary}${moreText}`;
           }
         } else if (isContentEditable) {
           document.execCommand("insertText", false, char);
-        } else {}
+        }
         el.dispatchEvent(new InputEvent("input", {
           bubbles: true,
           inputType: "insertText",

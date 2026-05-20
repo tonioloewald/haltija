@@ -1138,6 +1138,9 @@ async function handleRest(req: Request): Promise<Response> {
       serverVersion: SERVER_VERSION,
       recording: activeRecordings > 0,
       activeRecordings,
+      // True when this server is hosted by the Haltija desktop app — hj uses
+      // this to know it should NOT auto-launch a second Haltija.app instance.
+      desktopApp: isDesktopApp,
       // Legacy fields for backwards compatibility
       browsers: browsers.size,
       agents: agents.size,
@@ -1146,7 +1149,7 @@ async function handleRest(req: Request): Promise<Response> {
       }
     }, { headers })
   }
-  
+
   // Stats endpoint - efficiency and usage metrics
   if (path === '/stats' && req.method === 'GET') {
     const windowId = url.searchParams.get('window') || undefined

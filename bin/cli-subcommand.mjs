@@ -18,6 +18,7 @@
 
 import { spawn } from 'child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { formatTree } from './format-tree.mjs'
@@ -455,28 +456,39 @@ async function isServerRunning(port) {
 }
 
 /**
- * Resolve the server path - checks for bundled binary first, then dev server.
+ * Resolve the server path. Search order:
+ *   1. Next to the hj binary (compiled distribution).
+ *   2. `../dist/server.js` (running from a source checkout).
+ *   3. Inside an installed `/Applications/Haltija.app` (the bundled
+ *      server binary lives in Contents/Resources/haltija-server-<arch>).
+ *   4. Same under `~/Applications/`.
  * Exported for testing.
  */
 export function resolveServerPath() {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
   const execDir = dirname(process.execPath)
-  const bundledServerPath = join(execDir, `haltija-server-${arch}`)
-  const devServerPath = join(__dirname, '../dist/server.js')
-  
-  if (existsSync(bundledServerPath)) {
-    return { type: 'bundled', path: bundledServerPath }
-  } else if (existsSync(devServerPath)) {
-    return { type: 'dev', path: devServerPath }
+  const candidates = [
+    { type: 'bundled', path: join(execDir, `haltija-server-${arch}`) },
+    { type: 'dev', path: join(__dirname, '../dist/server.js') },
+    { type: 'app', path: `/Applications/Haltija.app/Contents/Resources/haltija-server-${arch}` },
+    { type: 'app', path: join(homedir(), `Applications/Haltija.app/Contents/Resources/haltija-server-${arch}`) },
+  ]
+  for (const c of candidates) {
+    if (existsSync(c.path)) return c
   }
   return null
 }
 
 async function startServerInBackground(port) {
   const resolved = resolveServerPath()
-  
+
   if (!resolved) {
-    console.error('Error: Server not found. Run `bun run build` first.')
+    console.error('Error: no haltija server found.')
+    console.error('')
+    console.error('Install one of these:')
+    console.error('  • Haltija desktop app: https://github.com/tonioloewald/haltija/releases')
+    console.error('  • Or run a server in another shell: bunx haltija --server')
+    console.error('  • Or, if you are developing haltija from source: bun run build')
     process.exit(1)
   }
   
@@ -551,14 +563,31 @@ async function launchElectronApp() {
 }
 
 async function ensureBrowserConnected(port) {
+  let status
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
       signal: AbortSignal.timeout(2000)
     })
-    const status = await resp.json()
+    status = await resp.json()
     if (status.ok) return true
   } catch { return false }
-  
+
+  // Server is up but no tabs yet. If this server is hosted by the Haltija
+  // desktop app, it will open a tab itself when the agent's command hits
+  // (via __NEED_WINDOW__). Launching /Applications/Haltija.app on top would
+  // produce two app instances side by side — skip the launch.
+  if (status?.desktopApp) return true
+
+  // Respect "user explicitly quit" — don't auto-relaunch on every agent
+  // call. Cleared when the user starts Haltija manually.
+  try {
+    const quitMarker = join(homedir(), '.haltija', 'last-quit')
+    if (existsSync(quitMarker)) {
+      process.stderr.write('\x1b[2m(Haltija was quit by user; not auto-launching. Open Haltija manually to resume.)\x1b[0m\n')
+      return false
+    }
+  } catch {}
+
   // No windows connected — try to launch Electron app (macOS only)
   if (process.platform !== 'darwin') return false
   
@@ -611,6 +640,18 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
 
   // Check if server is running, auto-start if not
   if (!(await isServerRunning(port))) {
+    // Respect "user manually quit Haltija" before we try to spawn anything.
+    // The marker is dropped by the desktop app on will-quit and cleared on
+    // its next launch — agent calls in between should not bring it back.
+    try {
+      const quitMarker = join(homedir(), '.haltija', 'last-quit')
+      if (!noLaunch && existsSync(quitMarker)) {
+        console.error('Haltija was quit by user; not auto-launching.')
+        console.error('Open Haltija manually to resume — or run `hj --no-launch` to bypass this check.')
+        process.exit(1)
+      }
+    } catch {}
+
     process.stderr.write('\x1b[2mStarting Haltija server...\x1b[0m')
     const started = await startServerInBackground(port)
     if (started) {
