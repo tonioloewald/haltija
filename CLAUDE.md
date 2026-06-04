@@ -6,6 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Haltija gives AI agents eyes and hands in the browser. Instead of guessing what's on screen, agents can see the actual DOM, click elements, type text, and watch for changes. The server exposes a REST API that routes commands to browser widgets connected via WebSocket.
 
+## Agent Skill / Plugin
+
+This repo ships a Claude Code **plugin** that teaches agents to use Haltija — both live
+browser control and authoring/running the JSON regression tests via `hj test-suite`.
+
+- Skill: `plugins/haltija-skill/skills/haltija/SKILL.md`
+- Plugin manifest: `plugins/haltija-skill/.claude-plugin/plugin.json`
+- Marketplace (repo root): `.claude-plugin/marketplace.json`
+
+Install (anyone): `/plugin marketplace add <this-repo>` then
+`/plugin install haltija-skill@haltija`. (Local testing: add the repo path instead of the
+GitHub slug.) This is the **skill** path; the older MCP path is `bunx haltija --setup-mcp`.
+
+**Keep the skill in sync with the tool.** When you add or change an `hj` command, a
+test-step `action`, or an `assertion` type, update `SKILL.md` in the same change — the skill
+is the agent-facing contract and silently drifts out of date otherwise. Bump
+`plugin.json`'s `version` on a release (or omit it to let the git SHA drive updates).
+
 ## Build & Test Commands
 
 ```bash

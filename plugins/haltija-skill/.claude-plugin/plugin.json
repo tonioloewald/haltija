@@ -1,0 +1,8 @@
+{
+  "name": "haltija-skill",
+  "description": "Teaches agents to drive the browser and author/run Haltija regression tests via the hj CLI",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tonio Loewald"
+  }
+}

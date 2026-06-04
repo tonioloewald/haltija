@@ -1,0 +1,13 @@
+{
+  "name": "haltija",
+  "owner": {
+    "name": "Tonio Loewald"
+  },
+  "plugins": [
+    {
+      "name": "haltija-skill",
+      "source": "./plugins/haltija-skill",
+      "description": "Drive the browser and author/run Haltija regression tests via the hj CLI"
+    }
+  ]
+}
