@@ -2839,7 +2839,7 @@ hj test-validate tests/login.json   # Validate format
 hj test-suite tests/a.json tests/b.json  # Run multiple
 \`\`\`
 
-Test steps: \`navigate\`, \`click\`, \`type\`, \`check\`, \`key\`, \`wait\`, \`assert\`, \`eval\`, \`verify\`
+Test steps: \`navigate\`, \`click\`, \`type\`, \`check\`, \`key\`, \`select\`, \`cut\`, \`copy\`, \`paste\`, \`wait\`, \`assert\`, \`eval\`, \`verify\`
 
 The \`type\` action uses realistic per-character keystroke simulation by default.
 Add \`"paste": true\` for fast paste-style input (still framework-compatible).
@@ -4375,7 +4375,7 @@ export const COMPONENT_JS: string = `(() => {
       if (htmlEl.disabled) {
         flags.disabled = true;
       }
-      if (htmlEl.readOnly) {
+      if ("readOnly" in htmlEl && htmlEl.readOnly) {
         flags.readOnly = true;
       }
       if (!htmlEl.validity.valid) {
@@ -5956,7 +5956,7 @@ export const COMPONENT_JS: string = `(() => {
             if (options.addAssertions && inputValue) {
               steps.push({
                 action: "assert",
-                assertion: { type: "value", selector, expected: inputValue },
+                assertion: { type: "value", selector, value: inputValue },
                 description: \`Verify \${inputLabel} is "\${inputValue}"\`
               });
             }
@@ -8276,7 +8276,8 @@ export const COMPONENT_JS: string = `(() => {
           scroll: 0,
           mutation: 0,
           console: 0,
-          focus: 0
+          focus: 0,
+          recording: 0
         };
         this.statsStartTime = Date.now();
         this.startSemanticEvents();

@@ -1604,6 +1604,9 @@ interface VisibilityInfo {
     | 'hidden-attr'
     | 'aria-hidden'
     | 'opacity'
+    | 'near-transparent'
+    | 'pointer-events-none'
+    | 'clipped'
     | 'zero-size'
     | 'off-screen'
     | 'collapsed-details'
@@ -2070,7 +2073,8 @@ function buildDomTree(
     if (htmlEl.disabled) {
       flags.disabled = true
     }
-    if (htmlEl.readOnly) {
+    // readOnly exists on <input>/<textarea> but not <select>
+    if ('readOnly' in htmlEl && htmlEl.readOnly) {
       flags.readOnly = true
     }
     // Validation state
@@ -2587,6 +2591,14 @@ export class DevChannel extends HTMLElement {
     popstate?: (e: PopStateEvent) => void
     mousedown?: (e: MouseEvent) => void
     mouseup?: (e: MouseEvent) => void
+    keydown?: (e: KeyboardEvent) => void
+    change?: (e: Event) => void
+    reset?: (e: Event) => void
+    invalid?: (e: Event) => void
+    cut?: (e: ClipboardEvent) => void
+    copy?: (e: ClipboardEvent) => void
+    paste?: (e: ClipboardEvent) => void
+    selectionchange?: (e: Event) => void
     originalFetch?: typeof fetch
   } = {}
 
@@ -3934,7 +3946,7 @@ export class DevChannel extends HTMLElement {
     const jsonArea = this.shadowRoot?.querySelector(
       '.test-json',
     ) as HTMLTextAreaElement
-    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement | null
     const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
 
     if (modal && nameInput && jsonArea) {
@@ -4098,7 +4110,7 @@ export class DevChannel extends HTMLElement {
           if (options.addAssertions && inputValue) {
             steps.push({
               action: 'assert',
-              assertion: { type: 'value', selector, expected: inputValue },
+              assertion: { type: 'value', selector, value: inputValue },
               description: `Verify ${inputLabel} is "${inputValue}"`,
             })
           }
@@ -4223,7 +4235,7 @@ export class DevChannel extends HTMLElement {
 
   private async sendToAgent() {
     const nameInput = this.shadowRoot?.querySelector('.test-name') as HTMLInputElement
-    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement | null
     const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
     
     // Description is optional - user will edit the prompt anyway
@@ -4244,7 +4256,7 @@ export class DevChannel extends HTMLElement {
 
   // Actually send recording after agent is selected from picker
   private async doSendRecordingToAgent(agentId: string, agentName: string, description: string) {
-    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement | null as HTMLElement
     const agentBtn = this.shadowRoot?.querySelector('[data-action="send-to-agent"]') as HTMLButtonElement
     
     if (!this.lastRecordingId) {
@@ -4304,7 +4316,7 @@ export class DevChannel extends HTMLElement {
     const jsonArea = this.shadowRoot?.querySelector(
       '.test-json',
     ) as HTMLTextAreaElement
-    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement | null
 
     if (jsonArea) {
       navigator.clipboard.writeText(jsonArea.value).then(() => {
@@ -4346,7 +4358,7 @@ export class DevChannel extends HTMLElement {
     const jsonArea = this.shadowRoot?.querySelector(
       '.test-json',
     ) as HTMLTextAreaElement
-    const successMsg = this.shadowRoot?.querySelector('.success-msg')
+    const successMsg = this.shadowRoot?.querySelector('.success-msg') as HTMLElement | null
 
     if (!nameInput?.value.trim()) {
       if (successMsg) {
@@ -6345,10 +6357,11 @@ export class DevChannel extends HTMLElement {
       },
     })
 
-    // Intercept fetch to capture network errors
+    // Intercept fetch to capture network errors. Cast to typeof fetch because the
+    // wrapper doesn't reimplement fetch's static members (e.g. preconnect).
     const originalFetch = window.fetch
     const self = this
-    window.fetch = async function (
+    window.fetch = (async function (
       input: RequestInfo | URL,
       init?: RequestInit,
     ): Promise<Response> {
@@ -6398,7 +6411,7 @@ export class DevChannel extends HTMLElement {
         })
         throw error
       }
-    }
+    }) as typeof fetch
 
     // Store original fetch for cleanup
     this.semanticHandlers.originalFetch = originalFetch
@@ -7150,6 +7163,7 @@ export class DevChannel extends HTMLElement {
         mutation: 0,
         console: 0,
         focus: 0,
+        recording: 0,
       }
       this.statsStartTime = Date.now()
 

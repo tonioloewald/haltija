@@ -337,7 +337,7 @@ function generateDocsMd(): string {
   lines.push('hj test-suite tests/a.json tests/b.json  # Run multiple')
   lines.push('```')
   lines.push('')
-  lines.push('Test steps: `navigate`, `click`, `type`, `check`, `key`, `wait`, `assert`, `eval`, `verify`')
+  lines.push('Test steps: `navigate`, `click`, `type`, `check`, `key`, `select`, `cut`, `copy`, `paste`, `wait`, `assert`, `eval`, `verify`')
   lines.push('')
   lines.push('The `type` action uses realistic per-character keystroke simulation by default.')
   lines.push('Add `"paste": true` for fast paste-style input (still framework-compatible).')

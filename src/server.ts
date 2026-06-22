@@ -2609,7 +2609,7 @@ Run 'hj --help' for all commands.`
 
           case 'key': {
             await requestFromBrowser('events', 'dispatch', {
-              selector: 'body',
+              selector: step.selector || 'body',
               event: 'keydown',
               options: {
                 key: step.key,
@@ -2619,6 +2619,23 @@ Run 'hj --help' for all commands.`
                 shiftKey: step.modifiers?.shift,
               },
             })
+            break
+          }
+
+          // Text-selection and clipboard steps (recorded by the widget). Replayed
+          // as the corresponding DOM event dispatched at the target element.
+          case 'select':
+          case 'cut':
+          case 'copy':
+          case 'paste': {
+            const resp = await requestFromBrowser('events', 'dispatch', {
+              selector: step.selector || 'body',
+              event: step.action === 'select' ? 'select' : step.action,
+            })
+            if (!resp.success) {
+              stepPassed = false
+              error = resp.error || `Failed to ${step.action} on ${step.selector}`
+            }
             break
           }
           
@@ -2963,6 +2980,14 @@ Run 'hj --help' for all commands.`
             if (step.window && windows.has(step.window)) {
               focusedWindowId = step.window
             }
+            break
+          }
+
+          default: {
+            // Unknown action: fail loudly rather than silently passing (stepPassed
+            // defaults to true, so a missing case would otherwise be a false pass).
+            stepPassed = false
+            error = `Unsupported step action: ${(step as { action?: string }).action}`
             break
           }
         }

@@ -1476,7 +1476,7 @@
       if (htmlEl.disabled) {
         flags.disabled = true;
       }
-      if (htmlEl.readOnly) {
+      if ("readOnly" in htmlEl && htmlEl.readOnly) {
         flags.readOnly = true;
       }
       if (!htmlEl.validity.valid) {
@@ -3057,7 +3057,7 @@
             if (options.addAssertions && inputValue) {
               steps.push({
                 action: "assert",
-                assertion: { type: "value", selector, expected: inputValue },
+                assertion: { type: "value", selector, value: inputValue },
                 description: `Verify ${inputLabel} is "${inputValue}"`
               });
             }
@@ -5377,7 +5377,8 @@ ${elementSummary}${moreText}`;
           scroll: 0,
           mutation: 0,
           console: 0,
-          focus: 0
+          focus: 0,
+          recording: 0
         };
         this.statsStartTime = Date.now();
         this.startSemanticEvents();
