@@ -442,23 +442,23 @@ await $`bun run scripts/embed-assets.ts`
 // 4. Build server, client, and index for Bun runtime (bundles the embedded component)
 await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts --outdir=dist --target=bun`
 
-// 4b. Emit TypeScript declarations (.d.ts) for all entry points — bun build does not.
-//     tsconfig.build.json excludes *.test.ts so only shippable types are emitted.
-//     tsc still emits declarations even with type errors (noEmitOnError is off), and
-//     the source has pre-existing type debt (see TODO.md) that bun build never checked.
-//     We don't gate the build on it, but we surface a one-line count instead of
-//     flooding the output, and we verify the public entry .d.ts actually landed.
+// 4b. Type-check and emit TypeScript declarations (.d.ts) for all entry points —
+//     bun build does neither. tsconfig.build.json excludes *.test.ts so only
+//     shippable types are emitted. The build is GATED on this: any type error
+//     fails the build, so type debt cannot silently re-accumulate. (tsc still
+//     emits declarations alongside errors, so the .d.ts are produced regardless.)
 {
   const tsc = await $`bunx tsc -p tsconfig.build.json --emitDeclarationOnly`.nothrow().quiet()
   const out = tsc.stdout.toString() + tsc.stderr.toString()
   const errCount = (out.match(/error TS\d+/g) || []).length
-  if (errCount > 0) {
-    console.warn(`⚠️  tsc reported ${errCount} pre-existing type error(s) (declarations still emitted; see TODO.md)`)
-  }
   const entryDts = ['index', 'component', 'server', 'client', 'test']
   const missing = entryDts.filter(n => !existsSync(`dist/${n}.d.ts`))
   if (missing.length > 0) {
     throw new Error(`Declaration emit failed for entry points: ${missing.join(', ')}`)
+  }
+  if (errCount > 0) {
+    console.error(out.trim())
+    throw new Error(`Type check failed: ${errCount} error(s). Fix them or run \`bunx tsc -p tsconfig.build.json --emitDeclarationOnly\` to see details.`)
   }
 }
 

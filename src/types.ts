@@ -781,6 +781,7 @@ export type TestAssertion =
   | { type: 'url', pattern: string }
   | { type: 'title', pattern: string }
   | { type: 'console-contains', text: string, level?: 'log' | 'warn' | 'error' }
+  | { type: 'console-empty', level?: 'log' | 'warn' | 'error' }
   | { type: 'eval', code: string, expected: any }
 
 /**

@@ -300,7 +300,7 @@ The build script (`scripts/build.ts`) generates:
 2. `dist/component.js` - Browser widget bundle (**IIFE**, auto-injecting). Served at `/component.js` and loaded via `<script>`. Also embedded into the server bundle (see below) and synced to the desktop app.
 3. `dist/component.esm.js` - Browser widget as **ESM** with real exports (`inject`, `VERSION`, `DevChannel`). This is what `import … from 'haltija/component'` resolves to. Do not use it as a script tag (it won't auto-run).
 4. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules. `server.js` embeds `dist/component.js` (via `embed-assets`) so it can serve `/component.js` even when no on-disk copy exists.
-5. `dist/*.d.ts` - TypeScript declarations for every entry point, emitted by `tsc -p tsconfig.build.json --emitDeclarationOnly` (bun build does not emit types). `tsconfig.build.json` excludes `*.test.ts`.
+5. `dist/*.d.ts` - TypeScript declarations for every entry point, emitted by `tsc -p tsconfig.build.json --emitDeclarationOnly` (bun build does not emit types). `tsconfig.build.json` excludes `*.test.ts`. **The build is gated on this type check — any type error fails `bun run build`.** Run `bunx tsc -p tsconfig.build.json --emitDeclarationOnly` to see errors during development.
 6. `apps/desktop/resources/component.js` - Synced copy for desktop app
 7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 8. `bin/hints.json` - CLI command hints generated from schema endpoints

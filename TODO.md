@@ -31,9 +31,7 @@
 - [ ] Playground color buttons have zero-size bounding rect in Electron — investigate layout
 
 ## Tech debt
-- [ ] Pre-existing TypeScript type errors surfaced by the new `tsc --emitDeclarationOnly` build step (`bun build` never type-checked). Down from ~147 to **70**. Declarations still emit; build is not gated on these. Fixed so far: `api-handlers.ts` (root cause was `EndpointDef.input` erasing the schema type so `Infer<…input>`/handler bodies fell back to examples — now `input: Base<TInput>`, which also repaired the previously-`never` `*Input` exports; plus `screenshot.format`/`quality`, `recordingStart.name`, `recording.id` union); duplicate `getKeyCode` (extracted to `src/key-codes.ts` + test). Remaining, by category:
-  - **`component.ts` (50)** — type-def drift: `TestStep` action union missing `select`/`paste`/`cut`/`copy`; visibility-reason union missing `pointer-events-none`/`near-transparent`/`clipped`; `DomQueryRequest` missing `ref`.
-  - **`server.ts` (11), `test-generator.ts` (4), `task-board.ts` (2), `agent-shell.ts` (2), `test-data.ts` (1)** — assorted real mismatches (`DevResponse` missing `selection`/`url`; `Element` vs `HTMLElement.dataset`; agent message-type union missing `agent-tool-output`).
+- [x] Eliminate all TypeScript type errors and gate the build on type-checking. Was ~147 (surfaced when `tsc --emitDeclarationOnly` was added; `bun build` never type-checked). Now **0**, and `bun run build` fails on any type error. Root-cause fixes included `EndpointDef.input: Base<TInput>` (repaired all previously-`never` `*Input` exports) and several real latent bugs found en route: duplicate `getKeyCode` dropping punctuation; recorder/test-generator value/text assertions using `expected` instead of `value`/`text`; recorded `key` steps ignoring `selector`; `select`/`cut`/`copy`/`paste` steps silently passing (no runner case); `/send/selection` calling `formatSelectionMessage` with wrong fields/arg-order; `console-empty` assertion unimplemented; `recording` category omitted from event-count stats.
 
 ## Testing
 - [x] Test helper for `.test.ts` files — `import { hj } from 'haltija/test'` (src/test.ts)

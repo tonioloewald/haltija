@@ -536,7 +536,7 @@ export class TaskBoard extends HTMLElement {
 
       col.addEventListener('drop', async (e) => {
         e.preventDefault()
-        const colEl = (e.target as HTMLElement).closest('.column-items')
+        const colEl = (e.target as HTMLElement).closest('.column-items') as HTMLElement | null
         colEl?.classList.remove('drag-over')
         
         if (this.draggedItem && colEl) {
@@ -572,7 +572,7 @@ export class TaskBoard extends HTMLElement {
     this.shadow.querySelectorAll('.task-card').forEach(card => {
       card.addEventListener('contextmenu', (e) => {
         e.preventDefault()
-        const id = parseInt((e.target as HTMLElement).closest('.task-card')?.dataset.id || '0')
+        const id = parseInt(((e.target as HTMLElement).closest('.task-card') as HTMLElement | null)?.dataset.id || '0')
         this.showContextMenu(e as MouseEvent, id)
       })
     })

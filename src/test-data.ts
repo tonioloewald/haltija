@@ -283,7 +283,7 @@ export function createTestDataGenerator(seed?: number): TestDataGenerator {
     // Text
     if (upper === 'TEXT') {
       const len = rng.int(5, 10)
-      const words = Array.from({ length: len }, () => rng.pick(WORDS))
+      const words: string[] = Array.from({ length: len }, () => rng.pick(WORDS))
       words[0] = words[0][0].toUpperCase() + words[0].slice(1)
       return words.join(' ') + '.'
     }

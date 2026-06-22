@@ -63,6 +63,7 @@ export type AgentEvent =
   | { type: 'agent-text'; shellId: string; text: string }
   | { type: 'agent-tool'; shellId: string; tool: string; input: string; id: string }
   | { type: 'agent-tool-result'; shellId: string; id: string; output: string }
+  | { type: 'agent-tool-output'; shellId: string; text: string }
   | { type: 'agent-done'; shellId: string; cost?: number; duration?: number }
   | { type: 'agent-error'; shellId: string; error: string }
   | { type: 'agent-status'; shellId: string; status: AgentSession['status'] }

@@ -15,6 +15,7 @@
  */
 
 import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode, VerifyExpectation, VerifyStep } from './types'
+import type { SelectionElement } from './agent-message-format'
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { generateTestPage } from './test-page'
@@ -1493,7 +1494,7 @@ async function handleRest(req: Request): Promise<Response> {
     
     // Assign name: explicit > next available from config names list > shell ID
     const agentNames = (terminalConfig as any)?.agent?.names || DEFAULT_AGENT_NAMES
-    let name = body.name
+    let name: string = body.name ?? ''
     if (!name) {
       // Find next available name (not already taken by shell or agent session)
       const existingAgentSessions = listAgentSessions()
@@ -2096,7 +2097,7 @@ Run 'hj --help' for all commands.`
   // Touch stream
   if (path === '/files/touches' && req.method === 'GET') {
     const shellId = url.searchParams.get('shellId') || '_global'
-    const touches = fileTouches.get(shellId) || []
+    const touches = fileTouches?.get(shellId) || []
     return Response.json({ touches: [...touches].reverse() }, { headers })
   }
 
@@ -2873,7 +2874,25 @@ Run 'hj --help' for all commands.`
                 }
                 break
               }
-              
+
+              case 'console-empty': {
+                const response = await requestFromBrowser('console', 'get', { since: 0 })
+                if (!response.success) {
+                  stepPassed = false
+                  error = 'Could not get console entries'
+                  break
+                }
+                const entries = response.data || []
+                const offending = assertion.level
+                  ? entries.filter((e: any) => e.level === assertion.level)
+                  : entries
+                if (offending.length > 0) {
+                  stepPassed = false
+                  error = `Expected console to be empty${assertion.level ? ` of ${assertion.level}` : ''}, found ${offending.length} entr${offending.length === 1 ? 'y' : 'ies'}`
+                }
+                break
+              }
+
               case 'eval': {
                 const response = await requestFromBrowser('eval', 'exec', { code: assertion.code })
                 if (!response.success) {
@@ -3463,9 +3482,11 @@ Run 'hj --help' for all commands.`
     // Default to submit: true for CLI usage
     const shouldSubmit = body.submit !== false
     
-    // Get the current selection from the browser
+    // Get the current selection from the browser. The widget returns the
+    // selection result object in `data` (elements, region, screenshot).
     const selectionResp = await requestFromBrowser('selection', 'result', {})
-    if (!selectionResp?.selection) {
+    const selection = selectionResp?.data as { elements?: SelectionElement[] } | undefined
+    if (!selection?.elements?.length) {
       return Response.json({ error: 'No selection available - use the selection tool in browser first' }, { status: 400, headers })
     }
     
@@ -3486,13 +3507,16 @@ Run 'hj --help' for all commands.`
       return Response.json({ error: 'No agent available' }, { status: 404, headers })
     }
     
-    // Format selection message
+    // Format selection message. Page title/URL come from the focused window's
+    // tracked state; optional caller context is prepended.
     const { formatSelectionMessage } = await import('./agent-message-format')
-    const messageText = formatSelectionMessage(
-      selectionResp.selection,
-      selectionResp.url || '',
-      body.context
+    const selWindow = focusedWindowId ? windows.get(focusedWindowId) : undefined
+    let messageText = formatSelectionMessage(
+      selection.elements,
+      selWindow?.title || '',
+      selWindow?.url || '',
     )
+    if (body.context) messageText = `${body.context}\n\n${messageText}`
     
     // Send to agent
     try {
@@ -3508,7 +3532,7 @@ Run 'hj --help' for all commands.`
         return Response.json({ 
           sent: true, 
           agent: targetShell.name || targetShell.id,
-          elementCount: selectionResp.selection.elements?.length || 0,
+          elementCount: selection.elements?.length || 0,
           submitted: shouldSubmit,
         }, { headers })
       } else {
@@ -3964,7 +3988,7 @@ const serverConfig = {
             console.log(`${LOG_PREFIX} Window disconnected: ${windowId}`)
             if (focusedWindowId === windowId) {
               // Focus next available window
-              focusedWindowId = windows.size > 0 ? windows.keys().next().value : null
+              focusedWindowId = windows.size > 0 ? (windows.keys().next().value ?? null) : null
             }
             // Update hj status for terminals
             updateHjStatus()
@@ -4042,7 +4066,7 @@ if (USE_HTTP) {
       throw err
     }
   }
-  PORT = httpServer.port
+  PORT = httpServer.port ?? PORT
 }
 
 if (USE_HTTPS) {
@@ -4067,7 +4091,7 @@ if (USE_HTTPS) {
       throw err
     }
   }
-  HTTPS_PORT = httpsServer.port
+  HTTPS_PORT = httpsServer.port ?? HTTPS_PORT
 }
 
 // Build URLs for display

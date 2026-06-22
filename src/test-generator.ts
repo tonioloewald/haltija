@@ -156,7 +156,7 @@ function eventToStep(
           assertion: {
             type: 'value',
             selector: step.selector,
-            expected: payload.finalValue,
+            value: payload.finalValue,
           },
           description: `Verify field contains "${truncate(payload.finalValue, 20)}"`,
           purpose: 'Confirm input was accepted',
@@ -175,9 +175,11 @@ function eventToStep(
       
       // Submit is usually triggered by click or Enter key
       // Add a wait for navigation/response
+      // The runner has no network-idle wait; use a fixed settle delay (the
+      // generated test is a starting point the author tunes).
       const waitStep: WaitStep = {
         action: 'wait',
-        wait: { type: 'network', timeout: 5000 },
+        duration: 1000,
         description: 'Wait for form submission to complete',
         purpose: 'Allow server to process the form',
       }
@@ -246,7 +248,7 @@ function eventToStep(
             assertion: {
               type: 'text',
               selector: payload.element,
-              expected: truncate(payload.text, 100),
+              text: truncate(payload.text, 100),
             },
             description: `Verify text changed to "${truncate(payload.text, 30)}"`,
             purpose: 'Confirm UI updated correctly',
