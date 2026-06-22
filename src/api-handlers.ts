@@ -83,6 +83,21 @@ export type EndpointHandler<T = any> = (
   ctx: HandlerContext
 ) => Promise<Response>
 
+/**
+ * Schema inputs that allow alternatives (e.g. `{ ref }` OR `{ selector }`) infer
+ * as a discriminated union. Handlers, however, treat the body as a single flat bag
+ * of optional fields (`body.ref`, `body.selector`, `body.diff ?? 100`). FlatBody
+ * collapses such a union into one object with every key across all members made
+ * optional, so those accesses type-check without weakening the registration call's
+ * own validation of the endpoint's input type.
+ */
+type KeysOfUnion<T> = T extends T ? keyof T : never
+/** Targeting param accepted by every endpoint (?window=<id>), not declared per-schema. */
+type CommonParams = { window?: string }
+type FlatBody<T> = ([T] extends [object]
+  ? { [K in KeysOfUnion<T>]?: Extract<T, Record<K, unknown>> extends Record<K, infer V> ? V : unknown }
+  : T) & CommonParams
+
 // ============================================
 // Handler Registry
 // ============================================
@@ -93,7 +108,7 @@ export const handlers = new Map<string, EndpointHandler>()
 /** Register a handler for an endpoint */
 export function registerHandler<T>(
   endpoint: EndpointDef<T>,
-  handler: EndpointHandler<T>
+  handler: EndpointHandler<FlatBody<T>>
 ): void {
   handlers.set(endpoint.path, handler as EndpointHandler)
 }

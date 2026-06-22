@@ -31,7 +31,10 @@
 - [ ] Playground color buttons have zero-size bounding rect in Electron — investigate layout
 
 ## Tech debt
-- [ ] Pre-existing TypeScript type errors (~150) surfaced by the new `tsc --emitDeclarationOnly` build step. `bun build` never type-checked, so these accumulated. Most are in `src/api-handlers.ts` (schema-union `body` accessed without narrowing) plus some in `component.ts`, `server.ts`, `test-generator.ts`. Declarations still emit correctly; build is not gated on them. Clean up incrementally so `tsc -p tsconfig.build.json` is error-free.
+- [ ] Pre-existing TypeScript type errors surfaced by the new `tsc --emitDeclarationOnly` build step (`bun build` never type-checked). Down from ~147 to **122** after two type-boundary fixes in `api-handlers.ts` (`FlatBody` collapses schema-union bodies; `CommonParams` adds the universal `window` param). Declarations still emit; build is not gated on these. Remaining, by category:
+  - **`api-handlers.ts` (50)** — handlers read parameters their endpoint schema doesn't declare (`diffDelay`, `x`/`deltaX`, `pierceShadow`, `minDelay`/`maxDelay`, etc.). Fix by completing the input schemas in `api-schema.ts` — also improves generated `API.md`/MCP defs. Mechanical.
+  - **`component.ts` (52)** — mixed. Includes a **real latent bug**: duplicate `getKeyCode` method (lines ~8440 and ~8847); the second wins and drops punctuation handling, so realistic typing emits wrong `KeyboardEvent.code` for `.`/`,`/`/` etc. Also type-def drift: `TestStep` action union missing `select`/`paste`/`cut`/`copy`; visibility-reason union missing `pointer-events-none`/`near-transparent`/`clipped`; `DomQueryRequest` missing `ref`.
+  - **`server.ts` (11), `test-generator.ts` (4), `task-board.ts` (2), `agent-shell.ts` (2), `test-data.ts` (1)** — assorted real mismatches (`DevResponse` missing `selection`/`url`; `Element` vs `HTMLElement.dataset`; agent message-type union missing `agent-tool-output`).
 
 ## Testing
 - [x] Test helper for `.test.ts` files — `import { hj } from 'haltija/test'` (src/test.ts)
