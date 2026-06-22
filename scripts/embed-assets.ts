@@ -39,6 +39,13 @@ const assets = {
   
   // Quick-start docs (auto-generated from schema, hj CLI focused)
   'DOCS.md': 'DOCS_MD',
+
+  // Agent discovery file (auto-generated from schema, https://llmstxt.org)
+  'llms.txt': 'LLMS_TXT',
+
+  // Browser component (IIFE) — embedded so the server bundle is self-contained
+  // and can always serve /component.js even if dist/component.js is absent.
+  'dist/component.js': 'COMPONENT_JS',
 }
 
 function escapeForTemplate(content: string): string {
@@ -74,7 +81,9 @@ function main() {
     const content = readFileSync(fullPath, 'utf-8')
     const escaped = escapeForTemplate(content)
     
-    lines.push(`export const ${varName} = \`${escaped}\``)
+    // Annotate as `: string` so tsc emits `declare const X: string` instead of
+    // inlining the entire (often huge) literal into the generated .d.ts.
+    lines.push(`export const ${varName}: string = \`${escaped}\``)
     lines.push('')
     
     console.log(`Embedded: ${filePath} -> ${varName} (${content.length} bytes)`)

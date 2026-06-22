@@ -30,6 +30,9 @@
 ## Bugs
 - [ ] Playground color buttons have zero-size bounding rect in Electron — investigate layout
 
+## Tech debt
+- [ ] Pre-existing TypeScript type errors (~150) surfaced by the new `tsc --emitDeclarationOnly` build step. `bun build` never type-checked, so these accumulated. Most are in `src/api-handlers.ts` (schema-union `body` accessed without narrowing) plus some in `component.ts`, `server.ts`, `test-generator.ts`. Declarations still emit correctly; build is not gated on them. Clean up incrementally so `tsc -p tsconfig.build.json` is error-free.
+
 ## Testing
 - [x] Test helper for `.test.ts` files — `import { hj } from 'haltija/test'` (src/test.ts)
 - [ ] Convert `screenshot-verify.sh` to a `.test.ts` using the test helper

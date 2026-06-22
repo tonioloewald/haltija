@@ -295,15 +295,20 @@ Located in `apps/mcp/`. Provides Model Context Protocol tools for Claude Desktop
 
 The build script (`scripts/build.ts`) generates:
 1. `src/version.ts` - Auto-generated from `package.json` version (do not edit)
-2. `dist/component.js` - Browser widget bundle (IIFE)
-3. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules
-4. `apps/desktop/resources/component.js` - Synced copy for desktop app
-5. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
-6. `bin/hints.json` - CLI command hints generated from schema endpoints
-7. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`)
-8. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
-9. `API.md` - Auto-generated API reference (do not edit directly)
-10. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
+2. `dist/component.js` - Browser widget bundle (**IIFE**, auto-injecting). Served at `/component.js` and loaded via `<script>`. Also embedded into the server bundle (see below) and synced to the desktop app.
+3. `dist/component.esm.js` - Browser widget as **ESM** with real exports (`inject`, `VERSION`, `DevChannel`). This is what `import … from 'haltija/component'` resolves to. Do not use it as a script tag (it won't auto-run).
+4. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules. `server.js` embeds `dist/component.js` (via `embed-assets`) so it can serve `/component.js` even when no on-disk copy exists.
+5. `dist/*.d.ts` - TypeScript declarations for every entry point, emitted by `tsc -p tsconfig.build.json --emitDeclarationOnly` (bun build does not emit types). `tsconfig.build.json` excludes `*.test.ts`.
+6. `apps/desktop/resources/component.js` - Synced copy for desktop app
+7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
+8. `bin/hints.json` - CLI command hints generated from schema endpoints
+9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`)
+10. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
+11. `API.md` - Auto-generated API reference (do not edit directly)
+12. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
+13. `llms.txt` - Auto-generated agent-discovery file ([llmstxt.org](https://llmstxt.org)) served at `/llms.txt` and shipped in the npm package (do not edit directly)
+
+**Build ordering note:** the IIFE component (#2) is built *before* `embed-assets` so it can be embedded into the server bundle; `embed-assets` also embeds `llms.txt`. Don't reorder these steps.
 
 ## Version Management
 

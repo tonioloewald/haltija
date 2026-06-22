@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declarationMap": false,
+    "outDir": "./dist",
+    "types": ["bun-types"]
+  },
+  "exclude": ["node_modules", "dist", "bin", "src/**/*.test.ts", "src/*.playwright.ts"]
+}

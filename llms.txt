@@ -1,0 +1,47 @@
+# Haltija
+
+> Browser control for AI agents - query DOM, click, type, run JS, watch mutations
+
+Haltija gives AI agents eyes and hands in a real browser. A widget injected into a
+browser tab connects over WebSocket to a local server that agents drive via the `hj`
+CLI or plain HTTP/REST. Agents see the actual DOM with stable ref IDs, click and type
+like a user, run JavaScript, and watch aggregated semantic events — instead of guessing.
+
+## Documentation
+- [Quick start (hj CLI)](https://github.com/tonioloewald/haltija/blob/main/DOCS.md): Agent-facing quick start — the `hj` commands and embedding snippet.
+- [REST API reference](https://github.com/tonioloewald/haltija/blob/main/API.md): Every endpoint with parameters and examples (auto-generated from the schema).
+- [README](https://github.com/tonioloewald/haltija/blob/main/README.md): Project overview and setup.
+- [Architecture & contributor guide](https://github.com/tonioloewald/haltija/blob/main/CLAUDE.md): How the server, widget, and CLI fit together.
+
+## Capabilities
+- **Status & info**: `GET /status`, `GET /stats`, `GET /version`, `GET /docs`, `GET /api`
+- **See the page**: `POST /tree`, `POST /query`, `POST /inspect`, `POST /inspectAll`, `POST /find`, `POST /form`
+- **Interact**: `POST /click`, `POST /type`, `POST /key`, `POST /drag`, `POST /highlight`, `POST /unhighlight`, `POST /scroll`, `POST /wait`, `POST /call`
+- **Navigate**: `POST /navigate`, `POST /refresh`, `GET /location`
+- **Watch events**: `POST /events/watch`, `POST /events/unwatch`, `GET /events`, `GET /events/stats`
+- **Watch DOM changes**: `POST /mutations/watch`, `POST /mutations/unwatch`, `GET /mutations/status`
+- **User selection**: `POST /select`, `POST /select/start`, `POST /select/cancel`, `GET /select/status`, `GET /select/result`, `POST /select/clear`
+- **Multiple tabs**: `GET /windows`, `POST /tabs/open`, `POST /tabs/close`, `POST /tabs/focus`
+- **Record & replay**: `POST /recording`, `POST /recording/start`, `POST /recording/stop`, `POST /recording/generate`, `GET /recordings`
+- **Run tests**: `POST /test/run`, `POST /test/suite`, `POST /test/validate`
+- **Debug & eval**: `GET /console`, `POST /eval`, `POST /fetch`, `POST /screenshot`, `POST /snapshot`, `POST /video/start`, `POST /video/stop`, `GET /video/status`
+
+## Embed in your app
+
+```js
+import { inject } from 'haltija/component'  // ESM (bundler)
+inject('ws://localhost:8700/ws/browser')                       // visible widget
+inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible
+```
+
+Or via a script tag (auto-injecting IIFE bundle served by the running server):
+
+```html
+<script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>
+```
+
+## Optional
+- [Recipes](https://github.com/tonioloewald/haltija/blob/main/docs/recipes.md): Common workflows (login flows, codebase exploration, recording bug reports).
+- [CI integration](https://github.com/tonioloewald/haltija/blob/main/docs/CI-INTEGRATION.md): Running Haltija headless in CI.
+- [Agent prompt](https://github.com/tonioloewald/haltija/blob/main/docs/agent-prompt.md): Drop-in instructions for an agent using Haltija.
+- `GET /llms.txt`, `GET /docs`, `GET /api`, `GET /endpoints`: A running server serves these live for discovery.

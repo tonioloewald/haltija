@@ -5,7 +5,7 @@
  */
 
 import { $ } from 'bun'
-import { writeFileSync, readFileSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync } from 'fs'
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
@@ -351,14 +351,116 @@ function generateDocsMd(): string {
 
 writeFileSync('DOCS.md', generateDocsMd())
 
-// 2. Embed static assets into TypeScript (after schema-derived files are generated)
-await $`bun run scripts/embed-assets.ts`
+// 6b. Generate llms.txt - discovery file for AI agents (https://llmstxt.org)
+// A concise, link-first overview of the library so an agent encountering Haltija
+// (via npm or a live server) can understand its capabilities and find the details.
+const REPO_URL = 'https://github.com/tonioloewald/haltija'
+const RAW_BASE = `${REPO_URL}/blob/main`
 
-// 3. Build browser component (IIFE for injection)
+function generateLlmsTxt(): string {
+  const lines: string[] = [
+    '# Haltija',
+    '',
+    `> ${pkg.description}`,
+    '',
+    'Haltija gives AI agents eyes and hands in a real browser. A widget injected into a',
+    'browser tab connects over WebSocket to a local server that agents drive via the `hj`',
+    'CLI or plain HTTP/REST. Agents see the actual DOM with stable ref IDs, click and type',
+    'like a user, run JavaScript, and watch aggregated semantic events — instead of guessing.',
+    '',
+    '## Documentation',
+    `- [Quick start (hj CLI)](${RAW_BASE}/DOCS.md): Agent-facing quick start — the \`hj\` commands and embedding snippet.`,
+    `- [REST API reference](${RAW_BASE}/API.md): Every endpoint with parameters and examples (auto-generated from the schema).`,
+    `- [README](${RAW_BASE}/README.md): Project overview and setup.`,
+    `- [Architecture & contributor guide](${RAW_BASE}/CLAUDE.md): How the server, widget, and CLI fit together.`,
+    '',
+    '## Capabilities',
+  ]
+
+  // Group public endpoints by category, mirroring the DOCS.md ordering.
+  const byCategory = new Map<string, typeof ALL_ENDPOINTS>()
+  for (const ep of ALL_ENDPOINTS) {
+    if ((ep as any).visibility === 'internal') continue
+    const cat = (ep as any).category || 'other'
+    if (!byCategory.has(cat)) byCategory.set(cat, [])
+    byCategory.get(cat)!.push(ep)
+  }
+  const categoryOrder = ['meta', 'dom', 'interaction', 'navigation', 'events', 'mutations', 'selection', 'windows', 'recording', 'testing', 'debug', 'other']
+  const categoryTitles: Record<string, string> = {
+    meta: 'Status & info', dom: 'See the page', interaction: 'Interact',
+    navigation: 'Navigate', events: 'Watch events', mutations: 'Watch DOM changes',
+    selection: 'User selection', windows: 'Multiple tabs', recording: 'Record & replay',
+    testing: 'Run tests', debug: 'Debug & eval', other: 'Other',
+  }
+  for (const cat of categoryOrder) {
+    const eps = byCategory.get(cat)
+    if (!eps || eps.length === 0) continue
+    const summary = eps.map(ep => `\`${ep.method} ${ep.path}\``).join(', ')
+    lines.push(`- **${categoryTitles[cat] || cat}**: ${summary}`)
+  }
+  lines.push('')
+
+  lines.push('## Embed in your app')
+  lines.push('')
+  lines.push('```js')
+  lines.push("import { inject } from 'haltija/component'  // ESM (bundler)")
+  lines.push("inject('ws://localhost:8700/ws/browser')                       // visible widget")
+  lines.push("inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible")
+  lines.push('```')
+  lines.push('')
+  lines.push('Or via a script tag (auto-injecting IIFE bundle served by the running server):')
+  lines.push('')
+  lines.push('```html')
+  lines.push('<script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>')
+  lines.push('```')
+  lines.push('')
+
+  lines.push('## Optional')
+  lines.push(`- [Recipes](${RAW_BASE}/docs/recipes.md): Common workflows (login flows, codebase exploration, recording bug reports).`)
+  lines.push(`- [CI integration](${RAW_BASE}/docs/CI-INTEGRATION.md): Running Haltija headless in CI.`)
+  lines.push(`- [Agent prompt](${RAW_BASE}/docs/agent-prompt.md): Drop-in instructions for an agent using Haltija.`)
+  lines.push('- `GET /llms.txt`, `GET /docs`, `GET /api`, `GET /endpoints`: A running server serves these live for discovery.')
+  lines.push('')
+
+  return lines.join('\n')
+}
+
+writeFileSync('llms.txt', generateLlmsTxt())
+
+// 3. Build browser component (IIFE for script-tag injection + /component.js).
+//    Built BEFORE embed-assets so the IIFE can be embedded into the server bundle,
+//    making dist/server.js self-contained (it can always serve /component.js).
 await $`bun build ./src/component.ts --outdir=dist --target=browser --format=iife`
 
-// 4. Build server, client, and index for Bun runtime
+// 3b. Build browser component as ESM (real exports) for bundler imports:
+//     import { inject, VERSION, DevChannel } from 'haltija/component'
+await $`bun build ./src/component.ts --target=browser --format=esm --outfile=dist/component.esm.js`
+
+// 2. Embed static assets into TypeScript (after schema-derived files + component.js exist)
+await $`bun run scripts/embed-assets.ts`
+
+// 4. Build server, client, and index for Bun runtime (bundles the embedded component)
 await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts --outdir=dist --target=bun`
+
+// 4b. Emit TypeScript declarations (.d.ts) for all entry points — bun build does not.
+//     tsconfig.build.json excludes *.test.ts so only shippable types are emitted.
+//     tsc still emits declarations even with type errors (noEmitOnError is off), and
+//     the source has pre-existing type debt (see TODO.md) that bun build never checked.
+//     We don't gate the build on it, but we surface a one-line count instead of
+//     flooding the output, and we verify the public entry .d.ts actually landed.
+{
+  const tsc = await $`bunx tsc -p tsconfig.build.json --emitDeclarationOnly`.nothrow().quiet()
+  const out = tsc.stdout.toString() + tsc.stderr.toString()
+  const errCount = (out.match(/error TS\d+/g) || []).length
+  if (errCount > 0) {
+    console.warn(`⚠️  tsc reported ${errCount} pre-existing type error(s) (declarations still emitted; see TODO.md)`)
+  }
+  const entryDts = ['index', 'component', 'server', 'client', 'test']
+  const missing = entryDts.filter(n => !existsSync(`dist/${n}.d.ts`))
+  if (missing.length > 0) {
+    throw new Error(`Declaration emit failed for entry points: ${missing.join(', ')}`)
+  }
+}
 
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()

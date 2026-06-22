@@ -18,7 +18,7 @@ import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest,
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
 import { generateTestPage } from './test-page'
-import { ICON_SVG, API_MD, DOCS_MD } from './embedded-assets'
+import { ICON_SVG, API_MD, DOCS_MD, LLMS_TXT, COMPONENT_JS } from './embedded-assets'
 import * as api from './api-schema'
 import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
@@ -144,22 +144,29 @@ const componentJsPaths = [
   join(process.cwd(), 'component.js'),               // CWD direct
 ]
 
-// Load component.js fresh on each request to always serve latest build
+// Inject the server session ID into the component bundle (bundler emits 'var').
+function withSessionId(componentJs: string): string {
+  return componentJs.replace(
+    /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
+    `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
+  )
+}
+
+// Load component.js fresh on each request to always serve the latest build during
+// development. Falls back to the copy embedded into this bundle at build time, so a
+// published/relocated server can always serve the widget even without dist/component.js.
 function getComponentJs(): string {
   for (const componentJsPath of componentJsPaths) {
     try {
       if (!existsSync(componentJsPath)) continue
-      const componentJs = readFileSync(componentJsPath, 'utf-8')
-      // Inject server session ID - replace the placeholder (bundler uses 'var' not 'const')
-      return componentJs.replace(
-        /var SERVER_SESSION_ID\s*=\s*["'][^"']*["']/,
-        `var SERVER_SESSION_ID = "${SERVER_SESSION_ID}"`
-      )
+      return withSessionId(readFileSync(componentJsPath, 'utf-8'))
     } catch {
       continue
     }
   }
-  return ''
+  // No on-disk copy found — serve the embedded fallback (empty only if this server
+  // was itself built before the component existed, which the build prevents).
+  return COMPONENT_JS ? withSessionId(COMPONENT_JS) : ''
 }
 
 // Connected browser clients (WebSocket -> browserId)
@@ -875,10 +882,16 @@ async function handleRest(req: Request): Promise<Response> {
   if (path === '/component.js') {
     const componentJs = getComponentJs()
     if (!componentJs) {
-      return new Response('// Component not built. Run: bun run build', { 
-        status: 503,
-        headers: { ...headers, 'Content-Type': 'application/javascript' } 
-      })
+      return new Response(
+        '// Haltija component bundle unavailable.\n' +
+        '// This server was built without the browser component. Run `bun run build`\n' +
+        '// in the haltija source, or reinstall the package (a complete publish ships\n' +
+        '// dist/component.js and embeds it in the server bundle).',
+        {
+          status: 503,
+          headers: { ...headers, 'Content-Type': 'application/javascript' }
+        }
+      )
     }
     return new Response(componentJs, { 
       headers: { ...headers, 'Content-Type': 'application/javascript' } 
@@ -1070,8 +1083,15 @@ async function handleRest(req: Request): Promise<Response> {
   
   // Agent documentation endpoint - everything an LLM needs to use this tool
   if (path === '/docs' && req.method === 'GET') {
-    return new Response(DOCS_MD, { 
-      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } 
+    return new Response(DOCS_MD, {
+      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' }
+    })
+  }
+
+  // Agent discovery file (https://llmstxt.org) — concise, link-first capability overview
+  if (path === '/llms.txt' && req.method === 'GET') {
+    return new Response(LLMS_TXT, {
+      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' }
     })
   }
 
