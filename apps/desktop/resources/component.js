@@ -98,6 +98,47 @@
     return lower.includes(parsed.searchText);
   }
 
+  // src/key-codes.ts
+  function keyToCode(key) {
+    const specialKeys = {
+      Enter: "Enter",
+      Escape: "Escape",
+      Tab: "Tab",
+      Backspace: "Backspace",
+      Delete: "Delete",
+      ArrowUp: "ArrowUp",
+      ArrowDown: "ArrowDown",
+      ArrowLeft: "ArrowLeft",
+      ArrowRight: "ArrowRight",
+      Home: "Home",
+      End: "End",
+      PageUp: "PageUp",
+      PageDown: "PageDown",
+      " ": "Space",
+      Space: "Space",
+      ".": "Period",
+      ",": "Comma",
+      "/": "Slash",
+      ";": "Semicolon",
+      "'": "Quote",
+      "[": "BracketLeft",
+      "]": "BracketRight",
+      "\\": "Backslash",
+      "-": "Minus",
+      "=": "Equal",
+      "`": "Backquote"
+    };
+    if (specialKeys[key])
+      return specialKeys[key];
+    if (/^F\d{1,2}$/.test(key))
+      return key;
+    if (/^[a-zA-Z]$/.test(key))
+      return `Key${key.toUpperCase()}`;
+    if (/^[0-9]$/.test(key))
+      return `Digit${key}`;
+    return key;
+  }
+
   // src/component.ts
   var VERSION2 = VERSION;
   var PRODUCT_NAME = "Haltija";
@@ -6193,31 +6234,6 @@ ${elementSummary}${moreText}`;
         el.value = value;
       }
     }
-    getKeyCode(char) {
-      const upper = char.toUpperCase();
-      if (upper >= "A" && upper <= "Z")
-        return `Key${upper}`;
-      if (char >= "0" && char <= "9")
-        return `Digit${char}`;
-      const specialKeys = {
-        " ": "Space",
-        ".": "Period",
-        ",": "Comma",
-        "/": "Slash",
-        ";": "Semicolon",
-        "'": "Quote",
-        "[": "BracketLeft",
-        "]": "BracketRight",
-        "\\": "Backslash",
-        "-": "Minus",
-        "=": "Equal",
-        "`": "Backquote",
-        Enter: "Enter",
-        Tab: "Tab",
-        Backspace: "Backspace"
-      };
-      return specialKeys[char] || `Key${upper}`;
-    }
     getAdjacentKeys() {
       return {
         a: ["s", "q", "w", "z"],
@@ -6464,32 +6480,7 @@ ${elementSummary}${moreText}`;
       }
     }
     getKeyCode(key) {
-      const specialKeys = {
-        Enter: "Enter",
-        Escape: "Escape",
-        Tab: "Tab",
-        Backspace: "Backspace",
-        Delete: "Delete",
-        ArrowUp: "ArrowUp",
-        ArrowDown: "ArrowDown",
-        ArrowLeft: "ArrowLeft",
-        ArrowRight: "ArrowRight",
-        Home: "Home",
-        End: "End",
-        PageUp: "PageUp",
-        PageDown: "PageDown",
-        " ": "Space",
-        Space: "Space"
-      };
-      if (specialKeys[key])
-        return specialKeys[key];
-      if (/^F\d{1,2}$/.test(key))
-        return key;
-      if (/^[a-zA-Z]$/.test(key))
-        return `Key${key.toUpperCase()}`;
-      if (/^[0-9]$/.test(key))
-        return `Digit${key}`;
-      return key;
+      return keyToCode(key);
     }
     getElementLabel(el) {
       const text = el.textContent?.trim().slice(0, 30);

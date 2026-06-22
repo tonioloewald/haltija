@@ -743,6 +743,7 @@ function getStableSelectorWithFallback(el: Element): DualSelector {
 // Custom pseudo-selector support - see src/text-selector.ts for parser
 import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
 import type { ParsedTextSelector } from './text-selector'
+import { keyToCode } from './key-codes'
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
@@ -8434,33 +8435,6 @@ export class DevChannel extends HTMLElement {
     }
   }
 
-  /**
-   * Get key code for a character
-   */
-  private getKeyCode(char: string): string {
-    const upper = char.toUpperCase()
-    if (upper >= 'A' && upper <= 'Z') return `Key${upper}`
-    if (char >= '0' && char <= '9') return `Digit${char}`
-
-    const specialKeys: Record<string, string> = {
-      ' ': 'Space',
-      '.': 'Period',
-      ',': 'Comma',
-      '/': 'Slash',
-      ';': 'Semicolon',
-      "'": 'Quote',
-      '[': 'BracketLeft',
-      ']': 'BracketRight',
-      '\\': 'Backslash',
-      '-': 'Minus',
-      '=': 'Equal',
-      '`': 'Backquote',
-      Enter: 'Enter',
-      Tab: 'Tab',
-      Backspace: 'Backspace',
-    }
-    return specialKeys[char] || `Key${upper}`
-  }
 
   /**
    * Adjacent keys map for realistic typos
@@ -8845,38 +8819,7 @@ export class DevChannel extends HTMLElement {
    * Get the code value for a key
    */
   private getKeyCode(key: string): string {
-    // Special keys
-    const specialKeys: Record<string, string> = {
-      Enter: 'Enter',
-      Escape: 'Escape',
-      Tab: 'Tab',
-      Backspace: 'Backspace',
-      Delete: 'Delete',
-      ArrowUp: 'ArrowUp',
-      ArrowDown: 'ArrowDown',
-      ArrowLeft: 'ArrowLeft',
-      ArrowRight: 'ArrowRight',
-      Home: 'Home',
-      End: 'End',
-      PageUp: 'PageUp',
-      PageDown: 'PageDown',
-      ' ': 'Space',
-      Space: 'Space',
-    }
-
-    if (specialKeys[key]) return specialKeys[key]
-
-    // Function keys
-    if (/^F\d{1,2}$/.test(key)) return key
-
-    // Letters
-    if (/^[a-zA-Z]$/.test(key)) return `Key${key.toUpperCase()}`
-
-    // Digits
-    if (/^[0-9]$/.test(key)) return `Digit${key}`
-
-    // Default: use key as code
-    return key
+    return keyToCode(key)
   }
 
   /**

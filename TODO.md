@@ -33,7 +33,7 @@
 ## Tech debt
 - [ ] Pre-existing TypeScript type errors surfaced by the new `tsc --emitDeclarationOnly` build step (`bun build` never type-checked). Down from ~147 to **122** after two type-boundary fixes in `api-handlers.ts` (`FlatBody` collapses schema-union bodies; `CommonParams` adds the universal `window` param). Declarations still emit; build is not gated on these. Remaining, by category:
   - **`api-handlers.ts` (50)** — handlers read parameters their endpoint schema doesn't declare (`diffDelay`, `x`/`deltaX`, `pierceShadow`, `minDelay`/`maxDelay`, etc.). Fix by completing the input schemas in `api-schema.ts` — also improves generated `API.md`/MCP defs. Mechanical.
-  - **`component.ts` (52)** — mixed. Includes a **real latent bug**: duplicate `getKeyCode` method (lines ~8440 and ~8847); the second wins and drops punctuation handling, so realistic typing emits wrong `KeyboardEvent.code` for `.`/`,`/`/` etc. Also type-def drift: `TestStep` action union missing `select`/`paste`/`cut`/`copy`; visibility-reason union missing `pointer-events-none`/`near-transparent`/`clipped`; `DomQueryRequest` missing `ref`.
+  - **`component.ts` (50)** — mixed. ~~Duplicate `getKeyCode` dropping punctuation codes~~ **fixed** (extracted to `src/key-codes.ts` + unit test). Remaining is type-def drift: `TestStep` action union missing `select`/`paste`/`cut`/`copy`; visibility-reason union missing `pointer-events-none`/`near-transparent`/`clipped`; `DomQueryRequest` missing `ref`.
   - **`server.ts` (11), `test-generator.ts` (4), `task-board.ts` (2), `agent-shell.ts` (2), `test-data.ts` (1)** — assorted real mismatches (`DevResponse` missing `selection`/`url`; `Element` vs `HTMLElement.dataset`; agent message-type union missing `agent-tool-output`).
 
 ## Testing
