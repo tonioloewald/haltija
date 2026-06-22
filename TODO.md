@@ -33,3 +33,34 @@
 ## Testing
 - [x] Test helper for `.test.ts` files — `import { hj } from 'haltija/test'` (src/test.ts)
 - [ ] Convert `screenshot-verify.sh` to a `.test.ts` using the test helper
+- [ ] Desktop integration tests need a running app — `apps/desktop/integration.test.ts` fails with ConnectionRefused when the app isn't up. Skip gracefully or document the requirement clearly.
+
+## Roadmap (migrated from former issue tracker)
+
+Already shipped and dropped during migration: `hj` CLI wrapper, graceful port handling
+(`HALTIJA_PORT` + auto-fallback), and optional API token auth (`HALTIJA_TOKEN`).
+
+### Phase 1 — Documentation & Discovery
+- [ ] Landing page hero — README buries the lede. Lead with one-liner setup (`bunx haltija` + one script tag), a 30-second video of AI controlling a real app, and a clear "Get Started in 2 Minutes" path.
+- [ ] Consolidate documentation — docs scattered across CLAUDE.md, /docs, /api, embedded markdown, README. One organized `docs/` hierarchy: Quick Start → Guides → API Reference → Architecture.
+- [ ] Use case galleries / recipes page — common workflows: testing a login flow, exploring a codebase, recording/replaying bug reports, generating tests from manual exploration.
+
+### Phase 2 — Developer Experience
+- [ ] Browser extension (Chrome/Firefox) — persistent injection that survives navigation and works on CSP-restricted sites; toggle per-site. Replaces the manual-per-page bookmarklet.
+- [ ] Better error messages with suggestions — e.g. `Element not found: #submit` → suggest nearby matches like `#submit-btn`, `button.submit`.
+- [ ] TypeScript SDK — type-safe wrapper over the REST API (`import { Haltija } from 'haltija'; await h.click('#submit')`), published to npm.
+- [ ] Flight Recorder UI — visual playback in the desktop app: timeline of Action → DOM Diff (visualized) → Result. Builds trust in AI decisions.
+
+### Phase 4 — Enterprise Readiness (dogfood in real CI first; these are hypotheses)
+- [ ] Audit logging — record executed commands with timestamps, optional file persistence, queryable history.
+
+### Phase 5 — Cloud & CI Integration
+- [ ] GitHub Action for CI/CD — `uses: haltija/action@v1`, plus a GitLab CI template, pre-configured for Next.js / Vite / CRA.
+- [ ] Docker image — `docker run -p 4000:4000 haltija/haltija`; headless for CI, Xvfb for headed mode in containers.
+
+### Phase 7 — Hosted Service
+- [ ] Agent-as-a-Service — zero-config AI automation with near-zero marginal cost (route messages, don't run browsers): Firebase stack, relay service, magic token, customer subdomains.
+
+### Other features
+- [ ] Multi-match reporting — when a selector matches multiple elements, act on the first but report "N others matched"; enables `--nth N` and `--all` flags.
+- [ ] Pre-built binaries on GitHub Releases — automated release workflow on git tag publishing macOS (arm64, x64), Linux, and Windows builds.

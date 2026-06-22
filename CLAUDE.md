@@ -338,13 +338,10 @@ The GitHub Actions workflow (`.github/workflows/test-qa.yml`) runs on push/PR to
 
 ## Issue Tracking
 
-Two complementary systems:
-
-- **`bd` (beads)** — primary issue tracker, sourced from `.beads/issues.jsonl`. Use `bd ready` to find work, `bd show <id>` to view, `bd update <id> --status in_progress` to claim, `bd close <id>` to complete, `bd sync` to commit changes. See `AGENTS.md` for the full session-completion workflow (the "landing the plane" steps culminating in `git push`).
-- **`TODO.md`** — free-form roadmap and feature notes (build/distribution items, multi-phase plans, known bugs). Not granular issues — those live in `bd`.
+- **`TODO.md`** — the roadmap and issue list (build/distribution items, multi-phase plans, known bugs). Keep it current as you work. See `AGENTS.md` for the session-completion workflow (the "landing the plane" steps culminating in `git push`).
 
 ## Related Docs
 
 - `COMPONENT-PATTERNS.md` — Required reading before editing `component.ts`, `task-board.ts`, or any custom element. Covers stable-by-default rendering, shadow DOM encapsulation, animation gotchas (transitions need start points; can't animate `left`↔`right`), drag handling, console interception, and WebSocket reconnection with kill flags.
-- `AGENTS.md` — Session workflow rules (issue tracking via `bd`, mandatory push on session end).
+- `AGENTS.md` — Session workflow rules (issue tracking via `TODO.md`, mandatory push on session end).
 - `docs/` — Hand-written reference docs (`agent-prompt.md`, `recipes.md`, `UX-CRIMES.md`, `CI-INTEGRATION.md`, `AGENTIC-IDE.md`, `REST-API.md`). Distinct from the auto-generated `API.md` and `DOCS.md` at the repo root.
