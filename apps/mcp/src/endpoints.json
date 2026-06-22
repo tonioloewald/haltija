@@ -1253,6 +1253,20 @@
           ],
           "description": "Element to capture (omit for full page)"
         },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Image format: png (default), webp, or jpeg"
+        },
+        "quality": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Quality 0-100 for lossy formats (webp/jpeg)"
+        },
         "scale": {
           "type": [
             "number",
@@ -1481,11 +1495,19 @@
           "description": "Test name (for generate action)"
         },
         "id": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
           ],
-          "description": "Recording ID or index number (for replay action)"
+          "description": "Recording ID or index number (for replay action)",
+          "type": [
+            null,
+            "null"
+          ]
         },
         "window": {
           "type": [
@@ -1508,7 +1530,15 @@
     "description": "Deprecated: Use POST /recording {\"action\":\"start\"} instead.",
     "inputSchema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Recording/test name"
+        }
+      },
       "required": [],
       "additionalProperties": false
     }

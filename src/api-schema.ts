@@ -10,7 +10,7 @@
  * Uses tosijs-schema for JSON Schema generation with TypeScript inference.
  */
 
-import { s, type Infer } from 'tosijs-schema'
+import { s, type Infer, type Base } from 'tosijs-schema'
 
 // ============================================
 // Endpoint Definition Type
@@ -57,7 +57,10 @@ export interface EndpointDef<TInput = any> {
   method: 'GET' | 'POST'
   summary: string // One-line description
   description?: string // Detailed description for docs
-  input?: { schema: any; validate: (data: any, opts?: any) => boolean }
+  // A tosijs-schema builder (e.g. s.object({...})). Typed as Base<TInput> so
+  // TInput is inferred from the schema itself — this is what makes Infer<typeof
+  // x.input> and the handler `body` type reflect the declared parameters.
+  input?: Base<TInput>
   examples?: EndpointExample<TInput>[] // Valid input examples
   invalidExamples?: InvalidExample[] // Invalid inputs for testing
   category?: string // Grouping for docs (interaction, dom, events, etc.)
@@ -1452,6 +1455,8 @@ Response: { success, path?, image?, width, height, source }`,
     ref: s.string.describe('Ref ID from /tree output - capture specific element').optional,
     selector: s.string.describe('Element to capture (omit for full page)')
       .optional,
+    format: s.string.describe('Image format: png (default), webp, or jpeg').optional,
+    quality: s.number.describe('Quality 0-100 for lossy formats (webp/jpeg)').optional,
     scale: s.number.describe('Scale factor (default 1)').optional,
     maxWidth: s.number.describe('Max width in pixels').optional,
     maxHeight: s.number.describe('Max height in pixels').optional,
@@ -1695,7 +1700,7 @@ Workflow: start → (user interacts, navigates pages) → stop → list → repl
       .enum(['start', 'stop', 'status', 'generate', 'list', 'replay'] as const)
       .describe('Recording action to perform'),
     name: s.string.describe('Test name (for generate action)').optional,
-    id: s.string.describe('Recording ID or index number (for replay action)').optional,
+    id: s.union([s.string, s.number]).describe('Recording ID or index number (for replay action)').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -1745,7 +1750,9 @@ export const recordingStart = endpoint({
   summary: '[Deprecated] Use /recording with action:"start"',
   description: 'Deprecated: Use POST /recording {"action":"start"} instead.',
   category: 'recording',
-  input: s.object({}),
+  input: s.object({
+    name: s.string.describe('Recording/test name').optional,
+  }),
 })
 
 export const recordingStop = endpoint({

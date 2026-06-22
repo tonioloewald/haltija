@@ -2206,7 +2206,7 @@ Workflow: start → (user interacts, navigates pages) → stop → list → repl
 |------|------|-------------|
 | \`action\` | string | Recording action to perform *(required)* |
 | \`name\` | string,null | Test name (for generate action) |
-| \`id\` | string,null | Recording ID or index number (for replay action) |
+| \`id\` | ,null | Recording ID or index number (for replay action) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
@@ -2247,6 +2247,12 @@ Workflow: start → (user interacts, navigates pages) → stop → list → repl
 **[Deprecated] Use /recording with action:"start"**
 
 Deprecated: Use POST /recording {"action":"start"} instead.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`name\` | string,null | Recording/test name |
 
 ---
 
@@ -2502,6 +2508,8 @@ Response: { success, path?, image?, width, height, source }
 |------|------|-------------|
 | \`ref\` | string,null | Ref ID from /tree output - capture specific element |
 | \`selector\` | string,null | Element to capture (omit for full page) |
+| \`format\` | string,null | Image format: png (default), webp, or jpeg |
+| \`quality\` | number,null | Quality 0-100 for lossy formats (webp/jpeg) |
 | \`scale\` | number,null | Scale factor (default 1) |
 | \`maxWidth\` | number,null | Max width in pixels |
 | \`maxHeight\` | number,null | Max height in pixels |
@@ -2727,7 +2735,7 @@ hj --help              # All commands
 ### Record & Replay
 
 - \`hj recording [action, name, id, ...]\` - Record user actions and generate tests
-- \`hj recording-start\` - [Deprecated] Use /recording with action:"start"
+- \`hj recording-start [name]\` - [Deprecated] Use /recording with action:"start"
 - \`hj recording-stop\` - [Deprecated] Use /recording with action:"stop"
 - \`hj recording-generate [name]\` - [Deprecated] Use /recording with action:"generate"
 - \`hj recordings\` - [Deprecated] Use /recording with action:"list"
@@ -2743,7 +2751,7 @@ hj --help              # All commands
 - \`hj console\` - Get console output
 - \`hj eval [code, window]\` - Execute JavaScript
 - \`hj fetch [url, window]\` - Fetch a URL from within the tab context
-- \`hj screenshot [ref, selector, scale, ...]\` - Capture a screenshot
+- \`hj screenshot [ref, selector, format, ...]\` - Capture a screenshot
 - \`hj snapshot [trigger, context]\` - Capture page snapshot
 - \`hj video-start [maxDuration, window]\` - Start video recording
 - \`hj video-stop [window]\` - Stop video recording

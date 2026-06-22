@@ -87,7 +87,7 @@ hj --help              # All commands
 ### Record & Replay
 
 - `hj recording [action, name, id, ...]` - Record user actions and generate tests
-- `hj recording-start` - [Deprecated] Use /recording with action:"start"
+- `hj recording-start [name]` - [Deprecated] Use /recording with action:"start"
 - `hj recording-stop` - [Deprecated] Use /recording with action:"stop"
 - `hj recording-generate [name]` - [Deprecated] Use /recording with action:"generate"
 - `hj recordings` - [Deprecated] Use /recording with action:"list"
@@ -103,7 +103,7 @@ hj --help              # All commands
 - `hj console` - Get console output
 - `hj eval [code, window]` - Execute JavaScript
 - `hj fetch [url, window]` - Fetch a URL from within the tab context
-- `hj screenshot [ref, selector, scale, ...]` - Capture a screenshot
+- `hj screenshot [ref, selector, format, ...]` - Capture a screenshot
 - `hj snapshot [trigger, context]` - Capture page snapshot
 - `hj video-start [maxDuration, window]` - Start video recording
 - `hj video-stop [window]` - Stop video recording
