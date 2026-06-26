@@ -37,7 +37,7 @@ hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
 hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
-hj evaluate "document.title"   # Run JS in the page
+hj evaluate "document.title"   # Run JS in the page (prints the result verbatim; pass --json for the full DevResponse)
 hj screenshot          # Capture the page
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 ```

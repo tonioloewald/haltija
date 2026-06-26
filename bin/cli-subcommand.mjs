@@ -765,6 +765,25 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path))
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(', ')
         if (meta) console.log(dim(meta))
+      } else if (!jsonOutput && subcommand === 'eval') {
+        // Print the eval result unwrapped so agents (and humans) can read it
+        // directly. Strings go to stdout as-is — no JSON escaping of newlines,
+        // quotes, etc. Objects/arrays still pretty-print as JSON. Failures
+        // go to stderr with a non-zero exit. Pass --json to get the full
+        // DevResponse envelope instead.
+        if (json.success === false) {
+          console.error(`eval failed: ${json.error || 'unknown error'}`)
+          process.exit(1)
+        }
+        const result = json.data
+        if (result === null || result === undefined) {
+          // nothing to print — the JS expression returned no value
+        } else if (typeof result === 'string') {
+          process.stdout.write(result)
+          if (!result.endsWith('\n')) process.stdout.write('\n')
+        } else {
+          console.log(JSON.stringify(result, null, 2))
+        }
       } else {
         console.log(JSON.stringify(json, null, 2))
       }
@@ -773,8 +792,10 @@ async function doRequest(url, method, body, context = {}) {
       console.log(text)
     }
 
-    // Show hint for this command (if available and successful)
-    if (resp.ok && !jsonOutput) {
+    // Show hint for this command (if available and successful).
+    // Skip for commands whose stdout is meant to be piped/consumed verbatim
+    // (e.g. eval — agents shouldn't have to strip a trailing hint line).
+    if (resp.ok && !jsonOutput && subcommand !== 'eval') {
       const hint = COMMAND_HINTS[subcommand]
       if (hint) {
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
