@@ -37,10 +37,18 @@ hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
 hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
-hj evaluate "document.title"   # Run JS in the page (prints the result verbatim; pass --json for the full DevResponse)
+hj evaluate "document.title"   # Run JS in the page
 hj screenshot          # Capture the page
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 ```
+
+**Output convention for read commands.** `hj eval`, `hj call`, `hj fetch`,
+`hj location`, `hj query`, `hj inspect`, `hj inspectAll`, `hj find`, and
+`hj console` print the result value directly to stdout — strings verbatim
+(no JSON escaping of newlines or quotes), objects/arrays as pretty JSON,
+no envelope wrapper, no trailing hint line. Errors go to stderr with a
+non-zero exit. Pass `--json` to get the full `DevResponse` envelope
+(useful when you need `.id` / `.timestamp` / etc.).
 
 ## Writing & running regression tests
 

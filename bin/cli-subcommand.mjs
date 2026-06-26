@@ -621,6 +621,22 @@ async function ensureBrowserConnected(port) {
 // Commands that don't need a browser window to be connected
 const INFO_COMMANDS = new Set(['status', 'windows', 'version', 'help'])
 
+// Commands whose payload lives in DevResponse.data and should be printed
+// unwrapped: strings verbatim, objects/arrays as pretty JSON, no envelope.
+// Trailing command hint is suppressed for these so agents can pipe stdout
+// directly. Pass --json to get the full DevResponse envelope instead.
+const UNWRAP_DATA_SUBCOMMANDS = new Set([
+  'eval',        // JS expression result (any type)
+  'call',        // method-call result on an element
+  'fetch',       // fetched URL response (body + headers + status)
+  'location',    // current URL + title
+  'query',       // matched element info (single or array)
+  'inspect',     // single-element details
+  'inspectAll',  // array of element details
+  'find',        // elements located by text
+  'console',     // console buffer entries
+])
+
 // ============================================
 // Main subcommand execution
 // ============================================
@@ -765,19 +781,19 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path))
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(', ')
         if (meta) console.log(dim(meta))
-      } else if (!jsonOutput && subcommand === 'eval') {
-        // Print the eval result unwrapped so agents (and humans) can read it
-        // directly. Strings go to stdout as-is — no JSON escaping of newlines,
-        // quotes, etc. Objects/arrays still pretty-print as JSON. Failures
-        // go to stderr with a non-zero exit. Pass --json to get the full
-        // DevResponse envelope instead.
+      } else if (!jsonOutput && UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
+        // Print the inner DevResponse.data unwrapped so agents (and humans) can
+        // read it directly. Strings go to stdout as-is — no JSON escaping of
+        // newlines, quotes, etc. Objects/arrays still pretty-print as JSON.
+        // Failures go to stderr with a non-zero exit. Pass --json to get the
+        // full DevResponse envelope instead.
         if (json.success === false) {
-          console.error(`eval failed: ${json.error || 'unknown error'}`)
+          console.error(`${subcommand} failed: ${json.error || 'unknown error'}`)
           process.exit(1)
         }
         const result = json.data
         if (result === null || result === undefined) {
-          // nothing to print — the JS expression returned no value
+          // nothing to print
         } else if (typeof result === 'string') {
           process.stdout.write(result)
           if (!result.endsWith('\n')) process.stdout.write('\n')
@@ -794,8 +810,8 @@ async function doRequest(url, method, body, context = {}) {
 
     // Show hint for this command (if available and successful).
     // Skip for commands whose stdout is meant to be piped/consumed verbatim
-    // (e.g. eval — agents shouldn't have to strip a trailing hint line).
-    if (resp.ok && !jsonOutput && subcommand !== 'eval') {
+    // — agents shouldn't have to strip a trailing hint line.
+    if (resp.ok && !jsonOutput && !UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
       const hint = COMMAND_HINTS[subcommand]
       if (hint) {
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
