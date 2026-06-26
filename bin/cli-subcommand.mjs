@@ -97,6 +97,7 @@ export const ARG_MAPS = {
   highlight: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), label: args[1] }),
   unhighlight: () => ({}),
   find: (args) => ({ text: args.join(' ') }),
+  form: (args) => parseFormArgs(args),
   wait: (args) => parseWaitArgs(args),
   call: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), method: args[1], args: args.slice(2).map(tryParseJSON) }),
   fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(' ') || undefined }),
@@ -268,6 +269,20 @@ export function parseClickArgs(args) {
     }
   }
   return Object.keys(body).length ? body : {}
+}
+
+/** Parse form args: optional form selector + --include-disabled/--include-hidden */
+export function parseFormArgs(args) {
+  const body = {}
+  const positional = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--include-disabled') { body.includeDisabled = true; continue }
+    if (a === '--include-hidden') { body.includeHidden = true; continue }
+    if (!a.startsWith('-')) { positional.push(a); continue }
+  }
+  if (positional.length) body.selector = positional[0]
+  return Object.keys(body).length ? body : undefined
 }
 
 /** Parse inspect args: selector/ref + CSS flags */
@@ -635,6 +650,7 @@ const UNWRAP_DATA_SUBCOMMANDS = new Set([
   'inspectAll',  // array of element details
   'find',        // elements located by text
   'console',     // console buffer entries
+  'form',        // form field values
 ])
 
 // ============================================
@@ -835,7 +851,7 @@ async function doRequest(url, method, body, context = {}) {
 
 /** Known valid subcommands */
 export const KNOWN_COMMANDS = new Set([
-  'tree', 'query', 'inspect', 'inspectAll', 'styles', 'find',
+  'tree', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form',
   'click', 'type', 'key', 'drag', 'scroll', 'call',
   'navigate', 'refresh', 'location',
   'events', 'events-watch', 'events-unwatch', 'console',

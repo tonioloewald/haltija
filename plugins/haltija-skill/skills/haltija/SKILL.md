@@ -43,12 +43,17 @@ hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 ```
 
 **Output convention for read commands.** `hj eval`, `hj call`, `hj fetch`,
-`hj location`, `hj query`, `hj inspect`, `hj inspectAll`, `hj find`, and
-`hj console` print the result value directly to stdout — strings verbatim
-(no JSON escaping of newlines or quotes), objects/arrays as pretty JSON,
-no envelope wrapper, no trailing hint line. Errors go to stderr with a
-non-zero exit. Pass `--json` to get the full `DevResponse` envelope
-(useful when you need `.id` / `.timestamp` / etc.).
+`hj location`, `hj query`, `hj inspect`, `hj inspectAll`, `hj find`,
+`hj console`, and `hj form` print the result value directly to stdout —
+strings verbatim (no JSON escaping of newlines or quotes), objects/arrays
+as pretty JSON, no envelope wrapper, no trailing hint line. Errors go to
+stderr with a non-zero exit. Pass `--json` to get the full `DevResponse`
+envelope (useful when you need `.id` / `.timestamp` / etc.).
+
+**Reading forms without DOM walking.** `hj form` extracts all values from a
+form (or the first form on the page if no selector given) as a structured
+object. Handles inputs, checkboxes, radios, selects, and most framework
+components. Add `--include-disabled` / `--include-hidden` for those fields.
 
 ## Writing & running regression tests
 
