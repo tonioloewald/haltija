@@ -2472,6 +2472,8 @@ export class DevChannel extends HTMLElement {
   private isElectron = false // True when running in the desktop app
   private browserId = uid() // Unique ID for this browser instance (changes each page load)
   private killed = false // Prevents reconnection after kill()
+  private displayStream: MediaStream | null = null // getDisplayMedia stream when user has granted screen share
+  private displayVideo: HTMLVideoElement | null = null // Hidden <video> element bound to displayStream for frame extraction
   private isActive = true // Whether this window is active (responding to commands)
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
@@ -2801,6 +2803,7 @@ export class DevChannel extends HTMLElement {
     this.restoreDialogs()
     this.clearEventWatchers()
     this.stopMutationWatch()
+    this.stopScreenCapture()
   }
 
   attributeChangedCallback(name: string, _old: string, value: string) {
@@ -2975,6 +2978,10 @@ export class DevChannel extends HTMLElement {
           background: #ef4444;
           color: white;
           animation: pulse 1s infinite;
+        }
+        .btn[data-action="screen"].sharing {
+          background: #3b82f6;
+          color: white;
         }
         .btn[data-action="logs"] {
           font-size: 10px;
@@ -3376,6 +3383,7 @@ export class DevChannel extends HTMLElement {
           <div class="controls">
             <button class="btn" data-action="select" title="Click or drag to select elements" aria-label="Select elements">👆</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
+            <button class="btn" data-action="screen" title="Share screen so the agent can take screenshots (browser only; not needed in Haltija desktop app)" aria-label="Share screen for screenshots">🖥</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">LOG</button>
             <button class="btn info-btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">i</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
@@ -3457,6 +3465,7 @@ export class DevChannel extends HTMLElement {
         if (action === 'clear-logs') this.clearLogPanel()
         if (action === 'record') this.toggleRecording()
         if (action === 'select') this.startSelection()
+        if (action === 'screen') this.toggleScreenCapture()
         if (action === 'stats') this.copyStatsToClipboard()
         if (action === 'close-modal') this.closeTestModal()
         if (action === 'copy-test') this.copyTest()
@@ -5178,6 +5187,65 @@ export class DevChannel extends HTMLElement {
     } else {
       this.hide()
     }
+  }
+
+  /**
+   * Toggle a `getDisplayMedia` screen-share session so the agent can take
+   * real-pixel screenshots in the bookmarklet / dev.js paths where no
+   * Electron native capture is available. The user clicks the 🖥 button,
+   * the browser prompts them to pick what to share (tab/window/screen),
+   * and the stream stays open until they stop sharing or click again.
+   * Subsequent `/screenshot` calls grab a frame from the open stream.
+   */
+  private async toggleScreenCapture() {
+    if (this.displayStream) {
+      this.stopScreenCapture()
+      return
+    }
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      console.warn(`${LOG_PREFIX} Screen capture not supported in this browser.`)
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 5 } }, // low frame rate: we only grab on demand
+        audio: false,
+      })
+      this.displayStream = stream
+      // Bind to an offscreen <video> so we can drawImage() any current frame
+      // on demand without re-prompting the user.
+      const video = document.createElement('video')
+      video.srcObject = stream
+      video.muted = true
+      video.playsInline = true
+      await video.play().catch(() => {})
+      this.displayVideo = video
+      // User clicked "Stop sharing" in the browser chrome — clean up.
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        this.stopScreenCapture()
+      })
+      const btn = this.shadowRoot?.querySelector('.btn[data-action="screen"]')
+      btn?.classList.add('sharing')
+    } catch (err) {
+      // User cancelled the picker, or the browser denied — no need to alarm.
+      console.log(`${LOG_PREFIX} Screen capture not started: ${(err as Error).message}`)
+    }
+  }
+
+  private stopScreenCapture() {
+    if (this.displayStream) {
+      for (const track of this.displayStream.getTracks()) {
+        try { track.stop() } catch {}
+      }
+      this.displayStream = null
+    }
+    if (this.displayVideo) {
+      try { this.displayVideo.pause() } catch {}
+      this.displayVideo.srcObject = null
+      this.displayVideo = null
+    }
+    const btn = this.shadowRoot?.querySelector('.btn[data-action="screen"]')
+    btn?.classList.remove('sharing')
   }
 
   private toggleMinimize() {
@@ -7805,8 +7873,49 @@ export class DevChannel extends HTMLElement {
           }
         }
 
-        // No capture method available — screenshots require the Electron desktop app
-        this.respond(msg.id, false, null, 'Screenshots require the Haltija Desktop app. Run: npx haltija@latest -f')
+        // Browser fallback: if the user has started a getDisplayMedia stream
+        // via the 🖥 button, grab a frame from it. Works in any browser, no
+        // Electron required, but the user has to have consented at least once
+        // (a single click in the widget per page session covers all calls).
+        if (this.displayVideo && this.displayStream) {
+          try {
+            const video = this.displayVideo
+            const w = video.videoWidth
+            const h = video.videoHeight
+            if (!w || !h) {
+              this.respond(msg.id, false, null, 'Screen capture stream has no frame data yet — try again in a moment.')
+              return
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = w
+            canvas.height = h
+            const ctx = canvas.getContext('2d')!
+            ctx.drawImage(video, 0, 0, w, h)
+            const dataUrl = canvas.toDataURL('image/png')
+            const converted = await convertFormat(dataUrl)
+            this.respond(msg.id, true, {
+              image: converted.image,
+              viewport,
+              format,
+              width: converted.width,
+              height: converted.height,
+              source: 'getDisplayMedia',
+            })
+            return
+          } catch (err: any) {
+            this.respond(msg.id, false, null, `Screen capture frame failed: ${err.message}`)
+            return
+          }
+        }
+
+        // No capture path available — Electron app missing AND user hasn't
+        // started a screen-share session yet.
+        this.respond(
+          msg.id,
+          false,
+          null,
+          'No screenshot capture available. Either run the Haltija Desktop app (npx haltija@latest -f) or click the 🖥 button in the Haltija widget to share your screen.',
+        )
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }

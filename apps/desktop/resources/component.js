@@ -1758,6 +1758,8 @@
     isElectron = false;
     browserId = uid();
     killed = false;
+    displayStream = null;
+    displayVideo = null;
     isActive = true;
     homeLeft = 0;
     homeBottom = 16;
@@ -1959,6 +1961,7 @@
       this.restoreDialogs();
       this.clearEventWatchers();
       this.stopMutationWatch();
+      this.stopScreenCapture();
     }
     attributeChangedCallback(name, _old, value) {
       if (name === "server") {
@@ -2125,6 +2128,10 @@
           background: #ef4444;
           color: white;
           animation: pulse 1s infinite;
+        }
+        .btn[data-action="screen"].sharing {
+          background: #3b82f6;
+          color: white;
         }
         .btn[data-action="logs"] {
           font-size: 10px;
@@ -2526,6 +2533,7 @@
           <div class="controls">
             <button class="btn" data-action="select" title="Click or drag to select elements" aria-label="Select elements">\uD83D\uDC46</button>
             <button class="btn" data-action="record" title="Record test (click to start/stop)" aria-label="Record test">REC</button>
+            <button class="btn" data-action="screen" title="Share screen so the agent can take screenshots (browser only; not needed in Haltija desktop app)" aria-label="Share screen for screenshots">\uD83D\uDDA5</button>
             <button class="btn" data-action="logs" title="Show event log panel" aria-label="Toggle event log">LOG</button>
             <button class="btn info-btn" data-action="stats" title="Copy stats to clipboard" aria-label="Copy stats">i</button>
             <button class="btn" data-action="minimize" title="Minimize widget (⌥Tab)" aria-label="Minimize">─</button>
@@ -2607,6 +2615,8 @@
             this.toggleRecording();
           if (action2 === "select")
             this.startSelection();
+          if (action2 === "screen")
+            this.toggleScreenCapture();
           if (action2 === "stats")
             this.copyStatsToClipboard();
           if (action2 === "close-modal")
@@ -3885,6 +3895,55 @@ ${elementSummary}${moreText}`;
       } else {
         this.hide();
       }
+    }
+    async toggleScreenCapture() {
+      if (this.displayStream) {
+        this.stopScreenCapture();
+        return;
+      }
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
+        console.warn(`${LOG_PREFIX} Screen capture not supported in this browser.`);
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: 5 } },
+          audio: false
+        });
+        this.displayStream = stream;
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        await video.play().catch(() => {});
+        this.displayVideo = video;
+        stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+          this.stopScreenCapture();
+        });
+        const btn = this.shadowRoot?.querySelector('.btn[data-action="screen"]');
+        btn?.classList.add("sharing");
+      } catch (err) {
+        console.log(`${LOG_PREFIX} Screen capture not started: ${err.message}`);
+      }
+    }
+    stopScreenCapture() {
+      if (this.displayStream) {
+        for (const track of this.displayStream.getTracks()) {
+          try {
+            track.stop();
+          } catch {}
+        }
+        this.displayStream = null;
+      }
+      if (this.displayVideo) {
+        try {
+          this.displayVideo.pause();
+        } catch {}
+        this.displayVideo.srcObject = null;
+        this.displayVideo = null;
+      }
+      const btn = this.shadowRoot?.querySelector('.btn[data-action="screen"]');
+      btn?.classList.remove("sharing");
     }
     toggleMinimize() {
       if (this.headless)
@@ -5823,7 +5882,37 @@ ${elementSummary}${moreText}`;
               return;
             }
           }
-          this.respond(msg2.id, false, null, "Screenshots require the Haltija Desktop app. Run: npx haltija@latest -f");
+          if (this.displayVideo && this.displayStream) {
+            try {
+              const video = this.displayVideo;
+              const w = video.videoWidth;
+              const h = video.videoHeight;
+              if (!w || !h) {
+                this.respond(msg2.id, false, null, "Screen capture stream has no frame data yet — try again in a moment.");
+                return;
+              }
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(video, 0, 0, w, h);
+              const dataUrl = canvas.toDataURL("image/png");
+              const converted = await convertFormat(dataUrl);
+              this.respond(msg2.id, true, {
+                image: converted.image,
+                viewport,
+                format,
+                width: converted.width,
+                height: converted.height,
+                source: "getDisplayMedia"
+              });
+              return;
+            } catch (err) {
+              this.respond(msg2.id, false, null, `Screen capture frame failed: ${err.message}`);
+              return;
+            }
+          }
+          this.respond(msg2.id, false, null, "No screenshot capture available. Either run the Haltija Desktop app (npx haltija@latest -f) or click the \uD83D\uDDA5 button in the Haltija widget to share your screen.");
         } catch (err) {
           this.respond(msg2.id, false, null, err.message);
         }
