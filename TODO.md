@@ -44,6 +44,7 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 (`HALTIJA_PORT` + auto-fallback), and optional API token auth (`HALTIJA_TOKEN`).
 
 ### Phase 1 — Documentation & Discovery
+- [ ] Re-check the README comparison tables ("Haltija vs. Playwright", "Haltija vs. Claude in Chrome") each release — competitors move, so claims silently drift out of date. Keep them strictly fair: credit rivals' real strengths, mark only objective capability gaps, don't editorialize either way.
 - [ ] Landing page hero — README buries the lede. Lead with one-liner setup (`bunx haltija` + one script tag), a 30-second video of AI controlling a real app, and a clear "Get Started in 2 Minutes" path.
 - [ ] Consolidate documentation — docs scattered across CLAUDE.md, /docs, /api, embedded markdown, README. One organized `docs/` hierarchy: Quick Start → Guides → API Reference → Architecture.
 - [ ] Use case galleries / recipes page — common workflows: testing a login flow, exploring a codebase, recording/replaying bug reports, generating tests from manual exploration.

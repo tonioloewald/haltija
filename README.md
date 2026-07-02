@@ -63,7 +63,7 @@ Full API: `hj docs` — or `hj api` for complete reference
 
 ## Haltija vs. Playwright
 
-Playwright is a mature, excellent automation framework — cross-browser, with rock-solid auto-waiting and actionability, a great trace viewer and codegen, and an official MCP that hands agents a structured accessibility snapshot. Reach for it when you want a full cross-browser test framework and its tooling. Haltija aims at something narrower: letting an agent drive **a browser you're already running**, over plain HTTP — or spawn its own when you'd rather it did.
+Playwright is a mature, cross-browser automation framework with deep tooling (trace viewer, codegen, test runner, fixtures) and an official MCP that hands agents a structured accessibility snapshot. Reach for it when you want cross-browser coverage or a full test framework. Haltija aims at something narrower: letting an agent drive **a browser you're already running**, over plain HTTP — or spawn its own when you'd rather it did.
 
 | | Haltija | Playwright (+ MCP) |
 |---|---|---|
@@ -71,12 +71,14 @@ Playwright is a mature, excellent automation framework — cross-browser, with r
 | Cross-browser | ⚠️ Chromium only | ✅ Chromium, Firefox, WebKit |
 | Session / auth | Uses your live logged-in session as-is | Fresh context by default; reusable via `storageState` / persistent context |
 | How an agent drives it | Plain HTTP/REST — curl, any language, no client library | Playwright client library, or the MCP tools |
-| Page model | DOM tree with stable ref IDs + `eval` | ✅ a11y-tree snapshot with ref IDs (MCP), or the full API in code |
-| Waiting / errors | Explicit `wait` steps + diff mode; you script the checks | ✅ Pervasive auto-waiting + actionability checks with descriptive failures |
-| Tooling | CLI, record→replay, JSON tests, CI | ✅ Trace viewer, codegen, test runner, fixtures |
+| Page model | DOM tree with stable ref IDs + `eval` | Accessibility-tree snapshot with ref IDs (MCP), or the full API in code |
+| Interaction | Per-character, framework-triggering synthetic events you can steer live over HTTP | Trusted CDP-level input |
+| Feedback when a step can't proceed | **Fails fast** — reports what's blocking it (missing / hidden / covered) right away | **Auto-waits to a timeout** (tens of seconds) — smooths over races, but a genuinely broken step burns the full timeout before failing |
+| Test generation | record→replay → JSON tests | codegen → Playwright code |
+| Debugging | Live widget, console capture, semantic events, click diff | Trace viewer — time-travel step snapshots |
 | Embed in your app | ✅ Ship the widget inside your own product | Not designed for that |
 
-**The short version:** use Playwright when you want a real cross-browser test framework or its tooling; use Haltija when you want to point an agent at the browser (and logged-in session) you already have — or embed agent-control into your own app — over nothing more than HTTP.
+**The short version:** they're complementary, and this project uses both — Playwright for cross-browser smoke checks, Haltija for the fast end-to-end pass. Reach for Haltija when you want to point an agent at the browser (and logged-in session) you already have, or embed agent-control into your own app — over nothing more than HTTP.
 
 ---
 
