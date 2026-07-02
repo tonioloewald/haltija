@@ -78,6 +78,7 @@ hj click 42                   # Click element by ref ID
 hj type 10 "hello"            # Type text into element
 hj eval "1+1"                 # Eval JS in browser
 hj status                     # Server status
+hj where                      # Which server this shell targets + what's alive there (add --json)
 hj --help                     # List all subcommands
 
 # Targeting a project-specific server (per-shell)
@@ -283,8 +284,18 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 Located in `apps/desktop/`. The Electron shell:
 - Strips CSP headers for universal compatibility
 - Auto-injects widget on page load
-- Provides native screenshot capture
+- Provides native screenshot capture (Electron `capturePage`)
 - Supports multi-tab browsing
+
+### Screenshots (two capture paths)
+
+`/screenshot` resolves differently depending on how the widget was loaded:
+- **Desktop app** — uses Electron's native `capturePage`; no user gesture needed.
+- **Bookmarklet / injected `dev.js`** — uses `getDisplayMedia`. The user clicks the
+  🖥 button in the widget header once to grant a screen/tab/window share; the stream
+  is kept alive so subsequent `/screenshot` calls grab frames with no re-prompt.
+  Clicking 🖥 again (or the browser's "Stop sharing") ends the session. Before a grant,
+  `/screenshot` returns a prompt-to-share message rather than an image.
 
 ## MCP Integration
 

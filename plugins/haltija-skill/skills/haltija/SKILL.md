@@ -29,6 +29,7 @@ that's on your PATH. `hj docs` is the quick start, `hj api` the full reference,
 
 ```
 hj status              # Server running?
+hj where               # Which server this shell targets + what's alive there (--json for structured)
 hj windows             # Connected browser tabs?
 hj tree                # DOM structure with ref IDs (hj tree -d 5 for deeper)
 hj console             # Browser console output

@@ -865,7 +865,7 @@ export const KNOWN_COMMANDS = new Set([
   'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   'send', 'send-message', 'send-selection', 'send-recording',
-  'status', 'version', 'docs', 'api', 'stats'
+  'status', 'version', 'docs', 'api', 'stats', 'where'
 ])
 
 /** Common typos/aliases mapped to correct commands */

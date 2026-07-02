@@ -11,11 +11,96 @@
  */
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
+
+/**
+ * Print what server this shell is currently targeting and what's alive
+ * there. Reports the resolved port, the source of the resolution (flag,
+ * env var, or registry lookup), and — if reachable — the server's
+ * version, the named-instance label, tab count, and the focused tab.
+ * Used as `hj where` (or `hj where --json` for structured output).
+ */
+async function runWhere(port, portSource, jsonOutput) {
+  let serverInfo = null
+  let serverError = null
+  try {
+    const resp = await fetch(`http://localhost:${port}/status`, {
+      signal: AbortSignal.timeout(2000),
+    })
+    if (resp.ok) {
+      serverInfo = await resp.json()
+    } else {
+      serverError = `HTTP ${resp.status}`
+    }
+  } catch (err) {
+    serverError = err.code === 'ConnectionRefused' || err.cause?.code === 'ECONNREFUSED'
+      ? 'no server is listening on this port'
+      : err.message
+  }
+  // Look up the instance name (if any) by scanning ~/.haltija/servers/ for
+  // an entry pointing at this port.
+  let instanceName = null
+  try {
+    const dir = join(homedir(), '.haltija', 'servers')
+    if (existsSync(dir)) {
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith('.json')) continue
+        try {
+          const entry = JSON.parse(readFileSync(join(dir, file), 'utf-8'))
+          if (entry.port === Number(port)) {
+            try { process.kill(entry.pid, 0); instanceName = entry.name } catch {}
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  const focused = serverInfo?.windows?.find(w => w.focused) || serverInfo?.windows?.[0]
+  const tabs = serverInfo?.windows?.length ?? 0
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      port: Number(port),
+      portSource,
+      reachable: !!serverInfo,
+      error: serverError,
+      server: serverInfo ? {
+        version: serverInfo.serverVersion,
+        instanceName,
+        desktopApp: !!serverInfo.desktopApp,
+        tabs,
+        agents: serverInfo.agents,
+        focused: focused ? { id: focused.id, url: focused.url, title: focused.title } : null,
+      } : null,
+    }, null, 2))
+    return
+  }
+
+  const bold = (s) => `\x1b[1m${s}\x1b[0m`
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`
+  console.log(`${bold('port:')}   ${port} ${dim(`(${portSource})`)}`)
+  if (!serverInfo) {
+    console.log(`${bold('server:')} ${dim(`unreachable — ${serverError}`)}`)
+    return
+  }
+  const desc = [
+    `haltija ${serverInfo.serverVersion}`,
+    instanceName ? `name=${instanceName}` : null,
+    serverInfo.desktopApp ? 'desktop app' : null,
+    `${tabs} tab${tabs === 1 ? '' : 's'}`,
+    serverInfo.agents > 0 ? `${serverInfo.agents} agent${serverInfo.agents === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(', ')
+  console.log(`${bold('server:')} ${desc}`)
+  if (focused) {
+    console.log(`${bold('focused:')} ${focused.title || dim('(no title)')} ${dim(`— ${focused.url}`)}`)
+  } else if (tabs === 0) {
+    console.log(`${bold('focused:')} ${dim('no tabs connected')}`)
+  }
+}
 
 /**
  * Resolve a named haltija instance to its port by reading
@@ -63,20 +148,26 @@ Run ${dim('haltija --help')} for server/app options.
 // Parse --name option (or HALTIJA_NAME env): resolve to a port via
 // ~/.haltija/servers/<name>.json, written by `haltija --name <foo>`.
 let resolvedName = process.env.HALTIJA_NAME || ''
+let nameSource = resolvedName ? 'HALTIJA_NAME env' : ''
 const nameIdx = args.indexOf('--name')
 if (nameIdx !== -1 && args[nameIdx + 1]) {
   resolvedName = args[nameIdx + 1]
+  nameSource = '--name flag'
   args.splice(nameIdx, 2)
 }
 
 // Port resolution priority:
 //   --port flag > --name/HALTIJA_NAME registry lookup > HALTIJA_PORT env
 //   > DEV_CHANNEL_PORT env > 8700 default
-let port = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || '8700'
+let port, portSource
+if (process.env.DEV_CHANNEL_PORT) { port = process.env.DEV_CHANNEL_PORT; portSource = 'DEV_CHANNEL_PORT env (legacy)' }
+if (process.env.HALTIJA_PORT)     { port = process.env.HALTIJA_PORT;     portSource = 'HALTIJA_PORT env' }
+if (!port) { port = '8700'; portSource = '8700 (default)' }
 if (resolvedName) {
   const entry = lookupNamedInstance(resolvedName)
   if (entry) {
     port = String(entry.port)
+    portSource = `name "${resolvedName}" via ${nameSource}`
   } else {
     console.error(`hj: no live haltija instance named "${resolvedName}".`)
     console.error(`Start one with:  haltija --name ${resolvedName} --server`)
@@ -86,6 +177,7 @@ if (resolvedName) {
 const portIdx = args.indexOf('--port')
 if (portIdx !== -1 && args[portIdx + 1]) {
   port = args[portIdx + 1]
+  portSource = '--port flag'
   args.splice(portIdx, 2)
 }
 
@@ -131,6 +223,14 @@ if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
 
 const subcommand = args[0]
 const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all args
+
+// `hj where` — show which haltija server this shell is targeting and what
+// (if anything) is alive there. Pure client-side resolution plus a single
+// /status probe; no side effects, no auto-launch, safe to run anywhere.
+if (subcommand === 'where') {
+  await runWhere(port, portSource, subArgs.includes('--json'))
+  process.exit(0)
+}
 
 if (!isSubcommand(subcommand)) {
   const suggestion = getSuggestion(subcommand)
