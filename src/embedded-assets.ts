@@ -2958,7 +2958,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.3.0";
+  var VERSION = "1.3.1";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;
