@@ -26,6 +26,19 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 - **Run tests**: `POST /test/run`, `POST /test/suite`, `POST /test/validate`
 - **Debug & eval**: `GET /console`, `POST /eval`, `POST /fetch`, `POST /screenshot`, `POST /snapshot`, `POST /video/start`, `POST /video/stop`, `GET /video/status`
 
+## Running Haltija
+
+Two first-party ways to run (plus embedding, below):
+
+- **Local dev & debugging (the paved path):** run a per-project server and drive
+  it with the `hj` CLI or a coding agent (e.g. Claude Code) talking straight to
+  the REST API. `bunx haltija --server --name myproject` starts a server your own
+  browser attaches to via the injected widget; `bunx haltija` launches a bundled
+  browser with the server embedded. Point `hj` at it with `hj --name myproject …`
+  (or `export HALTIJA_NAME=myproject`), and `hj where` to see what a shell targets.
+- **CI:** `haltija --headless` (or `--ci`) runs a headless Chromium with the widget
+  auto-injected — deterministic, no desktop app required. See the CI guide below.
+
 ## Embed in your app
 
 ```js

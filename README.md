@@ -246,17 +246,24 @@ The server rejects every REST/WebSocket request without a matching `X-Haltija-To
 ## Installation
 
 ```bash
-bunx haltija               # Desktop app (recommended)
-bunx haltija --server      # Server only (your browser, CI, remote)
+bunx haltija               # Bundled browser + embedded server (easiest start)
+bunx haltija --server      # Server only — your browser, per-project dev/debug
 npm install -g haltija     # Install globally
 
 # Server options
 haltija --https            # HTTPS mode
 haltija --port 3000        # Custom port
+haltija --name <proj>      # Register a per-project instance (hj --name <proj>)
 haltija --token <secret>   # Require X-Haltija-Token on every request
-haltija --headless         # For CI pipelines
+haltija --headless         # For CI pipelines (no desktop app needed)
 haltija --setup-mcp        # Configure Claude Desktop
 ```
+
+**Which mode?** For day-to-day dev/debugging, run a per-project server
+(`haltija --server --name <proj>`) and drive it with the `hj` CLI or your coding
+agent — that's the paved path. For CI, `haltija --headless` runs a deterministic
+headless Chromium with no desktop app required. A downloadable notarized desktop
+app also exists but isn't required for either.
 
 ---
 

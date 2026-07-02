@@ -279,6 +279,25 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 - **`assert` type `visible` / `hidden`**: "Rendered" semantics, not "on screen". Passes when `display != 'none'`, `visibility != 'hidden'`, and the element has non-zero width and height. Viewport position is intentionally NOT checked — headless CI's small default viewport often puts legitimate content below the fold, and that should not flake the test. If you actually need on-screen, prepend an `eval` step that calls `scrollIntoView()`.
 - All interaction steps route through the same `performRealisticType`/`performRealisticClick` handlers as the REST API.
 
+## Deployment paths (which mode, when)
+
+Three ways Haltija runs, in priority order of where we invest:
+
+1. **Private per-project server — the paved path for dev/debugging.** Run a haltija
+   server scoped to your project (`bunx haltija --server --name <proj>`, or embed the
+   widget on a port you pick) and drive it with the `hj` CLI or a coding agent (Claude
+   Code) talking straight to the REST API. `hj where` shows which server a shell targets.
+   This is where day-to-day agent-in-the-browser work happens.
+2. **Purpose-built Electron app in CI — the killer CI story.** `haltija --headless` /
+   `--ci` runs a headless Chromium with the widget auto-injected: deterministic, no DMG,
+   ideal for running the JSON test fixtures in GitHub Actions. See `docs/CI-INTEGRATION.md`.
+3. **Standalone notarized DMG — deprioritized.** The click-to-run desktop app (with its
+   agent / terminal / file-browsing tabs) is no longer a focus: running Claude Code
+   directly beats a bespoke harness for almost everything. Keep those tabs working since
+   they may still prove useful, but don't invest until/unless they become a burden.
+   **DMG building is not part of the standard beta loop** — build on demand only (see
+   `AGENTS.md` → "Building a standalone DMG").
+
 ## Desktop App (Electron)
 
 Located in `apps/desktop/`. The Electron shell:
