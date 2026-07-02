@@ -85,11 +85,11 @@ Both let an agent drive a browser — they're built for different jobs. Because 
 | Setup / auth | ✅ `bunx haltija` — zero auth, self-spawns | ⚠️ Extension + claude.ai login + per-site permissions |
 | How the agent invokes it | ✅ Plain `hj` CLI / REST — always available in a shell | ⚠️ MCP tools; must be loaded + extension connected |
 | Project integration | ✅ *Is* your test harness — JSON tests (`hj test-suite`), record→replay, CI | ❌ None |
-| Determinism / cost | ✅ DOM + `eval` with stable ref IDs — cheap text, scriptable, headless-CI-able | ⚠️ Vision screenshots: token-heavy, coordinate clicks less deterministic |
+| Determinism / cost | ✅ DOM + `eval` with stable ref IDs — cheap text, scriptable, headless-CI-able | ⚠️ Has structured reads (page text, find-by-text) *and* vision/coordinate actions; the vision path is token-heavy and coordinate clicks less deterministic |
 | Isolation | ✅ Own instance on its own port — never touches your browsing | ❌ Drives tabs in your live session |
 | Real-browser fidelity (WebGL/3D, pixels) | ✅ Attach to a real GPU Chrome or the desktop app *(headless GPU is the one weak spot)* | ✅ Full real Chrome GPU |
-| Authenticated / external sites | ✅ Inject into your logged-in browser on a chosen port | ✅ Your logged-in profile |
-| Flakiness / contention | ✅ One private port per project = dedicated instance | ⚠️ Depends on live browser + extension state |
+| Authenticated / external sites | ✅ Inject into your logged-in browser on a chosen port *(one-time setup step)* | ✅ Native — already your logged-in profile |
+| Flakiness / contention | ✅ A private port per project = dedicated instance *(a shared instance can still flake under contention)* | ⚠️ Depends on live browser + extension state |
 | Screenshots | ✅ Native (desktop) or WebRTC `getDisplayMedia` (browser) | ✅ Vision-native |
 
 **The short version:** reach for Claude in Chrome to glance at the tab you're already looking at; reach for Haltija when you want a browser your agent *controls* — reproducibly, cheaply, in CI, and as the regression harness your project already has.
