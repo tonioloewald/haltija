@@ -14,6 +14,8 @@ import {
   resolveServerPath,
   substituteVars,
   parseTestArgs,
+  normalizeEqualsFlags,
+  warnUnknownFlags,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -394,9 +396,26 @@ describe('ARG_MAPS', () => {
       expect(ARG_MAPS.screenshot(['--data-url'])).toEqual({ file: false })
     })
 
+    test('--format flag', () => {
+      expect(ARG_MAPS.screenshot(['--format', 'webp'])).toEqual({ format: 'webp', file: true })
+    })
+
+    test('--format with selector', () => {
+      expect(ARG_MAPS.screenshot(['#chart', '--format', 'jpeg'])).toEqual({ selector: '#chart', format: 'jpeg', file: true })
+    })
+
+    test('--quality in 0-1 range is passed through', () => {
+      expect(ARG_MAPS.screenshot(['--format', 'webp', '--quality', '0.9'])).toEqual({ format: 'webp', quality: 0.9, file: true })
+    })
+
+    test('--quality in 0-100 range is normalized to 0-1', () => {
+      expect(ARG_MAPS.screenshot(['--quality', '90'])).toEqual({ quality: 0.9, file: true })
+      expect(ARG_MAPS.screenshot(['--quality', '100'])).toEqual({ quality: 1, file: true })
+    })
+
     test('all flags combined', () => {
-      expect(ARG_MAPS.screenshot(['#chart', '--scale', '0.5', '--maxWidth', '400', '--delay', '500', '--no-chyron'])).toEqual({
-        selector: '#chart', scale: 0.5, maxWidth: 400, delay: 500, chyron: false, file: true
+      expect(ARG_MAPS.screenshot(['#chart', '--format', 'webp', '--scale', '0.5', '--maxWidth', '400', '--delay', '500', '--no-chyron'])).toEqual({
+        selector: '#chart', format: 'webp', scale: 0.5, maxWidth: 400, delay: 500, chyron: false, file: true
       })
     })
   })
@@ -802,5 +821,71 @@ describe('standalone hj bundle', () => {
     // Should NOT have relative imports to sibling files
     expect(content).not.toContain("from './cli-subcommand.mjs'")
     expect(content).not.toContain("from './format-tree.mjs'")
+  })
+})
+
+describe('normalizeEqualsFlags', () => {
+  test('splits --flag=value into two tokens', () => {
+    expect(normalizeEqualsFlags(['--format=webp'])).toEqual(['--format', 'webp'])
+  })
+
+  test('leaves --flag value untouched', () => {
+    expect(normalizeEqualsFlags(['--format', 'webp'])).toEqual(['--format', 'webp'])
+  })
+
+  test('leaves positionals untouched', () => {
+    expect(normalizeEqualsFlags(['#chart', '--scale=0.5'])).toEqual(['#chart', '--scale', '0.5'])
+  })
+
+  test('splits on the first = only', () => {
+    expect(normalizeEqualsFlags(['--vars={"A":"B=C"}'])).toEqual(['--vars', '{"A":"B=C"}'])
+  })
+
+  test('does not split a bare = inside a positional (non---)', () => {
+    expect(normalizeEqualsFlags(['[data-x=y]'])).toEqual(['[data-x=y]'])
+  })
+
+  test('feeds directly into the screenshot mapper', () => {
+    expect(ARG_MAPS.screenshot(normalizeEqualsFlags(['--format=webp', '--quality=80']))).toEqual({
+      format: 'webp', quality: 0.8, file: true,
+    })
+  })
+})
+
+describe('warnUnknownFlags', () => {
+  let warnings: string[]
+  let origWrite: typeof process.stderr.write
+  beforeAll(() => {
+    origWrite = process.stderr.write.bind(process.stderr)
+  })
+  function capture(fn: () => void): string[] {
+    warnings = []
+    // @ts-expect-error - test stub
+    process.stderr.write = (chunk: string) => { warnings.push(String(chunk)); return true }
+    try { fn() } finally { process.stderr.write = origWrite }
+    return warnings
+  }
+
+  test('warns on an unknown flag for a flag-oriented command', () => {
+    const out = capture(() => warnUnknownFlags('screenshot', ['--frmat', 'webp']))
+    expect(out.length).toBe(1)
+    expect(out[0]).toContain('--frmat')
+    expect(out[0]).toContain('did you mean --format?')
+  })
+
+  test('stays silent for known flags', () => {
+    expect(capture(() => warnUnknownFlags('screenshot', ['--format', 'webp', '--scale', '0.5']))).toEqual([])
+  })
+
+  test('stays silent for a free-text command (not in KNOWN_FLAGS)', () => {
+    expect(capture(() => warnUnknownFlags('eval', ['--anything', 'goes']))).toEqual([])
+  })
+
+  test('does not flag negative numbers as unknown flags', () => {
+    expect(capture(() => warnUnknownFlags('screenshot', ['--scale', '-0.5']))).toEqual([])
+  })
+
+  test('allows global flags anywhere', () => {
+    expect(capture(() => warnUnknownFlags('screenshot', ['--json', '--window', '3']))).toEqual([])
   })
 })

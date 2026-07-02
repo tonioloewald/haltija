@@ -107,6 +107,14 @@ export const ARG_MAPS = {
     for (let i = 0; i < args.length; i++) {
       const a = args[i]
       if (a === '--data-url') { body.file = false; continue }
+      if (a === '--format') { body.format = args[++i]; continue }
+      if (a === '--quality') {
+        // Accept both 0–1 (canvas-native) and 0–100 (documented) — normalize
+        // anything > 1 down to the 0–1 the widget's toDataURL expects.
+        const q = num(args[++i])
+        if (q != null && !Number.isNaN(q)) body.quality = q > 1 ? q / 100 : q
+        continue
+      }
       if (a === '--scale') { body.scale = num(args[++i]); continue }
       if (a === '--maxWidth' || a === '--max-width') { body.maxWidth = num(args[++i]); continue }
       if (a === '--maxHeight' || a === '--max-height') { body.maxHeight = num(args[++i]); continue }
@@ -136,7 +144,6 @@ export const ARG_MAPS = {
   'events-watch': (args) => ({ preset: args[0] || 'interactive' }),
   'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
   'network-watch': (args) => ({ preset: args[0] || 'standard' }),
-  form: (args) => parseTargetArgs(args),
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
   'test-run': (args) => {
@@ -657,6 +664,86 @@ const UNWRAP_DATA_SUBCOMMANDS = new Set([
 // Main subcommand execution
 // ============================================
 
+// Flags each flag-oriented subcommand recognizes. Used to (a) accept
+// `--flag=value` as well as `--flag value`, and (b) warn — not fail — when an
+// agent passes a flag the command will otherwise silently ignore. Commands that
+// take free-form text (type, eval, find, snapshot, send…) are intentionally
+// ABSENT: a leading-dash token there is content, not a flag, so we leave them
+// untouched.
+const GLOBAL_FLAGS = ['--json', '--window', '--port', '--name', '--token', '--no-launch', '--help']
+export const KNOWN_FLAGS = {
+  tree: ['--depth', '-d', '--selector', '-s', '--compact', '-c', '--interactive', '-i', '--visible', '-v', '--text', '--no-text', '--shadow', '--frames', '--no-frames'],
+  click: ['--diff', '--delay'],
+  form: ['--include-disabled', '--include-hidden'],
+  inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
+  inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
+  key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m'],
+  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron'],
+  'video-start': ['--maxDuration', '--max-duration'],
+  refresh: ['--soft'],
+  'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
+  'test-validate': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
+  'test-suite': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
+}
+
+/** Split `--flag=value` into `--flag`, `value` (first `=` only). Long flags only. */
+export function normalizeEqualsFlags(args) {
+  const out = []
+  for (const a of args) {
+    if (a.startsWith('--') && a.includes('=')) {
+      const eq = a.indexOf('=')
+      out.push(a.slice(0, eq), a.slice(eq + 1))
+    } else {
+      out.push(a)
+    }
+  }
+  return out
+}
+
+/** Levenshtein distance, for "did you mean" suggestions. */
+function editDistance(a, b) {
+  const m = a.length, n = b.length
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)])
+  for (let j = 0; j <= n; j++) d[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+    }
+  }
+  return d[m][n]
+}
+
+/** Closest known flag within a small edit distance, or null. */
+function closestFlag(input, candidates) {
+  let best = null, bestD = Infinity
+  for (const c of candidates) {
+    const dist = editDistance(input, c)
+    if (dist < bestD) { bestD = dist; best = c }
+  }
+  return bestD <= 3 ? best : null
+}
+
+/**
+ * Warn (to stderr, non-fatal) about dashed tokens a flag-oriented command
+ * doesn't recognize, so a typo like `--frmat` or an unsupported flag stops
+ * silently doing nothing. No-op for free-text commands (not in KNOWN_FLAGS).
+ */
+export function warnUnknownFlags(subcommand, args) {
+  const known = KNOWN_FLAGS[subcommand]
+  if (!known) return
+  const allowed = new Set([...known, ...GLOBAL_FLAGS])
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`
+  for (const a of args) {
+    if (!a.startsWith('-')) continue      // positional or a flag's value
+    if (/^-\d/.test(a)) continue          // negative number, not a flag
+    if (allowed.has(a)) continue
+    const suggestion = closestFlag(a, known)
+    const hint = suggestion ? ` (did you mean ${suggestion}?)` : ''
+    process.stderr.write(dim(`[hj] warning: unknown flag "${a}" ignored${hint}`) + '\n')
+  }
+}
+
 export async function runSubcommand(subcommand, subArgs, port = '8700', options = {}) {
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
@@ -668,6 +755,13 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   if (windowIdx !== -1) {
     targetWindowId = filteredArgs[windowIdx + 1]
     filteredArgs = [...filteredArgs.slice(0, windowIdx), ...filteredArgs.slice(windowIdx + 2)]
+  }
+
+  // For flag-oriented commands, accept `--flag=value` and surface unknown flags
+  // instead of silently dropping them. Free-text commands are left untouched.
+  if (KNOWN_FLAGS[subcommand]) {
+    filteredArgs = normalizeEqualsFlags(filteredArgs)
+    warnUnknownFlags(subcommand, filteredArgs)
   }
 
   // Check if server is running, auto-start if not

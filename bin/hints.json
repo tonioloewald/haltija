@@ -12,7 +12,7 @@
   "events": "events-watch first | see: recording, console, mutations-watch",
   "eval": "\"code\" (returns result) | see: console, snapshot",
   "call": "@ref or \"selector\" <method>, --args [...]  | see: eval, inspect",
-  "screenshot": "[selector], --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
+  "screenshot": "[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
   "windows": "--json | see: tabs-open, tabs-close, tabs-focus, status",
   "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
   "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",

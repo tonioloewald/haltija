@@ -1488,7 +1488,7 @@ Response: { success, path?, image?, width, height, source }`,
       description: 'Clean screenshot without burned-in metadata',
     },
   ],
-  hints: '[selector], --scale 0.5, --maxWidth 800 | see: highlight, snapshot',
+  hints: '[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot',
 })
 
 // ============================================

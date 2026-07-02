@@ -39,7 +39,7 @@ hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
 hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
 hj evaluate "document.title"   # Run JS in the page
-hj screenshot          # Capture the page (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
+hj screenshot          # Capture the page — PNG default; --format webp|jpeg (smaller), --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 ```
 
