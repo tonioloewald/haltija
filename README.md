@@ -61,18 +61,22 @@ Full API: `hj docs` — or `hj api` for complete reference
 
 ---
 
-## Why Not Playwright / Puppeteer?
+## Haltija vs. Playwright
 
-| | Haltija | Playwright MCP |
-|---|---------|----------------|
-| **Browser** | Your real browser | Separate headless instance |
-| **State** | Already logged in, cookies, extensions | Clean slate every time |
-| **Setup** | `bunx haltija` | Install Playwright, configure MCP |
-| **Protocol** | Simple REST/curl | Complex CDP |
-| **Feedback** | "Button hidden by modal" | `TimeoutError: element not found` |
-| **Visibility** | Watch it happen live | Background process |
+Playwright is a mature, excellent automation framework — cross-browser, with rock-solid auto-waiting and actionability, a great trace viewer and codegen, and an official MCP that hands agents a structured accessibility snapshot. Reach for it when you want a full cross-browser test framework and its tooling. Haltija aims at something narrower: letting an agent drive **a browser you're already running**, over plain HTTP — or spawn its own when you'd rather it did.
 
-Haltija connects to the browser you're already using. The one with the bug, the active session, and the weird cookie state. No reproduction script required.
+| | Haltija | Playwright (+ MCP) |
+|---|---|---|
+| Browser | Attach to your real, already-open browser — *or* spawn its own | Usually its own managed context; can connect to an existing browser over CDP |
+| Cross-browser | ⚠️ Chromium only | ✅ Chromium, Firefox, WebKit |
+| Session / auth | Uses your live logged-in session as-is | Fresh context by default; reusable via `storageState` / persistent context |
+| How an agent drives it | Plain HTTP/REST — curl, any language, no client library | Playwright client library, or the MCP tools |
+| Page model | DOM tree with stable ref IDs + `eval` | ✅ a11y-tree snapshot with ref IDs (MCP), or the full API in code |
+| Waiting / errors | Explicit `wait` steps + diff mode; you script the checks | ✅ Pervasive auto-waiting + actionability checks with descriptive failures |
+| Tooling | CLI, record→replay, JSON tests, CI | ✅ Trace viewer, codegen, test runner, fixtures |
+| Embed in your app | ✅ Ship the widget inside your own product | Not designed for that |
+
+**The short version:** use Playwright when you want a real cross-browser test framework or its tooling; use Haltija when you want to point an agent at the browser (and logged-in session) you already have — or embed agent-control into your own app — over nothing more than HTTP.
 
 ---
 
