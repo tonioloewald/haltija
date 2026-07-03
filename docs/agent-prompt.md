@@ -81,7 +81,7 @@ To fill this form:
   hj tree -d 5           Deeper tree
   hj tree form           Subtree rooted at selector
   hj console             Recent console logs/errors
-  hj screenshot          Capture page as image
+  hj screenshot          Capture page as image (--format webp for smaller)
   hj location            Current URL and title
   hj events              Recent semantic events
 
@@ -112,6 +112,10 @@ To fill this form:
 ### Multiple tabs
   hj windows              List connected tabs
   hj click 5 --window abc  Target specific tab
+
+### Server
+  hj status               Is the server up? which tab is focused?
+  hj where                Which server this shell targets (add --json)
 
 ## Tips
 

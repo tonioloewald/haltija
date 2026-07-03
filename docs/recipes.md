@@ -128,8 +128,8 @@ curl localhost:8700/events
 # Highlight what might be wrong
 curl -X POST localhost:8700/highlight -d '{"selector":".error-message","label":"This error"}'
 
-# Screenshot for the ticket
-curl -X POST localhost:8700/screenshot -d '{"maxWidth":1200}'
+# Screenshot for the ticket (webp keeps it small)
+curl -X POST localhost:8700/screenshot -d '{"maxWidth":1200,"format":"webp"}'
 ```
 
 **Or just tell the agent**: "Customer says Settings page is broken. Check it out."

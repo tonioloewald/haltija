@@ -1,0 +1,39 @@
+name: Docs Drift
+
+# Fails if the generated docs (built from the API schema by `bun run build`)
+# are out of date relative to what's committed. Keeps API.md / DOCS.md /
+# llms.txt / hints.json / endpoints.json automatically in sync — a schema
+# change that isn't accompanied by a rebuild trips this check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docs-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Rebuild generated docs
+        run: bun run build
+
+      - name: Check generated docs are in sync
+        run: |
+          if ! git diff --exit-code -- \
+              API.md DOCS.md llms.txt bin/hints.json apps/mcp/src/endpoints.json; then
+            echo ""
+            echo "::error::Generated docs are stale. Run 'bun run build' and commit the result."
+            exit 1
+          fi
+          echo "Generated docs are up to date."

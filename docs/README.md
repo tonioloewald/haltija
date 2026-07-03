@@ -34,7 +34,7 @@
 ## Planning
 
 - **[Executive Summary](EXECUTIVE-SUMMARY.md)** - What Haltija is, who it's for
-- **[Roadmap to 10/10](ROADMAP-TO-10.md)** - Where we're going
+- **[Roadmap](ROADMAP.md)** - Where we're going
 - **[Development Roadmap](../ROADMAP.md)** - Completed and planned phases
 - **[TODO](../TODO.md)** - Outstanding issues and ideas
 
