@@ -584,7 +584,7 @@ async function launchElectronApp() {
   return false
 }
 
-async function ensureBrowserConnected(port) {
+async function ensureBrowserConnected(port, { explicitTarget = false } = {}) {
   let status
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
@@ -599,6 +599,19 @@ async function ensureBrowserConnected(port) {
   // (via __NEED_WINDOW__). Launching /Applications/Haltija.app on top would
   // produce two app instances side by side — skip the launch.
   if (status?.desktopApp) return true
+
+  // Private / project-owned server (explicitly targeted via --port / --name /
+  // HALTIJA_PORT). Launching the standalone Haltija.app here is wrong — it runs
+  // its own server on 8700 and would never connect to this port — so guide the
+  // user to attach a browser to *this* server instead of spawning Electron.
+  if (explicitTarget) {
+    process.stderr.write(
+      `\x1b[2mNo browser connected to the haltija server on port ${port}. ` +
+      `Open your app/page with the widget injected (script tag or bookmarklet), ` +
+      `or run \`hj --no-launch\` to skip this check.\x1b[0m\n`
+    )
+    return false
+  }
 
   // Respect "user explicitly quit" — don't auto-relaunch on every agent
   // call. Cleared when the user starts Haltija manually.
@@ -748,6 +761,7 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
   const noLaunch = options.noLaunch || false
+  const explicitTarget = options.explicitTarget || false
   // Remove --json and extract --window before processing
   let filteredArgs = subArgs.filter(a => a !== '--json')
   let targetWindowId = undefined
@@ -791,7 +805,7 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
 
   // Auto-launch browser if no windows connected (skip for info commands and --no-launch)
   if (!noLaunch && !INFO_COMMANDS.has(subcommand)) {
-    await ensureBrowserConnected(port)
+    await ensureBrowserConnected(port, { explicitTarget })
   }
 
   // Special handling for 'send' command - route to appropriate endpoint

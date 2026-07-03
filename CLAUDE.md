@@ -215,6 +215,7 @@ Same model for embedders: each project chooses a port, agents target it via `HAL
 
 - `hj` auto-launches the Haltija Electron app when no browser windows are connected
 - Only triggers for action commands (tree, click, etc.), not info commands (status, windows)
+- **Only for the bare, unconfigured default (port 8700).** When the shell explicitly targets a private/project-owned instance (`--port`, `--name`, `HALTIJA_PORT`, `HALTIJA_NAME`), the Electron launch is suppressed — that server runs its own browser (bring-your-own-browser), and the standalone app can't connect to a custom port anyway. Instead `hj` prints a hint to attach a browser (inject the widget). This keeps private setups from accidentally spawning Electron.
 - `--no-launch` flag to disable
 - macOS only currently (`open -a Haltija`), checks `/Applications`, `~/Applications`, and Spotlight
 

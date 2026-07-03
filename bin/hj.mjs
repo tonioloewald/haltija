@@ -196,6 +196,15 @@ if (noLaunchIdx !== -1) {
   args.splice(noLaunchIdx, 1)
 }
 
+// Did the shell explicitly target a private instance (--port / --name /
+// HALTIJA_PORT / HALTIJA_NAME / DEV_CHANNEL_PORT)? If so, this is a
+// project-owned server with a bring-your-own browser — auto-launching the
+// standalone Haltija.app is never right (it runs its own server on 8700 and
+// can't connect to this port), so we suppress the Electron launch and print
+// an actionable hint instead. Only the bare, unconfigured 8700 default keeps
+// the zero-config desktop auto-launch.
+const explicitTarget = portSource !== '8700 (default)'
+
 // --- Space-to-hyphen sub-command resolution ---
 // "hj test run foo.json" → "hj test-run foo.json"
 // "hj events watch" → "hj events-watch"
@@ -247,7 +256,7 @@ if (!isSubcommand(subcommand)) {
 
   // Auto-execute if there's exactly one fuzzy match
   if (suggestion) {
-    runSubcommand(suggestion, subArgs, port, { noLaunch })
+    runSubcommand(suggestion, subArgs, port, { noLaunch, explicitTarget })
   } else {
     console.error(`Unknown command: '${subcommand}'`)
     console.error(`\nExamples: hj tree, hj navigate <url>, hj click @42`)
@@ -255,7 +264,7 @@ if (!isSubcommand(subcommand)) {
     process.exit(1)
   }
 } else {
-  runSubcommand(subcommand, subArgs, port, { noLaunch })
+  runSubcommand(subcommand, subArgs, port, { noLaunch, explicitTarget })
 }
 
 function filterHelp(topic) {
