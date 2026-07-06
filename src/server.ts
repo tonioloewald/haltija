@@ -3902,8 +3902,13 @@ const serverConfig = {
                 windowType: windowType || 'tab', // 'tab', 'popup', or 'iframe'
               })
 
-              // Set as focused if no window is focused, or if this was previously focused
-              if (!focusedWindowId || focusedWindowId === windowId) {
+              // Focus this window if nothing is focused, it was previously
+              // focused, or it's a visible tab. A freshly-opened foreground tab
+              // should receive untargeted commands; a background-loaded tab
+              // reports active:false and won't steal focus. (Only real tabs —
+              // never iframes/popups — become the untargeted-command target.)
+              const isVisibleTab = (windowType || 'tab') === 'tab' && active !== false
+              if (!focusedWindowId || focusedWindowId === windowId || isVisibleTab) {
                 focusedWindowId = windowId
               }
               
@@ -3963,6 +3968,12 @@ const serverConfig = {
             if (win) {
               win.active = active
               win.lastSeen = Date.now()
+              // Focus follows the visible tab: when a tab reports it became
+              // active (visible/foreground), route subsequent untargeted
+              // commands to it. Ignore iframes/popups so they can't hijack.
+              if (active && win.windowType === 'tab') {
+                focusedWindowId = windowId
+              }
             }
           }
         } catch {}

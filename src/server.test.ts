@@ -834,4 +834,53 @@ describe('window focus management', () => {
       await new Promise(r => setTimeout(r, 100))
     }
   })
+
+  it('untargeted commands follow the tab that reports it became visible', async () => {
+    // Simulates the real footgun: multiple injected tabs, untargeted `hj eval`
+    // must land on the tab that's in front — not whichever connected first.
+    const winA = await connectBrowserWindow('focus-follow-a')
+    const winB = await connectBrowserWindow('focus-follow-b')
+
+    // Fire an untargeted /eval and report which window's socket receives it.
+    const routeUntargetedEval = async (code: string): Promise<string | null> => {
+      const got = (ws: WebSocket, id: string) => new Promise<string | null>((resolve) => {
+        ws.onmessage = (e) => {
+          const m = JSON.parse(e.data)
+          if (m.channel === 'eval') resolve(id)
+        }
+        setTimeout(() => resolve(null), 1500)
+      })
+      const race = Promise.race([got(winA, 'a'), got(winB, 'b')])
+      fetch(`${BASE_URL}/eval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      }).catch(() => {})
+      return race
+    }
+
+    const becameVisible = (ws: WebSocket, windowId: string) => {
+      ws.send(JSON.stringify({
+        channel: 'system',
+        action: 'window-state',
+        payload: { windowId, active: true },
+        timestamp: Date.now(),
+      }))
+      return new Promise(r => setTimeout(r, 100))
+    }
+
+    try {
+      // User switches to A → untargeted eval lands on A.
+      await becameVisible(winA, 'focus-follow-a')
+      expect(await routeUntargetedEval('1+1')).toBe('a')
+
+      // User switches to B → the next untargeted eval follows to B.
+      await becameVisible(winB, 'focus-follow-b')
+      expect(await routeUntargetedEval('2+2')).toBe('b')
+    } finally {
+      winA.close()
+      winB.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
 })

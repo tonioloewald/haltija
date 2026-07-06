@@ -2475,6 +2475,7 @@ export class DevChannel extends HTMLElement {
   private displayStream: MediaStream | null = null // getDisplayMedia stream when user has granted screen share
   private displayVideo: HTMLVideoElement | null = null // Hidden <video> element bound to displayStream for frame extraction
   private isActive = true // Whether this window is active (responding to commands)
+  private visibilityHandler: (() => void) | null = null // document visibilitychange listener
   private homeLeft = 0 // Store home position for restore
   private homeBottom = 16
   private headless = false // When true, skip all rendering — pure WebSocket bridge
@@ -2793,6 +2794,22 @@ export class DevChannel extends HTMLElement {
 
     this.interceptConsole()
     this.interceptDialogs()
+
+    // Report tab visibility changes so the server can route untargeted
+    // commands to the tab that's actually in front (focus-follows-visible-tab).
+    // Without this, focusedWindowId sticks to whichever tab connected first and
+    // `hj eval` (and every other untargeted command) lands on the wrong tab.
+    if (typeof document !== 'undefined') {
+      this.visibilityHandler = () => {
+        if (document.visibilityState === 'hidden') {
+          this.deactivate()
+        } else {
+          this.activate()
+        }
+      }
+      document.addEventListener('visibilitychange', this.visibilityHandler)
+    }
+
     this.connect()
   }
 
@@ -2804,6 +2821,10 @@ export class DevChannel extends HTMLElement {
     this.clearEventWatchers()
     this.stopMutationWatch()
     this.stopScreenCapture()
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler)
+      this.visibilityHandler = null
+    }
   }
 
   attributeChangedCallback(name: string, _old: string, value: string) {
@@ -6822,6 +6843,11 @@ export class DevChannel extends HTMLElement {
           : window.parent !== window
             ? 'iframe'
             : 'tab'
+
+        // Report real tab visibility so the server can focus the tab that's
+        // actually in front (a background-loaded tab is 'hidden' and must not
+        // grab focus). Defaults to visible in non-browser contexts.
+        this.isActive = typeof document === 'undefined' || document.visibilityState !== 'hidden'
 
         this.send('system', 'connected', {
           windowId: this.windowId,

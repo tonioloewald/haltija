@@ -4673,6 +4673,7 @@ export const COMPONENT_JS: string = `(() => {
     displayStream = null;
     displayVideo = null;
     isActive = true;
+    visibilityHandler = null;
     homeLeft = 0;
     homeBottom = 16;
     headless = false;
@@ -4864,6 +4865,16 @@ export const COMPONENT_JS: string = `(() => {
       }
       this.interceptConsole();
       this.interceptDialogs();
+      if (typeof document !== "undefined") {
+        this.visibilityHandler = () => {
+          if (document.visibilityState === "hidden") {
+            this.deactivate();
+          } else {
+            this.activate();
+          }
+        };
+        document.addEventListener("visibilitychange", this.visibilityHandler);
+      }
       this.connect();
     }
     disconnectedCallback() {
@@ -4874,6 +4885,10 @@ export const COMPONENT_JS: string = `(() => {
       this.clearEventWatchers();
       this.stopMutationWatch();
       this.stopScreenCapture();
+      if (this.visibilityHandler && typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", this.visibilityHandler);
+        this.visibilityHandler = null;
+      }
     }
     attributeChangedCallback(name, _old, value) {
       if (name === "server") {
@@ -8012,6 +8027,7 @@ export const COMPONENT_JS: string = `(() => {
           this.state = "connected";
           this.show();
           const windowType = window.opener ? "popup" : window.parent !== window ? "iframe" : "tab";
+          this.isActive = typeof document === "undefined" || document.visibilityState !== "hidden";
           this.send("system", "connected", {
             windowId: this.windowId,
             browserId: this.browserId,
