@@ -1487,6 +1487,16 @@ test.describe('haltija-dev visibility and actionable mode', () => {
   })
 })
 
+test.describe('test page tab deep-linking', () => {
+  test('?tab= lands directly on the tab (no click race)', async ({ page }) => {
+    // The playground smoke test relies on this to avoid a flaky
+    // navigate → click → assert-visible sequence under headless CI.
+    await page.goto(`${SERVER_URL}/?tab=playground`)
+    await page.waitForSelector('#tab-playground.active', { timeout: 5000 })
+    expect(await page.isVisible('#tab-playground')).toBe(true)
+  })
+})
+
 test.describe('haltija-dev network error tracking', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)

@@ -572,7 +572,17 @@ ${isElectronApp ? '' : `  <script>
         document.getElementById('tab-' + tabId).classList.add('active');
       });
     });
-    
+
+    // Deep-link to a tab via ?tab=<name>. Lets tests (and links) land directly
+    // on a tab instead of relying on a click landing right after navigation —
+    // which raced under headless CI.
+    (function() {
+      var wanted = new URLSearchParams(location.search).get('tab');
+      if (!wanted) return;
+      var btn = document.querySelector('.tab[data-tab="' + wanted + '"]');
+      if (btn) btn.click();
+    })();
+
     // Copy button functionality
     function copyCode(btn) {
       var pre = btn.parentElement.querySelector('pre');

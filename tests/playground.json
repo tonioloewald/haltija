@@ -2,19 +2,13 @@
   "version": 1,
   "name": "Playground interactions",
   "description": "Tests all interactive elements in the Haltija playground tab",
-  "url": "http://localhost:8700",
+  "url": "http://localhost:8700/?tab=playground",
   "tags": ["smoke", "playground"],
   "steps": [
     {
       "action": "navigate",
-      "url": "http://localhost:8700",
-      "description": "Load Haltija home page"
-    },
-    {
-      "action": "click",
-      "selector": "[data-tab=\"playground\"]",
-      "description": "Switch to Playground tab",
-      "purpose": "Playground tab must be visible to interact with test elements"
+      "url": "http://localhost:8700/?tab=playground",
+      "description": "Load Haltija home page directly on the Playground tab (deep-link avoids a click race after navigation)"
     },
     {
       "action": "assert",
