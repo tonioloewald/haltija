@@ -119,6 +119,12 @@ Use ancestors:true to see parent elements when inspecting deep elements.`,
     ancestors: s.boolean.describe(
       'Include ancestor path from root (default false)',
     ).optional,
+    includeBox: s.boolean.describe(
+      'Include each node\'s bounding box { x, y, w, h, visible } (default false)',
+    ).optional,
+    mode: s.string.describe(
+      "'actionable' returns a page action summary (url, title, headings, buttons, links, inputs, selects) instead of the DOM tree",
+    ).optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [

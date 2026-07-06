@@ -1022,6 +1022,8 @@ Use ancestors:true to see parent elements when inspecting deep elements.
 | \`pierceFrames\` | boolean,null | Pierce same-origin iframes (default true) |
 | \`compact\` | boolean,null | Minimal output (default false) |
 | \`ancestors\` | boolean,null | Include ancestor path from root (default false) |
+| \`includeBox\` | boolean,null | Include each node's bounding box { x, y, w, h, visible } (default false) |
+| \`mode\` | string,null | 'actionable' returns a page action summary (url, title, headings, buttons, links, inputs, selects) instead of the DOM tree |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**

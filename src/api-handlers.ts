@@ -740,7 +740,10 @@ registerHandler(api.tree, async (body, ctx) => {
     pierceShadow: body.pierceShadow,
     pierceFrames: body.pierceFrames,
     visibleOnly: body.visibleOnly,
+    interactiveOnly: body.interactiveOnly,
     ancestors: body.ancestors,
+    includeBox: body.includeBox,
+    mode: body.mode,
   }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })

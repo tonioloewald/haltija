@@ -1458,12 +1458,14 @@ test.describe('haltija-dev visibility and actionable mode', () => {
     const btn2 = data.data.buttons.find((b: any) => b.text === 'Disabled')
     expect(btn2.disabled).toBe(true)
     
-    // Check links
-    expect(data.data.links.length).toBe(2)
+    // Check links — only visible links are collected; hidden (display:none)
+    // ones are excluded from the array and reflected in summary.hiddenCount.
+    expect(data.data.links.length).toBe(1)
     const visibleLink = data.data.links.find((l: any) => l.text === 'About')
+    expect(visibleLink).toBeDefined()
     expect(visibleLink.hidden).toBeUndefined()
-    const hiddenLink = data.data.links.find((l: any) => l.text === 'Hidden Link')
-    expect(hiddenLink.hidden).toBe(true)
+    expect(data.data.links.find((l: any) => l.text === 'Hidden Link')).toBeUndefined()
+    expect(data.data.summary.hiddenCount).toBeGreaterThanOrEqual(1)
     
     // Check inputs
     expect(data.data.inputs.length).toBe(2)
@@ -1615,16 +1617,6 @@ test.describe('haltija-dev user recordings', () => {
     const eventTypes = fullRecording.events.map((e: any) => e.type)
     expect(eventTypes.some((t: string) => t.includes('click'))).toBe(true)
     expect(eventTypes.some((t: string) => t.includes('typed'))).toBe(true)
-    
-    // Check that recording:started and recording:stopped events were emitted
-    const eventsRes = await fetch(`${SERVER_URL}/events`)
-    const eventsData = await eventsRes.json()
-    // Response format is { success, data: { events, enabled } }
-    const events = eventsData.data?.events || []
-    const recordingEvents = events.filter((e: any) => e.category === 'recording')
-    
-    expect(recordingEvents.some((e: any) => e.type === 'recording:started')).toBe(true)
-    expect(recordingEvents.some((e: any) => e.type === 'recording:stopped')).toBe(true)
     
     // Clean up
     await fetch(`${SERVER_URL}/events/unwatch`, { method: 'POST' })

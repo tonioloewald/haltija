@@ -58,17 +58,17 @@ async function injectAndWaitForConnection(page: Page) {
     </head>
     <body>
       <div id="root"></div>
-      <tosijs-dev server="${WS_URL}"></tosijs-dev>
+      <haltija-dev server="${WS_URL}"></haltija-dev>
     </body>
     </html>
   `)
   
   // Wait for component
-  await page.waitForSelector('tosijs-dev')
+  await page.waitForSelector('haltija-dev')
   
   // Wait for connected state
   await page.waitForFunction(() => {
-    const el = document.querySelector('tosijs-dev') as any
+    const el = document.querySelector('haltija-dev') as any
     console.log('Component state:', el?.state)
     return el?.state === 'connected'
   }, { timeout: 10000 })

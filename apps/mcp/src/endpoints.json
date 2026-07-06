@@ -70,6 +70,20 @@
           ],
           "description": "Include ancestor path from root (default false)"
         },
+        "includeBox": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include each node's bounding box { x, y, w, h, visible } (default false)"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "'actionable' returns a page action summary (url, title, headings, buttons, links, inputs, selects) instead of the DOM tree"
+        },
         "window": {
           "type": [
             "string",
