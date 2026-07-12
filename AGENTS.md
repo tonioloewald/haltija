@@ -1,79 +1,45 @@
 # Agent Instructions
 
+> **Shared engineering practices** live at
+> **https://github.com/tonioloewald/tosijs-coding-practices** — and, when checked out beside this
+> repo, at [`../tosijs-coding-practices`](../tosijs-coding-practices/README.md). Read that index
+> first for the cross-project defaults. **Session completion ("landing the plane"), the canonical
+> release flow, and the review gate all live there** —
+> [`practices/releasing.md`](../tosijs-coding-practices/practices/releasing.md) and
+> [`practices/review.md`](../tosijs-coding-practices/practices/review.md). This file records only
+> what is **specific to or divergent from** those defaults; when they conflict, this file wins.
+> Same contract as `CLAUDE.md`, which has the architecture.
+
 This project tracks issues and roadmap notes in **`TODO.md`** (free-form: build/distribution
 items, multi-phase plans, known bugs). There is no separate issue-tracker tool — keep `TODO.md`
 current as you work.
 
-## Landing the Plane (Session Completion)
+**Pushing is not gated to a human here.** A session is not done until `git push` succeeds — see
+["Landing the plane"](../tosijs-coding-practices/practices/releasing.md#landing-the-plane--session-completion).
+`npm publish`, by contrast, is usually left to Tonio; ask rather than assume.
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+## Releases
 
-**MANDATORY WORKFLOW:**
+The sequence lives upstream under
+[Project-specific practices → haltija](../tosijs-coding-practices/practices/releasing.md#haltija-npm--electron-dmg).
+The short version: bump **both** `package.json` files → `bun run build` → `bun test src/` 100%
+green → commit → annotated tag → push commits **and** tag → `gh release create` → `npm publish`.
 
-1. **Note remaining work** - Add anything that needs follow-up to `TODO.md`
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update `TODO.md`** - Check off finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+Before a **minor or major** bump, run `/pre-release-review` (the eight-lens adversarial review
+gate). Patch releases don't require it.
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+Haltija-specific notes not worth upstreaming:
 
-## Cutting a beta release
-
-When the user asks for a new beta (e.g. "cut beta.N"), follow this sequence.
-Several steps have non-obvious gotchas that have burned us — they're called out
-inline.
-
-1. **Bump the version** in `package.json` (root). Also bump
-   `apps/desktop/package.json` to match — the `sync-version` script inside
-   `npm run build:mac` does this automatically, but doing it up front means one
-   less commit later.
-
-2. **Rebuild**: `bun run build`. This regenerates `src/version.ts`,
-   `src/embedded-assets.ts`, the `dist/` bundles, and the copy of
-   `apps/desktop/resources/component.js` that ships in the DMG. Verify
-   `src/version.ts` shows the new version.
-
-3. **Run unit tests**: `bun test src/` — must be 100% green before tagging.
-
-4. **Commit the version bump**. Title: `chore: bump version to 1.3.0-beta.N`.
-   Body: a one-bullet-per-meaningful-commit summary of what's new since the
-   previous beta.
-
-5. **Tag** with an annotated message that doubles as the release-note seed:
-   ```bash
-   git tag -a v1.3.0-beta.N -m '...'
-   ```
-
-6. **Push commits and the tag**:
-   ```bash
-   git push origin main
-   git push origin v1.3.0-beta.N
-   ```
-
-7. **Create the GitHub pre-release** (notes-only, no binaries):
-   ```bash
-   gh release create v1.3.0-beta.N \
-     --title 'v1.3.0-beta.N — <one-liner>' \
-     --notes-file /tmp/release-notes.md \
-     --prerelease
-   ```
-
-8. **`npm publish --tag beta`** from the repo root. The `--tag beta` flag is
-   critical — without it, npm marks the beta as `latest` and bare
-   `npm install haltija` would pull a pre-release. Verify with `npm whoami`
-   if it's been a while since the last publish.
+- **Betas** add two flags — `gh release create --prerelease` and `npm publish --tag beta`. Get
+  them right in both directions; upstream explains why.
+- The **annotated tag message doubles as the release-note seed** — write it as prose you'd be
+  happy to publish, then expand it into `gh release create --notes-file`.
+- **Commit body** for a release: one bullet per meaningful commit since the last one.
+- Run **`npm whoami`** before publishing if it's been a while.
+- `bun run build` regenerates `src/version.ts`, `src/embedded-assets.ts`, the `dist/` bundles,
+  and the `apps/desktop/resources/component.js` copy that ships in the DMG. Verify
+  `src/version.ts` shows the new version. It also regenerates the schema-derived docs, which CI
+  (`docs-drift`) will fail on if they're stale — see `CLAUDE.md` → CI / QA.
 
 ### Building a standalone DMG (on demand only)
 
