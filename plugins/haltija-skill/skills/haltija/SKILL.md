@@ -38,7 +38,7 @@ hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
 hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
-hj evaluate "document.title"   # Run JS in the page
+hj evaluate "document.title"   # Run JS in the page (async OK — see below)
 hj screenshot          # Capture the page — PNG default; --format webp|jpeg (smaller), --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 ```
@@ -50,6 +50,18 @@ strings verbatim (no JSON escaping of newlines or quotes), objects/arrays
 as pretty JSON, no envelope wrapper, no trailing hint line. Errors go to
 stderr with a non-zero exit. Pass `--json` to get the full `DevResponse`
 envelope (useful when you need `.id` / `.timestamp` / etc.).
+
+**Async code in `hj eval`.** A returned Promise is resolved for you, and
+top-level `await` works. Multi-statement code runs as a function body, so it
+needs an explicit `return` to produce a value:
+
+```bash
+hj eval "document.title"                                 # sync expression
+hj eval "await fetch('/api/me').then(r => r.json())"     # top-level await
+hj eval "const r = await fetch('/api/me'); return r.status"   # needs `return`
+```
+
+The same holds for `"action": "eval"` steps in test JSON.
 
 **Reading forms without DOM walking.** `hj form` extracts all values from a
 form (or the first form on the page if no selector given) as a structured

@@ -199,6 +199,29 @@ The base CSS selector (before `:text()`) is used to narrow candidates, then text
 
 Implementation: `src/text-selector.ts` (parser), `src/component.ts` (`resolveSelector`/`resolveSelectorAll`).
 
+### Eval Semantics (`hj eval`, `POST /eval`, `eval` test step)
+
+All three paths funnel into the same place: the code string is passed through the server verbatim
+and run by `evalCode()` in `src/component.ts`. Async code works:
+
+```bash
+hj eval "document.title"                              # sync expression → its value
+hj eval "fetch('/api').then(r => r.json())"           # returned Promise → resolved value
+hj eval "await fetch('/api').then(r => r.json())"     # top-level await → resolved value
+hj eval "const r = await fetch('/api'); return r.status"  # multi-statement → needs `return`
+```
+
+The same applies to `"action": "eval"` steps in test JSON.
+
+**Why `evalCode` is a three-step ladder, not one `eval`:** direct `eval` never inherits an async
+context (even though the calling method is `async`), so top-level `await` — and `return` — are
+`SyntaxError`s. So it tries direct `eval` first, then retries inside an async IIFE in expression
+position (preserves the completion value), then as a statement body (needs an explicit `return`).
+
+The retry is deliberately gated on the code matching `/\b(await|return)\b/`. A *runtime*
+`SyntaxError` (e.g. `JSON.parse('{')`) is indistinguishable from a parse failure at that point, and
+retrying would re-run any side effects the code already had. Keep that guard if you touch this.
+
 ### Shadow DOM & Iframe Piercing
 
 `/tree`, `/query`, and related lookups support optional `pierceShadow` and `pierceFrames` flags (CLI: `hj tree --shadow`, `hj tree --frames`). With these, the widget descends into open shadow roots and same-origin iframe documents and flattens them into the same tree / ref ID space. Use when targeting Web Components or framed content.
@@ -283,7 +306,7 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 - **`type`**: Uses realistic per-character keystroke simulation by default (native setter, keydown/input/keyup per character, focus/blur lifecycle). Add `"paste": true` for fast paste-style input that still triggers React/form framework validation. Add `"humanlike": false` for instant typing. `"typoRate"` is always 0 in tests.
 - **`click`**: Uses realistic click simulation (scroll into view, mouseenter/mouseover/mousedown/mouseup/click sequence).
 - **`check`**: For checkboxes/radios — uses realistic click. The recording system generates these.
-- **`eval`**: Executes JavaScript in the browser. Promises are automatically awaited — if the code returns a Promise, the resolved value is returned.
+- **`eval`**: Executes JavaScript in the browser. Async code is supported — see "Eval Semantics" above. Multi-statement code needs an explicit `return`.
 - **`tabs-open`**: Opens a new tab (desktop app only). Optional `url` field.
 - **`tabs-close`**: Closes a tab by `window` ID.
 - **`tabs-focus`**: Focuses a tab by `window` ID. Updates server-side focus tracking.
@@ -380,11 +403,18 @@ Version is managed in `package.json` only. The build script generates `src/versi
 
 ## CI / QA
 
-The GitHub Actions workflow (`.github/workflows/test-qa.yml`) runs on push/PR to main:
-- Builds, launches Electron under xvfb, waits for server + browser connection
-- Runs test JSON fixtures via `POST /test/run` (not `bun test`): `tests/playground.json`, `tests/homepage.json`
-- `tests/xinjs-spa.json` is non-blocking (external site)
-- On failure, captures snapshot + screenshot as artifacts
+Three GitHub Actions workflows run on push/PR to main:
+
+- **`test-qa.yml`** — builds, launches Electron under xvfb, waits for server + browser connection,
+  then runs the test JSON fixtures via `POST /test/run` (not `bun test`): `tests/playground.json`,
+  `tests/homepage.json`. `tests/xinjs-spa.json` is non-blocking (external site). On failure it
+  captures a snapshot + screenshot as artifacts.
+- **`e2e.yml`** — runs the Playwright suites (`src/*.playwright.ts`); each spawns its own haltija
+  server and injects the widget into a real Chromium page.
+- **`docs-drift.yml`** — fails if the generated artifacts are stale relative to the schema. Any
+  change to `src/api-schema.ts` **must** be followed by `bun run build` and a commit of the
+  regenerated `API.md`, `DOCS.md`, `llms.txt`, `bin/hints.json`, and `apps/mcp/src/endpoints.json`,
+  or CI goes red.
 
 ## Issue Tracking
 

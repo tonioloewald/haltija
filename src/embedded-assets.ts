@@ -2421,7 +2421,14 @@ Great for debugging - check for errors after actions fail.
 Run arbitrary JavaScript in the browser context. Returns the result.
 
 The code runs in the page's context with access to window, document, etc.
-Return values are JSON-serialized. Promises are awaited.
+Return values are JSON-serialized.
+
+Async code is supported: a returned Promise is awaited, and top-level \`await\`
+works. Multi-statement code needs an explicit \`return\` to produce a value.
+
+  document.title                        -> the title
+  await fetch('/api').then(r => r.json()) -> the parsed body
+  const r = await fetch('/api'); return r.status -> the status code
 
 **Parameters:**
 
@@ -2960,7 +2967,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.3.3";
+  var VERSION = "1.3.4";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;
@@ -3512,13 +3519,13 @@ export const COMPONENT_JS: string = `(() => {
   }
   function resolveRefOrSelector(ref, selector) {
     if (ref) {
-      const result2 = refRegistry.resolveWithStatus(ref);
-      if (result2.element) {
+      const result = refRegistry.resolveWithStatus(ref);
+      if (result.element) {
         stats.refsResolved++;
-        return { element: result2.element, targetDesc: \`@\${ref}\` };
+        return { element: result.element, targetDesc: \`@\${ref}\` };
       }
       stats.refsStale++;
-      const errorMsg = result2.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result2.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+      const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
       return { element: null, targetDesc: \`@\${ref}\`, error: errorMsg };
     }
     if (selector) {
@@ -3529,13 +3536,13 @@ export const COMPONENT_JS: string = `(() => {
   }
   function resolveRefOrSelectorAll(ref, selector) {
     if (ref) {
-      const result2 = refRegistry.resolveWithStatus(ref);
-      if (result2.element) {
+      const result = refRegistry.resolveWithStatus(ref);
+      if (result.element) {
         stats.refsResolved++;
-        return { elements: [result2.element], targetDesc: \`@\${ref}\` };
+        return { elements: [result.element], targetDesc: \`@\${ref}\` };
       }
       stats.refsStale++;
-      const errorMsg = result2.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result2.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+      const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
       return { elements: [], targetDesc: \`@\${ref}\`, error: errorMsg };
     }
     if (selector) {
@@ -5784,8 +5791,8 @@ export const COMPONENT_JS: string = `(() => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "start", window: this.windowId })
         });
-        const result2 = await response.json();
-        if (result2.success) {
+        const result = await response.json();
+        if (result.success) {
           this.isRecording = true;
           this.serverManagedRecording = true;
           this.recordingStartTime = Date.now();
@@ -5797,7 +5804,7 @@ export const COMPONENT_JS: string = `(() => {
           this.updateRecordingUI(true);
           console.log("[Haltija] Recording started (server-managed)");
         } else {
-          console.error("[Haltija] Failed to start recording:", result2.error);
+          console.error("[Haltija] Failed to start recording:", result.error);
         }
       } catch (err) {
         console.error("[Haltija] Failed to start recording:", err);
@@ -5812,10 +5819,10 @@ export const COMPONENT_JS: string = `(() => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "stop", window: this.windowId })
         });
-        const result2 = await response.json();
-        if (result2.success && result2.data) {
-          this.recordingEvents = result2.data.events || [];
-          this.recordingStartTime = result2.data.startTime || this.recordingStartTime;
+        const result = await response.json();
+        if (result.success && result.data) {
+          this.recordingEvents = result.data.events || [];
+          this.recordingStartTime = result.data.startTime || this.recordingStartTime;
           const recordingId = \`rec_\${this.recordingStartTime}_\${Math.random().toString(36).slice(2, 8)}\`;
           this.lastRecordingId = recordingId;
           console.log(\`[Haltija] Recording stopped (\${this.recordingEvents.length} events)\`);
@@ -6128,15 +6135,15 @@ export const COMPONENT_JS: string = `(() => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description, agentId })
         });
-        const result2 = await response.json();
-        if (result2.error) {
+        const result = await response.json();
+        if (result.error) {
           if (successMsg) {
-            successMsg.textContent = \`⚠️ \${result2.error}\`;
+            successMsg.textContent = \`⚠️ \${result.error}\`;
             successMsg.style.color = "#f59e0b";
           }
         } else {
           if (successMsg) {
-            successMsg.textContent = \`✓ Sent to \${agentName}\${result2.interrupted ? " (interrupted)" : ""}\`;
+            successMsg.textContent = \`✓ Sent to \${agentName}\${result.interrupted ? " (interrupted)" : ""}\`;
             successMsg.style.color = "#22c55e";
           }
           setTimeout(() => this.closeTestModal(), 1500);
@@ -6667,13 +6674,13 @@ export const COMPONENT_JS: string = `(() => {
         const haltija = window.haltija;
         if (haltija?.openAgentTab) {
           newAgentText.textContent = "Creating...";
-          const result2 = await haltija.openAgentTab();
-          if (result2?.shellId) {
+          const result = await haltija.openAgentTab();
+          if (result?.shellId) {
             await new Promise((r) => setTimeout(r, 300));
             if (type === "selection") {
-              this.sendSelectionToAgent(result2.shellId, result2.name || "agent");
+              this.sendSelectionToAgent(result.shellId, result.name || "agent");
             } else if (type === "recording") {
-              this.sendRecordingToAgent(result2.shellId, result2.name || "agent");
+              this.sendRecordingToAgent(result.shellId, result.name || "agent");
             }
           } else {
             console.error(\`\${LOG_PREFIX} Failed to create agent tab\`);
@@ -6742,8 +6749,8 @@ export const COMPONENT_JS: string = `(() => {
             context: \`selection from \${window.location.host}\`
           })
         });
-        const result2 = await response.json();
-        if (result2.sent) {
+        const result = await response.json();
+        if (result.sent) {
           this.clearSelection();
           console.log(\`\${LOG_PREFIX} Selection sent to \${agentName}\`);
         }
@@ -8258,11 +8265,11 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, "Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f");
           return;
         }
-        haltija.startVideoCapture({ maxDuration: payload2.maxDuration }).then((result2) => {
-          if (result2.success) {
-            this.respond(msg2.id, true, { recordingId: result2.recordingId });
+        haltija.startVideoCapture({ maxDuration: payload2.maxDuration }).then((result) => {
+          if (result.success) {
+            this.respond(msg2.id, true, { recordingId: result.recordingId });
           } else {
-            this.respond(msg2.id, false, undefined, result2.error || "Failed to start video");
+            this.respond(msg2.id, false, undefined, result.error || "Failed to start video");
           }
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, \`Failed to start video: \${err.message}\`);
@@ -8272,11 +8279,11 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, "Video capture requires the Haltija Desktop app. Run: npx haltija@latest -f");
           return;
         }
-        haltija.stopVideoCapture().then((result2) => {
-          if (result2.success) {
-            this.respond(msg2.id, true, { path: result2.path, duration: result2.duration, size: result2.size, format: result2.format });
+        haltija.stopVideoCapture().then((result) => {
+          if (result.success) {
+            this.respond(msg2.id, true, { path: result.path, duration: result.duration, size: result.size, format: result.format });
           } else {
-            this.respond(msg2.id, false, undefined, result2.error || "Failed to stop video");
+            this.respond(msg2.id, false, undefined, result.error || "Failed to stop video");
           }
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, \`Failed to stop video: \${err.message}\`);
@@ -8286,8 +8293,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, true, { recording: false });
           return;
         }
-        haltija.videoStatus().then((result2) => {
-          this.respond(msg2.id, true, result2);
+        haltija.videoStatus().then((result) => {
+          this.respond(msg2.id, true, result);
         }).catch(() => {
           this.respond(msg2.id, true, { recording: false });
         });
@@ -8304,8 +8311,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, notAvailable);
           return;
         }
-        haltija.networkWatch(payload2 || {}).then((result2) => {
-          this.respond(msg2.id, result2.success !== false, result2);
+        haltija.networkWatch(payload2 || {}).then((result) => {
+          this.respond(msg2.id, result.success !== false, result);
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, err.message);
         });
@@ -8314,8 +8321,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, notAvailable);
           return;
         }
-        haltija.networkUnwatch().then((result2) => {
-          this.respond(msg2.id, true, result2);
+        haltija.networkUnwatch().then((result) => {
+          this.respond(msg2.id, true, result);
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, err.message);
         });
@@ -8324,8 +8331,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, notAvailable);
           return;
         }
-        haltija.networkLog(payload2 || {}).then((result2) => {
-          this.respond(msg2.id, true, result2);
+        haltija.networkLog(payload2 || {}).then((result) => {
+          this.respond(msg2.id, true, result);
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, err.message);
         });
@@ -8334,8 +8341,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, notAvailable);
           return;
         }
-        haltija.networkStats().then((result2) => {
-          this.respond(msg2.id, true, result2);
+        haltija.networkStats().then((result) => {
+          this.respond(msg2.id, true, result);
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, err.message);
         });
@@ -8344,8 +8351,8 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, notAvailable);
           return;
         }
-        haltija.networkClear().then((result2) => {
-          this.respond(msg2.id, true, result2);
+        haltija.networkClear().then((result) => {
+          this.respond(msg2.id, true, result);
         }).catch((err) => {
           this.respond(msg2.id, false, undefined, err.message);
         });
@@ -8791,9 +8798,9 @@ export const COMPONENT_JS: string = `(() => {
             try {
               const capturePromise = targetSelector ? haltija.captureElement(targetSelector) : haltija.capturePage();
               const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ success: false, error: "Screenshot capture timed out after 10s" }), 1e4));
-              const result2 = await Promise.race([capturePromise, timeoutPromise]);
-              if (result2?.success && result2.data) {
-                const converted = await convertFormat(result2.data);
+              const result = await Promise.race([capturePromise, timeoutPromise]);
+              if (result?.success && result.data) {
+                const converted = await convertFormat(result.data);
                 this.respond(msg2.id, true, {
                   image: converted.image,
                   viewport,
@@ -8803,8 +8810,8 @@ export const COMPONENT_JS: string = `(() => {
                   source: "electron"
                 });
                 return;
-              } else if (result2 && !result2.success) {
-                this.respond(msg2.id, false, null, result2.error || "Electron capture failed");
+              } else if (result && !result.success) {
+                this.respond(msg2.id, false, null, result.error || "Electron capture failed");
                 return;
               }
             } catch (err) {
@@ -8875,14 +8882,29 @@ export const COMPONENT_JS: string = `(() => {
         this.respond(msg2.id, true);
       }
     }
-    async handleEvalMessage(msg) {
+    async handleEvalMessage(msg2) {
       try {
-        const result = eval(msg.payload.code);
+        const result = this.evalCode(msg2.payload.code);
         const resolved = result instanceof Promise ? await result : result;
-        this.respond(msg.id, true, resolved);
+        this.respond(msg2.id, true, resolved);
       } catch (err) {
-        this.respond(msg.id, false, null, err.message);
+        this.respond(msg2.id, false, null, err.message);
       }
+    }
+    evalCode(code) {
+      try {
+        return eval(code);
+      } catch (err) {
+        if (!(err instanceof SyntaxError) || !/\\b(await|return)\\b/.test(code))
+          throw err;
+      }
+      try {
+        return eval(\`(async () => (\${code}))()\`);
+      } catch (err) {
+        if (!(err instanceof SyntaxError))
+          throw err;
+      }
+      return eval(\`(async () => { \${code} })()\`);
     }
     async handleFetchMessage(msg2) {
       const { url } = msg2.payload;
@@ -8960,14 +8982,14 @@ export const COMPONENT_JS: string = `(() => {
       let el = null;
       let targetDesc = "";
       if (ref) {
-        const result2 = refRegistry.resolveWithStatus(ref);
-        el = result2.element;
+        const result = refRegistry.resolveWithStatus(ref);
+        el = result.element;
         targetDesc = \`@\${ref}\`;
         if (el) {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result2.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result2.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+          const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -9312,14 +9334,14 @@ export const COMPONENT_JS: string = `(() => {
       let el = null;
       let targetDesc = "";
       if (payload2.ref) {
-        const result2 = refRegistry.resolveWithStatus(payload2.ref);
-        el = result2.element;
+        const result = refRegistry.resolveWithStatus(payload2.ref);
+        el = result.element;
         targetDesc = \`@\${payload2.ref}\`;
         if (el) {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result2.status === "never_assigned" ? \`Ref @\${payload2.ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result2.status === "removed_from_dom" ? \`Ref @\${payload2.ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${payload2.ref} is stale - element was garbage collected (try refreshing /tree)\`;
+          const errorMsg = result.status === "never_assigned" ? \`Ref @\${payload2.ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${payload2.ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${payload2.ref} is stale - element was garbage collected (try refreshing /tree)\`;
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -9388,15 +9410,15 @@ export const COMPONENT_JS: string = `(() => {
         let target = null;
         let targetDesc = "";
         if (ref) {
-          const result2 = refRegistry.resolveWithStatus(ref);
-          target = result2.element;
+          const result = refRegistry.resolveWithStatus(ref);
+          target = result.element;
           targetDesc = \`@\${ref}\`;
           if (target) {
             stats.refsResolved++;
             target.focus();
           } else {
             stats.refsStale++;
-            const errorMsg = result2.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result2.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+            const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
             this.respond(responseId, false, null, errorMsg);
             return;
           }
@@ -9788,9 +9810,9 @@ export const COMPONENT_JS: string = `(() => {
         });
       } else if (action2 === "result") {
         if (this.selectionResult) {
-          const result2 = this.selectionResult;
+          const result = this.selectionResult;
           this.clearSelection();
-          this.respond(msg2.id, true, result2);
+          this.respond(msg2.id, true, result);
         } else {
           this.respond(msg2.id, false, null, "No selection available");
         }

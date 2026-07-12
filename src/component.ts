@@ -7981,14 +7981,38 @@ export class DevChannel extends HTMLElement {
 
   private async handleEvalMessage(msg: DevMessage) {
     try {
-      // Note: eval is dangerous but this is a dev tool for localhost
-      const result = eval(msg.payload.code)
+      const result = this.evalCode(msg.payload.code)
       // Auto-await promises so callers get the resolved value
       const resolved = result instanceof Promise ? await result : result
       this.respond(msg.id, true, resolved)
     } catch (err: any) {
       this.respond(msg.id, false, null, err.message)
     }
+  }
+
+  /**
+   * Direct `eval` never inherits an async context, so top-level `await` is a
+   * SyntaxError no matter what encloses this call — likewise `return`. Retry
+   * such code inside an async IIFE: expression position first (it preserves the
+   * completion value), statement body second (which needs an explicit `return`).
+   *
+   * The retry is gated on the code mentioning `await`/`return` because a runtime
+   * SyntaxError (`JSON.parse('{')`) is indistinguishable from a parse failure
+   * here, and re-running would repeat any side effects the code already had.
+   */
+  private evalCode(code: string): any {
+    // Note: eval is dangerous but this is a dev tool for localhost
+    try {
+      return eval(code)
+    } catch (err) {
+      if (!(err instanceof SyntaxError) || !/\b(await|return)\b/.test(code)) throw err
+    }
+    try {
+      return eval(`(async () => (${code}))()`)
+    } catch (err) {
+      if (!(err instanceof SyntaxError)) throw err
+    }
+    return eval(`(async () => { ${code} })()`)
   }
 
   private async handleFetchMessage(msg: DevMessage) {

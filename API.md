@@ -1505,7 +1505,14 @@ Great for debugging - check for errors after actions fail.
 Run arbitrary JavaScript in the browser context. Returns the result.
 
 The code runs in the page's context with access to window, document, etc.
-Return values are JSON-serialized. Promises are awaited.
+Return values are JSON-serialized.
+
+Async code is supported: a returned Promise is awaited, and top-level `await`
+works. Multi-statement code needs an explicit `return` to produce a value.
+
+  document.title                        -> the title
+  await fetch('/api').then(r => r.json()) -> the parsed body
+  const r = await fetch('/api'); return r.status -> the status code
 
 **Parameters:**
 

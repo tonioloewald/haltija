@@ -578,12 +578,60 @@ test.describe('haltija-dev server integration', () => {
     })
     
     const data = await res.json()
-    
+
     if (data.success) {
       expect(data.data).toBe(84)
     }
   })
-  
+
+  test.describe('eval async support', () => {
+    const evalCode = async (code: string) => {
+      const res = await fetch(`${SERVER_URL}/eval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      return res.json()
+    }
+
+    test('resolves a returned promise', async () => {
+      const data = await evalCode('Promise.resolve(1 + 1)')
+      expect(data.success).toBe(true)
+      expect(data.data).toBe(2)
+    })
+
+    test('supports top-level await', async () => {
+      const data = await evalCode('await Promise.resolve("awaited")')
+      expect(data.success).toBe(true)
+      expect(data.data).toBe('awaited')
+    })
+
+    test('supports await in a multi-statement body via return', async () => {
+      const data = await evalCode(
+        'const n = await Promise.resolve(20); return n + 1'
+      )
+      expect(data.success).toBe(true)
+      expect(data.data).toBe(21)
+    })
+
+    test('reports rejections as errors, not results', async () => {
+      const data = await evalCode('await Promise.reject(new Error("nope"))')
+      expect(data.success).toBe(false)
+      expect(data.error).toContain('nope')
+    })
+
+    test('a runtime SyntaxError is reported, and the code runs only once', async () => {
+      await evalCode('window.__evalRuns = 0')
+      // JSON.parse throws SyntaxError at runtime, which must not be mistaken for
+      // a parse failure and retried — that would double the side effect.
+      const data = await evalCode('window.__evalRuns++; JSON.parse("{")')
+      expect(data.success).toBe(false)
+
+      const runs = await evalCode('window.__evalRuns')
+      expect(runs.data).toBe(1)
+    })
+  })
+
   test('mutation watching via REST', async ({ page }) => {
     // Verify connection is established first
     const connected = await page.evaluate(() => {

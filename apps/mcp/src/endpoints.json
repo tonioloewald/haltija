@@ -1149,7 +1149,7 @@
     "path": "/eval",
     "method": "POST",
     "summary": "Execute JavaScript",
-    "description": "Run arbitrary JavaScript in the browser context. Returns the result.\n\nThe code runs in the page's context with access to window, document, etc.\nReturn values are JSON-serialized. Promises are awaited.",
+    "description": "Run arbitrary JavaScript in the browser context. Returns the result.\n\nThe code runs in the page's context with access to window, document, etc.\nReturn values are JSON-serialized.\n\nAsync code is supported: a returned Promise is awaited, and top-level `await`\nworks. Multi-statement code needs an explicit `return` to produce a value.\n\n  document.title                        -> the title\n  await fetch('/api').then(r => r.json()) -> the parsed body\n  const r = await fetch('/api'); return r.status -> the status code",
     "inputSchema": {
       "type": "object",
       "properties": {
