@@ -18,6 +18,9 @@ import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 
+/** Where instance entries live. Mirrors DEFAULT_REGISTRY_DIR in src/sessions.ts. */
+const REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join(homedir(), '.haltija', 'servers')
+
 if (args[0] === '--version' || args[0] === '-v') {
   console.log(HJ_VERSION)
   process.exit(0)
@@ -51,7 +54,7 @@ async function runWhere(port, portSource, jsonOutput) {
   // an entry pointing at this port.
   let instanceName = null
   try {
-    const dir = join(homedir(), '.haltija', 'servers')
+    const dir = REGISTRY_DIR
     if (existsSync(dir)) {
       for (const file of readdirSync(dir)) {
         if (!file.endsWith('.json')) continue
@@ -121,7 +124,7 @@ async function runWhere(port, portSource, jsonOutput) {
  * malformed, or the recorded pid is no longer alive.
  */
 function lookupNamedInstance(name) {
-  const path = join(homedir(), '.haltija', 'servers', `${name}.json`)
+  const path = join(REGISTRY_DIR, `${name}.json`)
   if (!existsSync(path)) return null
   let entry
   try {
@@ -141,7 +144,7 @@ function lookupNamedInstance(name) {
  * standalone into dist/hj.js, with no access to the compiled TS.
  */
 function listLiveInstances() {
-  const dir = join(homedir(), '.haltija', 'servers')
+  const dir = REGISTRY_DIR
   if (!existsSync(dir)) return []
   const out = []
   for (const file of readdirSync(dir)) {
@@ -184,7 +187,14 @@ ${bold('hj')} - Haltija command-line interface
 
 Usage: hj <command> [args...]
 
-${dim('Targeting a specific haltija server (per-shell):')}
+${dim('Which server does hj talk to?')}
+  ${dim('By default, the one that owns the directory you are in: a haltija server')}
+  ${dim('records where it was started, and hj picks the one whose directory is the')}
+  ${dim('nearest ancestor of your cwd. So inside a project with its own server,')}
+  ${dim('plain `hj tree` just works. Otherwise it falls back to port 8700.')}
+  ${dim('Run `hj where` to see the port, WHY it was chosen, and what is alive there.')}
+
+${dim('Overriding that (per-shell):')}
   ${dim('haltija --name api --server')}   # in another shell: register as "api"
   ${dim('export HALTIJA_NAME=api')}       # all hj calls in this shell talk to "api"
   ${dim('hj --name api tree')}            # one-off name override
@@ -192,6 +202,7 @@ ${dim('Targeting a specific haltija server (per-shell):')}
   ${dim('hj --port 9123 tree')}           # one-off port override
   ${dim('export HALTIJA_TOKEN=secret')}   # required when server was started with HALTIJA_TOKEN
   ${dim('hj --token secret tree')}        # one-off token override
+  ${dim('hj --version')}                  # which hj is this?
 ${listSubcommands()}
 Run ${dim('hj --help')} for this help.
 Run ${dim('haltija --help')} for server/app options.
@@ -210,6 +221,18 @@ if (nameIdx !== -1 && args[nameIdx + 1]) {
   args.splice(nameIdx, 2)
 }
 
+// Parse --port up front. It must be consumed BEFORE resolution runs: the
+// fallback branch below warns about landing on the default port, and if --port
+// were still unparsed at that moment, `hj --port 9999` would warn "you're on
+// 8700, use --port" and then correctly use 9999 — a single run contradicting
+// itself, telling the user to reach for the flag they just used.
+let portFlag = ''
+const portIdx = args.indexOf('--port')
+if (portIdx !== -1 && args[portIdx + 1]) {
+  portFlag = args[portIdx + 1]
+  args.splice(portIdx, 2)
+}
+
 // Port resolution priority:
 //   --port flag > --name/HALTIJA_NAME registry lookup > HALTIJA_PORT env
 //   > DEV_CHANNEL_PORT env > cwd match against the registry > 8700 default
@@ -218,13 +241,32 @@ if (nameIdx !== -1 && args[nameIdx + 1]) {
 // started inside a project records its directory, so plain `hj` run anywhere
 // under that directory routes to it. Without it, every `hj` in every project
 // lands on 8700 and drives whatever browser is focused there — silently.
+//
+// Resolved highest-precedence-first and short-circuited, so each source is
+// consulted only when nothing above it decided. Only the final, losing branch
+// warns.
 let port, portSource
-let cwdMatch = null
-if (process.env.DEV_CHANNEL_PORT) { port = process.env.DEV_CHANNEL_PORT; portSource = 'DEV_CHANNEL_PORT env (legacy)' }
-if (process.env.HALTIJA_PORT)     { port = process.env.HALTIJA_PORT;     portSource = 'HALTIJA_PORT env' }
-if (!port && !resolvedName) {
+if (portFlag) {
+  port = portFlag
+  portSource = '--port flag'
+} else if (resolvedName) {
+  const entry = lookupNamedInstance(resolvedName)
+  if (!entry) {
+    console.error(`hj: no live haltija instance named "${resolvedName}".`)
+    console.error(`Start one with:  haltija --name ${resolvedName} --server`)
+    process.exit(1)
+  }
+  port = String(entry.port)
+  portSource = `name "${resolvedName}" via ${nameSource}`
+} else if (process.env.HALTIJA_PORT) {
+  port = process.env.HALTIJA_PORT
+  portSource = 'HALTIJA_PORT env'
+} else if (process.env.DEV_CHANNEL_PORT) {
+  port = process.env.DEV_CHANNEL_PORT
+  portSource = 'DEV_CHANNEL_PORT env (legacy)'
+} else {
   const live = listLiveInstances()
-  cwdMatch = resolveByCwd(process.cwd(), live)
+  const cwdMatch = resolveByCwd(process.cwd(), live)
   if (cwdMatch) {
     port = String(cwdMatch.port)
     portSource = `cwd match: ${cwdMatch.name}`
@@ -234,30 +276,14 @@ if (!port && !resolvedName) {
     // Falling back to the shared default while project servers are running is
     // the classic misroute — you think you're driving this project's browser
     // and you're driving someone else's. Say so rather than doing it quietly.
+    // Reached only when nothing else selected a port, so it can't contradict an
+    // explicit choice.
     if (live.length) {
       const names = live.map((e) => `${e.name} (${e.cwd})`).join(', ')
       console.error(`hj: warning — targeting the default port 8700, but these haltija servers are running: ${names}`)
       console.error(`hj: if you meant one of them, cd into its directory, or use --name/--port. See \`hj where\`.`)
     }
   }
-}
-if (!port) { port = '8700'; portSource = '8700 (default)' }
-if (resolvedName) {
-  const entry = lookupNamedInstance(resolvedName)
-  if (entry) {
-    port = String(entry.port)
-    portSource = `name "${resolvedName}" via ${nameSource}`
-  } else {
-    console.error(`hj: no live haltija instance named "${resolvedName}".`)
-    console.error(`Start one with:  haltija --name ${resolvedName} --server`)
-    process.exit(1)
-  }
-}
-const portIdx = args.indexOf('--port')
-if (portIdx !== -1 && args[portIdx + 1]) {
-  port = args[portIdx + 1]
-  portSource = '--port flag'
-  args.splice(portIdx, 2)
 }
 
 // Parse --token option (sets HALTIJA_TOKEN env so cli-subcommand.mjs picks it up).

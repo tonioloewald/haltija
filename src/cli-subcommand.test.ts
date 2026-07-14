@@ -789,6 +789,16 @@ describe('parseTestArgs', () => {
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+
+// Spawned servers register themselves in the instance registry. Point them at a
+// throwaway dir: otherwise a transient test server lands in the developer's real
+// ~/.haltija/servers/ and — same cwd, newer startedAt — out-ranks their actual dev
+// server on a cwd match, so `hj` in this repo silently drives a browserless test
+// server. Set before any spawn; sessions.ts resolves the dir per call.
+process.env.HALTIJA_REGISTRY_DIR = mkdtempSync(join(tmpdir(), 'haltija-test-registry-'))
+
 
 describe('standalone hj bundle', () => {
   const hjPath = join(import.meta.dir, '..', 'dist', 'hj.js')

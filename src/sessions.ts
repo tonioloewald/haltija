@@ -36,7 +36,24 @@ export interface NamedInstance {
   auto?: boolean
 }
 
-export const DEFAULT_REGISTRY_DIR = join(homedir(), '.haltija', 'servers')
+/**
+ * Where instance entries live.
+ *
+ * `HALTIJA_REGISTRY_DIR` overrides it. The `dir` option threaded through this
+ * module only helps callers *in this process* — a server we spawn is a separate
+ * process, so without an env override a spawned test server writes into the
+ * developer's real `~/.haltija/servers/` and can out-rank their actual dev
+ * server on a cwd match. Tests that spawn servers must set this to a temp dir.
+ *
+ * Resolved per call, not once at import: a test that sets the env var in its
+ * module body would otherwise lose the race to ESM's hoisted imports.
+ */
+export function registryDir(): string {
+  return process.env.HALTIJA_REGISTRY_DIR || join(homedir(), '.haltija', 'servers')
+}
+
+/** @deprecated Snapshot taken at import. Prefer `registryDir()`. */
+export const DEFAULT_REGISTRY_DIR = registryDir()
 
 /** Validate a name: alphanumerics, dashes, underscores, dots. No path separators. */
 export function isValidName(name: string): boolean {
@@ -72,7 +89,7 @@ export function register(
   if (!isValidName(name)) {
     throw new Error(`Invalid haltija instance name: ${JSON.stringify(name)}. Use alphanumerics, dashes, underscores, dots.`)
   }
-  const dir = opts.dir || DEFAULT_REGISTRY_DIR
+  const dir = opts.dir || registryDir()
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   const entry: NamedInstance = {
     name,
@@ -88,7 +105,7 @@ export function register(
 
 /** Remove a registry entry. No-op if it doesn't exist. */
 export function unregister(name: string, opts: { dir?: string } = {}): void {
-  const dir = opts.dir || DEFAULT_REGISTRY_DIR
+  const dir = opts.dir || registryDir()
   const p = pathFor(name, dir)
   try {
     rmSync(p, { force: true })
@@ -102,7 +119,7 @@ export function unregister(name: string, opts: { dir?: string } = {}): void {
  * stale (pid no longer alive) — stale entries are removed as a side effect.
  */
 export function lookup(name: string, opts: { dir?: string } = {}): NamedInstance | null {
-  const dir = opts.dir || DEFAULT_REGISTRY_DIR
+  const dir = opts.dir || registryDir()
   const p = pathFor(name, dir)
   if (!existsSync(p)) return null
   let entry: NamedInstance
@@ -125,7 +142,7 @@ export function lookup(name: string, opts: { dir?: string } = {}): NamedInstance
  * effect of the listing.
  */
 export function list(opts: { dir?: string } = {}): NamedInstance[] {
-  const dir = opts.dir || DEFAULT_REGISTRY_DIR
+  const dir = opts.dir || registryDir()
   if (!existsSync(dir)) return []
   const out: NamedInstance[] = []
   for (const file of readdirSync(dir)) {

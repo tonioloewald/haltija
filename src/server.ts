@@ -4208,7 +4208,20 @@ const primaryUrl = httpsUrl || httpUrl
 // to start, so its cwd says nothing about which project it serves; letting it
 // win a cwd match would reintroduce the cross-project misrouting this exists to
 // prevent. An explicit --name on a desktop server is still honored.
-const REGISTRY_NAME = INSTANCE_NAME || (isDesktopApp ? '' : autoNameFor(PORT))
+//
+// Only ever register a port we are actually listening on over HTTP. Under
+// `--https` the HTTP listener never binds, but PORT keeps its 8700 default — so
+// registering it would publish a *phantom* entry claiming this project lives on
+// 8700. Every plain `hj` under this directory would then cwd-match to 8700 and
+// either fail, or (worse) silently drive the desktop app's browser, which is the
+// exact misroute this release exists to eliminate. hj speaks HTTP only, so an
+// https-only server is not reachable by it at all; publishing an entry for it
+// would be a lie either way.
+const CAN_BE_REGISTERED = USE_HTTP
+const REGISTRY_NAME = !CAN_BE_REGISTERED ? '' : (INSTANCE_NAME || (isDesktopApp ? '' : autoNameFor(PORT)))
+if (!CAN_BE_REGISTERED && (INSTANCE_NAME || !isDesktopApp)) {
+  console.log(`${LOG_PREFIX} HTTPS-only: not registering an instance (hj speaks HTTP; cwd routing and --name need an HTTP port)`)
+}
 if (REGISTRY_NAME) {
   try {
     registerNamedInstance(REGISTRY_NAME, PORT, { auto: !INSTANCE_NAME })

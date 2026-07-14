@@ -9,6 +9,16 @@ import { spawn, type Subprocess } from 'bun'
 import { existsSync, readFileSync, rmSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+
+// Spawned servers register themselves in the instance registry. Point them at a
+// throwaway dir: otherwise a transient test server lands in the developer's real
+// ~/.haltija/servers/ and — same cwd, newer startedAt — out-ranks their actual dev
+// server on a cwd match, so `hj` in this repo silently drives a browserless test
+// server. Set before any spawn; sessions.ts resolves the dir per call.
+process.env.HALTIJA_REGISTRY_DIR = mkdtempSync(join(tmpdir(), 'haltija-test-registry-'))
+
 
 const REGISTRY_DIR = join(homedir(), '.haltija', 'servers')
 const trackedNames = new Set<string>()
