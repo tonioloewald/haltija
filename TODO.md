@@ -44,6 +44,45 @@ Every item is something that had to be hand-rolled — badly, three times — in
       because the tool truncated the JSON twice. Sampling primitives must return
       agent-sized tabular output, not raw JSON that gets cut off.
 
+- [ ] **Custom-element-aware inspection** *(tosijs-project)*. Shadow roots,
+      `initAttributes`-backed properties, CSS custom properties like `--local-progress`.
+      Generic DOM tools flatten all of that; a **tosijs-native** debugger shouldn't. We already
+      pierce shadow DOM structurally (`hj tree --shadow`) — this is about the *state* side:
+      reading the properties and custom props that actually drive a tosijs component.
+
+### The through-line (tosijs-project's framing — worth putting on the README)
+
+> The differentiator isn't access to a browser, it's the ability to **hold a running UI at an
+> arbitrary point in its state space and interrogate it.** Claude-in-Chrome gives an agent
+> hands. Playwright gives it a script. **Neither gives it instruments.**
+
+That's an unoccupied niche and it's exactly the shape of the bugs this stack produces. Note it
+sharpens Tonio's positioning rather than replacing it: a UI build/test tool, whose distinctive
+verb is *instrument*, not *drive*.
+
+### Foundational, not a feature: an instrument must not lie
+
+> "When the tab vanished mid-probe, my measurements didn't fail loudly — they went **ambiguous**,
+> and I couldn't tell 'the map is broken' from 'my instrument is broken.' An instrument that lies
+> is worse than no instrument." — tosijs-project
+
+This bites harder for a debugging tool than a browsing one, and it's a **correctness** property,
+not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not speculation):
+
+- [x] With **no browser connected**, `/eval` returns `{success:false, error:"No browser
+      connected…"}` and `hj` exits **1**. The loud signal exists for that case.
+- [ ] **`hj --json` prints NOTHING on that error** (empty stdout, exit 1). A machine-readable
+      consumer — i.e. every agent — gets nothing to parse, and must infer failure from an exit
+      code it may not be checking. `--json` must always emit a structured error object.
+- [ ] **The mid-probe case is untested and is the one that actually bit.** Losing the browser
+      *during* an in-flight request is a different path from having none at the start. Needs a
+      test that drops the WebSocket mid-`/eval` and asserts the response is an unambiguous,
+      machine-readable "I lost the browser" — never a timeout that reads like a slow page, and
+      never a partial result.
+- [ ] **Liveness in the response envelope.** Every result should be able to say *which* window it
+      was measured against and that the window was still alive when the value was taken —
+      otherwise a scrub/sample table can silently contain readings from a tab that died halfway.
+
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
