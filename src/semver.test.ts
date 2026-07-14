@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { compareVersions, isOlderThan, parseVersion } from './semver'
+import { compareVersions, differsBeyondPatch, isOlderThan, parseVersion } from './semver'
 
 describe('parseVersion', () => {
   it('parses a plain release', () => {
@@ -77,5 +77,26 @@ describe('isOlderThan', () => {
 
   it('is false for equal versions', () => {
     expect(isOlderThan('1.3.4', '1.3.4')).toBe(false)
+  })
+})
+
+describe('differsBeyondPatch', () => {
+  it('ignores patch drift — the normal steady state', () => {
+    // One global hj drives many pinned per-project servers. 1.4.0 vs 1.4.2 is fine,
+    // and no action the user takes can make those numbers match — warning about it on
+    // every command would be a permanent false alarm.
+    expect(differsBeyondPatch('1.4.0', '1.4.2')).toBe(false)
+    expect(differsBeyondPatch('1.4.2', '1.4.0')).toBe(false)
+    expect(differsBeyondPatch('1.4.0', '1.4.0')).toBe(false)
+  })
+
+  it('flags a minor or major gap — wide enough to actually break', () => {
+    expect(differsBeyondPatch('1.3.4', '1.4.0')).toBe(true)
+    expect(differsBeyondPatch('1.4.0', '2.0.0')).toBe(true)
+  })
+
+  it('does not cry wolf about a version string it could not parse', () => {
+    expect(differsBeyondPatch('garbage', '1.4.0')).toBe(false)
+    expect(differsBeyondPatch('1.4.0', '')).toBe(false)
   })
 })

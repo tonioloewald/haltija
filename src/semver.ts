@@ -82,3 +82,23 @@ export function compareVersions(a: string, b: string): number | null {
 export function isOlderThan(a: string, b: string): boolean {
   return compareVersions(a, b) === -1
 }
+
+/**
+ * True when two versions differ by more than a patch.
+ *
+ * Used to decide whether a client/server version mismatch is worth warning about.
+ * `hj` is ONE global binary driving MANY per-project servers, so patch-level skew is
+ * the normal steady state — a project pinned to 1.4.0 while the CLI is 1.4.2 is fine,
+ * and nothing the user does can "fix" it. Warning about it on every command would be
+ * a permanent false alarm, and a warning that always fires is one agents learn to
+ * ignore — including the ones that matter.
+ *
+ * Unparseable versions do NOT count as differing: we don't cry wolf about a version
+ * string we failed to understand.
+ */
+export function differsBeyondPatch(a: string, b: string): boolean {
+  const pa = parseVersion(a)
+  const pb = parseVersion(b)
+  if (!pa || !pb) return false
+  return pa.major !== pb.major || pa.minor !== pb.minor
+}

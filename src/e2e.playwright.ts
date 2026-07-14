@@ -13,6 +13,12 @@ import { test, expect, type Page } from '@playwright/test'
 import { spawn, type ChildProcess } from 'child_process'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join as pathJoin } from 'path'
+
+const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-pw-registry-'))
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -27,7 +33,16 @@ test.beforeAll(async () => {
   // Make sure component is built first
   serverProcess = spawn('bun', ['run', 'bin/server.ts'], {
     cwd: join(__dirname, '..'),
-    env: { ...process.env, DEV_CHANNEL_PORT: String(PORT), DEV_CHANNEL_NO_HTTPS: '1' },
+    env: {
+      ...process.env, DEV_CHANNEL_PORT: String(PORT), DEV_CHANNEL_NO_HTTPS: '1',
+      // Same guards as the Bun tests: a spawned server registers itself, SIGTERMs
+      // "legacy" servers it finds, and installs hj into ~/.local/bin. None of that
+      // belongs in a test run — it would corrupt the developer's own registry and
+      // CLI, and hijack `hj` in this repo for the duration of the suite.
+      HALTIJA_REGISTRY_DIR: TEST_REGISTRY_DIR,
+      HALTIJA_NO_RETIRE: '1',
+      HALTIJA_NO_INSTALL: '1',
+    },
     stdio: 'inherit', // Show server output for debugging
   })
   

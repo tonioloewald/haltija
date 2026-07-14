@@ -397,6 +397,9 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
 | `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
+| `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
+| `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
+| `HALTIJA_REGISTRY_DIR` | Instance registry location (tests must point this at a temp dir) | `~/.haltija/servers` |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
@@ -454,7 +457,9 @@ Haltija targets **macOS and Linux**. Several things shell out to POSIX tools —
 
 `hj` carries its own version (`bin/version.mjs`, generated from `package.json` by the build and inlined into `dist/hj.js` — a runtime file read wouldn't survive bundling). `hj --version` prints it.
 
-Every REST response carries an `X-Haltija-Version` header, so `hj` detects skew on **any** command and warns once on stderr. Servers older than 1.4.0 don't send that header — for those, `hj where` still catches it by reading `serverVersion` from `/status`.
+Every REST response carries an `X-Haltija-Version` header (set in **one** `jsonHeaders()` — it was once duplicated, and only one copy had the header, which quietly made this claim false for every routed endpoint). So `hj` detects skew on any command and warns once on stderr. Servers older than 1.4.0 don't send it — `hj where` still catches those by reading `serverVersion` from `/status`.
+
+**It only warns when the versions differ by more than a patch** (`differsBeyondPatch` in `src/semver.ts`). One global `hj` drives many pinned per-project servers, so patch drift is the normal steady state and nothing the user does can make the numbers match. Warning on exact mismatch fires forever, on every command, with a remedy that can't fix it — and `SKILL.md` tells agents to *trust* this warning, so a permanent false alarm trains them to ignore the real ones. `HALTIJA_NO_SKEW_WARN=1` silences it.
 
 ## CI / QA
 

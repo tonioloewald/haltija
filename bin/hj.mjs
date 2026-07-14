@@ -12,6 +12,7 @@
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 import { HJ_VERSION } from './version.mjs'
+import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -78,7 +79,8 @@ async function runWhere(port, portSource, jsonOutput) {
       reachable: !!serverInfo,
       error: serverError,
       client: HJ_VERSION,
-      versionSkew: serverInfo ? serverInfo.serverVersion !== HJ_VERSION : null,
+      // Same policy as the human output: patch drift is not "skew", it's normal.
+      versionSkew: serverInfo ? differsBeyondPatch(serverInfo.serverVersion || '', HJ_VERSION) : null,
       server: serverInfo ? {
         version: serverInfo.serverVersion,
         instanceName,
@@ -112,9 +114,14 @@ async function runWhere(port, portSource, jsonOutput) {
   } else if (tabs === 0) {
     console.log(`${bold('focused:')} ${dim('no tabs connected')}`)
   }
-  if (serverInfo.serverVersion && serverInfo.serverVersion !== HJ_VERSION) {
-    console.log(`\n${bold('warning:')} hj ${HJ_VERSION} is talking to server ${serverInfo.serverVersion}.`)
-    console.log(dim(`  Commands may route or format wrongly. Update with: bun install -g haltija@latest`))
+  // `hj where` is the diagnostic command, so it always SHOWS both versions above.
+  // It only escalates to a warning when the gap is wide enough to matter — patch
+  // skew between one global hj and many pinned per-project servers is normal and
+  // unfixable, and a warning that always fires is one nobody reads.
+  if (serverInfo.serverVersion && differsBeyondPatch(serverInfo.serverVersion, HJ_VERSION)) {
+    console.log(`\n${bold('warning:')} hj ${HJ_VERSION} is driving server ${serverInfo.serverVersion}.`)
+    console.log(dim(`  That gap is wide enough to route or format wrongly.`))
+    console.log(dim(`  This hj is ${process.argv[1]}`))
   }
 }
 

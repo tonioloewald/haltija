@@ -36,6 +36,18 @@ writeFileSync('bin/version.mjs', `/**
 export const HJ_VERSION = '${pkg.version}'
 `)
 
+// 0c. Compile src/semver.ts into bin/ so the .mjs CLI can use the SAME version
+// comparison the server does, rather than a hand-rolled twin that drifts. (The
+// cwd-routing rule is already duplicated between src/sessions.ts and bin/hj.mjs and
+// the copies have diverged — don't add a third instance of that mistake.)
+// bun inlines this into dist/hj.js, so the standalone bundle carries it too.
+await $`bun build ./src/semver.ts --outfile=bin/semver.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/semver.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/semver.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/semver.mjs', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

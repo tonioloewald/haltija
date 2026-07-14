@@ -27,6 +27,7 @@ import { formatTestResult, formatSuiteResult } from './format-test.mjs'
 import { formatNetwork, formatNetworkStats } from './format-network.mjs'
 import { substituteGeneratedVars } from './test-data.mjs'
 import { HJ_VERSION } from './version.mjs'
+import { differsBeyondPatch } from './semver.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -38,22 +39,32 @@ export const COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hin
 let warnedAboutSkew = false
 
 /**
- * Warn when this hj is a different version from the server it just talked to.
+ * Warn when this hj is meaningfully out of step with the server it just talked to.
  *
- * `hj` is a single global binary shared by every project on the machine, so it
- * routinely ends up older (or newer) than a given project's server — and the
- * symptoms of that are indirect: a command that formats oddly, or silently
- * routes somewhere unexpected because the client lacks a resolution rule the
- * server assumes. Say it out loud, once, on stderr (so `--json` stdout stays
- * machine-readable).
+ * `hj` is ONE global binary driving MANY per-project servers, so some version skew is
+ * the normal steady state, not a fault: a project pinned to haltija 1.4.0 while the
+ * CLI is 1.4.2 is fine, and no action the user takes can make those numbers match.
+ *
+ * So warn only when the versions differ by more than a patch — that's when hj can
+ * actually lack a resolution rule or response shape the server assumes. Warning on
+ * exact mismatch would fire forever, on every command, with a remedy
+ * (`bun install -g haltija@latest`) that cannot fix it. And a warning that always
+ * fires is one that gets ignored — including the times it's real. SKILL.md tells
+ * agents to *trust* this warning, so it has to be worth trusting.
+ *
+ * Once per process, on stderr (so `--json` stdout stays machine-readable).
+ * `HALTIJA_NO_SKEW_WARN=1` silences it.
  */
 function warnOnVersionSkew(resp) {
   if (warnedAboutSkew) return
+  if (process.env.HALTIJA_NO_SKEW_WARN === '1') return
   const serverVersion = resp.headers?.get?.('X-Haltija-Version')
-  if (!serverVersion || serverVersion === HJ_VERSION) return
+  if (!serverVersion) return
+  if (!differsBeyondPatch(serverVersion, HJ_VERSION)) return
   warnedAboutSkew = true
-  console.error(`hj: warning — hj ${HJ_VERSION} is talking to haltija server ${serverVersion}.`)
-  console.error(`hj: mismatched versions can route or format wrongly. Update with: bun install -g haltija@latest`)
+  console.error(`hj: warning — hj ${HJ_VERSION} is driving haltija server ${serverVersion}.`)
+  console.error(`hj: that gap is wide enough to route or format wrongly. This hj is ${process.argv[1]}`)
+  console.error(`hj: silence with HALTIJA_NO_SKEW_WARN=1`)
 }
 
 // Endpoints that use GET (everything else is POST)
