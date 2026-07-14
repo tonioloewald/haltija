@@ -29,7 +29,7 @@ import { register as registerNamedInstance, unregister as unregisterNamedInstanc
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { recordMachineAction } from './machine-log'
-import { identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
+import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
@@ -4461,33 +4461,68 @@ if (REGISTRY_NAME) {
     }
 
     if (isCompiledBinary) {
-      // Running from compiled binary (DMG distribution)
-      // Look for bundled hj binary in resources directory
-      // The server binary is at /path/to/Resources/haltija-server-<arch>
-      // The hj binary should be at /path/to/Resources/hj-<arch>
-      const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-      
-      // When running as compiled binary, we need to find the resources dir
-      // process.execPath points to the actual binary location
-      const resourcesDir = dirname(process.execPath)
-      const hjBundled = join(resourcesDir, `hj-${arch}`)
-      
-      if (!existsSync(hjBundled)) {
-        console.log(`  [hj] Bundled binary not found: ${hjBundled}`)
+      // DMG distribution: install a ~400-byte SHIM, not a 60 MB binary.
+      //
+      // We used to ship `hj-<arch>`, produced by `bun build --compile`, which statically
+      // links the ENTIRE Bun runtime and appends the payload — 60 MB of runtime to deliver
+      // 66 KB of haltija, twice (two arches). But the app already bundles a Node runtime:
+      // Electron, which runs as node under ELECTRON_RUN_AS_NODE=1. So the installed `hj`
+      // just execs the 66 KB `hj.mjs` we ship in Resources, with the runtime already sitting
+      // on disk a few directories away.
+      //
+      // (That 60 MB layout also caused a real bug: `bun build --compile` appends the payload,
+      // so the ownership marker lived at byte 62,735,161 — past every head window — and the
+      // installer disowned its own binary. Deleting the artifact deletes the bug class.)
+      const resourcesDir = dirname(process.execPath)   // …/Contents/Resources
+      const hjScript = join(resourcesDir, 'hj.mjs')
+      const macosDir = join(dirname(resourcesDir), 'MacOS')
+
+      if (!existsSync(hjScript)) {
+        console.log(`  [hj] Bundled CLI not found: ${hjScript}`)
         return
       }
-      
-      // Already installed and byte-identical? Nothing to do.
-      // We only get here having decided to install (bootstrap or repair).
-      {
-        // Copy binary to ~/.local/bin
-        if (existsSync(hjTarget)) {
-          unlinkSync(hjTarget)
+
+      // The Electron executable is the app's only binary in Contents/MacOS.
+      let runtime = ''
+      try {
+        for (const f of readdirSync(macosDir)) {
+          const candidate = join(macosDir, f)
+          if (statSync(candidate).isFile()) { runtime = candidate; break }
         }
-        copyFileSync(hjBundled, hjTarget)
-        chmodSync(hjTarget, 0o755) // Make executable
-        recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
+      } catch {}
+
+      if (!runtime) {
+        console.log(`  [hj] Could not locate the app's Node runtime under ${macosDir} — not installing hj`)
+        return
       }
+
+      // The marker makes this shim identifiable as ours (see src/hj-install.ts), and the
+      // guard means a moved/deleted app produces an actionable message rather than a
+      // confusing exec failure.
+      const shim = [
+        '#!/bin/sh',
+        `# ${HJ_MARKER} v${VERSION}`,
+        '# Installed by Haltija.app. Runs the hj CLI on the Node runtime Electron already',
+        '# bundles, rather than shipping a second 60MB copy of a runtime.',
+        `RUNTIME=${JSON.stringify(runtime)}`,
+        `SCRIPT=${JSON.stringify(hjScript)}`,
+        'if [ ! -x "$RUNTIME" ] || [ ! -f "$SCRIPT" ]; then',
+        '  echo "hj: Haltija.app is not where it was when hj was installed." >&2',
+        '  echo "hj: expected $RUNTIME" >&2',
+        '  echo "hj: Launch Haltija once to reinstall hj, or reinstall the app." >&2',
+        '  exit 127',
+        'fi',
+        'ELECTRON_RUN_AS_NODE=1 exec "$RUNTIME" "$SCRIPT" "$@"',
+        '',
+      ].join('\n')
+
+      if (existsSync(hjTarget)) unlinkSync(hjTarget)
+      writeFileSync(hjTarget, shim)
+      chmodSync(hjTarget, 0o755)
+      recordMachineAction({
+        kind: 'hj-install',
+        detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)`,
+      })
     } else {
       // Running from source (bunx or development)
       // Prefer standalone bundle (dist/hj.js) — works even if source tree is gone

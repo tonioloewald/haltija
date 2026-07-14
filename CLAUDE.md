@@ -375,7 +375,7 @@ The build script (`scripts/build.ts`) generates:
 6. `apps/desktop/resources/component.js` - Synced copy for desktop app
 7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 8. `bin/hints.json` - CLI command hints generated from schema endpoints
-9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`)
+9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`). Carries an ownership marker (`HJ_MARKER`, see `src/hj-install.ts`) stamped by the build — **the build fails if it's missing**, because without it a server cannot tell its own `hj` from a file a developer happens to have named `hj`, and will either refuse to repair its own CLI or overwrite someone else's. Also copied to `apps/desktop/resources/hj.mjs`, which the desktop app installs via a ~400-byte shim rather than a compiled binary (see below).
 10. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
 11. `API.md` - Auto-generated API reference (do not edit directly)
 12. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)

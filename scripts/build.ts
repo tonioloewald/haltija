@@ -570,6 +570,13 @@ const hjBody = hjBundle.startsWith('#!')
   : hjBundle
 const hjWithShebang = `#!/usr/bin/env bun\n// ${HJ_MARKER} v${pkg.version}\n${hjBody}`
 writeFileSync('dist/hj.js', hjWithShebang)
+// Ship the hj CLI into the desktop app as a 66KB .mjs, NOT as a 60MB compiled binary.
+// The app already bundles a Node runtime (Electron), so the installed `hj` can be a ~400
+// byte shim that execs this with ELECTRON_RUN_AS_NODE=1. `bun build --compile` would
+// statically link a whole second copy of the Bun runtime to deliver the same 66KB.
+// .mjs, not .js: Node needs the extension to treat it as ESM.
+await $`cp dist/hj.js apps/desktop/resources/hj.mjs`.quiet().nothrow()
+
 if (!readFileSync('dist/hj.js').includes(HJ_MARKER)) {
   console.error(`\nBuild FAILED — dist/hj.js is missing the ${HJ_MARKER} ownership marker.`)
   console.error('Without it the server cannot tell its own hj from a user\'s file, and will')

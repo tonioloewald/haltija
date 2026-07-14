@@ -173,3 +173,26 @@ describe('identifyHjBounded — bounded reads, real 60MB binary', () => {
     expect(identifyHjBounded(shim.length, read)).toBe('foreign')
   })
 })
+
+describe('the DMG shim', () => {
+  it('is identified as ours despite being ~400 bytes', () => {
+    // The desktop app installs a tiny shell shim that execs hj.mjs with the Node runtime
+    // Electron already bundles — instead of a 60MB compiled binary. The marker is what makes
+    // a 400-byte script identifiable as ours, so the size gates must not veto it.
+    const shim = Buffer.from([
+      '#!/bin/sh',
+      `# ${HJ_MARKER} v1.4.0`,
+      'ELECTRON_RUN_AS_NODE=1 exec "/Applications/Haltija.app/Contents/MacOS/Haltija" "/Applications/Haltija.app/Contents/Resources/hj.mjs" "$@"',
+      '',
+    ].join('\n'))
+    expect(shim.length).toBeLessThan(1000)
+    expect(identifyHj(shim)).toBe('ours')
+    const read = (o: number, l: number) => shim.subarray(o, o + l)
+    expect(identifyHjBounded(shim.length, read)).toBe('ours')
+  })
+
+  it("still declines a user's shim of similar size that lacks the marker", () => {
+    const userShim = Buffer.from('#!/bin/sh\nHALTIJA_PORT=9123 exec /opt/hj "$@"\n')
+    expect(identifyHj(userShim)).toBe('foreign')
+  })
+})
