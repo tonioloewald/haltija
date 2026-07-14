@@ -396,6 +396,7 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
+| `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
@@ -429,7 +430,19 @@ Servers auto-install `hj` into `~/.local/bin` on startup — a single global bin
 2. **Never downgrade.** The installing server records its version in `~/.haltija/hj-install.json`; an older server that sees a newer version there leaves `hj` alone. Comparison lives in `src/semver.ts` (a prerelease is older than its release, and `beta.9 < beta.12` — a string sort gets that backwards).
 3. **Install decisions compare file *contents*, not size.** Two builds can coincidentally share a byte count, which would strand a stale `hj` forever.
 
-Servers pre-1.4.0 have none of these guards, so they will still clobber `hj` until they age out.
+### Retiring legacy (pre-1.4.0) servers
+
+Servers before 1.4.0 have none of the guards above, and that can't be fixed in code that already shipped — the only remedy is to stop them running. So **on startup, a 1.4.0+ server retires any pre-1.4.0 haltija server it finds** (`retireLegacyServers()` in `src/server.ts`; policy in `src/legacy-servers.ts`). It runs *before* binding, so a legacy squatter on the port we want is genuinely reclaimed rather than killed after we've already fallen back to an ephemeral port.
+
+**The rule keys on harm, not on age: we retire servers below `GUARDS_VERSION` (1.4.0), never servers merely "older than me."** That distinction is the whole design. If it were "older than me," a 1.4.1 server would kill a 1.4.0 server forever, and two projects pinned to different 1.4.x releases would murder each other's sessions on every boot. Keyed on 1.4.0 it is self-terminating — once no 1.3.x servers remain, it never fires again. There's a test named for exactly this (`NEVER kills a peer just for being an older 1.4.x`); don't "improve" the rule into a version comparison against `VERSION`.
+
+Two things it deliberately will not kill:
+- **A running desktop app** (`desktopApp` in `/status`) — killing it orphans a GUI the user can see, which is more startling than the bug. It complains and tells them to quit and update it.
+- **Anything it can't identify.** No version, no answer, not haltija → left alone.
+
+When it *can't* kill something harmful (EPERM, no discoverable pid), it complains loudly rather than failing silently — a legacy server it couldn't stop will go on overwriting the user's `hj`, and they need to know why.
+
+Legacy servers don't register themselves, so they're invisible to the registry and can only be found by probing: well-known defaults (8700, 8701), our own port, plus registry ports. It is deliberately **not** a port scan. Set `HALTIJA_NO_RETIRE=1` to disable the sweep entirely.
 
 ### Version skew
 

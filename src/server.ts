@@ -25,8 +25,9 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
-import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor } from './sessions'
+import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
+import { candidatePorts, planForServer, type ServerProbe } from './legacy-servers'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -1162,6 +1163,8 @@ async function handleRest(req: Request): Promise<Response> {
       ok: allWindows.length > 0,
       windows: windowList,
       serverVersion: SERVER_VERSION,
+      // Lets a newer server identify us without shelling out to lsof.
+      pid: process.pid,
       recording: activeRecordings > 0,
       activeRecordings,
       // True when this server is hosted by the Haltija desktop app — hj uses
@@ -4054,6 +4057,85 @@ function killProcessOnPort(port: number): boolean {
   }
   return false
 }
+
+/** The pid listening on a port, if we can tell. Never returns our own. */
+function pidOnPort(port: number): number | null {
+  try {
+    const out = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    const pids = out.split('\n').filter(Boolean).map(Number)
+      .filter((p) => Number.isFinite(p) && p !== process.pid)
+    return pids[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Ask a port what it is. Anything that doesn't answer cleanly is "not haltija". */
+async function probePort(port: number): Promise<ServerProbe> {
+  const unknown: ServerProbe = { port, version: null, desktopApp: false, pid: null }
+  try {
+    const resp = await fetch(`http://localhost:${port}/status`, { signal: AbortSignal.timeout(1000) })
+    if (!resp.ok) return unknown
+    const status = await resp.json() as { serverVersion?: unknown; desktopApp?: unknown; pid?: unknown }
+    if (typeof status?.serverVersion !== 'string') return unknown
+    return {
+      port,
+      version: status.serverVersion,
+      desktopApp: !!status.desktopApp,
+      // Servers from 1.4.0 on report their own pid; older ones need lsof.
+      pid: typeof status.pid === 'number' ? status.pid : pidOnPort(port),
+    }
+  } catch {
+    return unknown
+  }
+}
+
+/**
+ * Retire pre-1.4.0 servers before we bind.
+ *
+ * They overwrite the shared ~/.local/bin/hj on every boot and squat the default
+ * port, and neither behavior can be fixed in code that has already shipped — the
+ * only remedy is to stop them running. Done before binding so that a legacy
+ * squatter on the port we want is actually reclaimed rather than merely killed
+ * after we've already fallen back to an ephemeral port.
+ *
+ * Policy (and the reasoning for it) lives in src/legacy-servers.ts. Set
+ * HALTIJA_NO_RETIRE=1 to disable.
+ */
+async function retireLegacyServers(): Promise<void> {
+  if (process.env.HALTIJA_NO_RETIRE === '1') return
+
+  const registryPorts = listInstances().map((e) => e.port)
+  const ports = candidatePorts({ defaults: [8700, 8701, PORT], registryPorts })
+  let killed = false
+
+  for (const port of ports) {
+    const plan = planForServer(await probePort(port), process.pid)
+
+    if (plan.action === 'retire') {
+      console.log(`  [legacy] ${plan.reason}`)
+      try {
+        process.kill(plan.pid, 'SIGTERM')
+        console.log(`  [legacy] Retired pid ${plan.pid} on :${port}`)
+        killed = true
+      } catch (err: unknown) {
+        // Complain — never fail silently. A legacy server we couldn't stop will
+        // go on overwriting the user's hj, and they need to know why.
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`  [legacy] ⚠️  Could not stop pid ${plan.pid} on :${port} (${msg})`)
+        console.warn(`  [legacy]    It will keep overwriting ~/.local/bin/hj. Stop it with: kill ${plan.pid}`)
+      }
+    } else if (plan.action === 'complain') {
+      console.warn(`  [legacy] ⚠️  ${plan.reason}`)
+      console.warn(`  [legacy]    ${plan.remedy}`)
+    }
+  }
+
+  // Give a retired server a moment to release its port before we try to bind it.
+  if (killed) Bun.sleepSync(200)
+}
+
+await retireLegacyServers()
 
 // Start servers based on mode
 let httpServer: ReturnType<typeof Bun.serve> | null = null

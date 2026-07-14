@@ -3,10 +3,9 @@
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Windows and Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
-- [ ] Old servers (pre-1.4.0) still clobber `~/.local/bin/hj` on boot — they predate the
-      symlink/downgrade guards. Nothing to fix in code; it resolves as 1.3.x installs age out.
-      If a dev's symlinked `hj` keeps reverting, a stale server is still running somewhere:
-      `hj where` names it.
+- [ ] Legacy-server retirement is macOS/Linux only — finding a pre-1.4.0 server's pid uses
+      `lsof`. On Windows the sweep finds nothing and stays silent. Low priority (no Windows
+      build yet), but revisit when Windows builds land.
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment
