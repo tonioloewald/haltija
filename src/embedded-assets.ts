@@ -2776,18 +2776,37 @@ hj --help              # All commands
 6. \`hj recording start\` survives page navigations — record OAuth flows, multi-page checkouts
 7. \`hj api\` for the full API reference with all parameters
 
-## Targeting a Specific Server
+## Which Server Does \`hj\` Talk To?
 
-Each project should run its own haltija. The friendliest way to address it
-is by name — every \`haltija --name <foo>\` registers itself in
-\`~/.haltija/servers/\` and \`hj\` resolves the name back to a port:
+**The one that owns the directory you are in.** A haltija server records the
+directory it was started in, and \`hj\` picks the live server whose directory is
+the nearest ancestor of your cwd. So inside a project with its own server,
+plain \`hj tree\` just works — no flags, no environment variables.
 
 \`\`\`bash
-haltija --name dashboard --server      # start the server (any free port)
-export HALTIJA_NAME=dashboard           # tell hj which one to talk to
-hj tree
+cd ~/my-project && bunx haltija --server   # this project now owns a server
+hj tree                                    # ...and plain hj reaches it
 
-hj --name dashboard tree                # one-off override
+hj where                                   # which port, WHY, and what is alive there
+\`\`\`
+
+If no server owns your directory, \`hj\` falls back to the shared default port
+8700 and **warns on stderr when other servers are running**. Heed that warning:
+it means the command may have driven a *different project's* browser. Misroutes
+are silent — they look like a flaky page, not an error. When something seems to
+hit the wrong page, run \`hj where\` first.
+
+\`hj --version\` prints the CLI version; \`hj\` warns if it is meaningfully out of
+step with the server it is driving.
+
+### Overriding it
+
+Precedence: \`--port\` > \`--name\`/\`HALTIJA_NAME\` > \`HALTIJA_PORT\` > cwd > 8700.
+
+\`\`\`bash
+haltija --name dashboard --server      # register under a name
+hj --name dashboard tree                # address it by name
+hj --port 9123 tree                     # or by port
 \`\`\`
 
 Or pin a port directly if you prefer:
@@ -2893,8 +2912,12 @@ Two first-party ways to run (plus embedding, below):
   it with the \`hj\` CLI or a coding agent (e.g. Claude Code) talking straight to
   the REST API. \`bunx haltija --server --name myproject\` starts a server your own
   browser attaches to via the injected widget; \`bunx haltija\` launches a bundled
-  browser with the server embedded. Point \`hj\` at it with \`hj --name myproject …\`
-  (or \`export HALTIJA_NAME=myproject\`), and \`hj where\` to see what a shell targets.
+  browser with the server embedded. **\`hj\` automatically targets the server that
+  owns your current directory** — a server records the directory it started in, and
+  \`hj\` picks the one whose directory is the nearest ancestor of your cwd, so plain
+  \`hj tree\` inside a project reaches that project's server with no flags. Falling
+  back to the shared default port 8700 warns on stderr. Use \`hj where\` to see which
+  port a shell targets and WHY; override with \`--port\` or \`--name\`.
 - **CI:** \`haltija --headless\` (or \`--ci\`) runs a headless Chromium with the widget
   auto-injected — deterministic, no desktop app required. See the CI guide below.
 

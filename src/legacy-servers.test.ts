@@ -108,3 +108,13 @@ describe('candidatePorts', () => {
     expect(candidatePorts({ exclude: [8700] })).toEqual([8701])
   })
 })
+
+describe('unknown desktopApp (pre-1.3.0 /status had no such field)', () => {
+  it('never retires a server that cannot say whether it is the desktop app', () => {
+    // Collapsing undefined into false made a running pre-1.3.0 Haltija.app look like an
+    // ordinary squatter — so we would shut it down and orphan a GUI the user can see.
+    // "Could not tell" must fall on the safe side.
+    const plan = planForServer(probe({ version: '1.1.7', desktopApp: null }), SELF)
+    expect(plan.action).toBe('complain')
+  })
+})

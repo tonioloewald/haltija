@@ -32,8 +32,8 @@ export interface ServerProbe {
   port: number
   /** From /status. Null when nothing answered, or it isn't a haltija server. */
   version: string | null
-  /** True when hosted by the Haltija desktop app. */
-  desktopApp: boolean
+  /** True when hosted by the Haltija desktop app. NULL = we could not tell. */
+  desktopApp: boolean | null
   /** Process id, if we could determine one. */
   pid: number | null
 }
@@ -87,12 +87,20 @@ export function planForServer(probe: ServerProbe, selfPid: number): RetirementPl
 
   // Legacy from here down: this server WILL clobber ~/.local/bin/hj.
 
-  if (probe.desktopApp) {
+  if (probe.desktopApp || probe.desktopApp === null) {
     // Stopping this orphans a GUI app the user can see on screen — a far more
     // startling outcome than the problem we're solving. Complain instead.
+    //
+    // `null` means we could not tell (pre-1.3.0 /status had no desktopApp field), and
+    // "could not tell" must fall on the SAFE side. Treating unknown as false is how a
+    // running pre-1.3.0 Haltija.app got classified as an ordinary squatter and shut
+    // down. Same rule as everywhere else here: never act on what you cannot identify.
+    const what = probe.desktopApp === null
+      ? `the haltija server on :${probe.port} (${probe.version}) is too old to say whether it is the desktop app`
+      : `the Haltija desktop app on :${probe.port} is running ${probe.version}`
     return {
       action: 'complain',
-      reason: `the Haltija desktop app on :${probe.port} is running ${probe.version}, which overwrites the shared ~/.local/bin/hj`,
+      reason: `${what}, and it overwrites the shared ~/.local/bin/hj`,
       remedy: 'quit Haltija.app and update it (or run: bunx haltija@latest)',
     }
   }

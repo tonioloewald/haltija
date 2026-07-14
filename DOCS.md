@@ -119,18 +119,37 @@ hj --help              # All commands
 6. `hj recording start` survives page navigations — record OAuth flows, multi-page checkouts
 7. `hj api` for the full API reference with all parameters
 
-## Targeting a Specific Server
+## Which Server Does `hj` Talk To?
 
-Each project should run its own haltija. The friendliest way to address it
-is by name — every `haltija --name <foo>` registers itself in
-`~/.haltija/servers/` and `hj` resolves the name back to a port:
+**The one that owns the directory you are in.** A haltija server records the
+directory it was started in, and `hj` picks the live server whose directory is
+the nearest ancestor of your cwd. So inside a project with its own server,
+plain `hj tree` just works — no flags, no environment variables.
 
 ```bash
-haltija --name dashboard --server      # start the server (any free port)
-export HALTIJA_NAME=dashboard           # tell hj which one to talk to
-hj tree
+cd ~/my-project && bunx haltija --server   # this project now owns a server
+hj tree                                    # ...and plain hj reaches it
 
-hj --name dashboard tree                # one-off override
+hj where                                   # which port, WHY, and what is alive there
+```
+
+If no server owns your directory, `hj` falls back to the shared default port
+8700 and **warns on stderr when other servers are running**. Heed that warning:
+it means the command may have driven a *different project's* browser. Misroutes
+are silent — they look like a flaky page, not an error. When something seems to
+hit the wrong page, run `hj where` first.
+
+`hj --version` prints the CLI version; `hj` warns if it is meaningfully out of
+step with the server it is driving.
+
+### Overriding it
+
+Precedence: `--port` > `--name`/`HALTIJA_NAME` > `HALTIJA_PORT` > cwd > 8700.
+
+```bash
+haltija --name dashboard --server      # register under a name
+hj --name dashboard tree                # address it by name
+hj --port 9123 tree                     # or by port
 ```
 
 Or pin a port directly if you prefer:

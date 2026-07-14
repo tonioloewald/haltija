@@ -4115,7 +4115,11 @@ async function probePort(port: number): Promise<ServerProbe> {
     return {
       port,
       version: status.serverVersion,
-      desktopApp: !!status.desktopApp,
+      // undefined (pre-1.3.0 /status had no such field) is NOT the same as false.
+      // Collapsing them made a running pre-1.3.0 Haltija.app look like an ordinary
+      // squatter, so we'd POST /shutdown to it and orphan a GUI the user can see —
+      // exactly what the `complain` branch exists to prevent.
+      desktopApp: status.desktopApp === undefined ? null : !!status.desktopApp,
       // Servers from 1.4.0 on report their own pid; older ones need lsof.
       pid: typeof status.pid === 'number' ? status.pid : listenerPidOnPort(port),
     }
@@ -4312,12 +4316,38 @@ if (REGISTRY_NAME) {
   const hjTarget = join(localBin, 'hj')
   const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
 
-  /** True if `p` exists and is a symlink (deliberate install — hands off). */
+  /** True if `p` is a symlink — dangling or not (lstat does not follow). */
   const isSymlink = (p: string): boolean => {
     try { return lstatSync(p).isSymbolicLink() } catch { return false }
   }
 
-  /** The version of the hj currently installed, per our own record. */
+  /**
+   * Is the file at `p` *our* `hj`, or some stranger's?
+   *
+   * **This gate exists because we were destroying people's files.** `~/.local/bin` is
+   * exactly where a developer drops their own scripts, and a personal 56-byte shell
+   * helper called `hj` was being `unlink`ed and replaced by the bundle — silently, with
+   * a receipt that said "installed the shared hj CLI" and never mentioned what it had
+   * deleted. Worse, we *executed* it first, to ask its version.
+   *
+   * This module already refuses to signal a process it cannot positively identify. A
+   * file on the user's disk deserves the same rule, and it is the same rule: **never
+   * destroy what you have not identified.** So look at the bytes before touching — and
+   * before running — anything.
+   *
+   * We check content rather than trusting the filename, because the filename is the one
+   * thing we know we share with the stranger.
+   */
+  const looksLikeHaltijaHj = (p: string): boolean => {
+    try {
+      // Our hj is a bundled JS CLI, tens of KB. A hand-written shim is not.
+      const head = readFileSync(p, 'utf-8').slice(0, 200_000)
+      return /haltija|HALTIJA_PORT|tosijs-dev/i.test(head)
+    } catch {
+      return false
+    }
+  }
+
   /**
    * What version of `hj` is currently on the user's PATH?
    *
@@ -4362,7 +4392,31 @@ if (REGISTRY_NAME) {
     }
 
     if (isSymlink(hjTarget)) {
-      // Someone pointed hj at a build on purpose. Leave it exactly as it is.
+      // Someone pointed hj at a build on purpose. Leave it exactly as it is — even if it
+      // now dangles. A broken symlink is a broken *deliberate* install: replacing it
+      // would silently undo their setup the moment they fix the target, and they will
+      // notice a dangling hj immediately anyway (`command not found`). Say so, don't fix
+      // it for them.
+      if (!existsSync(hjTarget)) {
+        recordMachineAction({
+          kind: 'declined',
+          detail: `~/.local/bin/hj is a symlink whose target is missing — leaving it alone. Repoint or remove it; haltija will not overwrite a deliberate install.`,
+        })
+      }
+      return
+    }
+
+    // NEVER TOUCH — OR EXECUTE — A FILE WE HAVE NOT IDENTIFIED.
+    //
+    // `~/.local/bin` is where developers keep their own scripts. We were unlinking a
+    // stranger's `hj` and replacing it with our bundle, having first *run* it to ask its
+    // version. This module already refuses to signal a process it cannot identify; a file
+    // on someone's disk gets the same rule.
+    if (existsSync(hjTarget) && !looksLikeHaltijaHj(hjTarget)) {
+      recordMachineAction({
+        kind: 'declined',
+        detail: `${hjTarget} exists but is not a haltija CLI — refusing to overwrite it. Haltija's own hj is not installed. Move that file, or set HALTIJA_NO_INSTALL=1 to silence this.`,
+      })
       return
     }
 

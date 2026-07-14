@@ -1,0 +1,67 @@
+name: Unit Tests
+
+# Runs the Bun unit suite (`bun test src/`).
+#
+# This did not exist until 1.4.0, which meant ~500 tests — including every test
+# guarding the code that KILLS OTHER PROCESSES and REWRITES A BINARY ON THE USER'S
+# PATH — were advisory. Someone could have reintroduced the bug that SIGTERMs the
+# user's browser and CI would have stayed green.
+#
+# `bun test src/` (not bare `bun test`): the bare form also discovers
+# tests/haltija.test.ts and apps/desktop/integration.test.ts, which need a live
+# server and an Electron display.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The build is gated on a full type check and on `node --check` of every
+      # shipped bin/*.mjs, so a broken entry point fails here rather than at a
+      # user's `bunx haltija`.
+      - name: Build
+        run: bun run build
+
+      # src/port-pid.test.ts binds real sockets via python3, and resolves them with
+      # lsof — both present on ubuntu-latest, but assert it rather than discover it
+      # via a confusing test failure.
+      - name: Check test prerequisites
+        run: |
+          command -v python3 >/dev/null || { echo "python3 missing — src/port-pid.test.ts needs it"; exit 1; }
+          command -v lsof >/dev/null || { echo "lsof missing — src/port-pid.test.ts needs it"; exit 1; }
+
+      - name: Unit tests
+        run: bun test src/
+
+      # The suite spawns real haltija servers. Every spawn site sets HALTIJA_NO_RETIRE
+      # and HALTIJA_NO_INSTALL so a test can never kill a process it did not start or
+      # rewrite ~/.local/bin/hj. If a new spawn site forgets, this catches it.
+      - name: Assert the suite left no footprint on the machine
+        run: |
+          if [ -e "$HOME/.local/bin/hj" ]; then
+            echo "FAIL: the test suite installed hj onto the PATH."
+            echo "A spawn site is missing HALTIJA_NO_INSTALL=1."
+            exit 1
+          fi
+          if [ -d "$HOME/.haltija/servers" ] && [ -n "$(ls -A "$HOME/.haltija/servers" 2>/dev/null)" ]; then
+            echo "FAIL: the test suite left entries in the real instance registry:"
+            ls -la "$HOME/.haltija/servers"
+            echo "A spawn site is missing HALTIJA_REGISTRY_DIR."
+            exit 1
+          fi
+          echo "OK: no machine-scope side effects from the suite."

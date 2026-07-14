@@ -249,7 +249,11 @@ export HALTIJA_PORT=9123
 hj tree
 ```
 
-If you don't pass `--port`, haltija tries 8700 first and falls back to a kernel-assigned ephemeral port — `--name` records whichever port it ends up on so `hj` can find it. A different shell can target a different project; there's no global state, just one named instance per haltija server.
+If you don't pass `--port`, haltija tries 8700 first and falls back to a kernel-assigned ephemeral port.
+
+**You usually don't need `--name` at all.** A server records the directory it was started in, so **plain `hj` inside a project reaches that project's server** — no flags, no environment variables. `--name` and `--port` are overrides for when you want to address a server from *outside* its directory. `hj where` shows which server a shell is targeting and why.
+
+Haltija does keep a little state outside your project — a shared `hj` on your PATH and a registry of running servers. That's deliberate, and it's all logged: see [Housekeeping](#housekeeping--what-haltija-does-to-your-machine) below.
 
 **Production embedding.** When haltija is reachable beyond loopback, gate it with a shared-secret token:
 
