@@ -27,7 +27,7 @@ import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
-import { candidatePorts, planForServer, type ServerProbe } from './legacy-servers'
+import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
@@ -4309,16 +4309,32 @@ if (REGISTRY_NAME) {
     try { return lstatSync(p).isSymbolicLink() } catch { return false }
   }
 
-  /** True if the two files have identical contents. */
-  const sameContents = (a: string, b: string): boolean => {
-    try { return readFileSync(a).equals(readFileSync(b)) } catch { return false }
-  }
-
   /** The version of the hj currently installed, per our own record. */
+  /**
+   * What version of `hj` is currently on the user's PATH?
+   *
+   * Prefer our own install record; if there isn't one (the copy was written by a
+   * pre-1.4.0 server, or by hand), just **ask it** — `hj --version` exists as of
+   * 1.4.0. Same principle as retiring a server by asking rather than guessing at a
+   * pid: the artifact can tell us what it is, so don't infer it.
+   *
+   * Null means "we could not establish a version" — which, for a copy sitting on the
+   * PATH, is itself informative: a pre-1.4.0 hj cannot answer, and that's exactly the
+   * stale one we want to replace.
+   */
   const installedVersion = (): string | null => {
     try {
       const rec = JSON.parse(readFileSync(installRecord, 'utf-8'))
-      return typeof rec?.version === 'string' ? rec.version : null
+      if (typeof rec?.version === 'string') return rec.version
+    } catch {
+      // no record — fall through and ask the binary itself
+    }
+    try {
+      const out = execSync(`${JSON.stringify(hjTarget)} --version 2>/dev/null`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+      }).trim()
+      return /^\d+\.\d+\.\d+/.test(out) ? out : null
     } catch {
       return null
     }
@@ -4345,13 +4361,30 @@ if (REGISTRY_NAME) {
       return
     }
 
-    // Refuse to replace a newer hj with our older one. An unknown or unparseable
-    // recorded version is NOT treated as older — we'd rather refresh a legacy
-    // copy once than silently roll a user's tooling backwards.
-    const existing = existsSync(hjTarget) ? installedVersion() : null
-    if (existing && isOlderThan(VERSION, existing)) {
-      console.log(`  [hj] Keeping newer hj ${existing} already installed (this server is ${VERSION})`)
-      return
+    // Install to BOOTSTRAP (nothing there) or to REPAIR (what's there is strictly
+    // older). Never otherwise.
+    //
+    // Retiring the legacy servers stops anything from clobbering hj in FUTURE, but it
+    // cannot un-write the stale copy one of them already left on the PATH — that's the
+    // only reason to overwrite at all. So we do it once, upward, and then stop.
+    //
+    // The previous rule ("install if the bytes differ") was the original
+    // last-writer-wins bug in miniature: two servers of the SAME version built from
+    // slightly different local builds would rewrite hj past each other on every boot.
+    // A byte difference is not a reason to touch a shared binary; being out of date is.
+    if (existsSync(hjTarget)) {
+      const existing = installedVersion()
+      if (existing && !isOlderThan(existing, VERSION)) {
+        // Same version, or newer than us. Nothing to repair — leave it alone.
+        return
+      }
+      if (existing) {
+        console.log(`  [hj] Replacing hj ${existing} on the PATH with ${VERSION}`)
+      } else {
+        // No record and it can't report a version → written by a pre-1.4.0 server.
+        // That's precisely the stale copy this release exists to fix.
+        console.log(`  [hj] Replacing an unversioned (pre-${GUARDS_VERSION}) hj on the PATH with ${VERSION}`)
+      }
     }
 
     if (isCompiledBinary) {
@@ -4372,9 +4405,8 @@ if (REGISTRY_NAME) {
       }
       
       // Already installed and byte-identical? Nothing to do.
-      const needsInstall = !existsSync(hjTarget) || !sameContents(hjBundled, hjTarget)
-
-      if (needsInstall) {
+      // We only get here having decided to install (bootstrap or repair).
+      {
         // Copy binary to ~/.local/bin
         if (existsSync(hjTarget)) {
           unlinkSync(hjTarget)
@@ -4399,9 +4431,8 @@ if (REGISTRY_NAME) {
       
       // Check if target already matches source. (A symlinked target already
       // returned above, so this is always a real file.)
-      const needsInstall = !existsSync(hjTarget) || !sameContents(source, hjTarget)
-
-      if (needsInstall) {
+      // We only get here having decided to install (bootstrap or repair).
+      {
         if (existsSync(hjTarget)) {
           unlinkSync(hjTarget)
         }

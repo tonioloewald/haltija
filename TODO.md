@@ -1,5 +1,41 @@
 # TODO
 
+## UI-debugging primitives — the actual product thesis
+
+**Positioning note (worth acting on before more comparison-table work):** Claude-in-Chrome
+isn't the competitor. That's an agent-to-browser bridge that happens to expose `eval`. If
+Haltija is a **UI debugging instrument**, what it actually competes with is *"an agent writing
+throwaway Playwright scripts"* and *"a human squinting at DevTools."* Judge it against those.
+(Whatever we conclude, the README comparisons stay strictly fair — see the fairness rule; the
+point here is that we're comparing against the wrong thing, not that we're being unfair to
+ourselves.)
+
+The evidence below is from a real session debugging tosijs-ui's scroll engine, not from theory.
+Every item is something that had to be hand-rolled — badly, three times — inside an `eval`:
+
+- [ ] **`hj scrub`** — sweep scroll position across N steps, sampling expressions at each.
+      `hj scrub --steps 20 --sample 'map.getZoom()' --sample 'sm.dataset.localProgress'`
+      → a table of scroll position vs. sampled values. For a scroll-narrative library this is
+      the whole ballgame: one command instead of six, and it answers "is the flyover working"
+      directly. Note the scroll container is often **not** `document.scrollingElement` (it was a
+      doc-system `<div>`), so this must walk the ancestor chain to find the real one.
+- [ ] **`hj spy <method>`** — `hj spy 'tosi-scroll-map.setScrollProgress'` → call count and
+      arguments over time. "Is progress even reaching this component" is the first question in
+      every scroll-engine bug, and today it needs a bespoke monkeypatched closure.
+- [ ] **Contact sheet** — screenshot at N scroll positions, tiled into one image. A single
+      screenshot at 80% settled a question instantly; five side by side would have settled it
+      *before* an hour went down a "map never initialized" rabbit hole.
+- [ ] **Cold-cache / throttled-load emulation** — *push hardest on this one.* The real bug found
+      that day ([tosijs-ui#13](https://github.com/tonioloewald/tosijs-ui/issues/13) — 180
+      `mapboxgl.Map` instances in one element) **only exists inside the CDN-load window**, and
+      had to be faked by monkeypatching `MapBox.mapboxAvailable` with a delayed promise.
+      Async-init races are where component libraries actually break, and nothing in the current
+      toolchain makes them reproducible. "Load this page cold, on 3G, and scrub the scroll"
+      would have surfaced it as a matter of routine.
+- [ ] **Output that survives the trip.** The above got reformatted into compact rows by hand
+      because the tool truncated the JSON twice. Sampling primitives must return
+      agent-sized tabular output, not raw JSON that gets cut off.
+
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
