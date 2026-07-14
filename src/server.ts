@@ -4295,10 +4295,13 @@ if (REGISTRY_NAME) {
 //   1. Never touch a symlink. A symlink is a deliberate install — typically a
 //      developer pointing hj at their own build — and clobbering it silently
 //      reverts their tooling under them.
-//   2. Never downgrade. We record the version we install in ~/.haltija/hj-install.json;
-//      an older server seeing a newer version there leaves it alone.
-//   3. Compare content, not file size. Two different builds can coincidentally
-//      share a byte count, and then a stale hj is never refreshed.
+//   2. Only bootstrap or repair. Write hj when nothing is there, or when what IS
+//      there is strictly older. Never otherwise — a byte difference is not a reason
+//      to touch a shared binary; being out of date is.
+//   3. ASK THE BINARY what it is (`hj --version`). Never cache that in a side file:
+//      a pre-1.4.0 server clobbers the BINARY and cannot know a record exists, so the
+//      record goes stale claiming a repair already happened — and permanently blocks
+//      the repair. Two sources of truth that cannot be kept in sync is worse than one.
 ;(async () => {
   // HALTIJA_NO_INSTALL=1 opts out. Every test-spawned server runs this IIFE, and
   // it writes to the developer's real ~/.local/bin — running the test suite must
@@ -4307,7 +4310,6 @@ if (REGISTRY_NAME) {
 
   const localBin = join(homedir(), '.local', 'bin')
   const hjTarget = join(localBin, 'hj')
-  const installRecord = join(homedir(), '.haltija', 'hj-install.json')
   const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
 
   /** True if `p` exists and is a symlink (deliberate install — hands off). */
@@ -4319,22 +4321,29 @@ if (REGISTRY_NAME) {
   /**
    * What version of `hj` is currently on the user's PATH?
    *
-   * Prefer our own install record; if there isn't one (the copy was written by a
-   * pre-1.4.0 server, or by hand), just **ask it** — `hj --version` exists as of
-   * 1.4.0. Same principle as retiring a server by asking rather than guessing at a
-   * pid: the artifact can tell us what it is, so don't infer it.
+   * **Ask the binary. Never cache this.**
    *
-   * Null means "we could not establish a version" — which, for a copy sitting on the
-   * PATH, is itself informative: a pre-1.4.0 hj cannot answer, and that's exactly the
-   * stale one we want to replace.
+   * There used to be a `~/.haltija/hj-install.json` record consulted first, and it was
+   * a bug of exactly the kind this release is about. The record and the binary are two
+   * sources of truth that cannot be kept in sync: a pre-1.4.0 server clobbers the
+   * *binary* and has no idea the *record* exists. So the record would still say "1.4.0
+   * is installed" while the actual `hj` on the PATH was the stale copy — and we would
+   * read the record, conclude there was nothing to repair, and skip the repair
+   * **forever**. It permanently defeated the one job this feature has. (Reproduced:
+   * install 1.4.0 → overwrite the binary with a 1.3.x copy → the next server does
+   * nothing.)
+   *
+   * `hj --version` exists as of 1.4.0, so the artifact can simply be asked. A copy that
+   * cannot answer is a pre-1.4.0 one — which is precisely the stale artifact we want to
+   * replace, so "no answer" is not ambiguity, it's a result.
+   *
+   * The strict `^\d+\.\d+\.\d+` match matters: a pre-1.4.0 hj does NOT reject
+   * `--version`, it treats it as a subcommand and prints JSON from the /version endpoint.
+   * Anything that isn't a bare version string is therefore "not a 1.4.0+ hj" — and the
+   * unparseable direction is the safe one (we install), so a surprise here can only cost
+   * us a redundant write, never a skipped repair.
    */
   const installedVersion = (): string | null => {
-    try {
-      const rec = JSON.parse(readFileSync(installRecord, 'utf-8'))
-      if (typeof rec?.version === 'string') return rec.version
-    } catch {
-      // no record — fall through and ask the binary itself
-    }
     try {
       const out = execSync(`${JSON.stringify(hjTarget)} --version 2>/dev/null`, {
         encoding: 'utf-8',
@@ -4343,16 +4352,6 @@ if (REGISTRY_NAME) {
       return /^\d+\.\d+\.\d+/.test(out) ? out : null
     } catch {
       return null
-    }
-  }
-
-  /** Remember what we just put on the user's PATH, so older servers defer to it. */
-  const recordInstall = (): void => {
-    try {
-      mkdirSync(dirname(installRecord), { recursive: true })
-      writeFileSync(installRecord, JSON.stringify({ version: VERSION, installedAt: Date.now() }, null, 2))
-    } catch {
-      // Best effort: a missing record only costs us the downgrade guard.
     }
   }
 
@@ -4419,7 +4418,6 @@ if (REGISTRY_NAME) {
         }
         copyFileSync(hjBundled, hjTarget)
         chmodSync(hjTarget, 0o755) // Make executable
-        recordInstall()
         recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
       }
     } else {
@@ -4446,13 +4444,11 @@ if (REGISTRY_NAME) {
           // Copy standalone bundle — works from any location
           copyFileSync(source, hjTarget)
           chmodSync(hjTarget, 0o755)
-          recordInstall()
-          recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
+            recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
         } else {
           // Fallback: symlink to source (dev mode only)
           symlinkSync(source, hjTarget)
-          recordInstall()
-          recordMachineAction({ kind: 'hj-install', detail: `linked the shared hj CLI at ${hjTarget} -> ${source}` })
+            recordMachineAction({ kind: 'hj-install', detail: `linked the shared hj CLI at ${hjTarget} -> ${source}` })
         }
       }
     }

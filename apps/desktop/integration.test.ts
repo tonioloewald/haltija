@@ -21,6 +21,12 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join as pathJoin } from 'path'
+
+const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-electron-registry-'))
+
 
 const DESKTOP_DIR = import.meta.dir
 const PORT = parseInt(process.env.HALTIJA_PORT || '8700') // Default to standard port
@@ -139,7 +145,17 @@ beforeAll(async () => {
   electronProcess = spawn({
     cmd: ['npm', 'start'],
     cwd: DESKTOP_DIR,
-    env: { ...process.env, HALTIJA_PORT: String(PORT) },
+    env: {
+      ...process.env,
+      HALTIJA_PORT: String(PORT),
+      // Electron spawns TWO real haltija servers, and each runs its full startup
+      // against the developer's REAL $HOME: installing hj onto their PATH and stopping
+      // other haltija servers on the machine. A test must not do either. (Same guards
+      // the Bun and Playwright suites carry — this file was the last one missing them.)
+      HALTIJA_REGISTRY_DIR: TEST_REGISTRY_DIR,
+      HALTIJA_NO_RETIRE: '1',
+      HALTIJA_NO_INSTALL: '1',
+    },
     stdout: 'pipe',
     stderr: 'pipe',
   })

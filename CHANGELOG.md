@@ -31,7 +31,9 @@ forgotten `bunx haltija@beta` could silently downgrade the CLI for an unrelated,
 project.
 
 - A **symlinked `hj` is never touched.** Point it at your own build and it stays put.
-- Servers **never downgrade** a newer `hj` (recorded in `~/.haltija/hj-install.json`).
+- Servers **only bootstrap or repair** `hj` — they write it when nothing is there, or when
+  what's there is strictly older. They never downgrade it, and never rewrite it just because
+  the bytes differ. To find out what's installed they ask it (`hj --version`).
 - **`hj --version`**, and `hj` now warns when its version differs from the server it's driving.
 - `HALTIJA_NO_INSTALL=1` opts out of the install entirely.
 
