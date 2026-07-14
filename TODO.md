@@ -178,10 +178,14 @@ This bites harder for a debugging tool than a browsing one, and it's a **correct
 not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not speculation):
 
 - [x] With **no browser connected**, `/eval` returns `{success:false, error:"No browser
-      connected…"}` and `hj` exits **1**. The loud signal exists for that case.
-- [ ] **`hj --json` prints NOTHING on that error** (empty stdout, exit 1). A machine-readable
-      consumer — i.e. every agent — gets nothing to parse, and must infer failure from an exit
-      code it may not be checking. `--json` must always emit a structured error object.
+      connected…"}` and plain `hj` exits **1**. The loud signal exists for that case.
+- [x] **`hj … --json` printed the failure envelope and then exited 0** — so an agent checking
+      the exit code (which is how a harness decides whether a step worked) saw *success* while
+      the payload said failure. Fixed in 1.4.0: `--json` now exits 1 when `success:false`.
+      *(Correction: I first filed this as "`--json` prints nothing", from a measurement where
+      I put `--json` before the subcommand, where it isn't parsed. The review had it right and
+      I had it wrong. Worth keeping visible — a false finding from a mis-run instrument, in the
+      middle of a thread about instruments that lie.)*
 - [ ] **The mid-probe case is untested and is the one that actually bit.** Losing the browser
       *during* an in-flight request is a different path from having none at the start. Needs a
       test that drops the WebSocket mid-`/eval` and asserts the response is an unambiguous,

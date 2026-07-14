@@ -822,23 +822,37 @@ function killOnPort(port) {
     }
   } catch {}
 
-  // 2. Kill any Electron processes running the desktop app
-  //    The Electron parent process isn't on the port, so lsof won't find it.
-  //    Without this, npx's cache directory stays locked causing ENOTEMPTY on restart.
+  // 2. Stop the Electron process running OUR desktop app.
+  //    The Electron parent isn't on the port, so lsof won't find it. Without this, npx's
+  //    cache directory stays locked and a restart fails with ENOTEMPTY.
+  //
+  //    This used to `pgrep -f 'Electron.*apps/desktop'` and kill EVERY match. `apps/desktop`
+  //    is the standard Turborepo/Nx monorepo layout — it is haltija's own layout *because*
+  //    it is the convention — so that pattern matches any other project's Electron app on
+  //    the machine, and killed it. No identity check, no receipt, no way to know why your
+  //    unrelated app died.
+  //
+  //    Match on OUR OWN installation path instead: whatever `apps/desktop` we would launch,
+  //    not any string that happens to look like one.
   if (platform() !== 'win32') {
+    const ourDesktopDir = join(__dirname, '..', 'apps', 'desktop')
     try {
       const output = execSyncImported(
-        `pgrep -f 'Electron.*apps/desktop|electron.*apps/desktop' 2>/dev/null`,
+        `pgrep -fl 'electron' 2>/dev/null`,
         { encoding: 'utf-8', timeout: 3000 }
       ).trim()
-      if (output) {
-        const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
-        for (const pid of pids) {
-          try {
-            execSyncImported(`kill ${pid} 2>/dev/null`)
-            killed = true
-          } catch {}
-        }
+      for (const line of output.split('\n').filter(Boolean)) {
+        const sp = line.indexOf(' ')
+        const pid = line.slice(0, sp)
+        const cmd = line.slice(sp + 1)
+        if (!pid || pid === myPid) continue
+        // Only ours: the command line must reference the very directory we launch from.
+        if (!cmd.includes(ourDesktopDir)) continue
+        try {
+          process.kill(Number(pid), 'SIGTERM')
+          console.log(dim(`  Stopped Haltija's Electron app (pid ${pid})`))
+          killed = true
+        } catch {}
       }
     } catch {}
   }

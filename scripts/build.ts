@@ -6,6 +6,7 @@
 
 import { $ } from 'bun'
 import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs'
+import { HJ_MARKER } from '../src/hj-install'
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
@@ -558,11 +559,23 @@ await $`bun build ./bin/hj.mjs --outfile=dist/hj.js --target=node --format=esm`
 // Replace shebang with bun — the extensionless copy at ~/.local/bin/hj needs
 // ESM support, and bun handles that natively regardless of file extension.
 // (bun build preserves the original #!/usr/bin/env node from hj.mjs)
+// Stamp an ownership marker into the CLI bundle. The server uses it to tell its own hj
+// from a file a developer happens to have named `hj` in ~/.local/bin — and it must survive
+// into the compiled `hj-<arch>` binary too (which embeds this JS ~62MB in, far past any
+// head window). Deliberately distinctive: a user's wrapper may well mention `haltija` or
+// HALTIJA_PORT; it will not contain this. See src/hj-install.ts.
 const hjBundle = readFileSync('dist/hj.js', 'utf-8')
-const hjWithShebang = hjBundle.startsWith('#!')
-  ? '#!/usr/bin/env bun\n' + hjBundle.slice(hjBundle.indexOf('\n') + 1)
-  : '#!/usr/bin/env bun\n' + hjBundle
+const hjBody = hjBundle.startsWith('#!')
+  ? hjBundle.slice(hjBundle.indexOf('\n') + 1)
+  : hjBundle
+const hjWithShebang = `#!/usr/bin/env bun\n// ${HJ_MARKER} v${pkg.version}\n${hjBody}`
 writeFileSync('dist/hj.js', hjWithShebang)
+if (!readFileSync('dist/hj.js').includes(HJ_MARKER)) {
+  console.error(`\nBuild FAILED — dist/hj.js is missing the ${HJ_MARKER} ownership marker.`)
+  console.error('Without it the server cannot tell its own hj from a user\'s file, and will')
+  console.error('either refuse to repair its own CLI or overwrite someone else\'s. See src/hj-install.ts.')
+  process.exit(1)
+}
 
 // Syntax-check every shipped .mjs. These are the actual entry points (`haltija`,
 // `hj`) but nothing else validates them: the build doesn't generate them, tsc

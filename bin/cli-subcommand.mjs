@@ -959,7 +959,15 @@ async function doRequest(url, method, body, context = {}) {
           console.log(JSON.stringify(result, null, 2))
         }
       } else {
+        // --json: emit the full envelope, then EXIT NON-ZERO IF IT SAYS FAILURE.
+        //
+        // This used to print `{"success": false, "error": "No browser connected…"}` and
+        // exit 0. An agent that checks the exit code — which is how a harness decides
+        // whether a step worked — saw success while the payload said failure. That is the
+        // instrument lying, and for a debugging tool a lying instrument is worse than no
+        // instrument: you cannot tell "the page is broken" from "my probe is broken".
         console.log(JSON.stringify(json, null, 2))
+        if (json && json.success === false) process.exit(1)
       }
     } else {
       const text = await resp.text()

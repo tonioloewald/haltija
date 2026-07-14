@@ -29,6 +29,7 @@ import { register as registerNamedInstance, unregister as unregisterNamedInstanc
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { recordMachineAction } from './machine-log'
+import { identifyHj, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
@@ -4040,28 +4041,63 @@ const serverConfig = {
 /**
  * Free a port we were explicitly asked to bind (the EADDRINUSE path).
  *
- * Resolves LISTENERS only, and signals nothing it cannot identify as haltija — see
- * src/port-pid.ts. Prefer `requestShutdown()` where you can await it; this one runs
- * on a synchronous failure path, so it signals rather than asks.
+ * ASK FIRST, like everywhere else. This used to go straight to SIGTERM, which meant that
+ * `--port 8700` would kill the user's **running desktop app** — a GUI they can see, with
+ * live tabs — and would also kill a perfectly healthy same-version peer. Both are outcomes
+ * `planForServer`'s `complain` branch exists to prevent; this path simply hadn't been taught
+ * the rule, and it wrote a "left alone" line while doing the opposite.
+ *
+ * Order: identify → refuse if it's the desktop app (or unidentifiable) → ask → only then,
+ * as a last resort, signal a listener that `ps` confirms is haltija.
  */
-function killProcessOnPort(port: number): boolean {
-  const pids = listenerPidsOnPort(port)
-  if (pids.length === 0) return false
+async function freePort(port: number): Promise<boolean> {
+  if (listenerPidsOnPort(port).length === 0) return false
+
+  const probe = await probePort(port)
+
+  // A running desktop app is never collateral for a port request. Neither is anything we
+  // cannot identify — including a server too old to tell us what it is.
+  if (probe.desktopApp || probe.desktopApp === null) {
+    recordMachineAction({
+      kind: 'declined',
+      detail: `port ${port} is held by the Haltija desktop app (or a server too old to say) — refusing to stop it for a port request. Quit it yourself, or choose another port.`,
+    })
+    return false
+  }
+
+  if (probe.version) {
+    // It's a haltija server and it can be asked. Do that.
+    if (await requestShutdown(port)) {
+      recordMachineAction({
+        kind: 'server-stopped',
+        detail: `stopped the haltija server on :${port} because this server was explicitly asked to bind that port`,
+      })
+      return true
+    }
+  }
+
+  // Unresponsive, or not answering /status at all. Signal only a LISTENER that ps confirms
+  // is haltija — never a client, never a stranger.
   let killed = false
-  for (const pid of pids) {
+  for (const pid of listenerPidsOnPort(port)) {
     if (!isHaltijaProcess(pid)) {
-      console.warn(`  [port] Port ${port} is held by pid ${pid}, which is not a haltija server — leaving it alone`)
+      recordMachineAction({
+        kind: 'declined',
+        detail: `port ${port} is held by pid ${pid}, which is not a haltija server — leaving it alone`,
+      })
       continue
     }
     try {
       process.kill(pid, 'SIGTERM')
-      console.log(`  [port] Stopped haltija (pid ${pid}) on port ${port}`)
+      recordMachineAction({
+        kind: 'server-stopped',
+        detail: `stopped an unresponsive haltija server (pid ${pid}) holding :${port}`,
+      })
       killed = true
     } catch {
       // Process may have already exited
     }
   }
-  // Give it a moment to release the port
   if (killed) Bun.sleepSync(100)
   return killed
 }
@@ -4201,7 +4237,7 @@ if (USE_HTTP) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
       if (PORT_IS_STRICT) {
         // User asked for a specific port — try to free it and retry.
-        if (killProcessOnPort(PORT)) {
+        if (await freePort(PORT)) {
           httpServer = Bun.serve({ port: PORT, ...serverConfig })
         } else {
           throw err
@@ -4227,7 +4263,7 @@ if (USE_HTTPS) {
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
       if (PORT_IS_STRICT) {
-        if (killProcessOnPort(HTTPS_PORT)) {
+        if (await freePort(HTTPS_PORT)) {
           httpsServer = Bun.serve({ port: HTTPS_PORT, tls, ...serverConfig })
         } else {
           throw err
@@ -4321,32 +4357,6 @@ if (REGISTRY_NAME) {
     try { return lstatSync(p).isSymbolicLink() } catch { return false }
   }
 
-  /**
-   * Is the file at `p` *our* `hj`, or some stranger's?
-   *
-   * **This gate exists because we were destroying people's files.** `~/.local/bin` is
-   * exactly where a developer drops their own scripts, and a personal 56-byte shell
-   * helper called `hj` was being `unlink`ed and replaced by the bundle — silently, with
-   * a receipt that said "installed the shared hj CLI" and never mentioned what it had
-   * deleted. Worse, we *executed* it first, to ask its version.
-   *
-   * This module already refuses to signal a process it cannot positively identify. A
-   * file on the user's disk deserves the same rule, and it is the same rule: **never
-   * destroy what you have not identified.** So look at the bytes before touching — and
-   * before running — anything.
-   *
-   * We check content rather than trusting the filename, because the filename is the one
-   * thing we know we share with the stranger.
-   */
-  const looksLikeHaltijaHj = (p: string): boolean => {
-    try {
-      // Our hj is a bundled JS CLI, tens of KB. A hand-written shim is not.
-      const head = readFileSync(p, 'utf-8').slice(0, 200_000)
-      return /haltija|HALTIJA_PORT|tosijs-dev/i.test(head)
-    } catch {
-      return false
-    }
-  }
 
   /**
    * What version of `hj` is currently on the user's PATH?
@@ -4391,59 +4401,50 @@ if (REGISTRY_NAME) {
       mkdirSync(localBin, { recursive: true })
     }
 
-    if (isSymlink(hjTarget)) {
-      // Someone pointed hj at a build on purpose. Leave it exactly as it is — even if it
-      // now dangles. A broken symlink is a broken *deliberate* install: replacing it
-      // would silently undo their setup the moment they fix the target, and they will
-      // notice a dangling hj immediately anyway (`command not found`). Say so, don't fix
-      // it for them.
-      if (!existsSync(hjTarget)) {
-        recordMachineAction({
-          kind: 'declined',
-          detail: `~/.local/bin/hj is a symlink whose target is missing — leaving it alone. Repoint or remove it; haltija will not overwrite a deliberate install.`,
-        })
+    // The whole decision lives in src/hj-install.ts — a pure, tested decision table rather
+    // than a hand-rolled closure. It was a closure, and it shipped two bugs in opposite
+    // directions (it claimed a user's shim and disowned our own compiled binary), which is
+    // exactly what an untestable policy buys you. Its siblings — legacy-servers.ts,
+    // port-pid.ts — were extracted and tested; this one now is too.
+    const symlinked = isSymlink(hjTarget)
+    const present = existsSync(hjTarget)
+
+    // Identity comes from the BYTES, before anything is executed. `installedVersion()` runs
+    // the file, and running a stranger's script is not an option.
+    let identity: HjIdentity | undefined
+    if (present && !symlinked) {
+      try {
+        identity = identifyHj(readFileSync(hjTarget))
+      } catch {
+        identity = 'foreign' // unreadable → not ours → hands off
       }
-      return
     }
 
-    // NEVER TOUCH — OR EXECUTE — A FILE WE HAVE NOT IDENTIFIED.
-    //
-    // `~/.local/bin` is where developers keep their own scripts. We were unlinking a
-    // stranger's `hj` and replacing it with our bundle, having first *run* it to ask its
-    // version. This module already refuses to signal a process it cannot identify; a file
-    // on someone's disk gets the same rule.
-    if (existsSync(hjTarget) && !looksLikeHaltijaHj(hjTarget)) {
+    const plan = planHjInstall(
+      {
+        exists: present,
+        isSymlink: symlinked,
+        symlinkResolves: symlinked ? present : undefined,
+        identity,
+        // Only ask a file for its version once we know it's ours.
+        reportedVersion: identity && identity !== 'foreign' ? installedVersion() : undefined,
+      },
+      VERSION,
+      isOlderThan,
+    )
+
+    if (plan.action === 'leave') return
+
+    if (plan.action === 'decline') {
       recordMachineAction({
         kind: 'declined',
-        detail: `${hjTarget} exists but is not a haltija CLI — refusing to overwrite it. Haltija's own hj is not installed. Move that file, or set HALTIJA_NO_INSTALL=1 to silence this.`,
+        detail: `${hjTarget}: ${plan.reason}. Haltija's own hj is not installed. Set HALTIJA_NO_INSTALL=1 to silence this.`,
       })
       return
     }
 
-    // Install to BOOTSTRAP (nothing there) or to REPAIR (what's there is strictly
-    // older). Never otherwise.
-    //
-    // Retiring the legacy servers stops anything from clobbering hj in FUTURE, but it
-    // cannot un-write the stale copy one of them already left on the PATH — that's the
-    // only reason to overwrite at all. So we do it once, upward, and then stop.
-    //
-    // The previous rule ("install if the bytes differ") was the original
-    // last-writer-wins bug in miniature: two servers of the SAME version built from
-    // slightly different local builds would rewrite hj past each other on every boot.
-    // A byte difference is not a reason to touch a shared binary; being out of date is.
-    if (existsSync(hjTarget)) {
-      const existing = installedVersion()
-      if (existing && !isOlderThan(existing, VERSION)) {
-        // Same version, or newer than us. Nothing to repair — leave it alone.
-        return
-      }
-      if (existing) {
-        console.log(`  [hj] Replacing hj ${existing} on the PATH with ${VERSION}`)
-      } else {
-        // No record and it can't report a version → written by a pre-1.4.0 server.
-        // That's precisely the stale copy this release exists to fix.
-        console.log(`  [hj] Replacing an unversioned (pre-${GUARDS_VERSION}) hj on the PATH with ${VERSION}`)
-      }
+    if (plan.action === 'repair') {
+      console.log(`  [hj] ${plan.reason}`)
     }
 
     if (isCompiledBinary) {
