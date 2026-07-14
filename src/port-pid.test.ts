@@ -12,15 +12,20 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { listenerPidOnPort, listenerPidsOnPort, isHaltijaProcess } from './port-pid'
 
-const PORT = 18899
+// Derived from our pid, not hardcoded: these tests bind a real socket, and a fixed
+// port collides with a lingering listener from a previous or concurrent run — which
+// fails the bind and takes down tests that never even ran.
+const PORT = 18000 + (process.pid % 1000)
 const procs = new Set<Subprocess>()
 
 afterEach(async () => {
+  // Actually WAIT for the children to die. Killing and sleeping a fixed 150ms is a
+  // race: a listener that outlives afterEach still holds PORT for the next test.
   for (const p of procs) {
     try { p.kill('SIGKILL') } catch {}
   }
+  await Promise.all([...procs].map((p) => p.exited.catch(() => {})))
   procs.clear()
-  await new Promise((r) => setTimeout(r, 150))
 })
 
 /** A process that listens on PORT and does nothing else. */

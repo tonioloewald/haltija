@@ -3,12 +3,14 @@
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
-- [ ] **Flaky when `bun run build` runs immediately before `bun test` in the same shell.**
-      Seen twice (once "1 error", once "4 fail"), never reproduced in 14 subsequent clean runs
-      and never with a captured test name. Suspect a race: the build rewrites `dist/` while a
-      test that reads `dist/hj.js` (cli-subcommand) is running. Not a product bug, but it is a
-      real red test and must not be waved away — pin it down, then either serialize or point
-      those tests at a build-stable copy.
+- [ ] **Watch for a recurrence of the transient suite failure.** Seen twice while landing 1.4.0
+      (once "1 error", once "4 fail" — and in that run only 497 of 500 tests *ran*, so a file
+      failed to load rather than an assertion failing). Likely cause found and fixed:
+      `src/port-pid.test.ts` bound a hardcoded port (18899) and its `afterEach` killed children
+      then slept a fixed 150ms instead of awaiting exit, so back-to-back runs could collide with
+      a lingering listener. Port is now pid-derived and teardown awaits `exited`. Never
+      reproduced deliberately, so this is *probably* fixed, not provably — if it returns, capture
+      the failing file name before assuming it's the same thing.
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment
