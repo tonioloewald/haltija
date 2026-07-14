@@ -302,6 +302,36 @@ app also exists but isn't required for either.
 
 ---
 
+## Housekeeping — what Haltija does to your machine
+
+Haltija is a dev tool that a *lot* of projects run at once, so a few things live outside
+your project directory. All of it is opt-out.
+
+**It installs `hj` into `~/.local/bin`.** One CLI, shared by every project. It will
+**never overwrite a symlink** (if you point `hj` at your own build, that's yours) and
+**never downgrade** a newer `hj` than the one it carries. `HALTIJA_NO_INSTALL=1` disables it.
+
+**It registers itself in `~/.haltija/servers/`,** recording the directory it was started
+in. That's what lets plain `hj` inside a project reach *that project's* server instead of
+whichever browser happens to be focused somewhere else. The entry is removed on shutdown.
+`hj where` shows what your shell is targeting and why.
+
+**It stops haltija servers older than 1.4.0.** Those versions overwrite the shared
+`~/.local/bin/hj` on every boot, so one stale server left running quietly hands every
+project on your machine an old CLI. A 1.4.0+ server SIGTERMs them on startup and says so.
+It is deliberately narrow:
+
+- It only stops servers **below 1.4.0** — never a peer. Two projects on 1.4.0 and 1.4.1
+  coexist; nothing kills anything once 1.3.x is gone.
+- It **will not touch a running desktop app** (that would orphan a window you can see) —
+  it tells you to quit and update it instead.
+- It **will not signal a process it cannot positively identify as haltija.** If it can't,
+  it says so and leaves it alone.
+
+`HALTIJA_NO_RETIRE=1` disables it.
+
+---
+
 ## Use Cases
 
 - **AI pair programming** — Agent sees your actual app, not a description of it

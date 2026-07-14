@@ -37,6 +37,7 @@
     "dist",
     "bin",
     "docs",
+    "CHANGELOG.md",
     "llms.txt",
     "haltija-icon.svg",
     "apps/desktop/*.js",

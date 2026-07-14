@@ -64,11 +64,23 @@ Options:
   --setup-mcp-remove Remove Haltija from Claude Desktop config
   --help, -h      Show this help
 
+What this does to your machine (see "Housekeeping" in the README):
+  - Installs the `hj` CLI into ~/.local/bin (never overwrites a symlink, never
+    downgrades a newer hj). Disable with HALTIJA_NO_INSTALL=1.
+  - Registers itself in ~/.haltija/servers/ so `hj` in this directory finds it.
+  - On startup, SIGTERMs any haltija server older than 1.4.0 that it finds — those
+    versions overwrite the shared ~/.local/bin/hj on every boot. It will not touch
+    a running desktop app, or any process it cannot identify as haltija.
+    Disable with HALTIJA_NO_RETIRE=1.
+
 Environment Variables:
   HALTIJA_PORT             HTTP port (default: try 8700, else ephemeral)
   HALTIJA_NAME             Register this server under <name> for hj resolution
   HALTIJA_TOKEN            Shared-secret required on every REST + WebSocket request
                            (default: unset = no auth; suitable for local dev)
+  HALTIJA_NO_RETIRE        Set to 1: do not stop pre-1.4.0 haltija servers
+  HALTIJA_NO_INSTALL       Set to 1: do not install hj into ~/.local/bin
+  HALTIJA_REGISTRY_DIR     Instance registry location (default: ~/.haltija/servers)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
   DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')

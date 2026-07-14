@@ -3,6 +3,12 @@
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
+- [ ] **Flaky when `bun run build` runs immediately before `bun test` in the same shell.**
+      Seen twice (once "1 error", once "4 fail"), never reproduced in 14 subsequent clean runs
+      and never with a captured test name. Suspect a race: the build rewrites `dist/` while a
+      test that reads `dist/hj.js` (cli-subcommand) is running. Not a product bug, but it is a
+      real red test and must not be waved away — pin it down, then either serialize or point
+      those tests at a build-stable copy.
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment

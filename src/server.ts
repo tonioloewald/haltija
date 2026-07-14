@@ -28,6 +28,7 @@ import type { HandlerContext } from './api-handlers'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, type ServerProbe } from './legacy-servers'
+import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -714,18 +715,37 @@ function handleMessage(ws: WebSocket, raw: string, isBrowser: boolean) {
 // Schema-driven API Router
 // ============================================
 
+/**
+ * The headers on every JSON response.
+ *
+ * ONE definition, used by both the router context and the REST handler. There
+ * used to be two copies, and `X-Haltija-Version` was added to only one — so the
+ * documented "hj warns about version skew on any command" was quietly false for
+ * every routed endpoint (/tree, /click, /type, …), which is every command that
+ * matters.
+ *
+ * CORS includes Private Network Access so HTTPS pages can reach this localhost
+ * server. `X-Haltija-Version` lets hj notice on ANY command that it is a different
+ * version from the server it is driving, without spending an extra round trip.
+ */
+function jsonHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Expose-Headers': 'X-Haltija-Version',
+    'Content-Type': 'application/json',
+    'X-Haltija-Version': VERSION,
+  }
+}
+
 // Create context factory for the router
 const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   // Window targeting: ?window=<id> query param, otherwise the focused window
   const targetWindowId = url.searchParams.get('window') || undefined
 
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
-    'Access-Control-Allow-Private-Network': 'true',
-    'Content-Type': 'application/json',
-  }
+  const headers = jsonHeaders()
 
   // Helper to get window info for response context
   const getWindowInfo = (windowId?: string) => {
@@ -838,19 +858,7 @@ async function handleRest(req: Request): Promise<Response> {
   // If not specified, command goes to all active windows
   const targetWindowId = url.searchParams.get('window') || undefined
   
-  // CORS headers (including Private Network Access for local server)
-  // PNA allows HTTPS sites to access localhost
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
-    'Access-Control-Allow-Private-Network': 'true',
-    'Access-Control-Expose-Headers': 'X-Haltija-Version',
-    'Content-Type': 'application/json',
-    // Lets `hj` notice on any command that it's older (or newer) than the server
-    // it's driving, without spending an extra round trip to ask.
-    'X-Haltija-Version': VERSION,
-  }
+  const headers = jsonHeaders()
 
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers })
@@ -4029,45 +4037,21 @@ const serverConfig = {
 }
 
 // Helper: Kill process using a port (returns true if killed something)
+// Resolves LISTENERS only — see src/port-pid.ts for why that matters.
 function killProcessOnPort(port: number): boolean {
-  const myPid = process.pid.toString()
-  try {
-    // Use lsof to find PID using the port
-    const output = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
-    if (output) {
-      const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
-      if (pids.length === 0) {
-        // Only found our own PID - nothing to kill
-        return false
-      }
-      for (const pid of pids) {
-        try {
-          execSync(`kill ${pid} 2>/dev/null`)
-          console.log(`  [port] Killed existing process ${pid} on port ${port}`)
-        } catch {
-          // Process may have already exited
-        }
-      }
-      // Give it a moment to release the port
-      Bun.sleepSync(100)
-      return true
+  const pids = listenerPidsOnPort(port)
+  if (pids.length === 0) return false
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGTERM')
+      console.log(`  [port] Killed existing process ${pid} on port ${port}`)
+    } catch {
+      // Process may have already exited
     }
-  } catch {
-    // No process found or lsof not available
   }
-  return false
-}
-
-/** The pid listening on a port, if we can tell. Never returns our own. */
-function pidOnPort(port: number): number | null {
-  try {
-    const out = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
-    const pids = out.split('\n').filter(Boolean).map(Number)
-      .filter((p) => Number.isFinite(p) && p !== process.pid)
-    return pids[0] ?? null
-  } catch {
-    return null
-  }
+  // Give it a moment to release the port
+  Bun.sleepSync(100)
+  return true
 }
 
 /** Ask a port what it is. Anything that doesn't answer cleanly is "not haltija". */
@@ -4083,7 +4067,7 @@ async function probePort(port: number): Promise<ServerProbe> {
       version: status.serverVersion,
       desktopApp: !!status.desktopApp,
       // Servers from 1.4.0 on report their own pid; older ones need lsof.
-      pid: typeof status.pid === 'number' ? status.pid : pidOnPort(port),
+      pid: typeof status.pid === 'number' ? status.pid : listenerPidOnPort(port),
     }
   } catch {
     return unknown
@@ -4114,9 +4098,17 @@ async function retireLegacyServers(): Promise<void> {
 
     if (plan.action === 'retire') {
       console.log(`  [legacy] ${plan.reason}`)
+      // Last gate before we signal a process on the user's machine. If we can't
+      // confirm it IS haltija, say so and leave it alone — a hazard we warned
+      // about is far cheaper than killing something that wasn't ours.
+      if (!isHaltijaProcess(plan.pid)) {
+        console.warn(`  [legacy] ⚠️  Refusing to signal pid ${plan.pid} on :${port} — it does not look like a haltija server`)
+        console.warn(`  [legacy]    Stop it yourself if it is one: kill ${plan.pid}`)
+        continue
+      }
       try {
         process.kill(plan.pid, 'SIGTERM')
-        console.log(`  [legacy] Retired pid ${plan.pid} on :${port}`)
+        console.log(`  [legacy] Retired pid ${plan.pid} on :${port} (set HALTIJA_NO_RETIRE=1 to disable)`)
         killed = true
       } catch (err: unknown) {
         // Complain — never fail silently. A legacy server we couldn't stop will
@@ -4254,6 +4246,11 @@ if (REGISTRY_NAME) {
 //   3. Compare content, not file size. Two different builds can coincidentally
 //      share a byte count, and then a stale hj is never refreshed.
 ;(async () => {
+  // HALTIJA_NO_INSTALL=1 opts out. Every test-spawned server runs this IIFE, and
+  // it writes to the developer's real ~/.local/bin — running the test suite must
+  // not rewrite the `hj` on their PATH.
+  if (process.env.HALTIJA_NO_INSTALL === '1') return
+
   const localBin = join(homedir(), '.local', 'bin')
   const hjTarget = join(localBin, 'hj')
   const installRecord = join(homedir(), '.haltija', 'hj-install.json')

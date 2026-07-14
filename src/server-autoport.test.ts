@@ -18,9 +18,17 @@ import { tmpdir } from 'os'
 // server on a cwd match, so `hj` in this repo silently drives a browserless test
 // server. Set before any spawn; sessions.ts resolves the dir per call.
 process.env.HALTIJA_REGISTRY_DIR = mkdtempSync(join(tmpdir(), 'haltija-test-registry-'))
+// A spawned server runs its full startup: it SIGTERMs "legacy" servers it finds on
+// well-known ports, and installs `hj` into ~/.local/bin. Both act on the real
+// machine, so running the test suite could kill processes it did not start and
+// rewrite the developer's `hj`. Neither belongs in a test run.
+process.env.HALTIJA_NO_RETIRE = '1'
+process.env.HALTIJA_NO_INSTALL = '1'
 
 
-const REGISTRY_DIR = join(homedir(), '.haltija', 'servers')
+// The throwaway dir the spawned servers write to (set above), NOT the developer's
+// real ~/.haltija/servers/.
+const REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR!
 const trackedNames = new Set<string>()
 const trackedProcs = new Set<Subprocess>()
 let occupiedSocket: ReturnType<typeof Bun.serve> | null = null
@@ -75,6 +83,13 @@ it('falls back to an ephemeral port when 8700 is taken and no preference is give
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       HALTIJA_NAME: name,
+      // This spawn does NOT inherit process.env, so the guards set at the top of
+      // this file don't reach it. Pass them through explicitly: HOME above is the
+      // developer's real one, so without these the server would SIGTERM processes
+      // it found on well-known ports and rewrite their ~/.local/bin/hj.
+      HALTIJA_REGISTRY_DIR: process.env.HALTIJA_REGISTRY_DIR,
+      HALTIJA_NO_RETIRE: '1',
+      HALTIJA_NO_INSTALL: '1',
     },
     stdout: 'pipe',
     stderr: 'pipe',
