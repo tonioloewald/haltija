@@ -2,13 +2,21 @@
 
 ## UI-debugging primitives — the actual product thesis
 
-**Positioning note (worth acting on before more comparison-table work):** Claude-in-Chrome
-isn't the competitor. That's an agent-to-browser bridge that happens to expose `eval`. If
-Haltija is a **UI debugging instrument**, what it actually competes with is *"an agent writing
-throwaway Playwright scripts"* and *"a human squinting at DevTools."* Judge it against those.
-(Whatever we conclude, the README comparisons stay strictly fair — see the fairness rule; the
-point here is that we're comparing against the wrong thing, not that we're being unfair to
-ourselves.)
+**Positioning note (Tonio's, and it's the one to build against).** Haltija is **a tool for
+building and testing user interfaces** — interactively *and in CI* — that also happens to let
+an agent use websites. Claude-in-Chrome is the mirror image: a tool for letting an agent *use*
+websites, that also happens to have `eval`. Same two capabilities, inverted primacy.
+
+So the comparison is legitimate — tosijs-ui overshot in calling them non-competitors — but the
+axis is *primary purpose*, not feature overlap. And note tosijs-ui's proposed competitor set
+("an agent writing throwaway Playwright scripts", "a human squinting at DevTools") is
+**interactive-only**: it drops CI, which is the half we've deliberately invested in
+(`--headless`/`--ci`, JSON fixtures) and the half that justifies deprioritizing the DMG. If
+Haltija is a UI *testing* tool, its real peer is **Playwright proper**, and the honest question
+is whether record→replay JSON tests beat writing specs by hand.
+
+Keep every comparison strictly fair and honest even where it doesn't flatter Haltija — the
+problem to fix is that we're comparing on the wrong axis, not that we're being too modest.
 
 The evidence below is from a real session debugging tosijs-ui's scroll engine, not from theory.
 Every item is something that had to be hand-rolled — badly, three times — inside an `eval`:
