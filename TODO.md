@@ -195,6 +195,51 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       was measured against and that the window was still alive when the value was taken —
       otherwise a scrub/sample table can silently contain readings from a tab that died halfway.
 
+## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
+
+- [ ] **Kill the cwd-routing duplication** *(dryness + coverage + ecosystem, all confirmed)*.
+      `resolveByCwd` / `isAncestorOf` / `listLiveInstances` / the broad-cwd guard exist twice —
+      in `src/sessions.ts` (tested) and hand-copied into `bin/hj.mjs` (**shipped, untested**) —
+      and the copies have already drifted (`'/'` vs `sep`; inlined guard vs `isTooBroadForCwdMatch`;
+      `startedAt||0` vs `startedAt`). `scripts/build.ts` flags this in a comment and then does it.
+      It routes *every* `hj` call. Fix with the pattern this release already established: compile
+      the routing/registry helpers out of `src/sessions.ts` into a `bin/` module (as done for
+      `bin/semver.mjs`) and import them, so there is one tested source. Inert on POSIX today; the
+      next routing fix lands in the tested copy and ships nothing.
+- [ ] **Default test-mode safety posture, not per-file opt-in** *(practices, confirmed)*. The
+      `HALTIJA_REGISTRY_DIR` + `NO_INSTALL` + `NO_RETIRE` guard is a copy-pasted 3-line preamble
+      in ~11 spawning test files; a new test that forgets it silently pollutes the real
+      `~/.haltija` / `~/.local/bin/hj`. Move it to a `bunfig.toml` preload / shared test-setup
+      that defaults these in test mode, and delete the copies. (`unit-tests.yml` asserts the
+      footprint, so a regression fails CI — but defense in depth beats a per-file ritual.)
+- [ ] **`freePort` is not gated by the test opt-outs.** `NO_RETIRE`/`NO_INSTALL` don't cover it,
+      so `bun test src/server.test.ts` on a machine with a real server on the strict port can
+      `POST /shutdown` to it and append to the real `machine-actions.log`. Gate freePort behind an
+      opt-out the suite sets, and extend `unit-tests.yml`'s footprint check to fail if
+      `machine-actions.log` was created/appended during the run.
+- [ ] **`bin/tosijs-dev.mjs` `killOnPort` reimplements `port-pid.ts`** *(dryness, confirmed)* —
+      compile `listenerPidsOnPort`/`isHaltijaProcess` into `bin/` and reuse, so the SIGTERM
+      identity check has one source of truth.
+- [ ] **`src/machine-log.ts` has zero tests** — add one against a temp `HALTIJA_MACHINE_LOG`:
+      append/parse per action kind, `readMachineActions(limit)` newest-last, missing/garbage file
+      → `[]` without throwing, unwritable path doesn't throw.
+- [ ] **`installedVersion()` spawns `hj --version` on every boot** — for our own artifact the
+      version is already in the `haltija-cli:do-not-edit vX.Y.Z` marker line the head window read;
+      parse it, and exec only for the markerless legacy case.
+- [ ] **`identifyHj` / `identifyHjBounded` encode the same 4-branch ladder twice** — factor into
+      one `classify()` parameterized by a byte-window accessor. This code can delete a file on
+      disk; the two paths must stay in lockstep.
+- [ ] **Integration tiers can latch onto a transient `src/`-spawned server.** Bare `bun test`
+      shows red integration-tier tests; point their skip-probe at a dedicated port (not 8700), and
+      document that `bun test src/` and `bun test tests/` are the supported invocations, not bare
+      `bun test`.
+- [ ] Add the five new 1.4.0 modules to the CLAUDE.md Key Source Files table (`hj-install.ts`,
+      `legacy-servers.ts`, `port-pid.ts`, `semver.ts`, `machine-log.ts`).
+- [ ] File the ecosystem/upstream items in `UPSTREAM.md` (which doesn't exist yet): `bun build
+      --compile` bloat (now shim-worked-around), no port→pid API, npx cache-lock on Electron
+      restart. And the repo has **zero GitHub issues** — the remediation this release performs is
+      unfindable by the transitive users it exists for; open a tracking issue.
+
 ## Build / Distribution
 
 - [x] **`hj` no longer ships as a 60 MB binary to deliver a 66 KB program.** `bun build

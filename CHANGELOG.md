@@ -55,6 +55,7 @@ silently.
 
 - HTTPS-only servers no longer advertise an HTTP port they aren't listening on.
 - Every REST response carries `X-Haltija-Version`.
+- `hj … --json` now exits non-zero when the response reports failure (`success:false`), matching the human-output path — so an agent checking the exit code can no longer read a failed probe as success.
 - `HALTIJA_REGISTRY_DIR` overrides the instance-registry location.
 
 ### Platform

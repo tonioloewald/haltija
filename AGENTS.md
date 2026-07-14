@@ -25,7 +25,7 @@ The sequence lives upstream under
 The short version: bump **both** `package.json` files → `bun run build` → `bun test src/` 100%
 green → commit → annotated tag → push commits **and** tag → `gh release create` → `npm publish`.
 
-Before a **minor or major** bump, run `/pre-release-review` (the eight-lens adversarial review
+Before a **minor or major** bump, run `/pre-release-review` (the nine-lens adversarial review
 gate). Patch releases don't require it.
 
 Haltija-specific notes not worth upstreaming:
