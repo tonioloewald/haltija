@@ -1,11 +1,8 @@
 # TODO
 
 ## Build / Distribution
-- [ ] Drop Intel macOS builds, add Windows and Linux DMG/installer builds
+- [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
-- [ ] Legacy-server retirement is macOS/Linux only — finding a pre-1.4.0 server's pid uses
-      `lsof`. On Windows the sweep finds nothing and stays silent. Low priority (no Windows
-      build yet), but revisit when Windows builds land.
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment

@@ -444,6 +444,12 @@ When it *can't* kill something harmful (EPERM, no discoverable pid), it complain
 
 Legacy servers don't register themselves, so they're invisible to the registry and can only be found by probing: well-known defaults (8700, 8701), our own port, plus registry ports. It is deliberately **not** a port scan. Set `HALTIJA_NO_RETIRE=1` to disable the sweep entirely.
 
+## Platform support: POSIX only, on purpose
+
+Haltija targets **macOS and Linux**. Several things shell out to POSIX tools — retiring legacy servers maps port→pid with `lsof`, and `hj` auto-launch uses `open -a`. That's a deliberate choice, not an oversight.
+
+**Native Windows is explicitly not a target.** Anyone developing on Windows today should use WSL, which is a Linux userland — `lsof` and `/proc` are present and everything here works unmodified. Do **not** add Windows codepaths, `tasklist`/`netstat` fallbacks, or cross-platform shims for these unless someone explicitly asks; it's compensating complexity for a case we've decided we don't serve.
+
 ### Version skew
 
 `hj` carries its own version (`bin/version.mjs`, generated from `package.json` by the build and inlined into `dist/hj.js` — a runtime file read wouldn't survive bundling). `hj --version` prints it.
