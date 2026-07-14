@@ -2819,6 +2819,27 @@ hj --port 9123 tree
 When the server is started with \`--token <secret>\`, set \`HALTIJA_TOKEN\` to
 match (or pass \`--token <secret>\` to \`hj\`).
 
+## Troubleshooting: a tab that reads as unreachable
+
+The widget proves it is alive with a heartbeat. If the page's main thread or its
+\`requestAnimationFrame\` loop is **suspended**, the heartbeat stalls and the tab
+reads as *unreachable* — commands time out or report "no browser connected" — even
+though the page itself is fine. This is the instrument going quiet, not the page
+breaking; do not chase a page bug that isn't there. Known causes:
+
+- **An active WebXR / immersive session.** WebXR suspends \`window.requestAnimationFrame\`
+  for the duration of the session (rAF is driven by the XR compositor instead), so a
+  heartbeat riding \`window.rAF\` stops. The tab is unreachable *while immersive*.
+  Workaround: drive state out through your own channel instead of polling the tab —
+  e.g. write the values you care about somewhere your test/agent can read them (an
+  in-page debug source, an in-headset stats panel), rather than issuing \`hj eval\` that
+  round-trips through the suspended heartbeat.
+- **A heavily throttled background tab, or a long blocking task** on the main thread —
+  same shape: the heartbeat can't run, so the tab looks dead until the thread frees up.
+
+If a command hits the *wrong* page rather than a dead one, that's targeting, not
+liveness — see "Which Server Does \`hj\` Talk To?" above and run \`hj where\`.
+
 ## Embed Haltija in Your App
 
 \`\`\`js
@@ -2934,6 +2955,11 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server):
 \`\`\`html
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>
 \`\`\`
+
+## Gotcha: a tab can read as unreachable while its main thread is suspended
+- The widget proves liveness with a heartbeat. If the page's main thread or its \`requestAnimationFrame\` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It's the instrument going quiet, not a page bug.
+- **WebXR / immersive sessions suspend \`window.requestAnimationFrame\`** (the XR compositor drives frames instead), so a tab is unreachable *while immersive*. Drive state out through your own channel — write the values you care about somewhere your agent can read (a debug source, an in-headset stats panel) — rather than \`hj eval\` round-trips through the suspended heartbeat. A heavily throttled background tab or a long blocking task has the same shape.
+- A command hitting the WRONG page (not a dead one) is targeting, not liveness: run \`hj where\`.
 
 ## Optional
 - [Recipes](https://github.com/tonioloewald/haltija/blob/main/docs/recipes.md): Common workflows (login flows, codebase exploration, recording bug reports).

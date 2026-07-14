@@ -57,6 +57,11 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server):
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>
 ```
 
+## Gotcha: a tab can read as unreachable while its main thread is suspended
+- The widget proves liveness with a heartbeat. If the page's main thread or its `requestAnimationFrame` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It's the instrument going quiet, not a page bug.
+- **WebXR / immersive sessions suspend `window.requestAnimationFrame`** (the XR compositor drives frames instead), so a tab is unreachable *while immersive*. Drive state out through your own channel — write the values you care about somewhere your agent can read (a debug source, an in-headset stats panel) — rather than `hj eval` round-trips through the suspended heartbeat. A heavily throttled background tab or a long blocking task has the same shape.
+- A command hitting the WRONG page (not a dead one) is targeting, not liveness: run `hj where`.
+
 ## Optional
 - [Recipes](https://github.com/tonioloewald/haltija/blob/main/docs/recipes.md): Common workflows (login flows, codebase exploration, recording bug reports).
 - [CI integration](https://github.com/tonioloewald/haltija/blob/main/docs/CI-INTEGRATION.md): Running Haltija headless in CI.

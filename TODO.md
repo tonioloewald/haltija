@@ -225,10 +225,14 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       channel drops, tab orphans (page loaded, socket dead). *Architectural (the embedding
       model), not caused by 1.4.0.* Design a channel that outlives a dev-server restart, or
       reconnects automatically — erases a class of "reload again" churn.
-- [ ] **#6 — WebXR suspends `window.rAF`, stalling the heartbeat; the tab goes unreachable while
-      immersive.** *Inherent to WebXR, not a haltija bug*, but worth designing for: the heartbeat
-      can't ride `window.rAF` if you want to drive a page inside an XR session. (tosijs-3d's
-      workaround: `addDebugSource` → read state in the in-headset Perf Stats panel.)
+- [~] **#6 — WebXR suspends `window.rAF`, stalling the heartbeat; the tab goes unreachable while
+      immersive.** *Inherent to WebXR, not a haltija bug* — so **docs are the mitigation, and they
+      shipped in 1.4.0**: a "tab reads as unreachable" troubleshooting section in `DOCS.md` and a
+      gotcha in `llms.txt` (both agent-facing, served at `/docs` and `/llms.txt`) explain that a
+      suspended main thread / rAF stalls the heartbeat, and to drive state out through your own
+      channel instead of round-tripping `hj eval`. *Still open as a design item:* a heartbeat that
+      doesn't ride `window.rAF` (or a fallback timer) would make immersive pages drivable, not just
+      diagnosable. (tosijs-3d's workaround: `addDebugSource` → in-headset Perf Stats panel.)
 
 ## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
 
