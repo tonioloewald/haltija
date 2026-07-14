@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { candidatePorts, isLegacy, planForServer, type ServerProbe } from './legacy-servers'
+import { candidatePorts, isLegacy, planForServer, planFreePort, type ServerProbe } from './legacy-servers'
 
 const SELF = 4242
 
@@ -116,5 +116,29 @@ describe('unknown desktopApp (pre-1.3.0 /status had no such field)', () => {
     // "Could not tell" must fall on the safe side.
     const plan = planForServer(probe({ version: '1.1.7', desktopApp: null }), SELF)
     expect(plan.action).toBe('complain')
+  })
+})
+
+describe('planFreePort (the EADDRINUSE decision — the blocker lived here)', () => {
+  const p = (over: Partial<ServerProbe> = {}): ServerProbe =>
+    ({ port: 8700, version: '1.4.0', desktopApp: false, pid: 999, ...over })
+
+  it('stops a positively-identified haltija server that is not the desktop app', () => {
+    expect(planFreePort(p({ version: '1.3.4', desktopApp: false }))).toBe('stop')
+  })
+
+  it('DECLINES an unidentified server (null) — the blocker: false let it through', () => {
+    // A token-gated /status 401s and a slow one times out; both probe as unidentified. This
+    // used to arrive as desktopApp:false and get SIGTERMed, including a running desktop app.
+    expect(planFreePort(p({ version: null, desktopApp: null }))).toBe('decline')
+  })
+
+  it('DECLINES the desktop app', () => {
+    expect(planFreePort(p({ desktopApp: true }))).toBe('decline')
+  })
+
+  it('DECLINES anything without a version, even if desktopApp is somehow false', () => {
+    // Belt and braces: no positive haltija identification -> hands off.
+    expect(planFreePort(p({ version: null, desktopApp: false }))).toBe('decline')
   })
 })

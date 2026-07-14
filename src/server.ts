@@ -27,7 +27,7 @@ import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
-import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
+import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { recordMachineAction } from './machine-log'
 import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
@@ -4055,25 +4055,24 @@ async function freePort(port: number): Promise<boolean> {
 
   const probe = await probePort(port)
 
-  // A running desktop app is never collateral for a port request. Neither is anything we
-  // cannot identify — including a server too old to tell us what it is.
-  if (probe.desktopApp || probe.desktopApp === null) {
+  // A running desktop app is never collateral for a port request, and neither is anything we
+  // could not identify (a token-gated or slow server probes as unidentified). Pure, tested
+  // decision — see planFreePort.
+  if (planFreePort(probe) === 'decline') {
     recordMachineAction({
       kind: 'declined',
-      detail: `port ${port} is held by the Haltija desktop app (or a server too old to say) — refusing to stop it for a port request. Quit it yourself, or choose another port.`,
+      detail: `port ${port} is held by the Haltija desktop app, or a server we could not identify — refusing to stop it for a port request. Quit it yourself, or choose another port.`,
     })
     return false
   }
 
-  if (probe.version) {
-    // It's a haltija server and it can be asked. Do that.
-    if (await requestShutdown(port)) {
-      recordMachineAction({
-        kind: 'server-stopped',
-        detail: `stopped the haltija server on :${port} because this server was explicitly asked to bind that port`,
-      })
-      return true
-    }
+  // Positively identified as a haltija server that isn't the desktop app: ask it to stop.
+  if (await requestShutdown(port)) {
+    recordMachineAction({
+      kind: 'server-stopped',
+      detail: `stopped the haltija server on :${port} because this server was explicitly asked to bind that port`,
+    })
+    return true
   }
 
   // Unresponsive, or not answering /status at all. Signal only a LISTENER that ps confirms
@@ -4118,9 +4117,14 @@ async function freePort(port: number): Promise<boolean> {
  * Returns true only once the port has actually gone quiet.
  */
 async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean> {
+  // /shutdown is token-gated. Send our token so this works at all for --token users — a peer
+  // in the same project shares it. (A different project's token won't match; that server 401s
+  // and simply doesn't shut down, which is correct: we're not authorized to stop it.)
+  const authHeaders: Record<string, string> = REQUIRED_TOKEN ? { 'X-Haltija-Token': REQUIRED_TOKEN } : {}
   try {
     await fetch(`http://localhost:${port}/shutdown`, {
       method: 'POST',
+      headers: authHeaders,
       signal: AbortSignal.timeout(1500),
     })
   } catch {
@@ -4131,7 +4135,10 @@ async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean>
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      await fetch(`http://localhost:${port}/status`, { signal: AbortSignal.timeout(500) })
+      await fetch(`http://localhost:${port}/status`, {
+        headers: authHeaders,
+        signal: AbortSignal.timeout(500),
+      })
     } catch {
       return true // nothing is answering: it's gone
     }
@@ -4142,9 +4149,21 @@ async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean>
 
 /** Ask a port what it is. Anything that doesn't answer cleanly is "not haltija". */
 async function probePort(port: number): Promise<ServerProbe> {
-  const unknown: ServerProbe = { port, version: null, desktopApp: false, pid: null }
+  // desktopApp: null means "we could not tell". It must NEVER be false here: false asserts
+  // "identified, and not the desktop app" about a server we never successfully read, and
+  // every consumer treats a false as license to stop it. A probe that fails — timeout, 401
+  // from a token-gated /status, non-2xx, non-haltija JSON — is UNIDENTIFIED, and unidentified
+  // is the one thing we must not touch. (This was a release blocker: unknown said `false`, so
+  // freePort SIGTERMed token-gated and slow servers, including a running desktop app.)
+  const unknown: ServerProbe = { port, version: null, desktopApp: null, pid: null }
   try {
-    const resp = await fetch(`http://localhost:${port}/status`, { signal: AbortSignal.timeout(1000) })
+    const resp = await fetch(`http://localhost:${port}/status`, {
+      signal: AbortSignal.timeout(1000),
+      // Send our token so a --token-configured server can identify (and later ask to stop)
+      // its OWN peers. A different project's server with a different token still 401s and
+      // stays unidentified, which is correct — we're not authorized to touch it.
+      headers: (REQUIRED_TOKEN ? { 'X-Haltija-Token': REQUIRED_TOKEN } : {}) as Record<string, string>,
+    })
     if (!resp.ok) return unknown
     const status = await resp.json() as { serverVersion?: unknown; desktopApp?: unknown; pid?: unknown }
     if (typeof status?.serverVersion !== 'string') return unknown

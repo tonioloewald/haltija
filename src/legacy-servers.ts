@@ -115,6 +115,28 @@ export function planForServer(probe: ServerProbe, selfPid: number): RetirementPl
 }
 
 /**
+ * May we stop the server on a port we were explicitly told to bind (the EADDRINUSE path)?
+ *
+ * Pure and tested because it decides whether to SIGTERM a process on the user's machine —
+ * the most dangerous decision in the codebase, and one that shipped a blocker while it was an
+ * inline conditional. The rule is the same as retirement's: act only on what we positively
+ * identified, and never on the desktop app.
+ *
+ *   'decline' — a running desktop app (visible GUI), OR anything we could not identify
+ *               (`desktopApp === null`: timeout, 401, non-haltija). Do not touch it.
+ *   'stop'    — a positively-identified haltija server. Ask it first; signal only as a last
+ *               resort (the caller handles that escalation).
+ */
+export function planFreePort(probe: ServerProbe): 'decline' | 'stop' {
+  // Unidentified (null) or the desktop app → hands off. `desktopApp` is only ever true, false,
+  // or null; null and true both decline.
+  if (probe.desktopApp || probe.desktopApp === null) return 'decline'
+  // Identified as NOT the desktop app, but is it identified as haltija at all?
+  if (!probe.version) return 'decline'
+  return 'stop'
+}
+
+/**
  * Ports worth probing. Legacy servers don't register themselves, so there's no
  * list to consult — we check the well-known defaults plus anything the registry
  * knows about. Deliberately NOT a port scan: we are looking for the specific
