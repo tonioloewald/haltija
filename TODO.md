@@ -50,6 +50,114 @@ Every item is something that had to be hand-rolled — badly, three times — in
       pierce shadow DOM structurally (`hj tree --shadow`) — this is about the *state* side:
       reading the properties and custom props that actually drive a tosijs component.
 
+### `hj vitals` — the orientation call *(do this one first)*
+
+**The gap it fills.** A token-minimal, query-narrow API implicitly assumes **the agent already
+has the right hypothesis.** Narrow questions get narrow answers — *including narrow wrong ones.*
+A probe asked "is the map ready?" three seconds in, got `false`, and sent an agent hunting a
+phantom initialization bug for ninety minutes. The answer was **true and useless**. Nothing in
+the loop said *"the thing you should be looking at is that this page has 180 WebGL contexts and
+a wall of console errors."*
+
+**Why a human doesn't have this problem, and an agent does.** A developer sees console spam —
+especially errors — *peripherally*, and treats a big red pile as a large signal without ever
+asking for it. For an agent that signal **does not exist unless it explicitly queries for it.**
+So the tool has to volunteer what's weird, or the agent will confidently reason from a page
+that is visibly on fire to anyone with eyes on it.
+
+So: a cheap orientation call that sits **between the two extremes we already have** — not a DOM
+dump (expensive, low signal) and not a single expression (cheap, but needs a hypothesis).
+A few hundred tokens, high signal, answering *"what's weird here?"* rather than *"what did you
+ask about?"* Candidate contents:
+
+- console errors + unhandled rejections **since last check** (the delta is the signal)
+- pending / failed network requests
+- custom elements that **failed to upgrade**
+- live **WebGL context count** (see resource accounting below)
+- elements with zero-size boxes that shouldn't have them
+- long tasks
+
+This is the call an agent should make *first* in any debugging loop. It would have handed over
+the real bug in the first thirty seconds instead of the ninetieth minute.
+
+## Multi-tenancy: a working set, not isolation-vs-sharing
+
+**The design target, named properly:** twenty projects *addressable*, three or four *resident*.
+That's **virtual memory applied to tabs** — and the goal is explicitly to avoid a bazillion
+containers eating the battery and RAM.
+
+- [ ] **One `BrowserContext` per project.** Chromium's cheap isolation primitive, sitting exactly
+      between "one shared tab" (which bites us) and "twenty containers" (which we're avoiding):
+      incognito-grade separation of cookies, localStorage, IndexedDB and **service workers**,
+      while sharing the browser process, GPU process and binary. The state it isolates is
+      precisely the state that makes concurrent dev sites collide — SWs and localStorage keyed by
+      `localhost:PORT`, where a stale service worker from project A cheerfully serves project B.
+      Miserable to debug; free to prevent.
+- [ ] **Lease the tab, freeze the rest.** Live tabs are the expensive thing (a renderer is tens to
+      hundreds of MB; a rAF loop with a WebGL context burns battery just sitting there). Keep a
+      bounded working set, evict by LRU — but evict to **frozen/discarded, not closed**
+      (`Page.setWebLifecycleState` / tab discard), which drops the renderer while preserving the
+      tab's identity and URL. **The lease outlives residency.** An agent returning after twenty
+      minutes issues a command, haltija transparently rehydrates, and the agent never knows it was
+      paged out. *Identity is cheap and permanent; residency is expensive and transient.*
+- [ ] **Fencing tokens + stamped responses.** Every response carries tab id, URL and **lease
+      epoch**. This turns the whole class of cross-tenant bleed into a **hard error at the
+      boundary** instead of a silent wrong answer, and it's the same idea as the
+      instrument-must-not-lie item above: *a tab's eviction must be a fact you can observe, not an
+      absence you have to infer.* (Real incident: an agent concluded a component wasn't in the DOM
+      because it was reading **someone else's page** and didn't know it. It caught that by
+      accident. An unattended agent wouldn't have.)
+- [ ] **Account for WebGL contexts as a first-class resource, not just RSS.** Chrome caps live
+      contexts around **16 browser-wide** and force-discards the oldest past that. Twenty projects
+      with a map or a 3D scene in several blow through that *while behaving* — and one `<tosi-map>`
+      bug spawned **180 in a single element**. The failure mode isn't slowness, it's *"another
+      tenant's map silently went black."*
+- [ ] *(Later, deliberately not now.)* The browser may not even be the biggest hog: twenty projects
+      means twenty long-lived dev servers with bundlers in them, and a pre-1.6.22 tosijs-ui dev
+      server leaked to **136 GB RSS** over two days. Idle-stopping dev servers is the *same
+      working-set abstraction* applied to the thing actually eating the machine. Resist building it
+      until tab leases are nailed — but know that's where this is heading **before** hardening the
+      interfaces around tabs alone.
+
+## Prove it: the benchmark nobody in this category has built
+
+There are **no benchmarks in browser-tooling-for-agents. It's all demos.** That's a vacuum, and
+the tool with the high bar should fill it — partly because we'd win, but mostly because a
+benchmark reframes the argument from *"look what my agent did"* to *"here's what the loop is
+worth"*, which is the argument we want and the one Playwright-shaped tools can't win.
+
+- [ ] **Same model, same task, with and without haltija.** Measure iterations-to-working,
+      wall-clock, and — the number to put on a slide — **the rate at which the agent catches its
+      own errors versus declaring victory on something broken.** Everyone demos success; nobody
+      measures how often the agent *thought* it succeeded and hadn't.
+
+*Caveat to keep us honest:* the "agent built a JSON-schema-powered editor in 45 minutes using
+haltija, six months ago" story is a **great hypothesis generator and a weak proof** — one agent,
+one task, and the models have moved enormously since. A skeptic will fairly say "a current model
+would build that with no tool at all," and we can't argue that away with an anecdote. The
+benchmark is how we answer it. (See also the fairness rule: claims must survive a hostile reading.)
+
+## Design principles these all serve
+
+- **Token burn is not an expense, it's brain damage.** An agent that spends 10k tokens on a DOM
+  dump doesn't just *pay* 10k tokens — it is measurably worse at reasoning for the rest of the
+  session, and in a long autonomous build that's what actually ends the run. "Minimize token burn"
+  really means **"preserve the agent's reasoning capacity across a long loop."** Same thesis as
+  everything else here: high signal, low volume, honest.
+- **Pixels are a terrible oracle.** A screenshot of a 3D scene says "that looks wrong" and nothing
+  else. What's needed is the scene graph — camera alpha/beta/radius, FOV, which animation group is
+  at which frame, how many meshes loaded, whether the light exists. A screenshot-and-click tool
+  **structurally cannot see that**; it isn't a few features behind, it's on a design path that
+  cannot reach 3D. An eval-first API can ask *"radius is 12, should be 3."*
+- **An agent's ceiling is set by the fidelity and honesty of its feedback.** What gates an agent
+  building real UI isn't code generation, it's whether **its model of the running page is true.**
+  Interrogation, not observation, is what closes the loop on real bugs instead of pixels. This is
+  the same idea as settle-based assertions and instrument-must-not-lie — they are one idea.
+- **Multi-tenancy plumbing is not housekeeping competing with the high bar — it is the
+  precondition for the high bar holding when twenty agents run at once.** In a 45-minute
+  autonomous build, one cross-tenant read means the agent builds on a false premise for the next
+  forty minutes with no signal that anything is wrong.
+
 ### The through-line (tosijs-project's framing — worth putting on the README)
 
 > The differentiator isn't access to a browser, it's the ability to **hold a running UI at an
