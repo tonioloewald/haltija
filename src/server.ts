@@ -26,6 +26,7 @@ import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman,
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor } from './sessions'
+import { isOlderThan } from './semver'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -843,7 +844,11 @@ async function handleRest(req: Request): Promise<Response> {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Access-Control-Request-Private-Network, X-Haltija-Token',
     'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Expose-Headers': 'X-Haltija-Version',
     'Content-Type': 'application/json',
+    // Lets `hj` notice on any command that it's older (or newer) than the server
+    // it's driving, without spending an extra round trip to ask.
+    'X-Haltija-Version': VERSION,
   }
 
   if (req.method === 'OPTIONS') {
@@ -4142,18 +4147,21 @@ if (REGISTRY_NAME) {
 //
 // `hj` is a single global binary on the user's PATH, but every haltija server
 // carries its own copy — so a server that overwrites it is deciding which `hj`
-// *every project on the machine* runs. Two rules keep that from turning into a
+// *every project on the machine* runs. Three rules keep that from turning into a
 // last-server-to-boot-wins race (which is exactly how a stale `bunx haltija@beta`
 // ends up owning the `hj` of an unrelated, up-to-date project):
 //
 //   1. Never touch a symlink. A symlink is a deliberate install — typically a
 //      developer pointing hj at their own build — and clobbering it silently
 //      reverts their tooling under them.
-//   2. Compare content, not file size. Two different builds can coincidentally
+//   2. Never downgrade. We record the version we install in ~/.haltija/hj-install.json;
+//      an older server seeing a newer version there leaves it alone.
+//   3. Compare content, not file size. Two different builds can coincidentally
 //      share a byte count, and then a stale hj is never refreshed.
 ;(async () => {
   const localBin = join(homedir(), '.local', 'bin')
   const hjTarget = join(localBin, 'hj')
+  const installRecord = join(homedir(), '.haltija', 'hj-install.json')
   const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
 
   /** True if `p` exists and is a symlink (deliberate install — hands off). */
@@ -4166,6 +4174,26 @@ if (REGISTRY_NAME) {
     try { return readFileSync(a).equals(readFileSync(b)) } catch { return false }
   }
 
+  /** The version of the hj currently installed, per our own record. */
+  const installedVersion = (): string | null => {
+    try {
+      const rec = JSON.parse(readFileSync(installRecord, 'utf-8'))
+      return typeof rec?.version === 'string' ? rec.version : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Remember what we just put on the user's PATH, so older servers defer to it. */
+  const recordInstall = (): void => {
+    try {
+      mkdirSync(dirname(installRecord), { recursive: true })
+      writeFileSync(installRecord, JSON.stringify({ version: VERSION, installedAt: Date.now() }, null, 2))
+    } catch {
+      // Best effort: a missing record only costs us the downgrade guard.
+    }
+  }
+
   try {
     // Create ~/.local/bin if needed
     if (!existsSync(localBin)) {
@@ -4174,6 +4202,15 @@ if (REGISTRY_NAME) {
 
     if (isSymlink(hjTarget)) {
       // Someone pointed hj at a build on purpose. Leave it exactly as it is.
+      return
+    }
+
+    // Refuse to replace a newer hj with our older one. An unknown or unparseable
+    // recorded version is NOT treated as older — we'd rather refresh a legacy
+    // copy once than silently roll a user's tooling backwards.
+    const existing = existsSync(hjTarget) ? installedVersion() : null
+    if (existing && isOlderThan(VERSION, existing)) {
+      console.log(`  [hj] Keeping newer hj ${existing} already installed (this server is ${VERSION})`)
       return
     }
 
@@ -4204,7 +4241,8 @@ if (REGISTRY_NAME) {
         }
         copyFileSync(hjBundled, hjTarget)
         chmodSync(hjTarget, 0o755) // Make executable
-        console.log(`  [hj] Installed: ${hjTarget} (from bundled binary)`)
+        recordInstall()
+        console.log(`  [hj] Installed: ${hjTarget} (from bundled binary, v${VERSION})`)
       }
     } else {
       // Running from source (bunx or development)
@@ -4231,10 +4269,12 @@ if (REGISTRY_NAME) {
           // Copy standalone bundle — works from any location
           copyFileSync(source, hjTarget)
           chmodSync(hjTarget, 0o755)
-          console.log(`  [hj] Installed: ${hjTarget} (standalone bundle)`)
+          recordInstall()
+          console.log(`  [hj] Installed: ${hjTarget} (standalone bundle, v${VERSION})`)
         } else {
           // Fallback: symlink to source (dev mode only)
           symlinkSync(source, hjTarget)
+          recordInstall()
           console.log(`  [hj] Installed: ${hjTarget} -> ${source}`)
         }
       }

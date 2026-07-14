@@ -40,6 +40,10 @@ silent: they look like a flaky page, not an error.
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 
+`hj` also warns on stderr when its version differs from the server's (`hj --version` prints its
+own). A mismatched `hj` can route or format wrongly — if you see that warning, believe it before
+you spend time debugging the page.
+
 ## Live control
 
 ```

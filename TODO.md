@@ -3,14 +3,10 @@
 ## Build / Distribution
 - [ ] Drop Intel macOS builds, add Windows and Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
-- [ ] **`hj` has no version of its own** — no `hj --version`, and nothing embedded in the
-      bundle. Consequences: (a) the server's auto-install into `~/.local/bin` can't tell an
-      *older* bundled `hj` from a newer installed one, so between two copied (non-symlink)
-      installs it's still last-server-to-boot-wins — an old server can downgrade a newer `hj`;
-      (b) `hj` can't warn when it's older than the server it's talking to, even though
-      `/status` already returns `serverVersion`. Fix: stamp the version into the bundle at
-      build time (like `bin/hints.json`), then refuse to downgrade on install and warn on
-      client/server skew. Symlinked installs are already safe (never overwritten).
+- [ ] Old servers (pre-1.4.0) still clobber `~/.local/bin/hj` on boot — they predate the
+      symlink/downgrade guards. Nothing to fix in code; it resolves as 1.3.x installs age out.
+      If a dev's symlinked `hj` keeps reverting, a stale server is still running somewhere:
+      `hj where` names it.
 
 ## Agentic IDE
 - [ ] See [docs/AGENTIC-IDE.md](docs/AGENTIC-IDE.md) — plan for post-IDE orchestration environment

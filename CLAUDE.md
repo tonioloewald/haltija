@@ -423,10 +423,19 @@ The desktop app is deliberately **not** auto-registered (it owns the default por
 
 ### The `hj` binary on `~/.local/bin` is shared state
 
-Servers auto-install `hj` into `~/.local/bin` on startup — a single global binary that every project on the machine runs. Two rules in `src/server.ts` keep that from becoming a last-server-to-boot-wins race (which is how a stale `bunx haltija@beta` ends up owning the `hj` of an unrelated, up-to-date project):
+Servers auto-install `hj` into `~/.local/bin` on startup — a single global binary that every project on the machine runs. Three rules in `src/server.ts` keep that from becoming a last-server-to-boot-wins race (which is how a stale `bunx haltija@beta` ends up owning the `hj` of an unrelated, up-to-date project):
 
 1. **A symlinked `hj` is never touched.** A symlink means someone deliberately pointed `hj` at their own build; clobbering it reverts their tooling under them. Developing on haltija? `ln -sf $PWD/dist/hj.js ~/.local/bin/hj` and every `bun run build` updates the `hj` you actually run.
-2. **Install decisions compare file *contents*, not size.** Two builds can coincidentally share a byte count, which would strand a stale `hj` forever.
+2. **Never downgrade.** The installing server records its version in `~/.haltija/hj-install.json`; an older server that sees a newer version there leaves `hj` alone. Comparison lives in `src/semver.ts` (a prerelease is older than its release, and `beta.9 < beta.12` — a string sort gets that backwards).
+3. **Install decisions compare file *contents*, not size.** Two builds can coincidentally share a byte count, which would strand a stale `hj` forever.
+
+Servers pre-1.4.0 have none of these guards, so they will still clobber `hj` until they age out.
+
+### Version skew
+
+`hj` carries its own version (`bin/version.mjs`, generated from `package.json` by the build and inlined into `dist/hj.js` — a runtime file read wouldn't survive bundling). `hj --version` prints it.
+
+Every REST response carries an `X-Haltija-Version` header, so `hj` detects skew on **any** command and warns once on stderr. Servers older than 1.4.0 don't send that header — for those, `hj where` still catches it by reading `serverVersion` from `/status`.
 
 ## CI / QA
 

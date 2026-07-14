@@ -26,6 +26,7 @@ import { formatEvents } from './format-events.mjs'
 import { formatTestResult, formatSuiteResult } from './format-test.mjs'
 import { formatNetwork, formatNetworkStats } from './format-network.mjs'
 import { substituteGeneratedVars } from './test-data.mjs'
+import { HJ_VERSION } from './version.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -33,6 +34,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // Use readFileSync instead of JSON import to avoid Node.js ExperimentalWarning
 const hintsPath = join(__dirname, 'hints.json')
 export const COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hintsPath, 'utf-8')) : {}
+
+let warnedAboutSkew = false
+
+/**
+ * Warn when this hj is a different version from the server it just talked to.
+ *
+ * `hj` is a single global binary shared by every project on the machine, so it
+ * routinely ends up older (or newer) than a given project's server — and the
+ * symptoms of that are indirect: a command that formats oddly, or silently
+ * routes somewhere unexpected because the client lacks a resolution rule the
+ * server assumes. Say it out loud, once, on stderr (so `--json` stdout stays
+ * machine-readable).
+ */
+function warnOnVersionSkew(resp) {
+  if (warnedAboutSkew) return
+  const serverVersion = resp.headers?.get?.('X-Haltija-Version')
+  if (!serverVersion || serverVersion === HJ_VERSION) return
+  warnedAboutSkew = true
+  console.error(`hj: warning — hj ${HJ_VERSION} is talking to haltija server ${serverVersion}.`)
+  console.error(`hj: mismatched versions can route or format wrongly. Update with: bun install -g haltija@latest`)
+}
 
 // Endpoints that use GET (everything else is POST)
 export const GET_ENDPOINTS = new Set([
@@ -875,6 +897,7 @@ async function doRequest(url, method, body, context = {}) {
     }
 
     const resp = await fetch(url, opts)
+    warnOnVersionSkew(resp)
     const contentType = resp.headers.get('content-type') || ''
 
     if (contentType.includes('application/json')) {

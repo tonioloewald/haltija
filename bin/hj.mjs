@@ -11,11 +11,17 @@
  */
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
+import { HJ_VERSION } from './version.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
+
+if (args[0] === '--version' || args[0] === '-v') {
+  console.log(HJ_VERSION)
+  process.exit(0)
+}
 
 /**
  * Print what server this shell is currently targeting and what's alive
@@ -68,6 +74,8 @@ async function runWhere(port, portSource, jsonOutput) {
       portSource,
       reachable: !!serverInfo,
       error: serverError,
+      client: HJ_VERSION,
+      versionSkew: serverInfo ? serverInfo.serverVersion !== HJ_VERSION : null,
       server: serverInfo ? {
         version: serverInfo.serverVersion,
         instanceName,
@@ -95,10 +103,15 @@ async function runWhere(port, portSource, jsonOutput) {
     serverInfo.agents > 0 ? `${serverInfo.agents} agent${serverInfo.agents === 1 ? '' : 's'}` : null,
   ].filter(Boolean).join(', ')
   console.log(`${bold('server:')} ${desc}`)
+  console.log(`${bold('client:')} hj ${HJ_VERSION}`)
   if (focused) {
     console.log(`${bold('focused:')} ${focused.title || dim('(no title)')} ${dim(`— ${focused.url}`)}`)
   } else if (tabs === 0) {
     console.log(`${bold('focused:')} ${dim('no tabs connected')}`)
+  }
+  if (serverInfo.serverVersion && serverInfo.serverVersion !== HJ_VERSION) {
+    console.log(`\n${bold('warning:')} hj ${HJ_VERSION} is talking to server ${serverInfo.serverVersion}.`)
+    console.log(dim(`  Commands may route or format wrongly. Update with: bun install -g haltija@latest`))
   }
 }
 
