@@ -72,6 +72,8 @@ What this does to your machine (see "Housekeeping" in the README):
     versions overwrite the shared ~/.local/bin/hj on every boot. It will not touch
     a running desktop app, or any process it cannot identify as haltija.
     Disable with HALTIJA_NO_RETIRE=1.
+  - Everything it does outside this project is logged to
+    ~/.haltija/machine-actions.log and announced on stderr.
 
 Environment Variables:
   HALTIJA_PORT             HTTP port (default: try 8700, else ephemeral)

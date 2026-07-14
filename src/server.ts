@@ -28,6 +28,7 @@ import type { HandlerContext } from './api-handlers'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
+import { recordMachineAction } from './machine-log'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
@@ -4157,7 +4158,10 @@ async function retireLegacyServers(): Promise<void> {
       // in this file — get it wrong and you kill the user's browser instead. Asking
       // needs no pid at all, so that whole class of mistake cannot happen.
       if (await requestShutdown(port)) {
-        console.log(`  [legacy] Stopped the server on :${port} (set HALTIJA_NO_RETIRE=1 to disable)`)
+        recordMachineAction({
+          kind: 'server-stopped',
+          detail: `stopped the haltija server on :${port} — it predates ${GUARDS_VERSION} and overwrites the shared ~/.local/bin/hj (set HALTIJA_NO_RETIRE=1 to disable)`,
+        })
         stopped = true
       } else {
         // Never fail silently: a legacy server we couldn't stop keeps overwriting
@@ -4166,8 +4170,10 @@ async function retireLegacyServers(): Promise<void> {
         console.warn(`  [legacy]    It will keep overwriting ~/.local/bin/hj. Stop it yourself, or set HALTIJA_NO_RETIRE=1 to stop asking.`)
       }
     } else if (plan.action === 'complain') {
-      console.warn(`  [legacy] ⚠️  ${plan.reason}`)
-      console.warn(`  [legacy]    ${plan.remedy}`)
+      recordMachineAction({
+        kind: 'declined',
+        detail: `left alone: ${plan.reason} — ${plan.remedy}`,
+      })
     }
   }
 
@@ -4414,7 +4420,7 @@ if (REGISTRY_NAME) {
         copyFileSync(hjBundled, hjTarget)
         chmodSync(hjTarget, 0o755) // Make executable
         recordInstall()
-        console.log(`  [hj] Installed: ${hjTarget} (from bundled binary, v${VERSION})`)
+        recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
       }
     } else {
       // Running from source (bunx or development)
@@ -4441,12 +4447,12 @@ if (REGISTRY_NAME) {
           copyFileSync(source, hjTarget)
           chmodSync(hjTarget, 0o755)
           recordInstall()
-          console.log(`  [hj] Installed: ${hjTarget} (standalone bundle, v${VERSION})`)
+          recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
         } else {
           // Fallback: symlink to source (dev mode only)
           symlinkSync(source, hjTarget)
           recordInstall()
-          console.log(`  [hj] Installed: ${hjTarget} -> ${source}`)
+          recordMachineAction({ kind: 'hj-install', detail: `linked the shared hj CLI at ${hjTarget} -> ${source}` })
         }
       }
     }

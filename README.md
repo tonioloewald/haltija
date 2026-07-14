@@ -304,8 +304,16 @@ app also exists but isn't required for either.
 
 ## Housekeeping — what Haltija does to your machine
 
-Haltija is a dev tool that a *lot* of projects run at once, so a few things live outside
-your project directory. All of it is opt-out.
+Haltija acts at **machine** scope on purpose. "Which `hj` does every shell on this box
+run?" is not a question a per-project fix can answer — so a few things live outside your
+project directory. All of it is opt-out, and **all of it leaves a receipt.**
+
+**Everything Haltija does outside its own project is logged to
+`~/.haltija/machine-actions.log`** (timestamped, with the version and the *directory of the
+project that triggered it*) and announced on **stderr**. That matters because Haltija is
+often a transitive dependency: if some other project's `test-browser` script spawned it,
+you may not know what Haltija even is. The receipt tells you what happened, when, and which
+project caused it.
 
 **It installs `hj` into `~/.local/bin`.** One CLI, shared by every project. It will
 **never overwrite a symlink** (if you point `hj` at your own build, that's yours) and
