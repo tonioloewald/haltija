@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isProcessAlive, isValidName, list, lookup, register, unregister } from './sessions'
+import { autoNameFor, isAncestorOf, isProcessAlive, isTooBroadForCwdMatch, isValidName, list, lookup, register, resolveByCwd, unregister } from './sessions'
+import { homedir } from 'os'
 
 let dir: string
 
@@ -145,5 +146,84 @@ describe('persisted format', () => {
     expect(raw).toContain('\n')
     const parsed = JSON.parse(raw)
     expect(parsed).toMatchObject({ name: 'foo', port: 8000 })
+  })
+})
+
+describe('autoNameFor', () => {
+  it('derives a valid registry name from a port', () => {
+    expect(autoNameFor(9123)).toBe('auto-9123')
+    expect(isValidName(autoNameFor(9123))).toBe(true)
+  })
+})
+
+describe('isAncestorOf', () => {
+  it('treats a directory as an ancestor of itself', () => {
+    expect(isAncestorOf('/a/b', '/a/b')).toBe(true)
+  })
+
+  it('matches real ancestors', () => {
+    expect(isAncestorOf('/a', '/a/b/c')).toBe(true)
+    expect(isAncestorOf('/a/b', '/a/b/c')).toBe(true)
+  })
+
+  it('does not match on a raw string prefix', () => {
+    // the bug this guards: /a/foo must not "own" /a/foobar
+    expect(isAncestorOf('/a/foo', '/a/foobar')).toBe(false)
+  })
+
+  it('does not match unrelated or reversed paths', () => {
+    expect(isAncestorOf('/a/b/c', '/a/b')).toBe(false)
+    expect(isAncestorOf('/x', '/a')).toBe(false)
+    expect(isAncestorOf('', '/a')).toBe(false)
+  })
+})
+
+describe('isTooBroadForCwdMatch', () => {
+  it('rejects roots that would capture every project on the box', () => {
+    expect(isTooBroadForCwdMatch('/')).toBe(true)
+    expect(isTooBroadForCwdMatch(homedir())).toBe(true)
+  })
+
+  it('accepts a normal project directory', () => {
+    expect(isTooBroadForCwdMatch(join(homedir(), 'my-project'))).toBe(false)
+  })
+})
+
+describe('resolveByCwd', () => {
+  it('finds the server whose cwd contains this one', () => {
+    register('proj', 9123, { cwd: '/work/proj', dir })
+    const found = resolveByCwd('/work/proj/src/deep', { dir })
+    expect(found?.port).toBe(9123)
+    expect(found?.name).toBe('proj')
+  })
+
+  it('returns null when no server owns this directory', () => {
+    register('proj', 9123, { cwd: '/work/proj', dir })
+    expect(resolveByCwd('/work/other', { dir })).toBeNull()
+  })
+
+  it('picks the nearest ancestor when servers nest', () => {
+    register('outer', 9000, { cwd: '/work', dir })
+    register('inner', 9001, { cwd: '/work/proj', dir })
+    expect(resolveByCwd('/work/proj/src', { dir })?.port).toBe(9001)
+    expect(resolveByCwd('/work/elsewhere', { dir })?.port).toBe(9000)
+  })
+
+  it('never matches a server started at / or in the home directory', () => {
+    register('root', 9000, { cwd: '/', dir })
+    register('home', 9001, { cwd: homedir(), dir })
+    expect(resolveByCwd('/work/proj', { dir })).toBeNull()
+    expect(resolveByCwd(join(homedir(), 'anything'), { dir })).toBeNull()
+  })
+
+  it('ignores dead servers', () => {
+    // pid 1 is alive but not ours; use an implausible pid instead
+    register('ghost', 9123, { cwd: '/work/proj', pid: 2 ** 30, dir })
+    expect(resolveByCwd('/work/proj', { dir })).toBeNull()
+  })
+
+  it('does not confuse sibling directories with a shared prefix', () => {
+    register('foo', 9000, { cwd: '/work/foo', dir })
+    expect(resolveByCwd('/work/foobar', { dir })).toBeNull()
   })
 })

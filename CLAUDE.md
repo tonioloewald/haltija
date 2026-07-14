@@ -48,12 +48,17 @@ bun run electron                  # Full build + launch Electron
 bun run electron:quick            # Launch Electron without rebuilding
 
 # Unit tests (run with Bun)
-bun test                          # All unit tests (src/ only)
+bun run test                      # All unit tests — this is `bun test src/`
 bun test src/server.test.ts       # Single test file
 bun run test:server               # Shortcut for src/server.test.ts
 bun run test:https                # Shortcut for src/https.test.ts
 bun run test:both                 # Shortcut for src/both-mode.test.ts
 bun run test:integration          # Integration tests (needs running desktop app)
+
+# Note: bare `bun test` (no path) is NOT the unit suite. There is no bunfig.toml test
+# root, so it also discovers tests/haltija.test.ts and apps/desktop/integration.test.ts,
+# both of which need a live server and will fail without one. Always scope it: `bun run
+# test`, or `bun test src/`.
 
 # Integration tests (requires running haltija server)
 bun test tests/haltija.test.ts    # Tests using haltija/test helper
@@ -397,9 +402,31 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
 
-### Named Instance Registry
+### Instance Registry & cwd Routing
 
-`haltija --name <foo>` writes `~/.haltija/servers/<foo>.json` containing `{ name, port, pid, cwd, startedAt }`. Cleaned up on `SIGINT`/`SIGTERM`/`exit`. `hj --name <foo>` (and `HALTIJA_NAME=foo hj`) reads the file to find the port — stale entries (pid no longer alive) are removed lazily on lookup. Implementation: `src/sessions.ts`. Validation rule: alphanumerics, dashes, underscores, dots only.
+Every server registers itself in `~/.haltija/servers/<name>.json` as `{ name, port, pid, cwd, startedAt, auto? }`, cleaned up on `SIGINT`/`SIGTERM`/`exit`. Stale entries (pid no longer alive) are removed lazily on lookup. Implementation: `src/sessions.ts`.
+
+- `haltija --name <foo>` registers under `foo`, so `hj --name <foo>` (or `HALTIJA_NAME=foo hj`) finds its port. Names are alphanumerics, dashes, underscores, dots only.
+- **Unnamed servers auto-register under `auto-<port>`**, recording the directory they were started in. That's what powers cwd routing.
+
+**cwd routing is the thing that keeps projects from stepping on each other.** `hj` resolves its target port as:
+
+```
+--port flag > --name/HALTIJA_NAME > HALTIJA_PORT > DEV_CHANNEL_PORT > cwd match > 8700 default
+```
+
+The cwd step picks the live server whose recorded `cwd` is the *nearest ancestor* of the shell's cwd, so plain `hj` run anywhere inside a project reaches that project's server with no flags and no env vars. Servers started at `/` or in `$HOME` are excluded from matching — they're ancestors of everything and would recapture every project. When `hj` falls back to 8700 while other servers are alive, it warns on stderr rather than silently driving the wrong browser.
+
+Before this existed, every `hj` in every project resolved to 8700 and drove whatever tab was focused there. If you touch the resolution ladder, keep that failure mode in mind: **a misroute is silent and looks like a flaky test, not an error.**
+
+The desktop app is deliberately **not** auto-registered (it owns the default port and is launched from an arbitrary directory, so its cwd says nothing about which project it serves).
+
+### The `hj` binary on `~/.local/bin` is shared state
+
+Servers auto-install `hj` into `~/.local/bin` on startup — a single global binary that every project on the machine runs. Two rules in `src/server.ts` keep that from becoming a last-server-to-boot-wins race (which is how a stale `bunx haltija@beta` ends up owning the `hj` of an unrelated, up-to-date project):
+
+1. **A symlinked `hj` is never touched.** A symlink means someone deliberately pointed `hj` at their own build; clobbering it reverts their tooling under them. Developing on haltija? `ln -sf $PWD/dist/hj.js ~/.local/bin/hj` and every `bun run build` updates the `hj` you actually run.
+2. **Install decisions compare file *contents*, not size.** Two builds can coincidentally share a byte count, which would strand a stale `hj` forever.
 
 ## CI / QA
 
@@ -419,9 +446,10 @@ Three GitHub Actions workflows run on push/PR to main:
 ## Issue Tracking
 
 - **`TODO.md`** — the roadmap and issue list (build/distribution items, multi-phase plans, known bugs). Keep it current as you work. See `AGENTS.md` for the session-completion workflow (the "landing the plane" steps culminating in `git push`).
+- Two other files look like issue lists but aren't: `ROADMAP.md` (repo root) is mostly a log of completed phases plus a "Planned"/"Ideas Parking Lot" backlog, and `docs/ROADMAP.md` is a longer-horizon vision doc ("Roadmap to 11/10"). Neither is the work queue — day-to-day items belong in `TODO.md`.
 
 ## Related Docs
 
 - `COMPONENT-PATTERNS.md` — Required reading before editing `component.ts`, `task-board.ts`, or any custom element. Covers stable-by-default rendering, shadow DOM encapsulation, animation gotchas (transitions need start points; can't animate `left`↔`right`), drag handling, console interception, and WebSocket reconnection with kill flags.
 - `AGENTS.md` — Session workflow rules (issue tracking via `TODO.md`, mandatory push on session end).
-- `docs/` — Hand-written reference docs (`agent-prompt.md`, `recipes.md`, `UX-CRIMES.md`, `CI-INTEGRATION.md`, `AGENTIC-IDE.md`, `REST-API.md`). Distinct from the auto-generated `API.md` and `DOCS.md` at the repo root.
+- `docs/` — Hand-written reference docs (`agent-prompt.md`, `recipes.md`, `UX-CRIMES.md`, `CI-INTEGRATION.md`, `AGENTIC-IDE.md`, `REST-API.md`, `EXECUTIVE-SUMMARY.md`, `ROADMAP.md`, `getting-started/`). Distinct from the auto-generated `API.md` and `DOCS.md` at the repo root.

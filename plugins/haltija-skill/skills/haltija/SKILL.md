@@ -25,11 +25,26 @@ that's on your PATH. `hj docs` is the quick start, `hj api` the full reference,
   it solely to reproduce/verify a bug that's unique to a particular engine (e.g. a Firefox
   shadow-DOM quirk). It's slow and heavy for everyday flows.
 
+## Which server am I driving?
+
+`hj` targets **the server owning the directory you're standing in.** A haltija server records
+the directory it was started in, and `hj` picks the live server whose directory is the nearest
+ancestor of your cwd. So in a project with its own server, plain `hj tree` just works — no
+flags, no env vars.
+
+If no server owns your cwd, `hj` falls back to the shared default port 8700 (the standalone
+desktop app) and **warns on stderr when other servers are running** — heed that warning. It
+means the command you just ran may have driven a *different project's* browser. Misroutes are
+silent: they look like a flaky page, not an error.
+
+**When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
+*why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
+
 ## Live control
 
 ```
 hj status              # Server running?
-hj where               # Which server this shell targets + what's alive there (--json for structured)
+hj where               # Which server this shell targets + WHY (--json for structured)
 hj windows             # Connected browser tabs?
 hj tree                # DOM structure with ref IDs (hj tree -d 5 for deeper)
 hj console             # Browser console output

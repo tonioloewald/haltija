@@ -25,12 +25,12 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
-import { register as registerNamedInstance, unregister as unregisterNamedInstance } from './sessions'
+import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor } from './sessions'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, realpathSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -4110,37 +4110,73 @@ const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
 const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
 
-// Register this instance so `hj --name <foo>` can resolve back to its port.
-// We register the public HTTP port (the one agents target) — HTTPS is just
-// a transport choice for the same logical server.
-if (INSTANCE_NAME) {
+// Register this instance so `hj` can find it again — by name (`hj --name
+// <foo>`) and, because the entry records our cwd, by directory: plain `hj`
+// run anywhere inside this project routes here with no flags. We register the
+// public HTTP port (the one agents target) — HTTPS is just a transport choice
+// for the same logical server.
+//
+// The desktop app is deliberately excluded from *auto* registration. It owns
+// the zero-config default port and is launched from wherever Electron happened
+// to start, so its cwd says nothing about which project it serves; letting it
+// win a cwd match would reintroduce the cross-project misrouting this exists to
+// prevent. An explicit --name on a desktop server is still honored.
+const REGISTRY_NAME = INSTANCE_NAME || (isDesktopApp ? '' : autoNameFor(PORT))
+if (REGISTRY_NAME) {
   try {
-    registerNamedInstance(INSTANCE_NAME, PORT)
+    registerNamedInstance(REGISTRY_NAME, PORT, { auto: !INSTANCE_NAME })
     const cleanup = () => {
-      try { unregisterNamedInstance(INSTANCE_NAME) } catch {}
+      try { unregisterNamedInstance(REGISTRY_NAME) } catch {}
     }
     process.on('SIGINT', () => { cleanup(); process.exit(130) })
     process.on('SIGTERM', () => { cleanup(); process.exit(143) })
     process.on('exit', cleanup)
   } catch (err) {
-    console.error(`${LOG_PREFIX} Failed to register named instance "${INSTANCE_NAME}":`, err instanceof Error ? err.message : err)
+    console.error(`${LOG_PREFIX} Failed to register instance "${REGISTRY_NAME}":`, err instanceof Error ? err.message : err)
   }
 }
 
 // Auto-install hj CLI to ~/.local/bin (no sudo needed)
 // For compiled binary (DMG), copies bundled binary
 // For source install (bunx), creates symlink to source
+//
+// `hj` is a single global binary on the user's PATH, but every haltija server
+// carries its own copy — so a server that overwrites it is deciding which `hj`
+// *every project on the machine* runs. Two rules keep that from turning into a
+// last-server-to-boot-wins race (which is exactly how a stale `bunx haltija@beta`
+// ends up owning the `hj` of an unrelated, up-to-date project):
+//
+//   1. Never touch a symlink. A symlink is a deliberate install — typically a
+//      developer pointing hj at their own build — and clobbering it silently
+//      reverts their tooling under them.
+//   2. Compare content, not file size. Two different builds can coincidentally
+//      share a byte count, and then a stale hj is never refreshed.
 ;(async () => {
   const localBin = join(homedir(), '.local', 'bin')
   const hjTarget = join(localBin, 'hj')
   const isCompiledBinary = __dirname.startsWith('/$bunfs/') || __dirname.startsWith('/snapshot/')
-  
+
+  /** True if `p` exists and is a symlink (deliberate install — hands off). */
+  const isSymlink = (p: string): boolean => {
+    try { return lstatSync(p).isSymbolicLink() } catch { return false }
+  }
+
+  /** True if the two files have identical contents. */
+  const sameContents = (a: string, b: string): boolean => {
+    try { return readFileSync(a).equals(readFileSync(b)) } catch { return false }
+  }
+
   try {
     // Create ~/.local/bin if needed
     if (!existsSync(localBin)) {
       mkdirSync(localBin, { recursive: true })
     }
-    
+
+    if (isSymlink(hjTarget)) {
+      // Someone pointed hj at a build on purpose. Leave it exactly as it is.
+      return
+    }
+
     if (isCompiledBinary) {
       // Running from compiled binary (DMG distribution)
       // Look for bundled hj binary in resources directory
@@ -4158,20 +4194,9 @@ if (INSTANCE_NAME) {
         return
       }
       
-      // Check if already installed with same version (by comparing file size as quick check)
-      let needsInstall = true
-      if (existsSync(hjTarget)) {
-        try {
-          const bundledSize = Bun.file(hjBundled).size
-          const targetSize = Bun.file(hjTarget).size
-          if (bundledSize === targetSize) {
-            needsInstall = false
-          }
-        } catch {
-          // Can't compare - reinstall
-        }
-      }
-      
+      // Already installed and byte-identical? Nothing to do.
+      const needsInstall = !existsSync(hjTarget) || !sameContents(hjBundled, hjTarget)
+
       if (needsInstall) {
         // Copy binary to ~/.local/bin
         if (existsSync(hjTarget)) {
@@ -4194,30 +4219,10 @@ if (INSTANCE_NAME) {
         return
       }
       
-      // Check if target already matches source
-      let needsInstall = true
-      if (existsSync(hjTarget)) {
-        try {
-          if (useBundle) {
-            // Compare file sizes for bundle copy
-            const sourceSize = Bun.file(source).size
-            const targetSize = Bun.file(hjTarget).size
-            if (sourceSize === targetSize) {
-              needsInstall = false
-            }
-          } else {
-            // Compare symlink target for dev mode
-            const resolved = realpathSync(hjTarget)
-            const expectedResolved = realpathSync(source)
-            if (resolved === expectedResolved) {
-              needsInstall = false
-            }
-          }
-        } catch {
-          // Broken symlink or can't resolve - reinstall
-        }
-      }
-      
+      // Check if target already matches source. (A symlinked target already
+      // returned above, so this is always a real file.)
+      const needsInstall = !existsSync(hjTarget) || !sameContents(source, hjTarget)
+
       if (needsInstall) {
         if (existsSync(hjTarget)) {
           unlinkSync(hjTarget)

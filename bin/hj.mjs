@@ -122,6 +122,47 @@ function lookupNamedInstance(name) {
   return entry
 }
 
+/**
+ * Every live entry in ~/.haltija/servers/. Mirrors `list()` in src/sessions.ts —
+ * duplicated rather than imported because this file is plain .mjs bundled
+ * standalone into dist/hj.js, with no access to the compiled TS.
+ */
+function listLiveInstances() {
+  const dir = join(homedir(), '.haltija', 'servers')
+  if (!existsSync(dir)) return []
+  const out = []
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue
+    const entry = lookupNamedInstance(file.slice(0, -'.json'.length))
+    if (entry) out.push(entry)
+  }
+  return out
+}
+
+/** True if `dir` is `p` or one of its ancestors (segment-wise, not raw prefix). */
+function isAncestorOf(dir, p) {
+  if (!dir || !p) return false
+  if (dir === p) return true
+  return p.startsWith(dir.endsWith('/') ? dir : dir + '/')
+}
+
+/**
+ * Find the live server that owns `cwd` — the one whose recorded directory is
+ * the nearest ancestor of it. This is what makes plain `hj` inside a project
+ * reach *that project's* server instead of the global default port.
+ *
+ * `/` and the home directory are ancestors of everything, so servers started
+ * there can't win a match; otherwise they'd capture every project on the box.
+ */
+function resolveByCwd(cwd, instances) {
+  const candidates = instances.filter(
+    (e) => e.cwd && e.cwd !== '/' && e.cwd !== homedir() && isAncestorOf(e.cwd, cwd),
+  )
+  if (!candidates.length) return null
+  candidates.sort((a, b) => b.cwd.length - a.cwd.length || (b.startedAt || 0) - (a.startedAt || 0))
+  return candidates[0]
+}
+
 if (!args.length || args.includes('--help') || args.includes('-h')) {
   const bold = (s) => `\x1b[1m${s}\x1b[0m`
   const dim = (s) => `\x1b[2m${s}\x1b[0m`
@@ -158,10 +199,35 @@ if (nameIdx !== -1 && args[nameIdx + 1]) {
 
 // Port resolution priority:
 //   --port flag > --name/HALTIJA_NAME registry lookup > HALTIJA_PORT env
-//   > DEV_CHANNEL_PORT env > 8700 default
+//   > DEV_CHANNEL_PORT env > cwd match against the registry > 8700 default
+//
+// The cwd step is what keeps projects from stepping on each other: a server
+// started inside a project records its directory, so plain `hj` run anywhere
+// under that directory routes to it. Without it, every `hj` in every project
+// lands on 8700 and drives whatever browser is focused there — silently.
 let port, portSource
+let cwdMatch = null
 if (process.env.DEV_CHANNEL_PORT) { port = process.env.DEV_CHANNEL_PORT; portSource = 'DEV_CHANNEL_PORT env (legacy)' }
 if (process.env.HALTIJA_PORT)     { port = process.env.HALTIJA_PORT;     portSource = 'HALTIJA_PORT env' }
+if (!port && !resolvedName) {
+  const live = listLiveInstances()
+  cwdMatch = resolveByCwd(process.cwd(), live)
+  if (cwdMatch) {
+    port = String(cwdMatch.port)
+    portSource = `cwd match: ${cwdMatch.name}`
+  } else {
+    port = '8700'
+    portSource = '8700 (default)'
+    // Falling back to the shared default while project servers are running is
+    // the classic misroute — you think you're driving this project's browser
+    // and you're driving someone else's. Say so rather than doing it quietly.
+    if (live.length) {
+      const names = live.map((e) => `${e.name} (${e.cwd})`).join(', ')
+      console.error(`hj: warning — targeting the default port 8700, but these haltija servers are running: ${names}`)
+      console.error(`hj: if you meant one of them, cd into its directory, or use --name/--port. See \`hj where\`.`)
+    }
+  }
+}
 if (!port) { port = '8700'; portSource = '8700 (default)' }
 if (resolvedName) {
   const entry = lookupNamedInstance(resolvedName)
