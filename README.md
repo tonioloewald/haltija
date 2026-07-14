@@ -318,15 +318,21 @@ whichever browser happens to be focused somewhere else. The entry is removed on 
 
 **It stops haltija servers older than 1.4.0.** Those versions overwrite the shared
 `~/.local/bin/hj` on every boot, so one stale server left running quietly hands every
-project on your machine an old CLI. A 1.4.0+ server SIGTERMs them on startup and says so.
-It is deliberately narrow:
+project on your machine an old CLI. A 1.4.0+ server **asks** them to stop on startup
+(`POST /shutdown`, which every haltija has understood since 0.1.7) and says so. It does
+not go hunting for processes to kill. It is deliberately narrow:
 
 - It only stops servers **below 1.4.0** — never a peer. Two projects on 1.4.0 and 1.4.1
   coexist; nothing kills anything once 1.3.x is gone.
 - It **will not touch a running desktop app** (that would orphan a window you can see) —
   it tells you to quit and update it instead.
-- It **will not signal a process it cannot positively identify as haltija.** If it can't,
-  it says so and leaves it alone.
+- It **asks rather than kills.** Retirement is an HTTP request to a server that already
+  told us what it is — no process IDs, no `kill`. (An earlier draft resolved a port to a
+  pid with `lsof` and signalled it; `lsof -i :PORT` also matches connected *clients*, so
+  that would have killed your **browser**. Asking makes that whole class of mistake
+  impossible.)
+- On the rare fallback paths that must free a port without waiting, it signals only
+  **listeners** that `ps` confirms are haltija — never something it cannot identify.
 
 `HALTIJA_NO_RETIRE=1` disables it.
 

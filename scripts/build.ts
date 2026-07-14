@@ -5,7 +5,7 @@
  */
 
 import { $ } from 'bun'
-import { writeFileSync, readFileSync, existsSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs'
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
@@ -540,5 +540,24 @@ const hjWithShebang = hjBundle.startsWith('#!')
   ? '#!/usr/bin/env bun\n' + hjBundle.slice(hjBundle.indexOf('\n') + 1)
   : '#!/usr/bin/env bun\n' + hjBundle
 writeFileSync('dist/hj.js', hjWithShebang)
+
+// Syntax-check every shipped .mjs. These are the actual entry points (`haltija`,
+// `hj`) but nothing else validates them: the build doesn't generate them, tsc
+// doesn't typecheck .mjs, and no test executes them. A stray backtick inside a
+// template literal in the --help text once made `bunx haltija` die with a
+// SyntaxError before running a single line, and it was caught only by a reviewer
+// reading the file. Fail the build instead.
+const mjsFiles = readdirSync('bin').filter((f) => f.endsWith('.mjs'))
+const syntaxErrors: string[] = []
+for (const f of mjsFiles) {
+  const res = await $`node --check bin/${f}`.nothrow().quiet()
+  if (res.exitCode !== 0) syntaxErrors.push(`bin/${f}: ${res.stderr.toString().trim().split('\n')[0]}`)
+}
+if (syntaxErrors.length) {
+  console.error('\nBuild FAILED — shipped .mjs does not parse:')
+  for (const e of syntaxErrors) console.error(`  ${e}`)
+  process.exit(1)
+}
+console.log(`  Syntax-checked ${mjsFiles.length} bin/*.mjs`)
 
 console.log('Build complete')

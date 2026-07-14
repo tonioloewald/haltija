@@ -4036,22 +4036,71 @@ const serverConfig = {
   },
 }
 
-// Helper: Kill process using a port (returns true if killed something)
-// Resolves LISTENERS only — see src/port-pid.ts for why that matters.
+/**
+ * Free a port we were explicitly asked to bind (the EADDRINUSE path).
+ *
+ * Resolves LISTENERS only, and signals nothing it cannot identify as haltija — see
+ * src/port-pid.ts. Prefer `requestShutdown()` where you can await it; this one runs
+ * on a synchronous failure path, so it signals rather than asks.
+ */
 function killProcessOnPort(port: number): boolean {
   const pids = listenerPidsOnPort(port)
   if (pids.length === 0) return false
+  let killed = false
   for (const pid of pids) {
+    if (!isHaltijaProcess(pid)) {
+      console.warn(`  [port] Port ${port} is held by pid ${pid}, which is not a haltija server — leaving it alone`)
+      continue
+    }
     try {
       process.kill(pid, 'SIGTERM')
-      console.log(`  [port] Killed existing process ${pid} on port ${port}`)
+      console.log(`  [port] Stopped haltija (pid ${pid}) on port ${port}`)
+      killed = true
     } catch {
       // Process may have already exited
     }
   }
   // Give it a moment to release the port
-  Bun.sleepSync(100)
-  return true
+  if (killed) Bun.sleepSync(100)
+  return killed
+}
+
+/**
+ * Ask the haltija server on `port` to stop, and wait until it actually has.
+ *
+ * This is THE way to stop another haltija server. `POST /shutdown` has shipped
+ * since 0.1.7, so every server we could want to stop understands it — including
+ * the pre-1.4.0 ones this release retires (verified against 1.3.0-beta.12).
+ *
+ * Prefer it over signalling a pid, always. Resolving a port to a pid needs `lsof`,
+ * and that value is the most dangerous one in this file: `lsof -i :PORT` matches
+ * connected CLIENTS too, so a wrong answer SIGTERMs the user's browser. Asking
+ * needs no pid, so that entire class of mistake becomes impossible — and the server
+ * exits cleanly, releasing its port and removing its own registry entry.
+ *
+ * Returns true only once the port has actually gone quiet.
+ */
+async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean> {
+  try {
+    await fetch(`http://localhost:${port}/shutdown`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(1500),
+    })
+  } catch {
+    // A server that dies mid-response is a success, not a failure — fall through
+    // and let the liveness poll below decide.
+  }
+
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await fetch(`http://localhost:${port}/status`, { signal: AbortSignal.timeout(500) })
+    } catch {
+      return true // nothing is answering: it's gone
+    }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return false
 }
 
 /** Ask a port what it is. Anything that doesn't answer cleanly is "not haltija". */
@@ -4091,31 +4140,30 @@ async function retireLegacyServers(): Promise<void> {
 
   const registryPorts = listInstances().map((e) => e.port)
   const ports = candidatePorts({ defaults: [8700, 8701, PORT], registryPorts })
-  let killed = false
+  let stopped = false
 
   for (const port of ports) {
     const plan = planForServer(await probePort(port), process.pid)
 
     if (plan.action === 'retire') {
       console.log(`  [legacy] ${plan.reason}`)
-      // Last gate before we signal a process on the user's machine. If we can't
-      // confirm it IS haltija, say so and leave it alone — a hazard we warned
-      // about is far cheaper than killing something that wasn't ours.
-      if (!isHaltijaProcess(plan.pid)) {
-        console.warn(`  [legacy] ⚠️  Refusing to signal pid ${plan.pid} on :${port} — it does not look like a haltija server`)
-        console.warn(`  [legacy]    Stop it yourself if it is one: kill ${plan.pid}`)
-        continue
-      }
-      try {
-        process.kill(plan.pid, 'SIGTERM')
-        console.log(`  [legacy] Retired pid ${plan.pid} on :${port} (set HALTIJA_NO_RETIRE=1 to disable)`)
-        killed = true
-      } catch (err: unknown) {
-        // Complain — never fail silently. A legacy server we couldn't stop will
-        // go on overwriting the user's hj, and they need to know why.
-        const msg = err instanceof Error ? err.message : String(err)
-        console.warn(`  [legacy] ⚠️  Could not stop pid ${plan.pid} on :${port} (${msg})`)
-        console.warn(`  [legacy]    It will keep overwriting ~/.local/bin/hj. Stop it with: kill ${plan.pid}`)
+      // ASK, don't kill. `POST /shutdown` has existed since 0.1.7, so every server
+      // we could ever want to retire can stop itself — cleanly, releasing its port
+      // and removing its registry entry. We only reach here after /status told us
+      // this port IS a haltija server, so the request goes to a known recipient.
+      //
+      // The signal path (resolve a pid, SIGTERM it) is strictly worse: it needs
+      // `lsof`, and a pid resolved from a port is the single most dangerous value
+      // in this file — get it wrong and you kill the user's browser instead. Asking
+      // needs no pid at all, so that whole class of mistake cannot happen.
+      if (await requestShutdown(port)) {
+        console.log(`  [legacy] Stopped the server on :${port} (set HALTIJA_NO_RETIRE=1 to disable)`)
+        stopped = true
+      } else {
+        // Never fail silently: a legacy server we couldn't stop keeps overwriting
+        // the user's hj, and they need to know why — and how to stop it themselves.
+        console.warn(`  [legacy] ⚠️  Could not stop the haltija server on :${port} — it did not respond to a shutdown request`)
+        console.warn(`  [legacy]    It will keep overwriting ~/.local/bin/hj. Stop it yourself, or set HALTIJA_NO_RETIRE=1 to stop asking.`)
       }
     } else if (plan.action === 'complain') {
       console.warn(`  [legacy] ⚠️  ${plan.reason}`)
@@ -4123,8 +4171,8 @@ async function retireLegacyServers(): Promise<void> {
     }
   }
 
-  // Give a retired server a moment to release its port before we try to bind it.
-  if (killed) Bun.sleepSync(200)
+  // Give a stopped server a moment to release its port before we try to bind it.
+  if (stopped) Bun.sleepSync(200)
 }
 
 await retireLegacyServers()

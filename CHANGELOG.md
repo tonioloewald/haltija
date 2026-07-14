@@ -38,11 +38,14 @@ project.
 ### New: pre-1.4.0 servers are retired on startup
 
 Older servers have none of the guards above and cannot be fixed in code that already shipped, so
-a 1.4.0+ server stops any haltija server **below 1.4.0** that it finds when it starts, and says
-what it did. This is deliberately narrow: it never stops a peer (1.4.0 and 1.4.1 coexist, and
-once 1.3.x is gone it never fires again), never touches a running desktop app, and never signals
-a process it cannot positively identify as haltija. When it can't act, it complains rather than
-failing silently.
+a 1.4.0+ server **asks** any haltija server **below 1.4.0** to stop when it starts, and says what
+it did. Retirement is `POST /shutdown` — an endpoint every haltija has understood since 0.1.7 —
+so it needs no process IDs and does no killing.
+
+This is deliberately narrow: it never stops a peer (1.4.0 and 1.4.1 coexist, and once 1.3.x is
+gone it never fires again), never touches a running desktop app, and never touches anything it
+cannot identify as haltija. When it can't stop a server, it complains rather than failing
+silently.
 
 `HALTIJA_NO_RETIRE=1` opts out. See "Housekeeping" in the README.
 

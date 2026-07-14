@@ -1292,39 +1292,90 @@ async function startEmbeddedServer() {
 /**
  * Ensure Haltija server is available
  */
+/** Is anything listening on this port? Listeners only — never connected clients. */
+function listenerPidsOnPort(port) {
+  const { execSync } = require('child_process')
+  try {
+    // `-sTCP:LISTEN` is load-bearing. `lsof -i :PORT` matches sockets whose local OR
+    // REMOTE port is PORT, so without it this also returns every connected CLIENT —
+    // i.e. the user's browser, holding a WebSocket to this very server. Browsers open
+    // since login have the lower pid and sort first, so killing what this returns used
+    // to kill the browser and leave the server running.
+    const out = execSync(`lsof -ti:${port} -sTCP:LISTEN 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    if (!out) return []
+    return out.split('\n').filter(Boolean).map(Number)
+      .filter(pid => Number.isFinite(pid) && pid !== process.pid)
+  } catch {
+    return []
+  }
+}
+
+/** Only signal something we can positively identify as haltija. */
+function isHaltijaProcess(pid) {
+  const { execSync } = require('child_process')
+  try {
+    const cmd = execSync(`ps -p ${pid} -o command= 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    return !!cmd && /haltija|tosijs-dev/i.test(cmd)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Free a port held by an old haltija server.
+ *
+ * ASK FIRST. `POST /shutdown` has shipped since 0.1.7, so any haltija server on this
+ * port can stop itself — cleanly, and with no pid involved. That matters: this used to
+ * run `lsof -ti:PORT | xargs kill -9`, which kills every pid matching the port
+ * INCLUDING connected clients, i.e. the user's browser. It ran on the default launch
+ * path, whenever a server was already up — exactly when browsers are attached.
+ *
+ * Signalling is now the fallback only, restricted to LISTENERS that `ps` confirms are
+ * haltija, and it never escalates to -9 against something it could not identify.
+ */
 async function killZombieOnPort(port) {
   if (os.platform() === 'win32') return true
 
-  const { execSync } = require('child_process')
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const pids = execSync(`lsof -ti:${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
-      if (!pids) {
-        console.log(`[Haltija Desktop] Port ${port} is free`)
-        return true
-      }
-
-      console.log(`[Haltija Desktop] Attempt ${attempt}: Killing process(es) on port ${port}: ${pids.replace(/\n/g, ', ')}`)
-
-      const signal = attempt < 3 ? '' : '-9'
-      execSync(`lsof -ti:${port} | xargs kill ${signal} 2>/dev/null`, { encoding: 'utf-8' })
-
-      await new Promise(r => setTimeout(r, 500 * attempt))
-
-      try {
-        execSync(`lsof -ti:${port} 2>/dev/null`, { encoding: 'utf-8' })
-      } catch {
-        console.log(`[Haltija Desktop] Port ${port} freed successfully`)
-        return true
-      }
-    } catch {
-      console.log(`[Haltija Desktop] Port ${port} is free`)
-      return true
-    }
+  if (listenerPidsOnPort(port).length === 0) {
+    console.log(`[Haltija Desktop] Port ${port} is free`)
+    return true
   }
 
-  console.error(`[Haltija Desktop] Warning: Could not free port ${port} after 3 attempts`)
+  // 1. Ask.
+  try {
+    await fetch(`http://localhost:${port}/shutdown`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(1500),
+    })
+  } catch {
+    // Dying mid-response is a success; the liveness check below decides.
+  }
+  for (let i = 0; i < 20; i++) {
+    if (listenerPidsOnPort(port).length === 0) {
+      console.log(`[Haltija Desktop] Server on port ${port} shut down cleanly`)
+      return true
+    }
+    await new Promise(r => setTimeout(r, 100))
+  }
+
+  // 2. It didn't answer. Signal only what we can identify.
+  for (const pid of listenerPidsOnPort(port)) {
+    if (!isHaltijaProcess(pid)) {
+      console.error(`[Haltija Desktop] Port ${port} is held by pid ${pid}, which is not a haltija server — leaving it alone`)
+      continue
+    }
+    try {
+      process.kill(pid, 'SIGTERM')
+      console.log(`[Haltija Desktop] Stopped unresponsive haltija (pid ${pid}) on port ${port}`)
+    } catch {}
+  }
+  await new Promise(r => setTimeout(r, 500))
+
+  if (listenerPidsOnPort(port).length === 0) {
+    console.log(`[Haltija Desktop] Port ${port} freed`)
+    return true
+  }
+  console.error(`[Haltija Desktop] Warning: could not free port ${port}`)
   return false
 }
 

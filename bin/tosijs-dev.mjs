@@ -65,10 +65,10 @@ Options:
   --help, -h      Show this help
 
 What this does to your machine (see "Housekeeping" in the README):
-  - Installs the `hj` CLI into ~/.local/bin (never overwrites a symlink, never
+  - Installs the hj CLI into ~/.local/bin (never overwrites a symlink, never
     downgrades a newer hj). Disable with HALTIJA_NO_INSTALL=1.
-  - Registers itself in ~/.haltija/servers/ so `hj` in this directory finds it.
-  - On startup, SIGTERMs any haltija server older than 1.4.0 that it finds — those
+  - Registers itself in ~/.haltija/servers/ so hj in this directory finds it.
+  - On startup, stops any haltija server older than 1.4.0 that it finds — those
     versions overwrite the shared ~/.local/bin/hj on every boot. It will not touch
     a running desktop app, or any process it cannot identify as haltija.
     Disable with HALTIJA_NO_RETIRE=1.
@@ -792,14 +792,28 @@ function killOnPort(port) {
   const myPid = process.pid.toString()
   let killed = false
 
-  // 1. Kill processes listening on the port (the Haltija server)
+  // 1. Stop the haltija server on the port.
+  //    `-sTCP:LISTEN` is load-bearing: `lsof -i :PORT` matches sockets whose local OR
+  //    REMOTE port is PORT, so without it this list also contains connected CLIENTS —
+  //    the user's browser, attached to the very server we're replacing. Browsers open
+  //    since login sort first by pid, so the unfiltered version killed the browser.
+  //    And `ps` must confirm it's haltija before we signal it: never signal a pid you
+  //    have not identified.
   try {
-    const output = execSyncImported(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim()
+    const output = execSyncImported(`lsof -ti :${port} -sTCP:LISTEN 2>/dev/null`, { encoding: 'utf-8' }).trim()
     if (output) {
       const pids = output.split('\n').filter(Boolean).filter(pid => pid !== myPid)
       for (const pid of pids) {
+        let cmd = ''
         try {
-          execSyncImported(`kill ${pid} 2>/dev/null`)
+          cmd = execSyncImported(`ps -p ${pid} -o command= 2>/dev/null`, { encoding: 'utf-8' }).trim()
+        } catch {}
+        if (!cmd || !/haltija|tosijs-dev/i.test(cmd)) {
+          console.error(yellow(`  Port ${port} is held by pid ${pid}, which is not a haltija server — leaving it alone`))
+          continue
+        }
+        try {
+          process.kill(Number(pid), 'SIGTERM')
           killed = true
         } catch {}
       }

@@ -29,8 +29,13 @@ describe('isLegacy', () => {
     expect(isLegacy('2.0.0')).toBe(false)
   })
 
-  it('treats a 1.4.0 prerelease as legacy (the guards landed in the release)', () => {
-    expect(isLegacy('1.4.0-beta.1')).toBe(true)
+  it('does NOT treat a 1.4.0 prerelease as legacy — betas must not fight each other', () => {
+    // Strict semver says 1.4.0-beta.1 < 1.4.0, which would make every 1.4.0 beta
+    // "legacy" — so two betas would stop each other on boot and the first
+    // `npm publish --tag beta` would ship servers that fight. A 1.4.0 prerelease is
+    // built from this code and HAS the guards.
+    expect(isLegacy('1.4.0-beta.1')).toBe(false)
+    expect(isLegacy('1.4.0-rc.2')).toBe(false)
   })
 
   it('does not flag an unknown version — we never kill what we cannot identify', () => {
@@ -40,10 +45,14 @@ describe('isLegacy', () => {
 })
 
 describe('planForServer', () => {
-  it('retires a legacy server with a known pid', () => {
-    const plan = planForServer(probe(), SELF)
-    expect(plan.action).toBe('retire')
-    expect(plan).toMatchObject({ pid: 999 })
+  it('retires a legacy server', () => {
+    expect(planForServer(probe(), SELF).action).toBe('retire')
+  })
+
+  it('retires a legacy server even with no pid — we ask it to stop, not signal it', () => {
+    // Retirement is POST /shutdown, so no pid is needed. This used to be a
+    // "complain, I cannot find the pid" case; needing a pid at all was the bug.
+    expect(planForServer(probe({ pid: null }), SELF).action).toBe('retire')
   })
 
   it('never retires itself', () => {
@@ -74,11 +83,14 @@ describe('planForServer', () => {
     }
   })
 
-  it('complains when a legacy server has no discoverable pid', () => {
-    const plan = planForServer(probe({ pid: null }), SELF)
-    expect(plan.action).toBe('complain')
-    if (plan.action === 'complain') {
-      expect(plan.remedy).toMatch(/lsof/)
+  it('never advises the user to run an unfiltered lsof kill', () => {
+    // The remedy string used to suggest `lsof -ti :PORT | xargs kill` — the exact
+    // command that kills connected browsers. Do not print the bug as guidance.
+    for (const p of [probe({ desktopApp: true }), probe({ pid: null })]) {
+      const plan = planForServer(p, SELF)
+      if (plan.action === 'complain') {
+        expect(plan.remedy).not.toMatch(/lsof/)
+      }
     }
   })
 })

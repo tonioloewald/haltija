@@ -87,22 +87,34 @@ async function hasBrowserConnected(): Promise<boolean> {
   }
 }
 
-// Kill any existing process on the test port to avoid conflicts
+// Free the test port, without murdering the developer's browser.
+//
+// This used to run `lsof -ti :PORT` and SIGTERM every pid it returned. `lsof -i :PORT`
+// matches sockets whose local OR REMOTE port is PORT, so that list includes connected
+// CLIENTS — the browser attached to the server on 8700 — and even this runner's own
+// pid. Bare `bun test` at the repo root discovers this file, so the everyday test
+// command was SIGTERMing the developer's browser.
+//
+// Listeners only, and only ones `ps` confirms are haltija.
 function killProcessOnPort(port: number): boolean {
   try {
     const result = Bun.spawnSync({
-      cmd: ['lsof', '-ti', `:${port}`],
+      cmd: ['lsof', '-ti', `:${port}`, '-sTCP:LISTEN'],
       stdout: 'pipe',
     })
     const pids = new TextDecoder().decode(result.stdout).trim()
-    if (pids) {
-      for (const pid of pids.split('\n')) {
-        try { process.kill(parseInt(pid), 'SIGTERM') } catch {}
-      }
-      // Give processes time to exit
-      Bun.sleepSync(500)
-      return true
+    if (!pids) return false
+    let killed = false
+    for (const raw of pids.split('\n')) {
+      const pid = parseInt(raw)
+      if (!Number.isFinite(pid) || pid === process.pid) continue
+      const ps = Bun.spawnSync({ cmd: ['ps', '-p', String(pid), '-o', 'command='], stdout: 'pipe' })
+      const cmd = new TextDecoder().decode(ps.stdout).trim()
+      if (!cmd || !/haltija|tosijs-dev/i.test(cmd)) continue
+      try { process.kill(pid, 'SIGTERM'); killed = true } catch {}
     }
+    if (killed) Bun.sleepSync(500)
+    return killed
   } catch {}
   return false
 }

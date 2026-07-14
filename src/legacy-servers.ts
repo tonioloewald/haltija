@@ -22,7 +22,7 @@
  * self-terminating: once no 1.3.x servers are left, this never fires again.
  */
 
-import { isOlderThan } from './semver'
+import { isOlderThan, parseVersion } from './semver'
 
 /** The release that added the hj-install guards. Servers below this are harmful. */
 export const GUARDS_VERSION = '1.4.0'
@@ -41,9 +41,9 @@ export interface ServerProbe {
 export type RetirementPlan =
   /** Leave it alone. */
   | { action: 'ignore'; reason: string }
-  /** Kill it — it's a pre-1.4.0 server that will clobber the shared hj. */
-  | { action: 'retire'; pid: number; reason: string }
-  /** It's harmful but we must not (or cannot) kill it. Tell the user plainly. */
+  /** Ask it to stop — it's a pre-1.4.0 server that will clobber the shared hj. */
+  | { action: 'retire'; reason: string }
+  /** It's harmful but we must not stop it. Tell the user plainly. */
   | { action: 'complain'; reason: string; remedy: string }
 
 /**
@@ -53,7 +53,21 @@ export type RetirementPlan =
  */
 export function isLegacy(version: string | null): boolean {
   if (!version) return false
-  return isOlderThan(version, GUARDS_VERSION)
+  const v = parseVersion(version)
+  const guards = parseVersion(GUARDS_VERSION)
+  if (!v || !guards) return false
+
+  // Compare the RELEASE BASE, ignoring any prerelease tag.
+  //
+  // By strict semver `1.4.0-beta.1 < 1.4.0`, which would make a 1.4.0 beta "legacy"
+  // — so two 1.4.0 betas would stop each other on every boot, and the first
+  // `npm publish --tag beta` would ship servers that fight. But a 1.4.0 prerelease is
+  // built from this code: it HAS the guards. The question this predicate asks is
+  // "does that server clobber the shared hj?", and the answer depends on the release
+  // line, not on the prerelease tag.
+  const base = (p: { major: number; minor: number; patch: number }) =>
+    `${p.major}.${p.minor}.${p.patch}`
+  return isOlderThan(base(v), base(guards))
 }
 
 /**
@@ -74,26 +88,20 @@ export function planForServer(probe: ServerProbe, selfPid: number): RetirementPl
   // Legacy from here down: this server WILL clobber ~/.local/bin/hj.
 
   if (probe.desktopApp) {
-    // Killing this orphans a GUI app the user can see on screen — a far more
+    // Stopping this orphans a GUI app the user can see on screen — a far more
     // startling outcome than the problem we're solving. Complain instead.
     return {
       action: 'complain',
       reason: `the Haltija desktop app on :${probe.port} is running ${probe.version}, which overwrites the shared ~/.local/bin/hj`,
-      remedy: 'quit Haltija.app and update it (or run `bunx haltija@latest`)',
+      remedy: 'quit Haltija.app and update it (or run: bunx haltija@latest)',
     }
   }
 
-  if (probe.pid === null) {
-    return {
-      action: 'complain',
-      reason: `a legacy haltija ${probe.version} is running on :${probe.port} and overwrites the shared ~/.local/bin/hj, but its process id could not be determined`,
-      remedy: `find and stop it: lsof -ti :${probe.port} | xargs kill`,
-    }
-  }
-
+  // No pid needed: we retire a server by ASKING it to stop (POST /shutdown), not by
+  // signalling a process. See `requestShutdown` in src/server.ts for why that
+  // distinction is the whole safety story.
   return {
     action: 'retire',
-    pid: probe.pid,
     reason: `haltija ${probe.version} on :${probe.port} predates ${GUARDS_VERSION} and overwrites the shared ~/.local/bin/hj`,
   }
 }
