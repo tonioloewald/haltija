@@ -1541,9 +1541,15 @@ async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
     warnUnknownFlags(subcommand, filteredArgs);
   }
   if (!await isServerRunning(port)) {
+    if (noLaunch || explicitTarget) {
+      console.error(`Error: nothing is answering on the haltija server you targeted (port ${port}).`);
+      console.error(explicitTarget ? "That port is yours to manage — haltija will not spawn a server against a target you named." : "Start it yourself: `haltija --server`  (or drop --no-launch to let hj start one on the default port).");
+      console.error("`hj where` shows what a shell is targeting and why.");
+      process.exit(1);
+    }
     try {
       const quitMarker = join(homedir(), ".haltija", "last-quit");
-      if (!noLaunch && existsSync(quitMarker)) {
+      if (existsSync(quitMarker)) {
         console.error("Haltija was quit by user; not auto-launching.");
         console.error("Open Haltija manually to resume — or run `hj --no-launch` to bypass this check.");
         process.exit(1);

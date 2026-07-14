@@ -811,14 +811,38 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
     warnUnknownFlags(subcommand, filteredArgs)
   }
 
-  // Check if server is running, auto-start if not
+  // Check if a server is answering; auto-start one only if it's safe to.
   if (!(await isServerRunning(port))) {
+    // NEVER auto-spawn a server against a port the shell EXPLICITLY targeted (--port /
+    // --name / HALTIJA_PORT / …), and never under --no-launch.
+    //
+    // Spawning a server is a machine-topology mutation, and doing it from a read-only-ish
+    // command (`hj eval`, `hj tree`) against a targeted port is the sharpest edge in the CLI:
+    // the target is a server the USER manages — very often their dev server, embedded on a
+    // port they chose. If it's momentarily not answering (mid-restart, or HTTPS-only so the
+    // HTTP /status probe fails), spawning a generic server that BINDS that port collides with
+    // their setup and knocks it offline. That's a bug report, and it was: `hj --no-launch
+    // --port 8700 eval` bound its own listener on 8700 and took the dev channel down.
+    //
+    // So auto-spawn is only for the bare, unconfigured 8700 default — the zero-config "I just
+    // want it to work" path. This mirrors the Electron auto-launch rule (hj.mjs), which the
+    // server spawn had drifted out of sync with. An explicit target that isn't answering is an
+    // actionable error, not license to spawn.
+    if (noLaunch || explicitTarget) {
+      console.error(`Error: nothing is answering on the haltija server you targeted (port ${port}).`)
+      console.error(explicitTarget
+        ? 'That port is yours to manage — haltija will not spawn a server against a target you named.'
+        : 'Start it yourself: `haltija --server`  (or drop --no-launch to let hj start one on the default port).')
+      console.error('`hj where` shows what a shell is targeting and why.')
+      process.exit(1)
+    }
+
     // Respect "user manually quit Haltija" before we try to spawn anything.
     // The marker is dropped by the desktop app on will-quit and cleared on
     // its next launch — agent calls in between should not bring it back.
     try {
       const quitMarker = join(homedir(), '.haltija', 'last-quit')
-      if (!noLaunch && existsSync(quitMarker)) {
+      if (existsSync(quitMarker)) {
         console.error('Haltija was quit by user; not auto-launching.')
         console.error('Open Haltija manually to resume — or run `hj --no-launch` to bypass this check.')
         process.exit(1)

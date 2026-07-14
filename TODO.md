@@ -195,6 +195,41 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       was measured against and that the window was still alive when the value was taken —
       otherwise a scrub/sample table can silently contain readings from a tab that died halfway.
 
+## From tosijs-3d's pain report (attribution noted honestly)
+
+- [x] **#1 — `hj` self-spawned a server from a read-only-ish call, ignoring `--no-launch` and
+      explicit targeting.** `hj --no-launch --port 8700 eval` bound its own listener on 8700 and
+      took the dev channel offline. The auto-spawn only checked "is the port answering", not
+      "am I allowed to start one" — `--no-launch` gated the browser launch but not the server
+      spawn, and an explicit `--port`/`--name` didn't suppress it either. **Fixed in 1.4.0:**
+      auto-spawn is now confined to the bare 8700 default, mirroring the Electron rule; an
+      explicit target or `--no-launch` that finds nothing is an actionable error, not a spawn.
+      *Attribution: pre-existing (the spawn path predates the 1.4.0 work), but squarely in the
+      CLI-targeting behavior 1.4.0 overhauls, so fixed here.* Also removes the root cause of #5.
+- [x] **#5 — stray servers on random ports muddying the registry.** Downstream of #1 (those
+      servers were auto-spawned). With #1 fixed they're no longer created; and every server now
+      cleans its registry entry on SIGINT/SIGTERM/exit, with stale entries self-healing on lookup
+      (dead pid → removed). *Attribution: 1.4.0's auto-registration made strays visible in the
+      registry rather than hidden — net good — but the strays themselves were #1.*
+- [ ] **#4 — ambient focus targets the wrong tab; a backgrounded tab can latch `focused:true`.**
+      Two dev pages on one channel → `hj eval` silently hits the wrong one, and `hj tabs focus`
+      times out on a backgrounded tab. *Not caused by 1.4.0.* This is the same need as
+      tosijs-project's fencing-tokens / per-call-targeting item above — **explicit per-call tab
+      targeting (by id/url, not ambient focus)** is the fix. Reinforces that item.
+- [ ] **#3 — HTTP/HTTPS asymmetry (hj→8700, widget on an https page→8701).** The CLI reports
+      "connected" (to 8700) while the widget can't connect (to 8701) — two truths. *Not caused by
+      1.4.0*, though the https-only phantom-registration fix helps a little (an https-only server
+      no longer advertises an HTTP port it isn't serving). Needs: hj aware of the https port, and
+      a too-fast restart leaving 8701 in TIME_WAIT should not silently downgrade to HTTP-only.
+- [ ] **#2 — the dev channel dies with the dev server.** Kill the dev server for a clean build →
+      channel drops, tab orphans (page loaded, socket dead). *Architectural (the embedding
+      model), not caused by 1.4.0.* Design a channel that outlives a dev-server restart, or
+      reconnects automatically — erases a class of "reload again" churn.
+- [ ] **#6 — WebXR suspends `window.rAF`, stalling the heartbeat; the tab goes unreachable while
+      immersive.** *Inherent to WebXR, not a haltija bug*, but worth designing for: the heartbeat
+      can't ride `window.rAF` if you want to drive a page inside an XR session. (tosijs-3d's
+      workaround: `addDebugSource` → read state in the in-headset Perf Stats panel.)
+
 ## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
 
 - [ ] **Kill the cwd-routing duplication** *(dryness + coverage + ecosystem, all confirmed)*.
