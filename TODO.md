@@ -196,6 +196,24 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       otherwise a scrub/sample table can silently contain readings from a tab that died halfway.
 
 ## Build / Distribution
+
+- [ ] **`hj` ships as a 60 MB binary to deliver a 66 KB program.** `bun build --compile`
+      produces a standalone executable by statically linking the *entire Bun runtime* and
+      appending the payload — so `hj-arm64` is 60.6 MB and `hj-x64` is 66.0 MB, of which
+      ~99.9% is runtime. (That's also why the ownership marker sits at byte 62,735,161: the
+      payload is at the *end*. A 200 KB head-window sniff saw nothing but Mach-O headers,
+      which is how the installer came to disown its own binary.)
+
+      The only justification is the DMG: a user with neither bun nor node still gets a working
+      `hj` in their shell. That's a 60 MB answer to a 66 KB question, ×2 archs, and it has
+      already cost us one bug and a 121 MB read per desktop launch (now bounded to ~8 MB of
+      tail scan). Options worth weighing:
+      - Ship `dist/hj.js` (66 KB) and have the DMG install a **tiny shim** that execs it with
+        the runtime **the app already bundles** (Electron ships Node). ~1 KB instead of 60 MB.
+      - Or drop the compiled `hj` entirely and require bun/node for the CLI — the DMG is
+        already deprioritized, and every actual user of `hj` is a developer.
+      Do this before any further DMG investment; it also shrinks the DMG substantially.
+
 - [ ] Drop Intel macOS builds, add Linux DMG/installer builds
 - [ ] Add npm pack verification test (ensure all renderer modules are included)
 - [ ] **Watch for a recurrence of the transient suite failure.** Seen twice while landing 1.4.0

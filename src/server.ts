@@ -29,13 +29,13 @@ import { register as registerNamedInstance, unregister as unregisterNamedInstanc
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { recordMachineAction } from './machine-log'
-import { identifyHj, planHjInstall, type HjIdentity } from './hj-install'
+import { identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, statSync, openSync, readSync, closeSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -4413,10 +4413,23 @@ if (REGISTRY_NAME) {
     // the file, and running a stranger's script is not an option.
     let identity: HjIdentity | undefined
     if (present && !symlinked) {
+      // Bounded reads: our compiled hj is a 60MB Bun runtime with ~66KB of haltija appended,
+      // so slurping it whole would cost a 121MB read + RSS spike on every desktop launch
+      // (two servers). Read a head window and, for big files, an 8MB tail — the marker lives
+      // in the last ~1%.
+      let fd: number | undefined
       try {
-        identity = identifyHj(readFileSync(hjTarget))
+        const size = statSync(hjTarget).size
+        fd = openSync(hjTarget, 'r')
+        identity = identifyHjBounded(size, (offset, length) => {
+          const buf = Buffer.alloc(length)
+          const n = readSync(fd!, buf, 0, length, offset)
+          return buf.subarray(0, n)
+        })
       } catch {
         identity = 'foreign' // unreadable → not ours → hands off
+      } finally {
+        if (fd !== undefined) { try { closeSync(fd) } catch {} }
       }
     }
 

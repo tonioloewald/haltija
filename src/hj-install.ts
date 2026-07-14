@@ -76,6 +76,53 @@ export function identifyHj(buf: Buffer): HjIdentity {
   return 'foreign'
 }
 
+/**
+ * How much of a large file's tail we scan for the marker.
+ *
+ * `bun build --compile` produces a standalone executable by statically linking the whole Bun
+ * runtime and **appending** the JS payload — so our 60 MB `hj-<arch>` is ~99.9% runtime and
+ * the marker sits in the last ~1%. Reading all 60 MB to find it would cost a 121 MB read and
+ * RSS spike on every desktop launch (two servers), which is real on a laptop juggling twenty
+ * projects. 8 MB of tail is a wide margin over a ~1 MB payload.
+ */
+export const TAIL_SCAN_BYTES = 8 * 1024 * 1024
+
+/** Head window for recognizing script-shaped artifacts. */
+export const HEAD_SCAN_BYTES = 256 * 1024
+
+/**
+ * Identify `hj` on disk with **bounded** reads — never loading a 60 MB binary into memory.
+ *
+ * `read(offset, length)` is injected so this stays testable without a filesystem.
+ */
+export function identifyHjBounded(
+  size: number,
+  read: (offset: number, length: number) => Buffer,
+): HjIdentity {
+  // Small enough to just look at whole.
+  if (size <= HEAD_SCAN_BYTES) return identifyHj(read(0, size))
+
+  const head = read(0, HEAD_SCAN_BYTES)
+  if (head.includes(HJ_MARKER)) return 'ours'
+
+  if (size >= MIN_COMPILED_BYTES) {
+    // Compiled binary: the payload — and therefore the marker — is at the END.
+    const tailLen = Math.min(TAIL_SCAN_BYTES, size)
+    const tail = read(size - tailLen, tailLen)
+    if (tail.includes(HJ_MARKER)) return 'ours'
+    // No marker: a pre-1.4.0 compiled hj. Its haltija strings live in the payload too.
+    if (/haltija|tosijs-dev/i.test(tail.toString('latin1'))) return 'ours-legacy'
+    return 'foreign'
+  }
+
+  // Script-shaped and big enough to be a bundle: the legacy JS-bundle case.
+  if (size >= MIN_BUNDLE_BYTES && /haltija|tosijs-dev/i.test(head.toString('latin1'))) {
+    return 'ours-legacy'
+  }
+
+  return 'foreign'
+}
+
 export type HjPlan =
   /** Nothing there — write it. */
   | { action: 'bootstrap'; reason: string }

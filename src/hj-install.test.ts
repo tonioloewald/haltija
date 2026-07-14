@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { existsSync, readFileSync } from 'fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'fs'
 import { join } from 'path'
-import { HJ_MARKER, identifyHj, planHjInstall, type HjState } from './hj-install'
+import { HEAD_SCAN_BYTES, HJ_MARKER, TAIL_SCAN_BYTES, identifyHj, identifyHjBounded, planHjInstall, type HjState } from './hj-install'
 import { isOlderThan } from './semver'
 
 const REPO = join(import.meta.dir, '..')
@@ -122,5 +122,54 @@ describe('planHjInstall', () => {
     // The churn bug: two servers of the SAME version built from different local builds used
     // to rewrite hj past each other on every boot.
     expect(plan({ exists: true, isSymlink: false, identity: 'ours', reportedVersion: OURS }).action).toBe('leave')
+  })
+})
+
+describe('identifyHjBounded — bounded reads, real 60MB binary', () => {
+  /** A reader that records how many bytes it actually pulled off disk. */
+  function fileReader(path: string) {
+    let bytesRead = 0
+    const fd = openSync(path, 'r')
+    const read = (offset: number, length: number) => {
+      const buf = Buffer.alloc(length)
+      const n = readSync(fd, buf, 0, length, offset)
+      bytesRead += n
+      return buf.subarray(0, n)
+    }
+    return { read, bytes: () => bytesRead, close: () => closeSync(fd) }
+  }
+
+  it('identifies our 60MB compiled hj WITHOUT reading all 60MB', () => {
+    if (!existsSync(COMPILED)) return
+    const size = statSync(COMPILED).size
+    const r = fileReader(COMPILED)
+    try {
+      const id = identifyHjBounded(size, r.read)
+      expect(id).not.toBe('foreign')
+      // The whole point: we must not slurp the entire binary on every server boot.
+      expect(r.bytes()).toBeLessThan(size)
+      expect(r.bytes()).toBeLessThanOrEqual(HEAD_SCAN_BYTES + TAIL_SCAN_BYTES)
+    } finally {
+      r.close()
+    }
+  })
+
+  it('finds a marker that lives only in the tail', () => {
+    // Exactly the compiled-binary shape: 20MB of runtime, marker appended at the end.
+    const big = Buffer.concat([Buffer.alloc(20_000_000, 0x41), Buffer.from(HJ_MARKER)])
+    const read = (o: number, l: number) => big.subarray(o, o + l)
+    expect(identifyHjBounded(big.length, read)).toBe('ours')
+  })
+
+  it('still declines a large file that is not ours', () => {
+    const big = Buffer.alloc(20_000_000, 0x41)
+    const read = (o: number, l: number) => big.subarray(o, o + l)
+    expect(identifyHjBounded(big.length, read)).toBe('foreign')
+  })
+
+  it('still declines a small user shim', () => {
+    const shim = Buffer.from('#!/bin/sh\nHALTIJA_PORT=9123 exec /opt/hj "$@"\n')
+    const read = (o: number, l: number) => shim.subarray(o, o + l)
+    expect(identifyHjBounded(shim.length, read)).toBe('foreign')
   })
 })
