@@ -55,7 +55,7 @@ silently.
 
 - HTTPS-only servers no longer advertise an HTTP port they aren't listening on.
 - Every REST response carries `X-Haltija-Version`.
-- `hj … --json` now exits non-zero when the response reports failure (`success:false`), matching the human-output path — so an agent checking the exit code can no longer read a failed probe as success.
+- **`hj` exits non-zero when an operation fails** (`success:false`) — not just with `--json`, but on action commands too (`hj click`, `navigate`, `key`, …). A click that didn't land, or any command with no browser connected, now exits 1 instead of 0, so an agent checking the exit code can't read a failed step as success. (Commands with their own human formatting were already this way; this closes the gap for the rest.)
 - `HALTIJA_REGISTRY_DIR` overrides the instance-registry location.
 - `hj` no longer auto-spawns a server against an **explicitly targeted** port (`--port`/`--name`/`HALTIJA_PORT`) or under `--no-launch` — a read-only command against a server you manage will not start a colliding one; it errors instead. Auto-spawn remains only for the bare default port.
 
