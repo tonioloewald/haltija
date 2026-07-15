@@ -259,6 +259,13 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
 - [ ] **`bin/tosijs-dev.mjs` `killOnPort` reimplements `port-pid.ts`** *(dryness, confirmed)* —
       compile `listenerPidsOnPort`/`isHaltijaProcess` into `bin/` and reuse, so the SIGTERM
       identity check has one source of truth.
+- [ ] **Document `hj`'s exit-code contract** in SKILL.md / DOCS.md: `hj` exits non-zero when an
+      operation reports failure (`success:false`), including action commands (click/navigate/key).
+      Agents are told to trust the exit code, so the contract should be written down.
+- [ ] **Tighten `isHaltijaProcess`** *(blast-radius, unverified)* — it matches any argv containing
+      `haltija`/`tosijs-dev`, so a process launched by absolute path from a dir named `haltija`
+      could be a false positive before SIGTERM. Match a haltija *invocation* shape
+      (`dist/server.js`, `haltija-server`, `bunx haltija`) instead. Same at `apps/desktop/main.js`.
 - [ ] **`src/machine-log.ts` has zero tests** — add one against a temp `HALTIJA_MACHINE_LOG`:
       append/parse per action kind, `readMachineActions(limit)` newest-last, missing/garbage file
       → `[]` without throwing, unwritable path doesn't throw.
