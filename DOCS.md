@@ -177,6 +177,18 @@ breaking; do not chase a page bug that isn't there. Known causes:
   e.g. write the values you care about somewhere your test/agent can read them (an
   in-page debug source, an in-headset stats panel), rather than issuing `hj eval` that
   round-trips through the suspended heartbeat.
+- **A tab that isn't visible on screen** — the common everyday case, and the one
+  people hit without realizing. A backgrounded tab, a minimized window, or a window
+  that is *maximized on another Space or fully occluded* (e.g. on macOS) all count as
+  **hidden** (`document.visibilityState === "hidden"`). While hidden, browsers stop
+  `requestAnimationFrame` entirely and throttle timers — and, on top of that, the
+  Haltija widget deliberately **deactivates** a hidden tab so untargeted commands
+  route to whichever tab is actually in front (focus-follows-visible-tab). So a page
+  you can't see may not answer an untargeted `hj eval`/`hj tree`, and any
+  `rAF`-driven state (scroll progress, animation frames) is frozen even if it does.
+  Fixes: **bring the tab to the front**, or **target it explicitly** —
+  `hj --window <id> eval …` (get the id from `hj windows`) reaches a specific tab
+  regardless of visibility. Don't rely on rAF-driven values while a tab is hidden.
 - **A heavily throttled background tab, or a long blocking task** on the main thread —
   same shape: the heartbeat can't run, so the tab looks dead until the thread frees up.
 

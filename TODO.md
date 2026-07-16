@@ -80,6 +80,37 @@ ask about?"* Candidate contents:
 This is the call an agent should make *first* in any debugging loop. It would have handed over
 the real bug in the first thirty seconds instead of the ninetieth minute.
 
+## Hidden / off-screen tab: detect and respond better (needs repro first)
+
+**Symptom** *(from tosijs-3d/Tonio):* a tab that isn't visible on screen — backgrounded,
+minimized, or **maximized on another Space / occluded on macOS** — makes haltija "seem broken."
+Documented as a gotcha in DOCS.md + llms.txt (bring it forward, or target explicitly with
+`hj --window <id>`). The code-side improvement below is separate and **not yet done**.
+
+**Mechanism — partially traced, NOT yet reproduced (do that first).** Two things happen when a
+tab goes `hidden`:
+1. The widget calls `deactivate()` on `visibilitychange → hidden` (`component.ts:2804`), which
+   tells the server this window is inactive so untargeted commands prefer the visible tab.
+2. Browsers stop `requestAnimationFrame` and throttle timers while hidden — so rAF-driven state
+   (scroll progress, animation frames) is frozen even if the widget does answer.
+
+   *Caveat, stated honestly:* the widget's command gate (`component.ts:7053`) reads as though
+   **untargeted** commands are still handled when inactive (`isForUs` is true when there's no
+   target window), so my static reading does **not** fully explain a hard "no response." The
+   real failing path must be reproduced with an actual hidden tab before changing code — I
+   could not simulate that from a shell, and this session's rule is: don't ship a fix on an
+   unverified reading of a running system.
+
+**The improvement, once reproduced:**
+- **Make the sole connected window always addressable** by untargeted commands regardless of
+  visibility — with one tab there's no ambiguity about which you mean, so focus-follows-visible
+  shouldn't apply. (The multi-tab focus behavior only earns its keep when there ARE multiple
+  tabs.) This fixes the common single-tab dev case with no downside.
+- **When a command can only route to an inactive/hidden window, return an actionable error**
+  the server already has the facts for (it knows the window is `active:false`): name the cause
+  and the fix (`bring it forward, or hj --window <id>`), instead of a bare `Timeout`. This is
+  the "instrument must not lie" / negative-blast-radius fix — one place, every consumer.
+
 ## Multi-tenancy: a working set, not isolation-vs-sharing
 
 **The design target, named properly:** twenty projects *addressable*, three or four *resident*.

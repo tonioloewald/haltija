@@ -2834,6 +2834,18 @@ breaking; do not chase a page bug that isn't there. Known causes:
   e.g. write the values you care about somewhere your test/agent can read them (an
   in-page debug source, an in-headset stats panel), rather than issuing \`hj eval\` that
   round-trips through the suspended heartbeat.
+- **A tab that isn't visible on screen** — the common everyday case, and the one
+  people hit without realizing. A backgrounded tab, a minimized window, or a window
+  that is *maximized on another Space or fully occluded* (e.g. on macOS) all count as
+  **hidden** (\`document.visibilityState === "hidden"\`). While hidden, browsers stop
+  \`requestAnimationFrame\` entirely and throttle timers — and, on top of that, the
+  Haltija widget deliberately **deactivates** a hidden tab so untargeted commands
+  route to whichever tab is actually in front (focus-follows-visible-tab). So a page
+  you can't see may not answer an untargeted \`hj eval\`/\`hj tree\`, and any
+  \`rAF\`-driven state (scroll progress, animation frames) is frozen even if it does.
+  Fixes: **bring the tab to the front**, or **target it explicitly** —
+  \`hj --window <id> eval …\` (get the id from \`hj windows\`) reaches a specific tab
+  regardless of visibility. Don't rely on rAF-driven values while a tab is hidden.
 - **A heavily throttled background tab, or a long blocking task** on the main thread —
   same shape: the heartbeat can't run, so the tab looks dead until the thread frees up.
 
@@ -2958,6 +2970,7 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server):
 
 ## Gotcha: a tab can read as unreachable while its main thread is suspended
 - The widget proves liveness with a heartbeat. If the page's main thread or its \`requestAnimationFrame\` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It's the instrument going quiet, not a page bug.
+- **A tab that is not visible on screen** — backgrounded, minimized, or maximized on another Space / fully occluded (macOS) — counts as \`hidden\`. Browsers stop \`requestAnimationFrame\` and throttle timers while hidden, AND the widget deliberately deactivates a hidden tab so untargeted commands go to the front tab. So a page you can't see may not answer an untargeted \`hj eval\`/\`hj tree\`, and rAF-driven state (scroll/animation) is frozen. Fix: bring it to the front, or **target it explicitly** — \`hj --window <id> eval …\` (id from \`hj windows\`) reaches a specific tab regardless of visibility.
 - **WebXR / immersive sessions suspend \`window.requestAnimationFrame\`** (the XR compositor drives frames instead), so a tab is unreachable *while immersive*. Drive state out through your own channel — write the values you care about somewhere your agent can read (a debug source, an in-headset stats panel) — rather than \`hj eval\` round-trips through the suspended heartbeat. A heavily throttled background tab or a long blocking task has the same shape.
 - A command hitting the WRONG page (not a dead one) is targeting, not liveness: run \`hj where\`.
 
