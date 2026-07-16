@@ -4051,6 +4051,14 @@ const serverConfig = {
  * as a last resort, signal a listener that `ps` confirms is haltija.
  */
 async function freePort(port: number): Promise<boolean> {
+  // freePort reaches out and stops ANOTHER server — a machine-scope action, exactly what
+  // HALTIJA_NO_RETIRE governs. The test suite sets NO_RETIRE, and on a shared machine (CI, or
+  // a dev box running other haltija servers — including other agents') a test that bound a
+  // fixed port and hit EADDRINUSE would otherwise SIGTERM/`/shutdown` a stranger's server.
+  // Under NO_RETIRE we never touch it: the bind simply fails, which is the caller's problem to
+  // handle, not license to disrupt someone else's process.
+  if (process.env.HALTIJA_NO_RETIRE === '1') return false
+
   if (listenerPidsOnPort(port).length === 0) return false
 
   const probe = await probePort(port)

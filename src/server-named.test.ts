@@ -11,19 +11,14 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
+import { isolateTestMachineState, uniqueTestPort } from './test-support'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
 // ~/.haltija/servers/ and — same cwd, newer startedAt — out-ranks their actual dev
 // server on a cwd match, so `hj` in this repo silently drives a browserless test
 // server. Set before any spawn; sessions.ts resolves the dir per call.
-process.env.HALTIJA_REGISTRY_DIR = mkdtempSync(join(tmpdir(), 'haltija-test-registry-'))
-// A spawned server runs its full startup: it SIGTERMs "legacy" servers it finds on
-// well-known ports, and installs `hj` into ~/.local/bin. Both act on the real
-// machine, so running the test suite could kill processes it did not start and
-// rewrite the developer's `hj`. Neither belongs in a test run.
-process.env.HALTIJA_NO_RETIRE = '1'
-process.env.HALTIJA_NO_INSTALL = '1'
+isolateTestMachineState()
 
 
 // The same throwaway dir the spawned servers write to (set above, inherited by
@@ -82,7 +77,7 @@ async function spawnNamedServer(name: string, port: number): Promise<Subprocess>
 describe('HALTIJA_NAME registration', () => {
   it('writes a registry entry on startup', async () => {
     const name = uniqueName('reg')
-    const port = 8741
+    const port = uniqueTestPort()
     await spawnNamedServer(name, port)
 
     const path = join(REGISTRY_DIR, `${name}.json`)
@@ -98,7 +93,7 @@ describe('HALTIJA_NAME registration', () => {
 
   it('cleans up the registry entry on SIGTERM', async () => {
     const name = uniqueName('cleanup')
-    const port = 8742
+    const port = uniqueTestPort()
     const proc = await spawnNamedServer(name, port)
 
     const path = join(REGISTRY_DIR, `${name}.json`)
@@ -117,13 +112,15 @@ describe('HALTIJA_NAME registration', () => {
   it('two servers with different names register independently', async () => {
     const nameA = uniqueName('multi-a')
     const nameB = uniqueName('multi-b')
-    await spawnNamedServer(nameA, 8743)
-    await spawnNamedServer(nameB, 8744)
+    const portA = uniqueTestPort()
+    const portB = uniqueTestPort()
+    await spawnNamedServer(nameA, portA)
+    await spawnNamedServer(nameB, portB)
 
     const a = JSON.parse(readFileSync(join(REGISTRY_DIR, `${nameA}.json`), 'utf-8'))
     const b = JSON.parse(readFileSync(join(REGISTRY_DIR, `${nameB}.json`), 'utf-8'))
-    expect(a.port).toBe(8743)
-    expect(b.port).toBe(8744)
+    expect(a.port).toBe(portA)
+    expect(b.port).toBe(portB)
     expect(a.pid).not.toBe(b.pid)
   })
 })
@@ -131,7 +128,7 @@ describe('HALTIJA_NAME registration', () => {
 describe('hj --name resolution', () => {
   it('routes hj to the registered port', async () => {
     const name = uniqueName('hj-resolve')
-    const port = 8745
+    const port = uniqueTestPort()
     await spawnNamedServer(name, port)
 
     // Run hj via the cli-subcommand resolver against the named instance.
@@ -147,7 +144,7 @@ describe('hj --name resolution', () => {
 
   it('hj.mjs binary resolves --name end-to-end', async () => {
     const name = uniqueName('hj-bin')
-    const port = 8746
+    const port = uniqueTestPort()
     await spawnNamedServer(name, port)
 
     // Invoke hj.mjs in a subprocess with --name and --no-launch (don't
@@ -195,7 +192,7 @@ describe('auto-registration (cwd routing)', () => {
   }
 
   it('an unnamed server registers as auto-<port> with its cwd', async () => {
-    const port = 8751
+    const port = uniqueTestPort()
     trackedNames.add(`auto-${port}`)
     await spawnServer(port)
     await settle()
@@ -216,7 +213,7 @@ describe('auto-registration (cwd routing)', () => {
     // registered, it would cwd-capture every project on the machine — the exact
     // misroute cwd routing exists to prevent. This one line is the only thing
     // preventing that, so it gets a test.
-    const port = 8752
+    const port = uniqueTestPort()
     trackedNames.add(`auto-${port}`)
     await spawnServer(port, { HALTIJA_DESKTOP: '1' })
     await settle()
@@ -234,7 +231,7 @@ describe('auto-registration (cwd routing)', () => {
     // Uses a private port rather than the real 8700 default: the bug is not
     // specific to 8700, and binding the default would collide with a desktop app
     // or dev server on the developer's machine.
-    const port = 8753
+    const port = uniqueTestPort()
     trackedNames.add(`auto-${port}`)
     await spawnServer(port, { DEV_CHANNEL_MODE: 'https', DEV_CHANNEL_HTTPS_PORT: '9453' })
     await settle(2500)
@@ -253,7 +250,7 @@ describe('hj port precedence', () => {
    */
   it('does not emit the default-port warning when --port is given', async () => {
     const name = uniqueName('precedence')
-    const port = 8748
+    const port = uniqueTestPort()
     await spawnNamedServer(name, port)
 
     const hj = spawn({
@@ -274,7 +271,7 @@ describe('hj port precedence', () => {
     // The warning must keep firing in the case it exists for, or fixing the false
     // positive would just have deleted the feature.
     const name = uniqueName('warns')
-    await spawnNamedServer(name, 8749)
+    await spawnNamedServer(name, uniqueTestPort())
 
     const hj = spawn({
       // Absolute — cwd below is deliberately outside the repo.
