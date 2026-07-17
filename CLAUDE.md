@@ -243,6 +243,8 @@ retrying would re-run any side effects the code already had. Keep that guard if 
 
 The Electron desktop app spawns *two* haltija servers: a public one on `HALTIJA_PORT` (default 8700) for content tabs, and an internal one on `HALTIJA_INTERNAL_PORT` (default 8701) that hosts the outer "chrome" widget — the haltija UI inspecting itself. The chrome widget never connects to the public server, so it never appears in agent listings on 8700; no exclusion logic needed.
 
+**The app REUSES an existing server by default (`serverMode: 'auto'`, `apps/desktop/main.js`).** On a machine running more than one project, 8700/8701 are shared — another project may have a live channel there (`haltija --server --both`). The old default `'builtin'` treated that channel as a "zombie" and killed both ports via `killZombieServer()` to start fresh, so *any* desktop-app launch (`bunx haltija`, an `hj` auto-launch, `--ci`, the integration test) silently took down another project's channel and made its widget vanish. `'auto'` detects a healthy server on 8700 (`checkServerRunning` → `/status` 200) and attaches to it instead, announcing that it did. This is the same "don't harm a healthy peer" discipline as retirement — the desktop app is not exempt from it. Force a fresh own-server with `HALTIJA_SERVER_MODE=builtin`.
+
 To inspect the outer Haltija UI from `hj`, target the internal port:
 
 ```bash

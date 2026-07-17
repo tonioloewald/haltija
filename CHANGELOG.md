@@ -52,6 +52,11 @@ silently.
 `HALTIJA_NO_RETIRE=1` opts out. See "Housekeeping" in the README.
 
 ### Also
+- **The desktop app now reuses an existing server instead of killing it.** Its default was to
+  stop any server on 8700/8701 and start fresh — so launching the app (or `bunx haltija`, or an
+  `hj` auto-launch) on a machine where another project had a live channel there silently took
+  that channel down. It now attaches to a healthy existing server and says so. Force the old
+  behavior with `HALTIJA_SERVER_MODE=builtin`.
 
 - HTTPS-only servers no longer advertise an HTTP port they aren't listening on.
 - Every REST response carries `X-Haltija-Version`.

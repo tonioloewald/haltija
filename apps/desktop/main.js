@@ -56,10 +56,17 @@ let navigateRequestId = 0
 
 const DEFAULT_PREFS = {
   // Server startup behavior:
-  // 'builtin'  - Always kill existing server and start fresh (default)
-  // 'external' - Never start server, expect one running externally
-  // 'auto'     - Use existing if found, else start embedded
-  serverMode: 'builtin',
+  // 'auto'     - Use an existing healthy server if one is on the port, else start embedded (DEFAULT)
+  // 'builtin'  - Always stop any existing server and start fresh (the old default)
+  // 'external' - Never start a server, expect one running externally
+  //
+  // Default is 'auto', NOT 'builtin'. On a machine running more than one project, 8700/8701 are
+  // shared: another project may legitimately have a live channel there (e.g. `haltija --server
+  // --both`). 'builtin' treated that channel as a "zombie" and killed it to start fresh — so
+  // launching the desktop app (or `bunx haltija`, or an `hj` auto-launch) silently took down
+  // another project's channel and made its widget vanish. 'auto' reuses a healthy server instead.
+  // Force the old behavior with HALTIJA_SERVER_MODE=builtin when you specifically want your own.
+  serverMode: process.env.HALTIJA_SERVER_MODE || 'auto',
 }
 
 // Active prefs (will be overwritten by persisted prefs when IPC is wired up)
@@ -67,6 +74,10 @@ const prefs = { ...DEFAULT_PREFS }
 
 let mainWindow = null
 const embeddedServers = []
+// True when this app attached to a server it did not start (auto mode found one already on the
+// port). Surfaced to the window so the user knows they're driving a reused, possibly-foreign server.
+let reusedExternalServer = false
+let reusedServerBanner = ''
 
 // ============================================
 // MCP Setup for Claude Desktop
@@ -298,6 +309,15 @@ function createWindow() {
 
   // Load the shell UI
   mainWindow.loadFile('index.html')
+
+  // If we attached to a server we didn't start, tell the renderer so it can surface it in the
+  // UI. Best-effort: harmless if the renderer doesn't handle 'server-reused' yet (that UI is a
+  // filed follow-up); the reuse is also announced on the app's console output regardless.
+  if (reusedExternalServer) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      try { mainWindow.webContents.send('server-reused', reusedServerBanner) } catch {}
+    })
+  }
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
@@ -1399,9 +1419,15 @@ async function ensureServer() {
       return false
 
     case 'auto':
-      // Use existing if found, else start embedded
+      // Use existing if found, else start embedded. Reusing is the whole point: it means the
+      // app does NOT kill a channel another project may be running on 8700/8701.
       if (running) {
-        console.log('[Haltija Desktop] Using existing server at', HALTIJA_SERVER)
+        // Surface this prominently — the user should know the app attached to a server it did
+        // NOT start (possibly a different version/config), rather than silently assuming its own.
+        const banner = `Attached to an existing haltija server at ${HALTIJA_SERVER} (did not start my own; set HALTIJA_SERVER_MODE=builtin to force a fresh one)`
+        console.log(`[Haltija Desktop] ${banner}`)
+        reusedExternalServer = true
+        reusedServerBanner = banner
         return true
       }
       console.log('[Haltija Desktop] No server found, starting embedded')

@@ -283,6 +283,24 @@ squatter held 8700; `--both` relocated/failed and the fixed-port probe couldn't 
   server's port is `hj where` or the registry, never "assume 8700/8701" — a fixed-port probe is the
   anti-pattern this whole episode is made of.
 
+## Desktop-app reuse: follow-ups (core fix done on main)
+
+- [ ] **Surface the "attached to an existing server" notice in the app UI**, not just the console.
+      `main.js` sends a best-effort `server-reused` IPC message on load; the renderer doesn't
+      display it yet. Add a small banner/status line so a user driving a REUSED (possibly
+      foreign-version) server can see that's what's happening.
+- [ ] **Make the desktop integration test deterministic under the new `auto` default.** With
+      `serverMode: 'auto'`, `apps/desktop/integration.test.ts` will REUSE a server if one is on
+      8700 (testing against a stranger) or start embedded if not. Give it a dedicated high port
+      pair (`HALTIJA_PORT`/`HALTIJA_INTERNAL_PORT`) + `HALTIJA_SERVER_MODE=builtin` so it tests
+      the app's OWN server on ports nothing else contends — the same hermeticity the unit suite
+      got. (On-demand Electron test; not in the CI unit lane.)
+- [ ] **The internal chrome server (8701) in the start-embedded path.** When `auto` finds no
+      public server and starts embedded, it still spawns an internal server on 8701; if 8701 is
+      held by an unrelated channel's HTTPS, that spawn should fall back to another port, never
+      kill the occupant. (Bounded: only on the rare no-public-server-but-8701-occupied path, and
+      the internal server is best-effort. Verify against a real Electron launch.)
+
 ## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
 
 - [ ] **Kill the cwd-routing duplication** *(dryness + coverage + ecosystem, all confirmed)*.

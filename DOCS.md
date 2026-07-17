@@ -217,6 +217,13 @@ hj tree --no-launch       # Skip auto-launch
 hj status                 # Info commands never trigger auto-launch
 ```
 
+**The desktop app REUSES an existing server rather than replacing it.** If a
+haltija server is already running on the port (e.g. another project started one
+with `haltija --server --both`), the app attaches to it and says so, instead of
+killing it to start its own — so launching the app (or an `hj` auto-launch) no
+longer takes down another project's channel. Set `HALTIJA_SERVER_MODE=builtin` to
+force the app to run its own fresh server instead.
+
 ## CI / Headless
 
 ```bash
