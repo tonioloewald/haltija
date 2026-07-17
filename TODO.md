@@ -276,17 +276,29 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       the routing/registry helpers out of `src/sessions.ts` into a `bin/` module (as done for
       `bin/semver.mjs`) and import them, so there is one tested source. Inert on POSIX today; the
       next routing fix lands in the tested copy and ships nothing.
-- [ ] **Default test-mode safety posture, not per-file opt-in** *(practices, confirmed)*. The
-      `HALTIJA_REGISTRY_DIR` + `NO_INSTALL` + `NO_RETIRE` guard is a copy-pasted 3-line preamble
-      in ~11 spawning test files; a new test that forgets it silently pollutes the real
-      `~/.haltija` / `~/.local/bin/hj`. Move it to a `bunfig.toml` preload / shared test-setup
-      that defaults these in test mode, and delete the copies. (`unit-tests.yml` asserts the
-      footprint, so a regression fails CI — but defense in depth beats a per-file ritual.)
-- [ ] **`freePort` is not gated by the test opt-outs.** `NO_RETIRE`/`NO_INSTALL` don't cover it,
-      so `bun test src/server.test.ts` on a machine with a real server on the strict port can
-      `POST /shutdown` to it and append to the real `machine-actions.log`. Gate freePort behind an
-      opt-out the suite sets, and extend `unit-tests.yml`'s footprint check to fail if
-      `machine-actions.log` was created/appended during the run.
+- [x] **Default test-mode safety posture, not per-file opt-in** — done (`eb89ed3`).
+      `src/test-support.ts` `isolateTestMachineState()` replaces the copy-pasted preamble in the
+      spawning test files and also redirects `HALTIJA_MACHINE_LOG` to temp. *(Could still move to a
+      `bunfig.toml` preload so a new test can't forget to call it, but the shared helper closes the
+      copy-paste-drift gap.)*
+- [x] **`freePort` is not gated by the test opt-outs** — done (`eb89ed3`). It now no-ops under
+      `HALTIJA_NO_RETIRE` (a reach-out-and-stop-another-server action, which is what NO_RETIRE
+      governs), so the suite can no longer `POST /shutdown` a stranger's server on a shared machine.
+      *(Follow-up: extend `unit-tests.yml`'s footprint assertion to fail if the REAL
+      `~/.haltija/machine-actions.log` was created/appended during a run — belt and braces on top of
+      the temp redirect.)*
+- [ ] **Test port strategy — a reserved test pair, not arbitrary ephemeral hermeticity** *(Tonio's
+      scoping; low priority)*. The current fix hands each test a high, pid-derived unique port
+      (`uniqueTestPort()`) so a shared machine doesn't collide, and `freePort` gating makes any
+      residual collision *harmless* (fails to bind rather than touching another process). That is
+      enough. **Full ephemeral-port + discovery hermeticity is explicitly NOT the goal** — it's the
+      over-engineered direction. The real design target is **one port pair for actual use (8700/8701)
+      and one for testing** — nothing more. Supporting arbitrary numbers of agents building
+      *different versions simultaneously* is a non-goal (same "working set, not infinite instances"
+      instinct as the multi-tenancy section above — don't spin up a bazillion of anything). If this
+      is ever revisited, the move is to *simplify* toward a documented reserved test pair, not to add
+      more concurrency machinery. Leave the current harmless approach until there's a concrete reason
+      to touch it.
 - [ ] **`bin/tosijs-dev.mjs` `killOnPort` reimplements `port-pid.ts`** *(dryness, confirmed)* —
       compile `listenerPidsOnPort`/`isHaltijaProcess` into `bin/` and reuse, so the SIGTERM
       identity check has one source of truth.
