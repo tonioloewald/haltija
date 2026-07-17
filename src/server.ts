@@ -3836,6 +3836,10 @@ Run 'hj --help' for all commands.`
 // Shared server config
 const serverConfig = {
   idleTimeout: 30, // 30 seconds for slow operations like screenshots
+  // NOTE: do NOT add `reusePort: true` here. SO_REUSEPORT lets TWO servers bind the SAME port
+  // and silently load-balance between them — which defeats the EADDRINUSE detection haltija
+  // relies on ("another server is already here") and would be far worse than the TIME_WAIT it
+  // was meant to dodge. The restart/TIME_WAIT case is handled by retrying the bind below.
   fetch(req: Request, server: any) {
     const url = new URL(req.url)
 
@@ -4285,29 +4289,56 @@ if (USE_HTTPS) {
     cert: readFileSync(certPath),
     key: readFileSync(keyPath),
   }
+  const wantedHttpsPort = HTTPS_PORT
+  const bindHttps = () => Bun.serve({ port: wantedHttpsPort, tls, ...serverConfig })
   try {
-    httpsServer = Bun.serve({ port: HTTPS_PORT, tls, ...serverConfig })
+    httpsServer = bindHttps()
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
-      if (PORT_IS_STRICT) {
-        if (await freePort(HTTPS_PORT)) {
-          httpsServer = Bun.serve({ port: HTTPS_PORT, tls, ...serverConfig })
-        } else {
-          throw err
-        }
+      // The HTTPS port is a CONTRACT: a widget on an https page connects to this exact port.
+      // So — unlike the HTTP side, which hj rediscovers via the registry — we must NOT quietly
+      // relocate it to an ephemeral port. That produced the "half-dead channel" bug: HTTP up,
+      // HTTPS answering on a port nobody looks at, so the page silently can't connect.
+      //
+      // Bun sets SO_REUSEADDR by default, so a clean restart rebinds fine; EADDRINUSE here is
+      // usually our PREVIOUS server still finishing its shutdown (a fast restart races it), and
+      // occasionally a genuinely live conflict. Retry the SAME port a few times with a short
+      // backoff to ride out the transient case, then give up LOUDLY.
+      if (PORT_IS_STRICT && await freePort(wantedHttpsPort)) {
+        httpsServer = bindHttps()
       } else {
-        httpsServer = Bun.serve({ port: 0, tls, ...serverConfig })
+        for (let attempt = 0; attempt < 5 && !httpsServer; attempt++) {
+          Bun.sleepSync(400)
+          try { httpsServer = bindHttps() } catch { /* still held; retry */ }
+        }
+        if (!httpsServer) {
+          // Do NOT bind ephemeral and pretend to be healthy. Fail loudly and stay down on
+          // HTTPS so the failure is visible, not a channel that looks up but can't be reached.
+          console.error('')
+          console.error(`  ⚠️  HTTPS could not bind its port ${wantedHttpsPort} — it is still in use`)
+          console.error(`      (a previous server in TIME_WAIT, or another process holding it).`)
+          console.error(`      A widget on an https page connects to :${wantedHttpsPort}, so it will`)
+          console.error(`      NOT connect until this is free. Haltija is NOT silently relocating it.`)
+          console.error(`      Fix: wait a few seconds and restart, or free port ${wantedHttpsPort}.`)
+          console.error('')
+          if (!USE_HTTP) {
+            // HTTPS-only and we couldn't bind it — there's nothing to serve. Exit non-zero.
+            throw err
+          }
+          // In --both, keep HTTP serving (hj still works) but leave HTTPS down and loud.
+        }
       }
     } else {
       throw err
     }
   }
-  HTTPS_PORT = httpsServer.port ?? HTTPS_PORT
+  if (httpsServer) HTTPS_PORT = httpsServer.port ?? HTTPS_PORT
 }
 
-// Build URLs for display
-const httpUrl = USE_HTTP ? `http://localhost:${PORT}` : null
-const httpsUrl = USE_HTTPS ? `https://localhost:${HTTPS_PORT}` : null
+// Build URLs for display. Advertise the HTTPS URL only if HTTPS actually bound — otherwise the
+// banner would claim a channel that's down (the very "looks healthy, isn't" lie we just fixed).
+const httpUrl = httpServer ? `http://localhost:${PORT}` : null
+const httpsUrl = httpsServer ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
 
 // Register this instance so `hj` can find it again — by name (`hj --name
@@ -4629,7 +4660,12 @@ if (USE_HTTPS && !httpUrl) {
 }
 
 if (MODE === 'both') {
-  console.log(`  Mode: both - Use HTTP (${PORT}) for HTTP sites, HTTPS (${HTTPS_PORT}) for HTTPS sites.\n`)
+  if (httpsServer) {
+    console.log(`  Mode: both - Use HTTP (${PORT}) for HTTP sites, HTTPS (${HTTPS_PORT}) for HTTPS sites.\n`)
+  } else {
+    console.log(`  Mode: both - ⚠️  HTTP (${PORT}) is up but HTTPS is DOWN (see the warning above).`)
+    console.log(`              Pages served over https will not connect until HTTPS binds.\n`)
+  }
 }
 
 // Export the primary server (HTTPS preferred)
