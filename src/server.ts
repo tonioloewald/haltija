@@ -4266,16 +4266,28 @@ if (USE_HTTP) {
     })
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
+      const wantedHttpPort = PORT
       if (PORT_IS_STRICT) {
         // User asked for a specific port — try to free it and retry.
         if (await freePort(PORT)) {
           httpServer = Bun.serve({ port: PORT, ...serverConfig })
         } else {
+          // Fail with a legible message, not a raw EADDRINUSE stack — a caller (or human)
+          // needs to know WHICH port and WHY, especially since spawn stderr is often ignored.
+          console.error('')
+          console.error(`  ⚠️  Could not bind the HTTP port ${wantedHttpPort} you asked for — it is in use.`)
+          console.error(`      Free it, or start on another port (--port N / HALTIJA_PORT).`)
+          console.error('')
           throw err
         }
       } else {
-        // No preference — fall back to an ephemeral port.
+        // No preference — fall back to an ephemeral port (the auto-port feature). This is
+        // fine for hj (it discovers the real port via the registry / `hj where`), but SAY SO:
+        // a caller that probes the default port, or a human, otherwise can't tell why the
+        // server isn't on 8700. Silent relocation of a port someone may be waiting on is the
+        // same "looks healthy, isn't" trap the HTTPS side had.
         httpServer = Bun.serve({ port: 0, ...serverConfig })
+        console.warn(`  [port] ${wantedHttpPort} was taken; bound HTTP on ${httpServer.port} instead. Find it with \`hj where\` (or read ~/.haltija/servers/).`)
       }
     } else {
       throw err

@@ -265,6 +265,24 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       doesn't ride `window.rAF` (or a fallback timer) would make immersive pages drivable, not just
       diagnosable. (tosijs-3d's workaround: `addDebugSource` → in-headset Perf Stats panel.)
 
+## Port discovery: callers must not probe a fixed port (from tosijs-3d)
+
+tosijs-3d's `ensureHaltijaChannel` probed a fixed HTTPS port (8701) while a stale HTTP-only
+squatter held 8700; `--both` relocated/failed and the fixed-port probe couldn't tell why
+(spawn stderr was ignored). Two sides:
+
+- **haltija side — done (`main`).** Both the HTTP ephemeral-fallback and the HTTPS bind failure
+  are now LEGIBLE: HTTP logs "8700 was taken; bound <ephemeral> instead — find it with `hj where`",
+  HTTPS retries then fails loudly instead of silently relocating, and the banner no longer names a
+  port it didn't bind. So a human/agent reading stderr can now see what happened.
+- **Cross-project (tosijs-3d, file-don't-fix — NOT ours to edit).** Their `ensureHaltijaChannel`
+  should (a) discover the port via `hj where` / the registry rather than probing a fixed port —
+  haltija may legitimately be on an ephemeral port — and/or (b) surface the spawn's stderr instead
+  of swallowing it. Relay to the tosijs-3d agent (who offered to write it up); do not touch their repo.
+- **haltija DX follow-up:** document prominently (README / DOCS) that the way to find a running
+  server's port is `hj where` or the registry, never "assume 8700/8701" — a fixed-port probe is the
+  anti-pattern this whole episode is made of.
+
 ## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
 
 - [ ] **Kill the cwd-routing duplication** *(dryness + coverage + ecosystem, all confirmed)*.
