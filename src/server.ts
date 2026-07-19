@@ -88,10 +88,19 @@ const LOG_PREFIX = '[haltija]'
 // try the canonical default (8700) and fall back to a kernel-assigned
 // ephemeral port — `haltija --name foo` records whichever port we end up
 // on so `hj --name foo` can resolve back to it.
+// A PRIVATE instance is the "ephemeral automation" role (see issue #1): a run that spawns its
+// own server + browser to drive a fixed set of pages and exit, and must NEVER see, adopt, or
+// navigate the shared interactive browser. So it binds a kernel-assigned EPHEMERAL port (never
+// the shared default 8700), does not register in the shared instance registry (interactive `hj`
+// / cwd-routing can't route to it), and does not touch other servers. It reports its address on
+// stdout (`HALTIJA_PRIVATE_READY {json}`) and to HALTIJA_PORT_FILE so the caller can drive it.
+const IS_PRIVATE = process.env.HALTIJA_PRIVATE === '1'
 const PORT_PREFERENCE = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT
-const PORT_IS_STRICT = !!PORT_PREFERENCE
-let PORT = parseInt(PORT_PREFERENCE || '8700')
-let HTTPS_PORT = parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
+// Private never binds a fixed shared port — always ephemeral, so it can't collide with or adopt
+// the shared server.
+const PORT_IS_STRICT = !!PORT_PREFERENCE && !IS_PRIVATE
+let PORT = IS_PRIVATE ? 0 : parseInt(PORT_PREFERENCE || '8700')
+let HTTPS_PORT = IS_PRIVATE ? 0 : parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
 const INSTANCE_NAME = process.env.HALTIJA_NAME || ''
 const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
 const DOCS_DIR = process.env.DEV_CHANNEL_DOCS_DIR || null
@@ -4209,6 +4218,9 @@ async function probePort(port: number): Promise<ServerProbe> {
  */
 async function retireLegacyServers(): Promise<void> {
   if (process.env.HALTIJA_NO_RETIRE === '1') return
+  // A private instance is isolated by construction — it must never reach out to another server,
+  // even if the launcher didn't set NO_RETIRE. Defense in depth for issue #1's whole point.
+  if (IS_PRIVATE) return
 
   const registryPorts = listInstances().map((e) => e.port)
   const ports = candidatePorts({ defaults: [8700, 8701, PORT], registryPorts })
@@ -4353,6 +4365,25 @@ const httpUrl = httpServer ? `http://localhost:${PORT}` : null
 const httpsUrl = httpsServer ? `https://localhost:${HTTPS_PORT}` : null
 const primaryUrl = httpsUrl || httpUrl
 
+// A private instance reports its ephemeral address so the caller can drive it — it isn't in the
+// registry, so this (or HALTIJA_PORT_FILE) is the ONLY way to find it. Machine-readable, one line.
+if (IS_PRIVATE) {
+  const ready = {
+    port: PORT,
+    httpsPort: httpsServer ? HTTPS_PORT : null,
+    url: httpUrl,
+    httpsUrl,
+    pid: process.pid,
+  }
+  console.log(`HALTIJA_PRIVATE_READY ${JSON.stringify(ready)}`)
+  const portFile = process.env.HALTIJA_PORT_FILE
+  if (portFile) {
+    try { writeFileSync(portFile, JSON.stringify(ready)) } catch (err) {
+      console.error(`${LOG_PREFIX} could not write HALTIJA_PORT_FILE ${portFile}: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+}
+
 // Register this instance so `hj` can find it again — by name (`hj --name
 // <foo>`) and, because the entry records our cwd, by directory: plain `hj`
 // run anywhere inside this project routes here with no flags. We register the
@@ -4373,7 +4404,10 @@ const primaryUrl = httpsUrl || httpUrl
 // exact misroute this release exists to eliminate. hj speaks HTTP only, so an
 // https-only server is not reachable by it at all; publishing an entry for it
 // would be a lie either way.
-const CAN_BE_REGISTERED = USE_HTTP
+// A PRIVATE instance never registers in the shared registry — that is the isolation: interactive
+// `hj` and cwd-routing must not be able to discover or adopt it. The caller drives it by the port
+// it reported (HALTIJA_PRIVATE_READY / HALTIJA_PORT_FILE), not via the registry.
+const CAN_BE_REGISTERED = USE_HTTP && !IS_PRIVATE
 const REGISTRY_NAME = !CAN_BE_REGISTERED ? '' : (INSTANCE_NAME || (isDesktopApp ? '' : autoNameFor(PORT)))
 if (!CAN_BE_REGISTERED && (INSTANCE_NAME || !isDesktopApp)) {
   console.log(`${LOG_PREFIX} HTTPS-only: not registering an instance (hj speaks HTTP; cwd routing and --name need an HTTP port)`)

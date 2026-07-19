@@ -409,6 +409,32 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
 
+### Two roles: shared interactive vs. private automation (issue #1)
+
+haltija serves two distinct roles, and conflating them lets an automated run hijack a developer's
+live browser:
+
+- **Shared interactive** — a haltija you drive by hand on the default port (8700). One shared
+  server across projects is a *feature*: whatever window is focused is what `hj` drives. This is
+  the registry/cwd-routing world below.
+- **Private automation** (`--private`) — an ephemeral run that spawns its own server + browser to
+  drive fixed pages and exit. It is **isolated by construction** and must NEVER see, adopt, or
+  navigate the shared interactive browser. `--private`:
+  - binds a kernel-assigned **ephemeral** port (never 8700; `IS_PRIVATE` forces `PORT = 0`);
+  - does **not** register in the shared registry (`CAN_BE_REGISTERED = USE_HTTP && !IS_PRIVATE`) —
+    so interactive `hj` / cwd-routing can't route to it;
+  - does **not** retire or touch other servers (`retireLegacyServers` returns early on `IS_PRIVATE`);
+  - reports its address on stdout (`HALTIJA_PRIVATE_READY {json}`) and to `--port-file`, since the
+    registry won't reveal it;
+  - the launcher never consults the shared server for a `--private` run (the adopt-existing check
+    is skipped), and `--private --headless` points the browser at the discovered ephemeral port.
+
+  **Consumers** (e.g. a dev-server test lane) should request a private instance and drive *that*
+  by the port it reports — never an unscoped `hj windows` check that races whatever else is on the
+  machine. The isolation belongs in haltija's model, not in every consumer reimplementing project
+  scoping. Verified end-to-end for `--private --headless`; `--private --app` (Electron accepting
+  the ephemeral port) is a follow-up.
+
 ### Instance Registry & cwd Routing
 
 Every server registers itself in `~/.haltija/servers/<name>.json` as `{ name, port, pid, cwd, startedAt, auto? }`, cleaned up on `SIGINT`/`SIGTERM`/`exit`. Stale entries (pid no longer alive) are removed lazily on lookup. Implementation: `src/sessions.ts`.

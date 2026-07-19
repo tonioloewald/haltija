@@ -52,6 +52,11 @@ silently.
 `HALTIJA_NO_RETIRE=1` opts out. See "Housekeeping" in the README.
 
 ### Also
+- **`--private`: an isolated automation instance** (issue #1). Automated runs used to adopt and
+  navigate a developer's shared interactive browser on 8700, hijacking it and failing. `haltija
+  --private` (pair with `--headless`) binds an ephemeral port, spawns its own browser, never
+  sees/adopts/touches the shared server, and reports its address on stdout + `--port-file`. A dev
+  server's test lane requests one of these and drives it, with no race against other projects.
 - **The desktop app now reuses an existing server instead of killing it.** Its default was to
   stop any server on 8700/8701 and start fresh — so launching the app (or `bunx haltija`, or an
   `hj` auto-launch) on a machine where another project had a live channel there silently took

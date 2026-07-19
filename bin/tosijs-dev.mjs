@@ -59,6 +59,11 @@ Options:
                   HALTIJA_NAME=foo hj <cmd> can resolve back to its port
   --force, -f     Restart even if server already running
   --wait-ready    Block until server + browser are ready (for scripts)
+  --private       Isolated automation instance: own server on an EPHEMERAL port (never
+                  8700), own browser, torn down with the run. Never sees/adopts/navigates
+                  the shared interactive browser. Reports its address on stdout
+                  (HALTIJA_PRIVATE_READY {json}) and to --port-file. Pair with --headless.
+  --port-file <p> Write the (private) server's bound address as JSON to <p> when ready.
   --setup-mcp     Configure Claude Desktop MCP integration
   --setup-mcp-check  Check MCP configuration status
   --setup-mcp-remove Remove Haltija from Claude Desktop config
@@ -408,6 +413,43 @@ const explicitServer = args.includes('--server')
 const explicitApp = args.includes('--app') || ciMode  // CI mode uses Electron app
 const waitReady = args.includes('--wait-ready') || ciMode
 
+// --private: the "ephemeral automation" role (issue #1). An isolated instance — own server on an
+// EPHEMERAL port (never 8700), its own browser, torn down with the run — that must never see,
+// adopt, or navigate the shared interactive browser. It reports its address on stdout
+// (HALTIJA_PRIVATE_READY {json}) and to --port-file, so the caller drives THAT, with no `hj
+// windows` race against whatever else is on the machine. Sets the isolation env for the server.
+const privateMode = args.includes('--private')
+const portFileIdx = args.indexOf('--port-file')
+let privatePortFile = null
+if (privateMode) {
+  // Mutate `env` (the object passed to the spawned server), NOT process.env — `env` was already
+  // snapshotted above, so setting process.env here would never reach the server.
+  env.HALTIJA_PRIVATE = '1'
+  env.HALTIJA_NO_RETIRE = '1'   // never touch another server
+  env.HALTIJA_NO_INSTALL = '1'  // never rewrite the shared ~/.local/bin/hj
+  delete env.HALTIJA_PORT       // force ephemeral — never bind the shared default
+  delete env.DEV_CHANNEL_PORT
+  // The server writes its actual (ephemeral) address here on ready; we read it back to point our
+  // own browser at it, and the caller can read it too. Default to a temp file if none was given.
+  privatePortFile = (portFileIdx !== -1 && args[portFileIdx + 1])
+    ? args[portFileIdx + 1]
+    : join(tmpdir(), `haltija-private-${process.pid}.json`)
+  env.HALTIJA_PORT_FILE = privatePortFile
+}
+
+/** Poll the private instance's port-file until it reports its ephemeral port. */
+async function discoverPrivatePort(portFile, timeout = 30000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    try {
+      const data = JSON.parse(readFileSync(portFile, 'utf-8'))
+      if (data && data.port) return data.port
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  return null
+}
+
 // CI mode sets ELECTRON_DISABLE_SANDBOX automatically (needed for containerized CI)
 if (ciMode && !process.env.ELECTRON_DISABLE_SANDBOX) {
   process.env.ELECTRON_DISABLE_SANDBOX = '1'
@@ -717,7 +759,13 @@ const tryBun = () => {
   // Start headless browser after server is ready
   if (headlessMode) {
     (async () => {
-      const serverPort = env.DEV_CHANNEL_PORT || 8700
+      const serverPort = privateMode
+        ? await discoverPrivatePort(privatePortFile)
+        : (env.DEV_CHANNEL_PORT || 8700)
+      if (!serverPort) {
+        console.error('[tosijs-dev] Private server did not report its port within timeout')
+        process.exit(1)
+      }
       console.log('[tosijs-dev] Waiting for server to be ready...')
       const serverReady = await waitForServer(serverPort)
       if (serverReady) {
@@ -750,7 +798,13 @@ const tryNode = () => {
   // Start headless browser after server is ready
   if (headlessMode) {
     (async () => {
-      const serverPort = env.DEV_CHANNEL_PORT || 8700
+      const serverPort = privateMode
+        ? await discoverPrivatePort(privatePortFile)
+        : (env.DEV_CHANNEL_PORT || 8700)
+      if (!serverPort) {
+        console.error('[tosijs-dev] Private server did not report its port within timeout')
+        process.exit(1)
+      }
       console.log('[tosijs-dev] Waiting for server to be ready...')
       const serverReady = await waitForServer(serverPort)
       if (serverReady) {
@@ -867,8 +921,10 @@ function killOnPort(port) {
 const port = env.DEV_CHANNEL_PORT || '8700'
 const forceRestart = args.includes('--force') || args.includes('-f')
 
-// Check for existing server before launching
-const existingServer = await checkExistingServer(port)
+// A PRIVATE instance NEVER consults or adopts the shared server — that adoption is the exact
+// bug issue #1 is about, and it lived right here in our own launcher (it saw the shared 8700
+// server and exited, "already running"). Private always starts its own on an ephemeral port.
+const existingServer = privateMode ? { running: false } : await checkExistingServer(port)
 if (existingServer.running && !forceRestart) {
   console.log('')
   console.log(green('✓') + ` Haltija is already running on port ${port}` + 
