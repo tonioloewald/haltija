@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.5.0
+
+Completes the **private-automation** feature (`--private`) begun in 1.4.1 — now for the Electron
+app as well as headless — and adds two **"the instrument must not lie"** guards so a command that
+lands on the wrong or sleeping tab says so instead of returning a plausible-but-wrong answer.
+
+### New: `--private --app` — isolated Electron automation ([#1](https://github.com/tonioloewald/haltija/issues/1))
+
+`--private` gave headless runs an isolated server + browser on an ephemeral port. `--private --app`
+extends that to the desktop app: it spawns its **own** public and internal servers on ephemeral
+ports (never 8700/8701), drives its **own** browser, writes the public address to `--port-file`,
+and never sees, adopts, registers, or touches the shared interactive channel. The app's port
+constants are now resolved *after* the private servers report their ephemeral ports, so every
+downstream use — widget injection, `/status`, content tabs — follows the ephemeral instance.
+
+### New: hidden-tab warning ([#3](https://github.com/tonioloewald/haltija/issues/3))
+
+A backgrounded tab **answers** — `hj eval 'document.querySelectorAll("x").length'` returns `0`, not
+a timeout — because browsers stop `requestAnimationFrame` and throttle timers in a hidden tab, so
+anything mounted by rAF/IntersectionObserver never ran. The page looks broken when it's merely
+asleep. When a command is routed to a tab that reported itself hidden, the result now carries a
+warning that the number can be plausible-but-wrong, with how to target a visible tab.
+
+### New: focus-ambiguity warning ([#2](https://github.com/tonioloewald/haltija/issues/2))
+
+cwd routing gets an untargeted `hj` command to the right shared *server* and then stops — which
+*tab* answers falls back to focus. So two agents each staying in their own project can drive each
+other's pages once both have a tab on the shared server. When a command isn't pinned to a window
+and the server spans more than one origin, the result now warns that *focus*, not your directory,
+chose the tab — and lists the other tabs as `--window` pins. It deliberately does **not** guess
+which tab is "yours" (there's no reliable origin→directory map); ranking waits for one that can
+justify itself.
+
+### Fixed
+
+- **`hj --window <id> <cmd>`** — the documented leading form printed the usage banner instead of
+  targeting the window (`--window` wasn't pre-parsed like `--port`/`--name`). Both positions work now.
+- **Desktop-spawned servers get their port** via the env the server actually reads
+  (`HALTIJA_PORT`/`DEV_CHANNEL_PORT`, not `PORT`) — the app couldn't control its servers' ports before.
+
 ## 1.4.1
 
 Five cross-project bugs, all of the same shape: **haltija reaching out and disrupting a healthy
