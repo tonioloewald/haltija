@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.1
+
+Low-risk follow-ups from the 1.5.0 pre-release review — the two new "instrument must not lie"
+warnings now reach more of the surfaces where they matter.
+
+### Fixed
+
+- **The hidden-tab / focus-ambiguity warning is no longer dropped on the paths where it's most
+  useful.** It's now attached on the **timeout** path — a hidden tab whose rAF-driven `eval` never
+  resolves now returns a `Timeout` that *explains* it may be asleep, instead of a bare timeout —
+  and preserved by the `hj find` / `hj form` handlers, which previously reshaped the response and
+  lost it. (`hj screenshot` already carried it; `hj call` intentionally still returns the raw value
+  with no envelope.)
+
+### Internal
+
+- Extracted the `hj --window <id>` argument handling into a pure, unit-tested helper
+  (`bin/arg-utils.mjs`), covering both the leading and trailing positions — the leading form was
+  the escape hatch that broke in 1.4.0, and it now has a regression test.
+- A private-app startup that fails to learn its ephemeral port no longer leaves its temp port-files
+  behind.
+
 ## 1.5.0
 
 Completes the **private-automation** feature (`--private`) begun in 1.4.1 — now for the Electron

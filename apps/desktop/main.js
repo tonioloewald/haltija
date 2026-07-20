@@ -1350,7 +1350,12 @@ async function startEmbeddedServer() {
     }
     const pubPort = await readPort(pubFile)
     const intPort = await readPort(intFile)
-    if (!pubPort) { console.error('[Haltija Desktop] Private public server did not report its port'); return false }
+    if (!pubPort) {
+      // Don't leak the pid-scoped tmp port-files on the failure path (the success path cleans below).
+      try { fs.rmSync(pubFile, { force: true }); fs.rmSync(intFile, { force: true }) } catch {}
+      console.error('[Haltija Desktop] Private public server did not report its port')
+      return false
+    }
 
     HALTIJA_PORT = pubPort
     HALTIJA_SERVER = `http://localhost:${pubPort}`

@@ -456,45 +456,45 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 
 ## Follow-ups
 
-### From the 1.5.0 pre-release review (GO_WITH_FOLLOWUPS)
+### From the 1.5.0 pre-release review
 
-- **[DX, confirmed] Throttle the hidden-tab / focus-ambiguity warnings.** Both re-fire on *every*
-  untargeted command against a multi-origin (or hidden) server — a ~4-line stderr block each time.
-  The repo's own skew-warning rationale is that a warning firing forever desensitizes agents to it.
-  Emit once per (server, origin-set / window) fingerprint. Ideally a shared throttle for both
-  warnings (they combine at the same choke point in `requestFromBrowser`). `src/server.ts:634`.
-- **[coverage, confirmed] Regression-test the `hj --window <id> <cmd>` fix.** The leading-`--window`
-  arg-splice in `bin/hj.mjs` (a documented, previously-broken escape hatch) ships untested. Extract
-  the pre-subcommand flag extraction into an exported pure fn; assert `--window w1 eval x` and
-  `eval x --window w1` both surface the flag, plus the lone-trailing case. `bin/hj.mjs:~311-320`.
-- **[coverage, confirmed] Unit-test the desktop server-env / port logic.** Extract
-  `buildServerEnv({port,isPrivate,portFile})` + the port-file discovery from `apps/desktop/main.js`
-  (`spawnHaltijaServer`/`startEmbeddedServer`) and test under bun: shared mode sets
-  `HALTIJA_PORT`/`DEV_CHANNEL_PORT` (not `PORT`); private sets/strips the private flags. Would have
-  caught the `PORT`-vs-`HALTIJA_PORT` internal-server-death bug directly. `apps/desktop/main.js`.
-- **[correctness, sanity-check first] Forward `warning` on the drop paths.** The hidden-tab /
-  ambiguity warning is lost on the *timeout* path (compute in the `setTimeout` handler — `sentTo` is
-  in closure scope) and by response-reshaping handlers `find`/`call`/`formData`/`screenshot`.
-  Timeout is exactly when a hidden tab is most opaque (rAF-driven eval never resolves).
-  `src/server.ts:~622`, `src/api-handlers.ts:~511,1259,1370`.
-- **[coverage] Server-level warning-wiring test.** Two widgets on different origins → untargeted
-  eval carries a `warning` naming both; `?window=` targeted carries none; `/status` reports
-  `hidden` for an inactive window.
-- **[docs] Update `SKILL.md` + bump `plugin.json`** — done in the 1.5.0 cut if the accompanying
-  commit lands; otherwise: document `hj <cmd> --window <id>` (both positions), the `hj windows`
-  `hidden` field, and that untargeted commands can land on a hidden/wrong tab and say so on stderr.
-- **[ecosystem, confirmed] `hj tabs focus` is broken (issue #4).** `api-handlers.ts:~816` passes
-  `windowId` in the *payload*, not as the routing arg, so focus dispatches to the wrong tab and
-  times out. The hidden-tab warning steers agents toward "bring the tab to the front" — either fix
-  the routing or soften the warning to only recommend `--window <id>` and reference #4.
-- **[ecosystem] Give issues #4 and #5 an explicit disposition** (both STILL OPEN — don't leave them
-  silent). Cheap partial for #5 while the tabs-list shape is already edited: add a `connected`/
-  `client` field beside the new `hidden` field, and a `reason` on the `{opened,fallback}` response.
-- **[nit] Share a `readPortFile(path,{timeoutMs})` util** — `readPort` (main.js, ~10s) and
-  `discoverPrivatePort` (tosijs-dev.mjs, 30s) are near-identical and have already drifted on timeout.
-- **[nit] Private-startup failure path leaks tmp port-files** — `rmSync` the
-  `haltija-app-{pub,int}-<pid>.json` files in the `IS_PRIVATE` early-return/error path of
-  `startEmbeddedServer` (currently cleaned only on success). `apps/desktop/main.js`.
+**Done in 1.5.1:**
+
+- ✅ **[correctness] Forward `warning` on the drop paths.** Now attached on the *timeout* path
+  (shared `attachWarning` in `requestFromBrowser`) — a hidden tab whose rAF-driven eval never
+  resolves now explains *why* it timed out — and preserved by the reshaping handlers
+  `find`/`formData` via a `withWarning` helper. (`screenshot` already spread it; `call` deliberately
+  left alone — its contract is to return the raw value, so a `warning` field would corrupt it.)
+- ✅ **[coverage] Regression-test the `hj --window <id>` fix.** Extracted `extractWindowTarget` into
+  `bin/arg-utils.mjs` (pure); `src/hj-args.test.ts` covers leading/trailing/middle/absent/no-value
+  and non-mutation.
+- ✅ **[docs] SKILL.md + plugin.json** — done in the 1.5.0 cut.
+- ✅ **[nit] Private-startup failure path leaks tmp port-files** — `rmSync` added to the `!pubPort`
+  early-return in `startEmbeddedServer`.
+
+**Deferred (not "little risk / easy" — kept tracked):**
+
+- **[DX] Throttle the hidden-tab / focus-ambiguity warnings** (once per server/origin-set/window
+  fingerprint). *Deferred:* stateful (keyed Map + cooldown), and a too-aggressive throttle silently
+  hides a warning the user needed — the opposite failure from the one it fixes. Wants a careful
+  design, not a quick patch. `src/server.ts` (`attachWarning`).
+- **[coverage] Unit-test the desktop server-env / port logic** — extract
+  `buildServerEnv({port,isPrivate,portFile})` from `apps/desktop/main.js` and test it. *Deferred:*
+  the extraction refactors the live desktop launch path; more than a low-risk change.
+- **[coverage] Server-level warning-wiring test** (two origins → untargeted warns, `?window=`
+  doesn't, `/status` reports `hidden`). *Deferred:* needs a two-widget harness; verified live for
+  now (eval + form both carry the warning).
+- **[ecosystem] `hj tabs focus` is broken (issue #4).** *Deferred — architectural:* the reporter's
+  own analysis is right — focusing a hidden tab by dispatching a command *to* it is
+  unreachable-by-construction; `tabs focus` needs to be a server/desktop-side operation, not
+  tab-dispatched. Not a one-line routing fix. The hidden-tab warning's "bring the tab to the front"
+  means the *manual* action (clicking the tab), which works — no softening needed.
+- **[ecosystem] Explicit disposition for #4/#5** — #4 architectural (above); #5 (client-less tab
+  silently uncontrollable) wants a `connected`/`client` field beside `hidden` + a `reason` on the
+  `{opened,fallback}` response. Additive but touches the tabs-list shape; deferred with #4.
+- **[nit] Share a `readPortFile(path,{timeoutMs})` util** — `readPort` (main.js) and
+  `discoverPrivatePort` (tosijs-dev.mjs) are near-identical and drifted on timeout. *Deferred:* nit;
+  touches timing behavior in two files.
 
 ### Pre-existing
 

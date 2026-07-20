@@ -619,17 +619,14 @@ async function requestFromBrowser(
   }
   
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      pendingResponses.delete(id)
-      resolve({ id, success: false, error: 'Timeout', timestamp: Date.now() })
-    }, timeoutMs)
-    
     // Track the window we actually send to, so a result that came from a HIDDEN tab can say so
     // instead of passing off a plausible-but-wrong answer as fact (issue #3).
     let sentTo: { id: string; title?: string; active?: boolean } | null = null
     // Attach warnings (if any) to whatever the tab answers: the tab was asleep (#3) and/or *focus*
     // rather than the caller's directory chose which tab answered (#2). Both can apply at once.
-    const resolveWithLiveness = (res: DevResponse) => {
+    // Also runs on the TIMEOUT path — a hidden tab whose rAF-driven eval never resolves is exactly
+    // when the "this tab is asleep" caveat is most useful (it explains *why* it timed out).
+    const attachWarning = (res: DevResponse): DevResponse => {
       const hidden = hiddenTabWarning(sentTo)
       const ambiguous = ambiguousFocusWarning({
         windows: Array.from(windows.values()),
@@ -637,8 +634,15 @@ async function requestFromBrowser(
         wasTargeted: !!windowId,
       })
       const warning = [hidden, ambiguous].filter(Boolean).join('\n\n')
-      resolve(warning ? { ...res, warning } : res)
+      return warning ? { ...res, warning } : res
     }
+
+    const timeout = setTimeout(() => {
+      pendingResponses.delete(id)
+      resolve(attachWarning({ id, success: false, error: 'Timeout', timestamp: Date.now() }))
+    }, timeoutMs)
+
+    const resolveWithLiveness = (res: DevResponse) => resolve(attachWarning(res))
     pendingResponses.set(id, { resolve: resolveWithLiveness, timeout })
     
     // If windowId specified, send only to that window

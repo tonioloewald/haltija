@@ -11,6 +11,7 @@
  */
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
+import { extractWindowTarget } from './arg-utils.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -313,12 +314,11 @@ if (noLaunchIdx !== -1) {
 // died with "Unknown command: '--window'" — i.e. the escape hatch we tell people to use for a
 // hidden/wrong tab didn't work in the shape the docs gave. Pulled out here and re-appended to
 // the subcommand args below, so BOTH positions work.
-let windowTarget = null
-const windowIdx = args.indexOf('--window')
-if (windowIdx !== -1 && args[windowIdx + 1]) {
-  windowTarget = args[windowIdx + 1]
-  args.splice(windowIdx, 2)
-}
+const { windowTarget, args: argsWithoutWindow } = extractWindowTarget(args)
+// Preserve the `const args` reference (downstream code mutates it in place) while dropping the
+// consumed --window <id> pair.
+args.length = 0
+args.push(...argsWithoutWindow)
 
 // Did the shell explicitly target a private instance (--port / --name /
 // HALTIJA_PORT / HALTIJA_NAME / DEV_CHANNEL_PORT)? If so, this is a

@@ -22,6 +22,18 @@ export interface DevResponse {
   data?: any
   error?: string
   timestamp: number
+  /** Hidden-tab / focus-ambiguity caveat attached by the server (see requestFromBrowser). */
+  warning?: string
+}
+
+/**
+ * Preserve a top-level `warning` (hidden-tab #3 / focus-ambiguity #2) when a handler reshapes the
+ * browser response into a different top-level object. Handlers that return `response.data` verbatim
+ * would otherwise drop the caveat — a `hj form` / `hj find` against a hidden or focus-chosen tab
+ * would come back empty with nothing saying why.
+ */
+function withWarning(body: Record<string, unknown>, response: DevResponse): Record<string, unknown> {
+  return response.warning ? { ...body, warning: response.warning } : body
 }
 
 /** Function to send request to browser widget */
@@ -1257,7 +1269,7 @@ registerHandler(api.find, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('eval', 'exec', { code: findCode }, 5000, windowId)
   
   if (response.success && response.data) {
-    return Response.json({ success: true, ...response.data }, { headers: ctx.headers })
+    return Response.json(withWarning({ success: true, ...response.data }, response), { headers: ctx.headers })
   }
   return Response.json(response, { headers: ctx.headers })
 })
@@ -1366,9 +1378,9 @@ registerHandler(api.formData, async (body, ctx) => {
   })()`
   
   const response = await ctx.requestFromBrowser('eval', 'exec', { code: formCode }, 5000, windowId)
-  
+
   if (response.success && response.data) {
-    return Response.json(response.data, { headers: ctx.headers })
+    return Response.json(withWarning(response.data, response), { headers: ctx.headers })
   }
   return Response.json(response, { headers: ctx.headers })
 })
