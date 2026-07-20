@@ -37,12 +37,12 @@ ${bold('haltija')} - Browser control for AI agents
 Usage:
   haltija [options]
 
-Modes:
+Modes: ${dim('(the browser ENGINE differs — see "Choosing a CI engine" below)')}
   ${dim('(default)')}       Launch desktop app if electron available, otherwise server
-  --app           Explicitly launch desktop app (Electron)
-  --server        Server only (for CI, headless, or bookmarklet usage)
-  --headless      Start with headless Chromium browser (for CI)
-  --ci            CI mode: Electron app + wait for ready + sandbox disabled
+  --app           Explicitly launch desktop app (Electron — Chromium)
+  --server        Server only; bring your own browser (inject the widget). For bookmarklets/CI-lite
+  --headless      Headless Chromium via ${bold('Playwright')} (needs the 'playwright' package) — for CI
+  --ci            CI mode: ${bold('Electron')} app + wait-ready + sandbox off. No Playwright. Recommended for CI
 
 Options:
   --http          HTTP only on port 8700 (default protocol)
@@ -62,7 +62,9 @@ Options:
   --private       Isolated automation instance: own server on an EPHEMERAL port (never
                   8700), own browser, torn down with the run. Never sees/adopts/navigates
                   the shared interactive browser. Reports its address on stdout
-                  (HALTIJA_PRIVATE_READY {json}) and to --port-file. Pair with --headless.
+                  (HALTIJA_PRIVATE_READY {json}) and to --port-file. This is an ISOLATION
+                  modifier, not an engine: pair with --app (Electron, no Playwright) or
+                  --headless (Playwright Chromium).
   --port-file <p> Write the (private) server's bound address as JSON to <p> when ready.
   --setup-mcp     Configure Claude Desktop MCP integration
   --setup-mcp-check  Check MCP configuration status
@@ -106,13 +108,23 @@ Subcommands:
 
   Use 'hj' as a short alias: hj tree, hj click @42, etc.
 
+Choosing a CI engine ${dim('(both need one external browser, but a DIFFERENT one):')}
+  ${bold('Electron')} (Chromium, same engine the desktop app uses) — no Playwright:
+    haltija --ci                   # recommended: Electron + wait-ready + sandbox off
+    haltija --private --app        # + isolation (own ephemeral port, adopts nothing)
+    ${dim('Electron is fetched via npx if not already installed.')}
+  ${bold('Playwright')} Chromium — needs the 'playwright' package:
+    npm i playwright && npx playwright install chromium
+    haltija --headless             # single-engine; or --private --headless for isolation
+    ${dim("Pick this for MULTI-ENGINE coverage (Firefox/WebKit) — not just because it says \"CI\".")}
+
 Examples:
   haltija                          # Desktop app (or server fallback)
   haltija --app                    # Desktop app explicitly
-  haltija --server                 # Server only
+  haltija --server                 # Server only (bring your own browser)
   haltija --server --https         # HTTPS server only
-  haltija --headless               # Headless browser for CI
-  haltija --ci                     # CI mode (headless + wait + sandbox disabled)
+  haltija --ci                     # CI: Electron (no Playwright) + wait + sandbox off
+  haltija --headless               # CI: Playwright Chromium (needs playwright)
   haltija --setup-mcp              # Configure Claude Desktop integration
 `)
   process.exit(0)
@@ -729,8 +741,12 @@ const startHeadlessBrowser = async (port) => {
     
   } catch (err) {
     if (err.code === 'ERR_MODULE_NOT_FOUND') {
-      console.error('[tosijs-dev] Playwright not installed. Run: npm install playwright')
-      console.error('[tosijs-dev] Then: npx playwright install chromium')
+      console.error('[tosijs-dev] --headless uses Playwright Chromium, which is not installed.')
+      console.error('[tosijs-dev]   To use Playwright: npm install playwright && npx playwright install chromium')
+      console.error('[tosijs-dev]   Or skip Playwright entirely and use the ELECTRON engine instead:')
+      console.error('[tosijs-dev]     haltija --ci                 (Electron, waits for ready, sandbox off)')
+      console.error('[tosijs-dev]     haltija --private --app      (Electron + isolated ephemeral instance)')
+      console.error('[tosijs-dev]   Reach for --headless (Playwright) when you need Firefox/WebKit coverage.')
     } else {
       console.error('[tosijs-dev] Failed to start headless browser:', err.message)
     }

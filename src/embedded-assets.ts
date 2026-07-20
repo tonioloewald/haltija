@@ -2962,8 +2962,17 @@ Two first-party ways to run (plus embedding, below):
   \`hj tree\` inside a project reaches that project's server with no flags. Falling
   back to the shared default port 8700 warns on stderr. Use \`hj where\` to see which
   port a shell targets and WHY; override with \`--port\` or \`--name\`.
-- **CI:** \`haltija --headless\` (or \`--ci\`) runs a headless Chromium with the widget
-  auto-injected — deterministic, no desktop app required. See the CI guide below.
+- **CI:** two engines, and the choice matters — both need one external browser, but
+  a *different* one:
+  - \`haltija --ci\` (or \`--private --app\` for an isolated instance) drives **Electron**
+    (Chromium — the same engine the Haltija desktop app uses). Electron is fetched via
+    \`npx\` if not already present; **no \`playwright\` needed.** This is the default CI path.
+  - \`haltija --headless\` drives **Playwright Chromium**, which requires the \`playwright\`
+    package (\`npm i playwright && npx playwright install chromium\`). Reach for it when you
+    want multi-engine coverage (Firefox/WebKit) or a lighter single-engine run — not just
+    because it says "for CI". \`--private\` is an *isolation* modifier (ephemeral port), and
+    pairs with either engine: \`--private --app\` (Electron) or \`--private --headless\`
+    (Playwright). See the CI guide below.
 
 ## Embed in your app
 

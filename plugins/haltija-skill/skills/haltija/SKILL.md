@@ -24,6 +24,10 @@ that's on your PATH. `hj docs` is the quick start, `hj api` the full reference,
 - **A cross-browser runner (e.g. Playwright) = only when it's browser-specific.** Reach for
   it solely to reproduce/verify a bug that's unique to a particular engine (e.g. a Firefox
   shadow-DOM quirk). It's slow and heavy for everyday flows.
+- **In CI, `--ci` is the default engine (Electron/Chromium) and needs no Playwright.** Haltija's
+  own `--headless` mode drives *Playwright* Chromium and requires the `playwright` package — pick
+  it only for the browser-specific/multi-engine case above, not just because it says "for CI".
+  See [CI integration](../../../docs/CI-INTEGRATION.md) → "Which engine?".
 
 ## Which server am I driving?
 
