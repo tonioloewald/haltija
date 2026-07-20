@@ -453,3 +453,13 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 ### Other features
 - [ ] Multi-match reporting — when a selector matches multiple elements, act on the first but report "N others matched"; enables `--nth N` and `--all` flags.
 - [ ] Pre-built binaries on GitHub Releases — automated release workflow on git tag publishing macOS (arm64, x64), Linux, and Windows builds.
+
+## Follow-ups
+
+- **[desktop] `--private --app` default tab points at `localhost:8700`.** `apps/desktop/index.html`
+  hardcodes the address bar default to `http://localhost:8700`, so a private app's first content
+  tab loads the *shared* server's landing page. No isolation break — the app injects its own widget
+  at the private ephemeral port and the shared channel is untouched (verified) — but it pollutes the
+  private window list and inflates the new focus-ambiguity origin count. In private mode the initial
+  tab should default to `about:blank` (or the private server's own URL). Desktop is deprioritized
+  (deployment path #3), so low priority. (surfaced verifying issue #2 warning)

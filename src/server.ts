@@ -32,6 +32,7 @@ import { recordMachineAction } from './machine-log'
 import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { hiddenTabWarning } from './tab-liveness'
+import { ambiguousFocusWarning } from './focus-ambiguity'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -626,9 +627,16 @@ async function requestFromBrowser(
     // Track the window we actually send to, so a result that came from a HIDDEN tab can say so
     // instead of passing off a plausible-but-wrong answer as fact (issue #3).
     let sentTo: { id: string; title?: string; active?: boolean } | null = null
-    // Attach the hidden-tab warning (if any) to whatever the tab answers.
+    // Attach warnings (if any) to whatever the tab answers: the tab was asleep (#3) and/or *focus*
+    // rather than the caller's directory chose which tab answered (#2). Both can apply at once.
     const resolveWithLiveness = (res: DevResponse) => {
-      const warning = hiddenTabWarning(sentTo)
+      const hidden = hiddenTabWarning(sentTo)
+      const ambiguous = ambiguousFocusWarning({
+        windows: Array.from(windows.values()),
+        sentToId: sentTo?.id,
+        wasTargeted: !!windowId,
+      })
+      const warning = [hidden, ambiguous].filter(Boolean).join('\n\n')
       resolve(warning ? { ...res, warning } : res)
     }
     pendingResponses.set(id, { resolve: resolveWithLiveness, timeout })
