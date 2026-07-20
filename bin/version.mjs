@@ -3,4 +3,4 @@
  * ⚠️  To change the version, update package.json and run: bun run build
  */
 
-export const HJ_VERSION = '1.5.0'
+export const HJ_VERSION = '1.5.1'

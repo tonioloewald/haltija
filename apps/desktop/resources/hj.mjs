@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.5.0
+// haltija-cli:do-not-edit v1.5.1
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
@@ -756,7 +756,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.5.0";
+var HJ_VERSION = "1.5.1";
 
 // bin/semver.mjs
 function parseVersion(v) {
@@ -1906,6 +1906,17 @@ function dim2(s) {
   return `\x1B[2m${s}\x1B[0m`;
 }
 
+// bin/arg-utils.mjs
+function extractWindowTarget(args) {
+  const i = args.indexOf("--window");
+  if (i === -1 || args[i + 1] === undefined) {
+    return { windowTarget: null, args: [...args] };
+  }
+  const rest = [...args];
+  rest.splice(i, 2);
+  return { windowTarget: args[i + 1], args: rest };
+}
+
 // bin/hj.mjs
 import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
@@ -2137,12 +2148,9 @@ if (noLaunchIdx !== -1) {
   noLaunch = true;
   args.splice(noLaunchIdx, 1);
 }
-var windowTarget = null;
-var windowIdx = args.indexOf("--window");
-if (windowIdx !== -1 && args[windowIdx + 1]) {
-  windowTarget = args[windowIdx + 1];
-  args.splice(windowIdx, 2);
-}
+var { windowTarget, args: argsWithoutWindow } = extractWindowTarget(args);
+args.length = 0;
+args.push(...argsWithoutWindow);
 var explicitTarget = portSource !== "8700 (default)";
 if (args.length >= 2 && isSubcommand(`${args[0]}-${args[1]}`)) {
   args.splice(0, 2, `${args[0]}-${args[1]}`);
