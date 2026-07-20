@@ -79,6 +79,18 @@ export interface HandlerContext {
   headers: Record<string, string>
   url: URL
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
+  /**
+   * Set the server-side focused window — the tab that receives untargeted commands. This is pure
+   * server state, NOT a browser roundtrip: it validates the tab exists and returns immediately, so
+   * it can never time out the way dispatching a command *to* the (possibly hidden) tab does (#4).
+   */
+  focusWindow: (windowId: string) => {
+    ok: boolean
+    error?: string
+    active?: boolean
+    windowType?: string
+    title?: string
+  }
   // Recording session management (for cross-page recording)
   startRecordingSession: (windowId: string, url: string, name?: string) => void
   stopRecordingSession: (windowId: string) => RecordingSessionInfo | undefined
@@ -823,10 +835,27 @@ registerHandler(api.tabsClose, async (body, ctx) => {
 registerHandler(api.tabsFocus, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
   if (!windowId) {
-    return Response.json({ success: false, error: 'window id is required' }, { status: 400, headers: ctx.headers })
+    return Response.json({ success: false, error: 'window id is required (run `hj tabs` to list connected tabs)' }, { status: 400, headers: ctx.headers })
   }
-  const response = await ctx.requestFromBrowser('tabs', 'focus', { windowId })
-  return Response.json(response, { headers: ctx.headers })
+  // #4: focus is a SERVER-SIDE operation. The old code dispatched a `focus` command to the browser,
+  // routed to the *focused* tab (not the target), so nobody answered and it timed out — and even
+  // routed correctly, a backgrounded tab can't raise itself (window.focus() is a no-op there, and
+  // its throttled event loop may never process the message). So we just set the routing target.
+  const r = ctx.focusWindow(windowId)
+  if (!r.ok) {
+    return Response.json({ success: false, error: r.error }, { status: 404, headers: ctx.headers })
+  }
+  const result: Record<string, unknown> = { success: true, focused: windowId, active: r.active !== false }
+  if (r.title) result.title = r.title
+  if (r.active === false) {
+    // Honest about the limit: we route commands here, but we can't physically raise a hidden tab
+    // from the server — a backgrounded tab stays frozen until it's actually brought to the front.
+    result.warning =
+      'Untargeted commands now route to this tab, but it reports HIDDEN — browsers freeze ' +
+      'requestAnimationFrame and throttle timers in a backgrounded tab, so results can be stale ' +
+      '("not mounted yet", not "broken"). Bring it to the front in your browser to wake it.'
+  }
+  return Response.json(result, { headers: ctx.headers })
 })
 
 // Mutations handlers

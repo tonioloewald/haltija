@@ -873,6 +873,19 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     headers,
     url,
     getWindowInfo,
+    // Server-side focus: point untargeted commands at a specific tab without dispatching anything to
+    // the browser (so it never times out on a hidden tab — issue #4). "Focus follows the visible
+    // tab" still applies on a real visibilitychange, which is correct: if the user physically
+    // switches tabs, that's genuine intent that should win over a stale CLI pin.
+    focusWindow: (windowId: string) => {
+      const win = windows.get(windowId)
+      if (!win) {
+        return { ok: false, error: `Tab ${windowId} not found (run \`hj tabs\` to list connected tabs)` }
+      }
+      focusedWindowId = windowId
+      updateHjStatus()
+      return { ok: true, active: win.active, windowType: win.windowType, title: win.title }
+    },
     startRecordingSession,
     stopRecordingSession,
     getRecordingSession,
@@ -3045,13 +3058,13 @@ Run 'hj --help' for all commands.`
           }
 
           case 'tabs-focus': {
-            const resp = await requestFromBrowser('tabs', 'focus', { windowId: step.window }, stepTimeout)
-            if (!resp.success) {
+            // Server-side focus (issue #4): set the routing target, don't dispatch to the browser.
+            // Dispatching timed out whenever the target tab was hidden — exactly when you'd want to
+            // focus it.
+            if (!step.window || !windows.has(step.window)) {
               stepPassed = false
-              error = resp.error || 'Failed to focus tab'
-            }
-            // Update server-side focus tracking
-            if (step.window && windows.has(step.window)) {
+              error = `Tab ${step.window ?? '(none)'} not found`
+            } else {
               focusedWindowId = step.window
             }
             break

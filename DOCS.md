@@ -82,7 +82,7 @@ hj --help              # All commands
 - `hj windows` - List connected windows
 - `hj tabs-open [url]` - Open a new tab
 - `hj tabs-close [window]` - Close a tab
-- `hj tabs-focus [window]` - Focus a tab
+- `hj tabs-focus [window]` - Focus a tab (route untargeted commands to it)
 
 ### Record & Replay
 

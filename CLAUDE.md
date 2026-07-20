@@ -319,7 +319,10 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 - **`eval`**: Executes JavaScript in the browser. Async code is supported — see "Eval Semantics" above. Multi-statement code needs an explicit `return`.
 - **`tabs-open`**: Opens a new tab (desktop app only). Optional `url` field.
 - **`tabs-close`**: Closes a tab by `window` ID.
-- **`tabs-focus`**: Focuses a tab by `window` ID. Updates server-side focus tracking.
+- **`tabs-focus`**: Points untargeted commands at a tab by `window` ID — a **server-side** focus
+  change, not a browser action. It never dispatches to the tab, so (unlike pre-1.5.2) it can't time
+  out when the target is hidden. It does not physically raise the tab; to pin one command use
+  `--window <id>`.
 - **`navigate`**: After navigation, waits for the specific window to reconnect (tracked by `windowId` + `browserId`). Works correctly with multiple tabs open.
 - **`wait`** with `forWindow: true`: Polls until a new window/tab connects. Use after `tabs-open` to wait for the new tab's widget to initialize. Returns `newWindowId` in step context.
 - **`assert` type `visible` / `hidden`**: "Rendered" semantics, not "on screen". Passes when `display != 'none'`, `visibility != 'hidden'`, and the element has non-zero width and height. Viewport position is intentionally NOT checked — headless CI's small default viewport often puts legitimate content below the fold, and that should not flake the test. If you actually need on-screen, prepend an `eval` step that calls `scrollIntoView()`.
