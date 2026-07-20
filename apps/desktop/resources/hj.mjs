@@ -2134,6 +2134,12 @@ if (noLaunchIdx !== -1) {
   noLaunch = true;
   args.splice(noLaunchIdx, 1);
 }
+var windowTarget = null;
+var windowIdx = args.indexOf("--window");
+if (windowIdx !== -1 && args[windowIdx + 1]) {
+  windowTarget = args[windowIdx + 1];
+  args.splice(windowIdx, 2);
+}
 var explicitTarget = portSource !== "8700 (default)";
 if (args.length >= 2 && isSubcommand(`${args[0]}-${args[1]}`)) {
   args.splice(0, 2, `${args[0]}-${args[1]}`);
@@ -2152,7 +2158,9 @@ if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
   args[0] = NOUN_DEFAULTS[args[0]];
 }
 var subcommand = args[0];
-var subArgs = args.slice(1).filter((a) => a !== "--window" || true);
+var subArgs = args.slice(1);
+if (windowTarget)
+  subArgs = [...subArgs, "--window", windowTarget];
 if (subcommand === "where") {
   await runWhere(port, portSource, subArgs.includes("--json"));
   process.exit(0);

@@ -308,6 +308,18 @@ if (noLaunchIdx !== -1) {
   args.splice(noLaunchIdx, 1)
 }
 
+// Parse --window <id> HERE so it works BEFORE the subcommand, like --port/--name/--token do.
+// It was only handled after the subcommand, so the documented form `hj --window <id> eval …`
+// died with "Unknown command: '--window'" — i.e. the escape hatch we tell people to use for a
+// hidden/wrong tab didn't work in the shape the docs gave. Pulled out here and re-appended to
+// the subcommand args below, so BOTH positions work.
+let windowTarget = null
+const windowIdx = args.indexOf('--window')
+if (windowIdx !== -1 && args[windowIdx + 1]) {
+  windowTarget = args[windowIdx + 1]
+  args.splice(windowIdx, 2)
+}
+
 // Did the shell explicitly target a private instance (--port / --name /
 // HALTIJA_PORT / HALTIJA_NAME / DEV_CHANNEL_PORT)? If so, this is a
 // project-owned server with a bring-your-own browser — auto-launching the
@@ -343,7 +355,9 @@ if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
 }
 
 const subcommand = args[0]
-const subArgs = args.slice(1).filter(a => a !== '--window' || true) // keep all args
+let subArgs = args.slice(1)
+// Re-attach a leading --window so cli-subcommand's existing handling sees it (both positions work).
+if (windowTarget) subArgs = [...subArgs, '--window', windowTarget]
 
 // `hj where` — show which haltija server this shell is targeting and what
 // (if anything) is alive there. Pure client-side resolution plus a single
