@@ -78,6 +78,44 @@ describe('ambiguousFocusWarning', () => {
     expect(w).toContain('--window real')
   })
 
+  it('ignores a cross-origin iframe — one real page is not multi-project ambiguity', () => {
+    const pageWithFrame = [
+      { id: 'tab', url: 'https://localhost:8787/app/', title: 'app', windowType: 'tab' },
+      { id: 'frame', url: 'https://ads.example.com/x', title: 'ad', windowType: 'iframe' },
+    ]
+    expect(
+      ambiguousFocusWarning({ windows: pageWithFrame, sentToId: 'tab', wasTargeted: false }),
+    ).toBeNull()
+  })
+
+  it('ignores a child popup (e.g. an OAuth window)', () => {
+    const pageWithPopup = [
+      { id: 'tab', url: 'https://localhost:8787/app/', title: 'app', windowType: 'tab' },
+      { id: 'oauth', url: 'https://accounts.google.com/o', title: 'Sign in', windowType: 'popup' },
+    ]
+    expect(
+      ambiguousFocusWarning({ windows: pageWithPopup, sentToId: 'tab', wasTargeted: false }),
+    ).toBeNull()
+  })
+
+  it('still warns for two real tabs even when frames/popups are also present', () => {
+    const mixed = [
+      { id: 't1', url: 'https://localhost:8787/a/', title: 'a', windowType: 'tab' },
+      { id: 'f', url: 'https://ads.example.com/x', title: 'ad', windowType: 'iframe' },
+      { id: 't2', url: 'https://localhost:8030/b/', title: 'b', windowType: 'tab' },
+    ]
+    const w = ambiguousFocusWarning({ windows: mixed, sentToId: 't1', wasTargeted: false })!
+    expect(w).toContain('2 different origins')
+    expect(w).toContain('--window t2')
+    expect(w).not.toContain('--window f') // the iframe is never offered as a pin
+  })
+
+  it('treats a window with no windowType as a tab (older widgets)', () => {
+    // Two real tabs, neither reporting windowType → must still warn.
+    const w = ambiguousFocusWarning({ windows: twoProjects, sentToId: 'w1', wasTargeted: false })
+    expect(w).toContain('2 different origins')
+  })
+
   it('caps the pin list and notes the remainder', () => {
     const many = Array.from({ length: 7 }, (_, i) => ({
       id: `w${i}`,

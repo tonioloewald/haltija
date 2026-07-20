@@ -28,6 +28,19 @@ export interface FocusWindowInfo {
   id: string
   url?: string
   title?: string
+  /** 'tab' | 'popup' | 'iframe' (older widgets may omit it — treated as a tab). */
+  windowType?: string
+}
+
+/**
+ * Only a top-level **tab** represents a distinct project the caller might have meant. A cross-origin
+ * iframe or a child popup (an OAuth window, say) carries its own origin but is *part of* the tab
+ * that opened it — counting it would fire the ambiguity warning on a single real page and even
+ * offer a frame as a `--window` pin. The focus-*selection* path already ignores frames/popups; this
+ * mirrors it. `undefined` (older widgets) is treated as a tab so we never miss real ambiguity.
+ */
+function isTopLevelTab(w: FocusWindowInfo): boolean {
+  return w.windowType !== 'iframe' && w.windowType !== 'popup'
 }
 
 /** A tab's origin for grouping — `about:blank`, opaque, and unparseable URLs fall back to the raw
@@ -63,6 +76,7 @@ export function ambiguousFocusWarning(opts: {
   if (!sentToId) return null
 
   const withOrigin = windows
+    .filter(isTopLevelTab) // frames/popups aren't separate projects — see isTopLevelTab
     .map((w) => ({ ...w, origin: originOf(w.url) }))
     .filter((w): w is FocusWindowInfo & { origin: string } => w.origin !== null)
 
