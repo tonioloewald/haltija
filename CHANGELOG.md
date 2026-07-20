@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.4
+
+The `hj tabs open` client-less-tab trap now explains itself ([#5](https://github.com/tonioloewald/haltija/issues/5)).
+
+Outside the desktop app, `hj tabs open <url>` has no tab API, so it falls back to `window.open()` —
+and that new tab has **no haltija widget** unless its page injects one. So the server never hears
+from it, it doesn't appear in `hj tabs`, and commands can't reach it (they go to the focused widget
+tab). It presents as "the tab opened fine but every command goes somewhere else" — indistinguishable
+from a routing bug.
+
+- The fallback response now carries a `reason`, promoted to a top-level `warning` that `hj` prints
+  on stderr — at the one moment the client-less tab is created.
+- The `/tabs/open` schema and `SKILL.md` now state plainly that only widget-injected tabs are
+  controllable and appear in `hj tabs`, so a non-responding tab is the first thing to check.
+
 ## 1.5.3
 
 Discoverability fix for the two CI browser engines ([#6](https://github.com/tonioloewald/haltija/issues/6)).
