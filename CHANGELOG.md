@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.3
+
+Discoverability fix for the two CI browser engines ([#6](https://github.com/tonioloewald/haltija/issues/6)).
+
+Both `--headless` and `--ci` said "for CI" with no hint that they drive **different** engines:
+`--headless` is Playwright Chromium (and needs the `playwright` package), while `--ci` / `--app` /
+`--private --app` drive Electron and need no Playwright. An agent picked `--headless`, hit
+"Playwright not installed", and wrongly concluded haltija's CI mode is just a Playwright wrapper.
+
+- `hj --help` now names the engine per mode and adds a "Choosing a CI engine" block; `--private` is
+  clarified as an *isolation* modifier that pairs with either engine (not "pair with `--headless`").
+- The "Playwright not installed" error points at the Electron path (`--ci` / `--private --app`) as
+  the no-Playwright alternative.
+- `llms.txt`, `docs/CI-INTEGRATION.md`, and `SKILL.md` get an honest "which engine?" framing:
+  it's Electron vs Playwright (neither is bundled), and the real reason to choose Playwright is
+  multi-engine coverage (Firefox/WebKit), not the words "for CI".
+
 ## 1.5.2
 
 Two follow-ups from the 1.5.0 review, both about the multi-tab experience on a shared server.
