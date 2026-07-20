@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.5.2
+
+Two follow-ups from the 1.5.0 review, both about the multi-tab experience on a shared server.
+
+### Fixed
+
+- **`hj tabs focus <id>` no longer times out** ([#4](https://github.com/tonioloewald/haltija/issues/4)).
+  It was dispatching a `focus` command to the browser, routed to the *focused* tab rather than the
+  target, so nobody answered — and even routed correctly, a backgrounded tab can't raise itself.
+  Focus is now a **server-side** routing change: it validates the tab and points untargeted commands
+  at it, returning instantly (unknown tab → a clean error, never a timeout). It does not physically
+  raise the tab; to pin a single command use `--window <id>`. "Focus follows the visible tab" still
+  applies when you physically switch tabs — that's genuine intent that should win over a stale pin.
+
+### Changed
+
+- **The hidden-tab / focus-ambiguity warnings are de-duplicated within a short (15s) cooldown**, so
+  a burst of commands from one agent doesn't repeat the same block every time. A *changed* condition
+  (different tab, newly-hidden tab, a new origin on the server) always re-warns; the cooldown
+  re-arms rather than suppressing forever. Set `HALTIJA_NO_TAB_WARN=1` to silence them entirely.
+
 ## 1.5.1
 
 Low-risk follow-ups from the 1.5.0 pre-release review — the two new "instrument must not lie"

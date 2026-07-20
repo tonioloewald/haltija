@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.5.1
+// haltija-cli:do-not-edit v1.5.2
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
@@ -756,7 +756,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.5.1";
+var HJ_VERSION = "1.5.2";
 
 // bin/semver.mjs
 function parseVersion(v) {

@@ -2160,11 +2160,15 @@ Get window IDs from /windows endpoint.
 
 ### \`POST /tabs/focus\`
 
-**Focus a tab**
+**Focus a tab (route untargeted commands to it)**
 
-Desktop app only. Brings the specified tab to front.
-
-Useful when working with multiple tabs to ensure the right one is visible.
+Make the given tab the target of untargeted commands. This is a server-side
+routing change, NOT a browser action: it does not physically raise the tab (a backgrounded browser
+tab cannot be raised remotely), and because it never dispatches to the tab it can't time out — even
+if the tab is hidden. After this, commands without a \`window\`/\`--window\` go to this tab until you
+focus another or physically switch tabs in the browser. To pin a single command instead, use
+\`--window <id>\`. If the tab is hidden the response includes a warning (a backgrounded tab's results
+can be stale). Returns \`{ success, focused, active, title }\`.
 
 **Parameters:**
 
@@ -2174,7 +2178,7 @@ Useful when working with multiple tabs to ensure the right one is visible.
 
 **Examples:**
 
-- **focus**: Bring tab to front
+- **focus**: Route untargeted commands to this tab
   \`\`\`json
   {"window":"window-abc123"}
   \`\`\`
@@ -2739,7 +2743,7 @@ hj --help              # All commands
 - \`hj windows\` - List connected windows
 - \`hj tabs-open [url]\` - Open a new tab
 - \`hj tabs-close [window]\` - Close a tab
-- \`hj tabs-focus [window]\` - Focus a tab
+- \`hj tabs-focus [window]\` - Focus a tab (route untargeted commands to it)
 
 ### Record & Replay
 
@@ -3036,7 +3040,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.5.1";
+  var VERSION = "1.5.2";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;

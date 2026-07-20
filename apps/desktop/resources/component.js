@@ -46,7 +46,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.5.1";
+  var VERSION = "1.5.2";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
