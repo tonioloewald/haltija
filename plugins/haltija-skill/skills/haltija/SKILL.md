@@ -87,6 +87,32 @@ form (or the first form on the page if no selector given) as a structured
 object. Handles inputs, checkboxes, radios, selects, and most framework
 components. Add `--include-disabled` / `--include-hidden` for those fields.
 
+## Targeting a specific tab — and trusting the warnings
+
+An untargeted command drives the **focused** tab. On a shared server that's the whole point, but
+it means a command can land on a tab you didn't mean, or one that's asleep. `hj windows` lists
+every connected tab with its `id`, url, and a `hidden` flag. To pin a command to one tab, pass
+`--window <id>` — it works in **either** position:
+
+```bash
+hj windows                              # list tabs; note the id you want
+hj --window w2 eval "document.title"    # leading form
+hj eval "document.title" --window w2    # trailing form — both work
+```
+
+**Heed the stderr warnings — they exist because the tool must not hand you a plausible-but-wrong
+answer.** Two can appear on an untargeted command:
+
+- **Hidden tab.** The tab that answered reports it is hidden (backgrounded, minimized, or the
+  display is asleep). Browsers freeze `requestAnimationFrame` and throttle timers there, so
+  anything mounted by rAF/IntersectionObserver may never have run — an empty selector means "not
+  mounted yet," **not** "broken." Bring the tab to the front or target a visible one with
+  `--window <id>` before concluding anything is wrong.
+- **Focus ambiguity.** The command wasn't pinned and this server has tabs from more than one
+  origin, so *focus* — not your working directory — chose which tab answered. If you meant a
+  different page (another project's tab on a shared server), re-run pinned with `--window <id>`
+  from the list the warning prints.
+
 ## Writing & running regression tests
 
 Tests are JSON files in a directory, run **alphabetically** (numeric prefixes order them:

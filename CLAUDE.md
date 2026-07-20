@@ -32,9 +32,12 @@ Install (anyone): `/plugin marketplace add <this-repo>` then
 GitHub slug.) This is the **skill** path; the older MCP path is `bunx haltija --setup-mcp`.
 
 **Keep the skill in sync with the tool.** When you add or change an `hj` command, a
-test-step `action`, or an `assertion` type, update `SKILL.md` in the same change — the skill
-is the agent-facing contract and silently drifts out of date otherwise. Bump
-`plugin.json`'s `version` on a release (or omit it to let the git SHA drive updates).
+test-step `action`, an `assertion` type, **or any new agent-facing signal — a `warning`
+string, a result field, a stderr hint** — update `SKILL.md` in the same change. The skill is
+the agent-facing contract and silently drifts out of date otherwise; the 1.5.0 hidden-tab and
+focus-ambiguity warnings shipped without reaching it precisely because this rule used to name
+only commands/actions/assertions. Bump `plugin.json`'s `version` on a release (or omit it to
+let the git SHA drive updates).
 
 ## Build & Test Commands
 
@@ -434,7 +437,12 @@ live browser:
     servers report their ephemeral ports (each child writes a per-server port-file), so every
     downstream use — widget injection, `/status`, content tabs — follows the ephemeral instance.
     `ensureServer` short-circuits to `startEmbeddedServer` for private (never adopts/kills a shared
-    server); the launcher stops pinning `DEV_CHANNEL_PORT`. 8700/8701 and the registry are untouched.
+    server); the launcher stops pinning `DEV_CHANNEL_PORT`. The shared channel — 8700/8701's
+    *server lifecycle and the registry* — is untouched (verified). One rough edge remains: the
+    desktop app's default content tab still *loads* `http://localhost:8700` (`index.html`'s
+    hardcoded address-bar default), so a private app opens a tab **showing** the shared server's
+    page — a harmless GET (the app injects its own widget at the ephemeral port; the shared
+    channel isn't driven), but it pollutes the private window list. Tracked in `TODO.md`.
 
   **Consumers** (e.g. a dev-server test lane) should request a private instance and drive *that*
   by the port it reports — never an unscoped `hj windows` check that races whatever else is on the
