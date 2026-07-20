@@ -31,6 +31,7 @@ import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type Serve
 import { recordMachineAction } from './machine-log'
 import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
+import { hiddenTabWarning } from './tab-liveness'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -622,12 +623,21 @@ async function requestFromBrowser(
       resolve({ id, success: false, error: 'Timeout', timestamp: Date.now() })
     }, timeoutMs)
     
-    pendingResponses.set(id, { resolve, timeout })
+    // Track the window we actually send to, so a result that came from a HIDDEN tab can say so
+    // instead of passing off a plausible-but-wrong answer as fact (issue #3).
+    let sentTo: { id: string; title?: string; active?: boolean } | null = null
+    // Attach the hidden-tab warning (if any) to whatever the tab answers.
+    const resolveWithLiveness = (res: DevResponse) => {
+      const warning = hiddenTabWarning(sentTo)
+      resolve(warning ? { ...res, warning } : res)
+    }
+    pendingResponses.set(id, { resolve: resolveWithLiveness, timeout })
     
     // If windowId specified, send only to that window
     if (windowId) {
       const win = windows.get(windowId)
       if (win) {
+        sentTo = win
         win.ws.send(JSON.stringify(msg))
       } else {
         clearTimeout(timeout)
@@ -636,6 +646,7 @@ async function requestFromBrowser(
       }
     } else if (focusedWindowId && windows.has(focusedWindowId)) {
       const focusedWin = windows.get(focusedWindowId)!
+      sentTo = focusedWin
       focusedWin.ws.send(JSON.stringify(msg))
     } else {
       // Fallback: pick ONE active window (most recently seen)
@@ -644,10 +655,12 @@ async function requestFromBrowser(
         .sort((a, b) => b.lastSeen - a.lastSeen)
 
       if (activeWindows.length > 0) {
+        sentTo = activeWindows[0]
         activeWindows[0].ws.send(JSON.stringify(msg))
       } else if (windows.size > 0) {
         const mostRecent = Array.from(windows.values())
           .sort((a, b) => b.lastSeen - a.lastSeen)[0]
+        sentTo = mostRecent
         mostRecent.ws.send(JSON.stringify(msg))
       } else {
         // No windows at all
@@ -1172,6 +1185,9 @@ async function handleRest(req: Request): Promise<Response> {
       title: w.title?.slice(0, 50) || '(untitled)',
       url: w.url,
       focused: w.id === focusedWindowId,
+      // The tab told us it went hidden (visibilitychange). rAF/timers are throttled there, so
+      // results from it can be plausible-but-wrong — see src/tab-liveness.ts (issue #3).
+      hidden: w.active === false,
       recording: activeRecordingSessions.has(w.id),
     }))
     

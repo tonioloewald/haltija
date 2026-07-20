@@ -28,6 +28,12 @@ export interface DevResponse {
   data?: any
   error?: string
   timestamp: number
+  /**
+   * Set when the result is real but may be MISLEADING — currently: it came from a tab that
+   * reported itself hidden, where rAF/timers are throttled so rAF-driven content may never have
+   * mounted. The command succeeded; the number may still be wrong. See src/tab-liveness.ts.
+   */
+  warning?: string
 }
 
 // ============================================

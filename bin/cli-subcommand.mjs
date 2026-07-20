@@ -938,6 +938,13 @@ async function doRequest(url, method, body, context = {}) {
     if (contentType.includes('application/json')) {
       const json = await resp.json()
 
+      // A result can be REAL but MISLEADING — e.g. it came from a hidden tab where rAF-driven
+      // content never mounted, so an empty selector means "not mounted", not "broken" (issue #3).
+      // Print it on stderr so it can't be mistaken for output, and so --json stdout stays clean.
+      if (json && typeof json.warning === 'string' && json.warning) {
+        console.error(`hj: warning — ${json.warning}`)
+      }
+
       // Text format for supported subcommands (unless --json)
       if (!jsonOutput && subcommand === 'tree' && json.success && json.data) {
         console.log(formatTree(json.data, 0, { depth: body?.depth }))

@@ -1628,6 +1628,9 @@ async function doRequest(url, method, body, context = {}) {
     const contentType = resp.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const json = await resp.json();
+      if (json && typeof json.warning === "string" && json.warning) {
+        console.error(`hj: warning — ${json.warning}`);
+      }
       if (!jsonOutput && subcommand === "tree" && json.success && json.data) {
         console.log(formatTree(json.data, 0, { depth: body?.depth }));
       } else if (!jsonOutput && subcommand === "events" && (json.events || Array.isArray(json))) {
