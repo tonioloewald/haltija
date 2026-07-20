@@ -428,12 +428,18 @@ live browser:
     registry won't reveal it;
   - the launcher never consults the shared server for a `--private` run (the adopt-existing check
     is skipped), and `--private --headless` points the browser at the discovered ephemeral port.
+  - **`--private --app`** (Electron) is isolated the same way: the desktop app spawns its own
+    public **and** internal servers on ephemeral ports and drives its own browser. `main.js`'s
+    `HALTIJA_PORT`/`HALTIJA_INTERNAL_PORT`/`*_SERVER` are `let`, resolved *after* the private
+    servers report their ephemeral ports (each child writes a per-server port-file), so every
+    downstream use — widget injection, `/status`, content tabs — follows the ephemeral instance.
+    `ensureServer` short-circuits to `startEmbeddedServer` for private (never adopts/kills a shared
+    server); the launcher stops pinning `DEV_CHANNEL_PORT`. 8700/8701 and the registry are untouched.
 
   **Consumers** (e.g. a dev-server test lane) should request a private instance and drive *that*
   by the port it reports — never an unscoped `hj windows` check that races whatever else is on the
   machine. The isolation belongs in haltija's model, not in every consumer reimplementing project
-  scoping. Verified end-to-end for `--private --headless`; `--private --app` (Electron accepting
-  the ephemeral port) is a follow-up.
+  scoping. Verified end-to-end with real Electron for both `--private --headless` and `--private --app`.
 
 ### Instance Registry & cwd Routing
 
