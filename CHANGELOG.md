@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.4.1
+
+Five cross-project bugs, all of the same shape: **haltija reaching out and disrupting a healthy
+peer.** If you run more than one project on a machine, this is the release that stops your
+browser channel vanishing.
+
+### Behavior changes (no API breaks)
+
+Nothing was removed or renamed — no endpoint, export, or flag — so nothing should fail to compile
+or resolve. Two *runtime* behaviors changed, and in both the old behavior was the bug:
+
+- **The desktop app attaches to an existing server instead of replacing it.** If you relied on a
+  launch always giving you a pristine embedded server, set `HALTIJA_SERVER_MODE=builtin`.
+- **`--https` (https-only) now exits if it cannot bind its port**, instead of silently starting on
+  an ephemeral one. The old "success" produced a channel no widget could reach.
+
+### New: `--private` — isolated automation instances ([#1](https://github.com/tonioloewald/haltija/issues/1))
+
+haltija plays two roles that were conflated. A **shared interactive** browser on the default port
+is a feature — whatever window is focused is what `hj` drives, across projects. But **ephemeral
+automation** (a test lane that spawns a browser, drives fixed pages, and exits) was consulting
+that shared server and, if any was reachable, *adopting and navigating it* — so one project's
+doc-test lane yanked another project's live browser to different pages, and then failed on a
+timeout. Intermittent and baffling, because it only bit when a foreign haltija happened to be up.
+
+`haltija --private` (pair with `--headless`) is isolated by construction:
+
+- binds an **ephemeral port, never 8700** — it can't collide with or be mistaken for the shared server;
+- is **not registered** in the shared registry, so interactive `hj` / cwd-routing can't adopt it;
+- **never reaches out** — it retires nothing and touches no other server;
+- **reports its address** on stdout (`HALTIJA_PRIVATE_READY {json}`) and to `--port-file` — since
+  it's not in the registry, that's how you find it.
+
+A consumer's test lane should request a private instance and drive *that* by the port it reports,
+instead of an unscoped `hj windows` check that races whatever else is on the machine.
+
+### Fixed: the desktop app killed other projects' channels
+
+Its default was to stop any server on 8700/8701 and start fresh — so launching the app (`bunx
+haltija`, an `hj` auto-launch, `--ci`, the integration test) silently took down a live channel
+another project was using, and made its widget vanish. It now **attaches to a healthy existing
+server and says so**. Force the old behavior with `HALTIJA_SERVER_MODE=builtin`.
+
+### Fixed: a half-dead `--both` channel (HTTPS silently on the wrong port)
+
+When the HTTPS port was busy (a fast restart racing the previous server), the HTTPS side quietly
+fell back to an **ephemeral** port. But a widget on an https page connects to the *known* port —
+so 8701 sat empty, the page couldn't connect, and the server looked healthy because HTTP was fine.
+HTTPS now retries its intended port and, failing that, **fails loudly** rather than relocating;
+the startup banner never advertises a port it didn't bind.
+
+### Fixed: silent HTTP port relocation
+
+When the wanted HTTP port was taken, the server bound an ephemeral one without a word — so a
+caller probing a fixed port had no idea why nothing was there. It now says
+`<port> was taken; bound HTTP on <n> instead. Find it with \`hj where\`.`
+
+### Fixed: the test suite disrupted other servers
+
+`bun test` bound fixed 87xx ports — the range real servers live in — and on a collision would
+`POST /shutdown` whatever was there, including another project's channel. The suite now uses
+high, per-process-unique ports and can never stop a server it didn't start.
+
+### Docs
+
+A "tab that reads as unreachable" troubleshooting section in `DOCS.md` and `llms.txt`: a hidden,
+backgrounded, minimized, or occluded tab (and an active WebXR session) suspends
+`requestAnimationFrame` and throttles timers, so the tab can stop answering even though the page
+is fine. Bring it forward, or target it explicitly with `hj --window <id>`.
+
+
 ## 1.4.0
 
 **`hj` now routes to the server that owns your current directory.** If you run more than one
@@ -52,16 +123,6 @@ silently.
 `HALTIJA_NO_RETIRE=1` opts out. See "Housekeeping" in the README.
 
 ### Also
-- **`--private`: an isolated automation instance** (issue #1). Automated runs used to adopt and
-  navigate a developer's shared interactive browser on 8700, hijacking it and failing. `haltija
-  --private` (pair with `--headless`) binds an ephemeral port, spawns its own browser, never
-  sees/adopts/touches the shared server, and reports its address on stdout + `--port-file`. A dev
-  server's test lane requests one of these and drives it, with no race against other projects.
-- **The desktop app now reuses an existing server instead of killing it.** Its default was to
-  stop any server on 8700/8701 and start fresh — so launching the app (or `bunx haltija`, or an
-  `hj` auto-launch) on a machine where another project had a live channel there silently took
-  that channel down. It now attaches to a healthy existing server and says so. Force the old
-  behavior with `HALTIJA_SERVER_MODE=builtin`.
 
 - HTTPS-only servers no longer advertise an HTTP port they aren't listening on.
 - Every REST response carries `X-Haltija-Version`.
