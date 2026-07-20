@@ -494,9 +494,15 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
     app. Needs a renderer widget-`windowId`→webview-tab bridge (the renderer doesn't track the
     widget's client-generated windowId today) plus a server→main→renderer signal. Deprioritized
     desktop surface; the server-side routing fix already makes the tab addressable everywhere.
-- **[ecosystem] Explicit disposition for #4/#5** — #4 architectural (above); #5 (client-less tab
-  silently uncontrollable) wants a `connected`/`client` field beside `hidden` + a `reason` on the
-  `{opened,fallback}` response. Additive but touches the tabs-list shape; deferred with #4.
+- ✅ **[ecosystem] `tabs open` fallback / client-less tab (issue #5)** — addressed in 1.5.4. The
+  `window.open` fallback response now carries a `reason`, promoted to a top-level `warning` (so `hj`
+  prints it on stderr) explaining the new tab is client-less, won't appear in `hj tabs`, and can't
+  be reached. Documented the injection model in the tabs-open schema + SKILL troubleshooting.
+  Targeted commands (`--window <id>`) at a client-less tab already error ("Window not found") since
+  the server never knew it — so suggestion 3 was already satisfied.
+  - **Remaining follow-up [desktop, deferred]:** in the desktop app, surface tabs the app knows
+    about but that have no *widget* connected (a `connected: false` row in `hj tabs`). Only the app
+    knows its client-less webviews; the shared-server case genuinely can't see a `window.open` tab.
 - **[nit] Share a `readPortFile(path,{timeoutMs})` util** — `readPort` (main.js) and
   `discoverPrivatePort` (tosijs-dev.mjs) are near-identical and drifted on timeout. *Deferred:* nit;
   touches timing behavior in two files.

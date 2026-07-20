@@ -5637,7 +5637,11 @@ ${elementSummary}${moreText}`;
           });
         } else {
           window.open(payload2.url, "_blank");
-          this.respond(msg2.id, true, { opened: true, fallback: true });
+          this.respond(msg2.id, true, {
+            opened: true,
+            fallback: true,
+            reason: "Opened a plain browser tab via window.open() (this is not the Haltija desktop app). " + "That tab has NO Haltija widget unless its page injects one, so it will NOT appear in " + "`hj tabs` and hj commands cannot reach it — untargeted commands go to the focused " + "widget tab instead. To control the new tab: inject the widget on that page (e.g. " + "HALTIJA_DEV=1 / haltijaDev:true in that project), or use the Haltija desktop app, " + "which auto-injects into every tab."
+          });
         }
       } else if (action2 === "close") {
         if (haltija?.closeTab) {

@@ -820,6 +820,12 @@ registerHandler(api.screenshot, async (body, ctx) => {
 // Tabs handlers
 registerHandler(api.tabsOpen, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url })
+  // #5: `window.open` fallback opens a client-less tab that's invisible and uncontrollable. Promote
+  // the widget's explanation to a top-level `warning` so `hj` prints it on stderr — otherwise the
+  // fallback looks like success and the next command silently lands on the wrong tab.
+  if (response?.data?.fallback && response.data.reason && !response.warning) {
+    response.warning = response.data.reason as string
+  }
   return Response.json(response, { headers: ctx.headers })
 })
 

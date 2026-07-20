@@ -1196,9 +1196,15 @@ Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
 
 **Open a new tab**
 
-Desktop app only. Opens a new tab with optional URL.
+Opens a new tab with optional URL. If url is omitted, opens a blank tab.
 
-If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
+**In the Haltija desktop app** the new tab gets the widget auto-injected, so it's immediately
+controllable. **Anywhere else** (widget injected into a normal browser via bookmarklet/dev-server)
+there is no tab API, so this falls back to `window.open()` — the new tab is a plain browser tab
+with NO widget unless its own page injects one. In that case the response has `fallback: true`
+plus a `reason`, and a top-level `warning`: the tab will NOT appear in `hj tabs` and hj commands
+cannot reach it (they go to the focused widget tab). To control it, inject the widget on that page
+(e.g. HALTIJA_DEV / haltijaDev) or use the desktop app.
 
 **Parameters:**
 

@@ -7532,9 +7532,23 @@ export class DevChannel extends HTMLElement {
             this.respond(msg.id, false, null, err.message)
           })
       } else {
-        // Fallback: open in new window (works outside Electron too)
+        // Fallback: no Electron tab API, so open a plain browser tab. That tab has NO haltija
+        // widget unless its own page injects one — so the server never hears from it, it won't
+        // appear in `hj tabs`, and hj commands can't reach it (they go to the focused widget tab
+        // instead). That silent retargeting is exactly what reads as a routing bug (issue #5), so
+        // say so loudly right here, at the one moment we know a client-less tab was created.
         window.open(payload.url, '_blank')
-        this.respond(msg.id, true, { opened: true, fallback: true })
+        this.respond(msg.id, true, {
+          opened: true,
+          fallback: true,
+          reason:
+            'Opened a plain browser tab via window.open() (this is not the Haltija desktop app). ' +
+            'That tab has NO Haltija widget unless its page injects one, so it will NOT appear in ' +
+            '`hj tabs` and hj commands cannot reach it — untargeted commands go to the focused ' +
+            'widget tab instead. To control the new tab: inject the widget on that page (e.g. ' +
+            'HALTIJA_DEV=1 / haltijaDev:true in that project), or use the Haltija desktop app, ' +
+            'which auto-injects into every tab.',
+        })
       }
     } else if (action === 'close') {
       if (haltija?.closeTab) {

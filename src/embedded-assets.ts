@@ -2112,9 +2112,15 @@ Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
 
 **Open a new tab**
 
-Desktop app only. Opens a new tab with optional URL.
+Opens a new tab with optional URL. If url is omitted, opens a blank tab.
 
-If url is omitted, opens a blank tab. The new tab gets the widget auto-injected.
+**In the Haltija desktop app** the new tab gets the widget auto-injected, so it's immediately
+controllable. **Anywhere else** (widget injected into a normal browser via bookmarklet/dev-server)
+there is no tab API, so this falls back to \`window.open()\` — the new tab is a plain browser tab
+with NO widget unless its own page injects one. In that case the response has \`fallback: true\`
+plus a \`reason\`, and a top-level \`warning\`: the tab will NOT appear in \`hj tabs\` and hj commands
+cannot reach it (they go to the focused widget tab). To control it, inject the widget on that page
+(e.g. HALTIJA_DEV / haltijaDev) or use the desktop app.
 
 **Parameters:**
 
@@ -8640,7 +8646,11 @@ export const COMPONENT_JS: string = `(() => {
           });
         } else {
           window.open(payload2.url, "_blank");
-          this.respond(msg2.id, true, { opened: true, fallback: true });
+          this.respond(msg2.id, true, {
+            opened: true,
+            fallback: true,
+            reason: "Opened a plain browser tab via window.open() (this is not the Haltija desktop app). " + "That tab has NO Haltija widget unless its page injects one, so it will NOT appear in " + "\`hj tabs\` and hj commands cannot reach it — untargeted commands go to the focused " + "widget tab instead. To control the new tab: inject the widget on that page (e.g. " + "HALTIJA_DEV=1 / haltijaDev:true in that project), or use the Haltija desktop app, " + "which auto-injects into every tab."
+          });
         }
       } else if (action2 === "close") {
         if (haltija?.closeTab) {

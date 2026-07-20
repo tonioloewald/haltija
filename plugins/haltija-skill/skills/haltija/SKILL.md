@@ -178,3 +178,11 @@ on the resulting UI/state.
 - `hj status` / `hj windows` — confirm the server is up and a tab is connected.
 - Restart clean: `bunx haltija@latest -f`.
 - `hj console` — surfaces page errors.
+- **Only tabs with the widget injected are controllable — and only those appear in `hj tabs`.**
+  A page controls itself only if it loads the haltija widget (the desktop app auto-injects; a
+  normal browser needs the bookmarklet, a `<script src=".../component.js">`, or the project's
+  own opt-in like `HALTIJA_DEV=1` / `haltijaDev:true`). A tab **without** the widget is invisible
+  to the server, so it never shows up in `hj tabs` and commands can't reach it — they silently go
+  to the focused widget tab, which looks like a routing bug. `hj tabs open <url>` outside the
+  desktop app hits exactly this: it returns `fallback: true` + a warning saying the new tab is
+  client-less. If a page you opened isn't responding, first check it actually injected the widget.
