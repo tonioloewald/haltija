@@ -29,15 +29,27 @@ const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwo
 process.stdout.on('error', () => {})
 process.stderr.on('error', () => {})
 
+// PRIVATE (isolated automation) mode — the Electron half of issue #1. `bunx haltija --private
+// --app` must be an isolated instance that never sees/adopts/touches the shared servers on
+// 8700/8701: it binds EPHEMERAL ports, discovered after the servers start. So these are `let`,
+// not `const` — reassigned once the private servers report their ports (below), which means every
+// downstream use (widget injection, status checks, help text, content tabs) automatically follows
+// the ephemeral ports with no other edits.
+const IS_PRIVATE = process.env.HALTIJA_PRIVATE === '1'
+// The caller's port-file (from `--port-file`), captured before we repurpose the env for our own
+// per-server discovery. In private mode the app writes the PUBLIC ephemeral address here so the
+// consumer (e.g. a dev-server test lane) can drive this instance.
+const CALLER_PORT_FILE = IS_PRIVATE ? (process.env.HALTIJA_PORT_FILE || null) : null
+
 // Haltija server config
-const HALTIJA_PORT = parseInt(process.env.HALTIJA_PORT || '8700')
-const HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
+let HALTIJA_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_PORT || '8700')
+let HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
 // Internal port for the chrome widget (the haltija UI inspecting itself).
 // Lives on a separate server so it never appears in agent-facing window lists
 // — agents see only content tabs unless they explicitly target this port.
-const HALTIJA_INTERNAL_PORT = parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701')
-const HALTIJA_INTERNAL_SERVER = `http://localhost:${HALTIJA_INTERNAL_PORT}`
+let HALTIJA_INTERNAL_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701')
+let HALTIJA_INTERNAL_SERVER = `http://localhost:${HALTIJA_INTERNAL_PORT}`
 
 // Unique app instance ID - used to create stable window IDs across navigations
 // Combined with webContents.id to create globally unique tab identifiers
@@ -1188,13 +1200,12 @@ function checkServerRunning() {
  * Stdout/stderr are piped to the desktop app's console with a label, and
  * `__NEED_WINDOW__` from the public server triggers window recreation.
  */
-function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir }) {
+function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir, portFile }) {
   // Pass the port via the env the SERVER ACTUALLY READS. It was `PORT`, which src/server.ts
   // never reads (it reads HALTIJA_PORT / DEV_CHANNEL_PORT) — so a spawned server ignored the
   // port it was given and inherited the app's HALTIJA_PORT instead. The internal chrome server
   // therefore tried to bind the PUBLIC port, collided, and died: verified by launching the app
-  // on high ports and finding nothing on the internal one. Also clear HALTIJA_PRIVATE/PORT_FILE
-  // so a private parent doesn't force its children to ephemeral ports we then can't find.
+  // on high ports and finding nothing on the internal one.
   const env = {
     ...process.env,
     PORT: port.toString(),            // kept for anything else that may read it
@@ -1202,8 +1213,21 @@ function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, compone
     DEV_CHANNEL_PORT: port.toString(),
     HALTIJA_DESKTOP: '1',
   }
-  delete env.HALTIJA_PRIVATE
-  delete env.HALTIJA_PORT_FILE
+  if (IS_PRIVATE) {
+    // Isolated instance: this child binds an EPHEMERAL port (HALTIJA_PRIVATE forces PORT=0) and
+    // reports it to `portFile` so we can discover it. Each child gets its OWN port-file — never
+    // the caller's, which we write ourselves once with the public address.
+    env.HALTIJA_PRIVATE = '1'
+    env.HALTIJA_NO_RETIRE = '1'
+    env.HALTIJA_NO_INSTALL = '1'
+    env.HALTIJA_PORT_FILE = portFile
+    delete env.HALTIJA_PORT       // ephemeral, not the app's port
+    delete env.DEV_CHANNEL_PORT
+  } else {
+    // A non-private child must not inherit a private parent's flags (belt and braces).
+    delete env.HALTIJA_PRIVATE
+    delete env.HALTIJA_PORT_FILE
+  }
   let proc
   if (serverPath && useCompiledBinary) {
     proc = spawn(serverPath, [], {
@@ -1304,6 +1328,43 @@ async function startEmbeddedServer() {
       console.log('[Haltija Desktop] Component.js found at:', p)
       break
     }
+  }
+
+  if (IS_PRIVATE) {
+    // Private: both servers bind ephemeral ports we don't know yet. Give each its own port-file,
+    // wait for them to report, then reassign the module ports so everything downstream (injection,
+    // status, tabs, help) follows the ephemeral instance. Never touches 8700/8701.
+    const pubFile = path.join(os.tmpdir(), `haltija-app-pub-${process.pid}.json`)
+    const intFile = path.join(os.tmpdir(), `haltija-app-int-${process.pid}.json`)
+    try { fs.rmSync(pubFile, { force: true }); fs.rmSync(intFile, { force: true }) } catch {}
+
+    spawnHaltijaServer({ port: 0, role: 'public', serverPath, useCompiledBinary, componentDir, portFile: pubFile })
+    spawnHaltijaServer({ port: 0, role: 'internal', serverPath, useCompiledBinary, componentDir, portFile: intFile })
+
+    const readPort = async (file) => {
+      for (let i = 0; i < 50; i++) {
+        try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); if (d && d.port) return d.port } catch {}
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      return null
+    }
+    const pubPort = await readPort(pubFile)
+    const intPort = await readPort(intFile)
+    if (!pubPort) { console.error('[Haltija Desktop] Private public server did not report its port'); return false }
+
+    HALTIJA_PORT = pubPort
+    HALTIJA_SERVER = `http://localhost:${pubPort}`
+    if (intPort) { HALTIJA_INTERNAL_PORT = intPort; HALTIJA_INTERNAL_SERVER = `http://localhost:${intPort}` }
+    try { fs.rmSync(pubFile, { force: true }); fs.rmSync(intFile, { force: true }) } catch {}
+
+    // Hand the PUBLIC address to the consumer that asked for this private instance.
+    if (CALLER_PORT_FILE) {
+      try {
+        fs.writeFileSync(CALLER_PORT_FILE, JSON.stringify({ port: pubPort, url: HALTIJA_SERVER, internalPort: intPort || null, pid: process.pid }))
+      } catch (err) { console.error('[Haltija Desktop] Could not write caller port-file:', err.message) }
+    }
+    console.log(`[Haltija Desktop] Private instance ready — public ${HALTIJA_SERVER}, internal :${intPort || 'n/a'} (8700/8701 untouched)`)
+    return true
   }
 
   spawnHaltijaServer({ port: HALTIJA_PORT, role: 'public', serverPath, useCompiledBinary, componentDir })
@@ -1420,6 +1481,13 @@ async function killZombieServer() {
 }
 
 async function ensureServer() {
+  // Private is isolated by construction: never look for, adopt, or replace a shared server. It
+  // always starts its own on ephemeral ports. `checkServerRunning` would probe 8700 (which we
+  // must ignore), so skip it entirely.
+  if (IS_PRIVATE) {
+    return await startEmbeddedServer()
+  }
+
   const running = await checkServerRunning()
 
   switch (prefs.serverMode) {

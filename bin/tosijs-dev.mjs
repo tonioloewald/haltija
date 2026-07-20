@@ -565,15 +565,12 @@ function launchApp(desktopDir, port) {
 
   // Resolve electron binary directly to avoid npx cache race conditions (ENOTEMPTY)
   const electronBinary = resolveElectronBinary()
+  // A private app run must NOT pin DEV_CHANNEL_PORT — it binds ephemeral ports and never touches
+  // 8700. `env` already carries HALTIJA_PRIVATE=1 / HALTIJA_PORT_FILE from the --private block.
+  const appEnv = privateMode ? { ...env } : { ...env, DEV_CHANNEL_PORT: String(port) }
   const child = electronBinary
-    ? spawn(electronBinary, [desktopDir], {
-        env: { ...env, DEV_CHANNEL_PORT: String(port) },
-        stdio: 'inherit'
-      })
-    : spawn('npx', ['--yes', 'electron', desktopDir], {
-        env: { ...env, DEV_CHANNEL_PORT: String(port) },
-        stdio: 'inherit'
-      })
+    ? spawn(electronBinary, [desktopDir], { env: appEnv, stdio: 'inherit' })
+    : spawn('npx', ['--yes', 'electron', desktopDir], { env: appEnv, stdio: 'inherit' })
 
   child.on('error', (err) => {
     console.error(red('Error:') + ` Failed to launch desktop app: ${err.message}`)
