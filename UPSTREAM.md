@@ -5,7 +5,7 @@ directly. Each entry links the issue once filed.
 
 ## tosijs-ui — dev-server test lane should drive a `--private` haltija, not adopt the shared browser
 
-**Status:** to file (surfaced by the haltija 1.5.0 pre-release review).
+**Status:** filed — https://github.com/tonioloewald/tosijs-ui/issues/21
 
 `tosijs-ui`'s `dev-server.js` test mode runs an unscoped `hj windows` adopt check, so it consults
 and can navigate whatever browser is live on the shared 8700 server — yanking a developer's live
@@ -18,4 +18,4 @@ consumer needs to migrate: request a `--private` instance and drive **that** by 
 reports (`--port-file` / `HALTIJA_PRIVATE_READY`), instead of the unscoped `hj windows` check.
 
 Closing haltija #1 removes the field bug; it does **not** change the consumer until tosijs-ui
-migrates. Issue URL: _(pending)_
+migrates. Issue URL: https://github.com/tonioloewald/tosijs-ui/issues/21
