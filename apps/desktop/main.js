@@ -1189,7 +1189,21 @@ function checkServerRunning() {
  * `__NEED_WINDOW__` from the public server triggers window recreation.
  */
 function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir }) {
-  const env = { ...process.env, PORT: port.toString(), HALTIJA_DESKTOP: '1' }
+  // Pass the port via the env the SERVER ACTUALLY READS. It was `PORT`, which src/server.ts
+  // never reads (it reads HALTIJA_PORT / DEV_CHANNEL_PORT) — so a spawned server ignored the
+  // port it was given and inherited the app's HALTIJA_PORT instead. The internal chrome server
+  // therefore tried to bind the PUBLIC port, collided, and died: verified by launching the app
+  // on high ports and finding nothing on the internal one. Also clear HALTIJA_PRIVATE/PORT_FILE
+  // so a private parent doesn't force its children to ephemeral ports we then can't find.
+  const env = {
+    ...process.env,
+    PORT: port.toString(),            // kept for anything else that may read it
+    HALTIJA_PORT: port.toString(),    // what src/server.ts actually reads
+    DEV_CHANNEL_PORT: port.toString(),
+    HALTIJA_DESKTOP: '1',
+  }
+  delete env.HALTIJA_PRIVATE
+  delete env.HALTIJA_PORT_FILE
   let proc
   if (serverPath && useCompiledBinary) {
     proc = spawn(serverPath, [], {
