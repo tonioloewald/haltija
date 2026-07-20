@@ -407,6 +407,7 @@ Version is managed in `package.json` only. The build script generates `src/versi
 | `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
+| `HALTIJA_NO_TAB_WARN` | Set to `1` to silence the hidden-tab / focus-ambiguity result warnings | — |
 | `HALTIJA_MACHINE_LOG` | Path for the machine-scope action receipt (tests point this at a temp dir) | `~/.haltija/machine-actions.log` |
 | `HALTIJA_REGISTRY_DIR` | Instance registry location (tests must point this at a temp dir) | `~/.haltija/servers` |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |

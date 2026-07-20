@@ -33,6 +33,7 @@ import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { hiddenTabWarning } from './tab-liveness'
 import { ambiguousFocusWarning } from './focus-ambiguity'
+import { shouldEmitWarning } from './warning-dedupe'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -203,6 +204,13 @@ interface TrackedWindow {
   windowType?: string  // 'tab', 'popup', or 'iframe'
 }
 const windows = new Map<string, TrackedWindow>()
+
+// Tab-warning (hidden #3 / focus-ambiguity #2) de-duplication. `recentTabWarnings` maps a warning's
+// exact text → when it was last emitted, so an identical repeat within the cooldown is suppressed
+// (see warning-dedupe.ts). `HALTIJA_NO_TAB_WARN=1` turns the warnings off entirely.
+const recentTabWarnings = new Map<string, number>()
+const TAB_WARN_COOLDOWN_MS = 15_000
+const TAB_WARN_DISABLED = process.env.HALTIJA_NO_TAB_WARN === '1'
 
 // Connected agent clients (could be multiple)
 const agents = new Set<WebSocket>()
@@ -627,6 +635,7 @@ async function requestFromBrowser(
     // Also runs on the TIMEOUT path — a hidden tab whose rAF-driven eval never resolves is exactly
     // when the "this tab is asleep" caveat is most useful (it explains *why* it timed out).
     const attachWarning = (res: DevResponse): DevResponse => {
+      if (TAB_WARN_DISABLED) return res
       const hidden = hiddenTabWarning(sentTo)
       const ambiguous = ambiguousFocusWarning({
         windows: Array.from(windows.values()),
@@ -634,7 +643,14 @@ async function requestFromBrowser(
         wasTargeted: !!windowId,
       })
       const warning = [hidden, ambiguous].filter(Boolean).join('\n\n')
-      return warning ? { ...res, warning } : res
+      if (!warning) return res
+      // Suppress an identical repeat within the cooldown so a burst of commands from one agent
+      // doesn't re-print the same block every time. A changed condition (different text) always
+      // warns; see warning-dedupe.ts for why it's a short cooldown, not "once forever".
+      if (!shouldEmitWarning(warning, recentTabWarnings, Date.now(), TAB_WARN_COOLDOWN_MS)) {
+        return res
+      }
+      return { ...res, warning }
     }
 
     const timeout = setTimeout(() => {

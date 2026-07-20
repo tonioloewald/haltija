@@ -474,21 +474,26 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 
 **Deferred (not "little risk / easy" — kept tracked):**
 
-- **[DX] Throttle the hidden-tab / focus-ambiguity warnings** (once per server/origin-set/window
-  fingerprint). *Deferred:* stateful (keyed Map + cooldown), and a too-aggressive throttle silently
-  hides a warning the user needed — the opposite failure from the one it fixes. Wants a careful
-  design, not a quick patch. `src/server.ts` (`attachWarning`).
+- ✅ **[DX] Throttle the hidden-tab / focus-ambiguity warnings** — done in 1.5.2. Pure
+  `shouldEmitWarning` (`src/warning-dedupe.ts`, 6 tests) dedups an *identical* warning within a 15s
+  cooldown, keyed on the full warning text (so a changed condition always re-warns) and re-arming
+  after the cooldown rather than suppressing forever. Deliberately a short cooldown, not
+  "once forever": the server can't tell its clients apart, so a permanent global suppress would hide
+  the warning from a *second* agent that never saw it — the exact failure these warnings prevent.
+  `HALTIJA_NO_TAB_WARN=1` disables them entirely.
 - **[coverage] Unit-test the desktop server-env / port logic** — extract
   `buildServerEnv({port,isPrivate,portFile})` from `apps/desktop/main.js` and test it. *Deferred:*
   the extraction refactors the live desktop launch path; more than a low-risk change.
 - **[coverage] Server-level warning-wiring test** (two origins → untargeted warns, `?window=`
   doesn't, `/status` reports `hidden`). *Deferred:* needs a two-widget harness; verified live for
   now (eval + form both carry the warning).
-- **[ecosystem] `hj tabs focus` is broken (issue #4).** *Deferred — architectural:* the reporter's
-  own analysis is right — focusing a hidden tab by dispatching a command *to* it is
-  unreachable-by-construction; `tabs focus` needs to be a server/desktop-side operation, not
-  tab-dispatched. Not a one-line routing fix. The hidden-tab warning's "bring the tab to the front"
-  means the *manual* action (clicking the tab), which works — no softening needed.
+- ✅ **[ecosystem] `hj tabs focus` timed out (issue #4)** — fixed in 1.5.2. Now a server-side
+  routing change (`ctx.focusWindow`): validates the tab, sets `focusedWindowId`, returns instantly,
+  never dispatches to the (possibly hidden) tab. Verified live (37ms, was a 5s timeout).
+  - **Remaining follow-up [desktop, deferred]:** physically *raise* the focused tab in the desktop
+    app. Needs a renderer widget-`windowId`→webview-tab bridge (the renderer doesn't track the
+    widget's client-generated windowId today) plus a server→main→renderer signal. Deprioritized
+    desktop surface; the server-side routing fix already makes the tab addressable everywhere.
 - **[ecosystem] Explicit disposition for #4/#5** — #4 architectural (above); #5 (client-less tab
   silently uncontrollable) wants a `connected`/`client` field beside `hidden` + a `reason` on the
   `{opened,fallback}` response. Additive but touches the tabs-list shape; deferred with #4.
@@ -498,6 +503,14 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 
 ### Pre-existing
 
+- **[desktop, isolation] `--private --app` collides with Electron's single-instance lock.** If any
+  Electron haltija app is already running, a new `--private --app` prints "Another instance is
+  already running. Focusing existing window." and does NOT start its own isolated instance — so two
+  private apps can't run concurrently, and a private app can silently attach to a *non-private*
+  running app. `main.js` should request a **unique** single-instance lock (or skip the lock) for a
+  private run, keyed on the ephemeral instance, so private apps are truly isolated. Surfaced while
+  verifying 1.5.2 (repeated `--private --app` test launches focused a stale instance instead of
+  starting fresh). Desktop is deprioritized, but this is an isolation gap, not just cosmetics.
 - **[desktop] `--private --app` default tab points at `localhost:8700`.** `apps/desktop/index.html`
   hardcodes the address bar default to `http://localhost:8700`, so a private app's first content
   tab loads the *shared* server's landing page. No isolation break — the app injects its own widget

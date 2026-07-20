@@ -88,6 +88,7 @@ Environment Variables:
   HALTIJA_NO_RETIRE        Set to 1: do not stop pre-1.4.0 haltija servers
   HALTIJA_NO_INSTALL       Set to 1: do not install hj into ~/.local/bin
   HALTIJA_NO_SKEW_WARN     Set to 1: silence hj's version-skew warning
+  HALTIJA_NO_TAB_WARN      Set to 1: silence hidden-tab / focus-ambiguity result warnings
   HALTIJA_REGISTRY_DIR     Instance registry location (default: ~/.haltija/servers)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
