@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.5
+
+`--private` now really is "torn down with the run" ([#7](https://github.com/tonioloewald/haltija/issues/7)).
+
+The private Electron instance used to survive teardown — holding Electron's single-instance lock (so
+the **next** `--private` run failed with "Another instance is already running") and leaking a process
+per run. Fixed three ways, all verified with real Electron:
+
+- **A private run never takes the single-instance lock.** Private instances are isolated on ephemeral
+  ports and meant to run concurrently / back-to-back, so an orphan can no longer block the next run,
+  and two private runs coexist.
+- **The private Electron self-terminates** when its spawner dies (even via SIGKILL) or on
+  SIGTERM/SIGINT. It reparents to launchd, so it watches the launcher's pid (`HALTIJA_SPAWNER_PID`)
+  and calls `app.quit()` — which reaps its own helper processes, unlike an external tree-kill.
+- **`hj shutdown` / `hj quit`** (and `POST /shutdown`) on a private-desktop instance tears down the
+  whole thing — Electron and its servers — for a deterministic end-of-run teardown.
+
 ## 1.5.4
 
 The `hj tabs open` client-less-tab trap now explains itself ([#5](https://github.com/tonioloewald/haltija/issues/5)).
