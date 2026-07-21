@@ -509,14 +509,12 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 
 ### Pre-existing
 
-- **[desktop, isolation] `--private --app` collides with Electron's single-instance lock.** If any
-  Electron haltija app is already running, a new `--private --app` prints "Another instance is
-  already running. Focusing existing window." and does NOT start its own isolated instance — so two
-  private apps can't run concurrently, and a private app can silently attach to a *non-private*
-  running app. `main.js` should request a **unique** single-instance lock (or skip the lock) for a
-  private run, keyed on the ephemeral instance, so private apps are truly isolated. Surfaced while
-  verifying 1.5.2 (repeated `--private --app` test launches focused a stale instance instead of
-  starting fresh). Desktop is deprioritized, but this is an isolation gap, not just cosmetics.
+- ✅ **[desktop, isolation] `--private --app` single-instance lock + teardown (issue #7)** — fixed
+  in 1.5.5. A private run no longer requests the single-instance lock (so an orphan can't block the
+  next run and concurrent runs coexist); the private Electron self-terminates when its spawner dies
+  (spawner-pid poll, since Electron reparents to launchd) or on SIGTERM/SIGINT; and `hj shutdown` /
+  `POST /shutdown` on a private-desktop server tears down the whole instance. Verified with real
+  Electron (`hj shutdown`, launcher-SIGKILL, two concurrent runs).
 - **[desktop] `--private --app` default tab points at `localhost:8700`.** `apps/desktop/index.html`
   hardcodes the address bar default to `http://localhost:8700`, so a private app's first content
   tab loads the *shared* server's landing page. No isolation break — the app injects its own widget

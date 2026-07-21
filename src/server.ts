@@ -1442,6 +1442,17 @@ async function handleRest(req: Request): Promise<Response> {
   // Shutdown the server (for Electron app to kill external servers)
   if (path === '/shutdown' && req.method === 'POST') {
     console.log(`${LOG_PREFIX} Shutdown requested`)
+    if (IS_PRIVATE && isDesktopApp) {
+      // This server is a CHILD of a private Electron app (issue #7). Exiting only ourselves would
+      // orphan the app (and its other server + helpers). Signal our parent — Electron — to quit;
+      // its 'will-quit' tears down every child server (this one included) and its own helpers.
+      // process.exit is a fallback in case the parent is already gone.
+      setTimeout(() => {
+        try { if (process.ppid > 1) process.kill(process.ppid, 'SIGTERM') } catch {}
+        process.exit(0)
+      }, 100)
+      return Response.json({ success: true, message: 'Private app shutting down (Electron + servers)...' }, { headers })
+    }
     setTimeout(() => process.exit(0), 100)
     return Response.json({ success: true, message: 'Server shutting down...' }, { headers })
   }

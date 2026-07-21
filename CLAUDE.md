@@ -447,6 +447,16 @@ live browser:
     hardcoded address-bar default), so a private app opens a tab **showing** the shared server's
     page — a harmless GET (the app injects its own widget at the ephemeral port; the shared
     channel isn't driven), but it pollutes the private window list. Tracked in `TODO.md`.
+  - **Teardown is part of the isolation (issue #7).** A private Electron must not outlive its run.
+    Three cooperating rules: (1) a private run **never requests the single-instance lock** — so an
+    orphan can't block the next run and concurrent private runs don't collide (`gotTheLock =
+    IS_PRIVATE ? true : app.requestSingleInstanceLock()`); (2) it **self-terminates** — the launcher
+    passes its pid as `HALTIJA_SPAWNER_PID` and the app polls it (Electron reparents to launchd, so
+    `process.ppid` is useless), calling `app.quit()` when the spawner dies or on SIGTERM/SIGINT;
+    `'will-quit'` then kills the child servers and Electron reaps its own helpers (an *external*
+    kill famously doesn't); (3) **`hj shutdown`** / `POST /shutdown` on a private-desktop server
+    signals its parent Electron to quit, tearing down the whole instance. Verified with real
+    Electron: `hj shutdown`, launcher-SIGKILL, and two concurrent runs all tear down cleanly.
 
   **Consumers** (e.g. a dev-server test lane) should request a private instance and drive *that*
   by the port it reports — never an unscoped `hj windows` check that races whatever else is on the

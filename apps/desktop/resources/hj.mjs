@@ -2081,6 +2081,10 @@ ${dim3("Overriding that (per-shell):")}
   ${dim3("export HALTIJA_TOKEN=secret")}   # required when server was started with HALTIJA_TOKEN
   ${dim3("hj --token secret tree")}        # one-off token override
   ${dim3("hj --version")}                  # which hj is this?
+
+${dim3("Lifecycle:")}
+  ${dim3("hj where")}                       # which server this shell targets + what is alive there
+  ${dim3("hj shutdown")}                    # stop the targeted server (a private --app: Electron + all)
 ${listSubcommands()}
 Run ${dim3("hj --help")} for this help.
 Run ${dim3("haltija --help")} for server/app options.
@@ -2175,6 +2179,30 @@ if (windowTarget)
 if (subcommand === "where") {
   await runWhere(port, portSource, subArgs.includes("--json"));
   process.exit(0);
+}
+if (subcommand === "shutdown" || subcommand === "quit") {
+  const token = process.env.HALTIJA_TOKEN;
+  try {
+    const resp = await fetch(`http://localhost:${port}/shutdown`, {
+      method: "POST",
+      headers: token ? { "X-Haltija-Token": token } : {},
+      signal: AbortSignal.timeout(3000)
+    });
+    if (resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      console.log(j.message || `Shutdown requested on port ${port}.`);
+      process.exit(0);
+    }
+    console.error(`hj ${subcommand}: server on port ${port} returned HTTP ${resp.status}`);
+    process.exit(1);
+  } catch (err) {
+    if (err.code === "ConnectionRefused" || err.cause?.code === "ECONNREFUSED") {
+      console.log(`No server listening on port ${port} (already stopped).`);
+      process.exit(0);
+    }
+    console.error(`hj ${subcommand}: ${err.message}`);
+    process.exit(1);
+  }
 }
 if (!isSubcommand(subcommand)) {
   const suggestion = getSuggestion(subcommand);

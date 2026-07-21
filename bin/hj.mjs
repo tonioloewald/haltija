@@ -211,6 +211,10 @@ ${dim('Overriding that (per-shell):')}
   ${dim('export HALTIJA_TOKEN=secret')}   # required when server was started with HALTIJA_TOKEN
   ${dim('hj --token secret tree')}        # one-off token override
   ${dim('hj --version')}                  # which hj is this?
+
+${dim('Lifecycle:')}
+  ${dim('hj where')}                       # which server this shell targets + what is alive there
+  ${dim('hj shutdown')}                    # stop the targeted server (a private --app: Electron + all)
 ${listSubcommands()}
 Run ${dim('hj --help')} for this help.
 Run ${dim('haltija --help')} for server/app options.
@@ -365,6 +369,35 @@ if (windowTarget) subArgs = [...subArgs, '--window', windowTarget]
 if (subcommand === 'where') {
   await runWhere(port, portSource, subArgs.includes('--json'))
   process.exit(0)
+}
+
+// `hj shutdown` / `hj quit` — cleanly stop the targeted server. For a private `--app` instance this
+// tears down the WHOLE thing (Electron + its child servers); for a plain server it stops that
+// server. Never auto-launches (it's a stop command), so it's handled here before the routing table.
+if (subcommand === 'shutdown' || subcommand === 'quit') {
+  const token = process.env.HALTIJA_TOKEN
+  try {
+    const resp = await fetch(`http://localhost:${port}/shutdown`, {
+      method: 'POST',
+      headers: token ? { 'X-Haltija-Token': token } : {},
+      signal: AbortSignal.timeout(3000),
+    })
+    if (resp.ok) {
+      const j = await resp.json().catch(() => ({}))
+      console.log(j.message || `Shutdown requested on port ${port}.`)
+      process.exit(0)
+    }
+    console.error(`hj ${subcommand}: server on port ${port} returned HTTP ${resp.status}`)
+    process.exit(1)
+  } catch (err) {
+    // Nothing listening = already stopped; that's success for a stop command.
+    if (err.code === 'ConnectionRefused' || err.cause?.code === 'ECONNREFUSED') {
+      console.log(`No server listening on port ${port} (already stopped).`)
+      process.exit(0)
+    }
+    console.error(`hj ${subcommand}: ${err.message}`)
+    process.exit(1)
+  }
 }
 
 if (!isSubcommand(subcommand)) {

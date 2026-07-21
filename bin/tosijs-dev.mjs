@@ -580,7 +580,12 @@ function launchApp(desktopDir, port) {
   const electronBinary = resolveElectronBinary()
   // A private app run must NOT pin DEV_CHANNEL_PORT — it binds ephemeral ports and never touches
   // 8700. `env` already carries HALTIJA_PRIVATE=1 / HALTIJA_PORT_FILE from the --private block.
-  const appEnv = privateMode ? { ...env } : { ...env, DEV_CHANNEL_PORT: String(port) }
+  // For a private run we also hand the app OUR pid (HALTIJA_SPAWNER_PID): the Electron process
+  // reparents to launchd shortly after startup, so it can't watch us via process.ppid — it polls
+  // this pid instead and quits when we're gone (issue #7, "torn down with the run").
+  const appEnv = privateMode
+    ? { ...env, HALTIJA_SPAWNER_PID: String(process.pid) }
+    : { ...env, DEV_CHANNEL_PORT: String(port) }
   const child = electronBinary
     ? spawn(electronBinary, [desktopDir], { env: appEnv, stdio: 'inherit' })
     : spawn('npx', ['--yes', 'electron', desktopDir], { env: appEnv, stdio: 'inherit' })
@@ -595,6 +600,12 @@ function launchApp(desktopDir, port) {
   child.on('exit', code => {
     process.exit(code || 0)
   })
+
+  // Belt-and-suspenders to the app's own spawner-pid poll: if WE get a signal, ask the app to quit
+  // before we exit. (If we're SIGKILLed we can't do this — that's exactly what the poll covers.)
+  const signalChild = () => { try { child.kill('SIGTERM') } catch {} ; process.exit(0) }
+  process.on('SIGTERM', signalChild)
+  process.on('SIGINT', signalChild)
   
   // In CI/wait-ready mode, wait for server + browser to be ready
   if (waitReady) {

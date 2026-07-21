@@ -1532,8 +1532,12 @@ async function ensureServer() {
   }
 }
 
-// Single-instance lock — prevent multiple Electron windows from launching
-const gotTheLock = app.requestSingleInstanceLock()
+// Single-instance lock — prevent multiple Electron windows from launching.
+// A PRIVATE run must NOT contend for it (issue #7): private instances are isolated on ephemeral
+// ports and are meant to run many at once / back-to-back. Taking the shared lock means an orphaned
+// private Electron blocks the NEXT private run ("Another instance is already running"), and two
+// concurrent private runs collide. So a private run never requests and never holds the lock.
+const gotTheLock = IS_PRIVATE ? true : app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   console.log('[Haltija Desktop] Another instance is already running. Focusing existing window.')
@@ -1547,6 +1551,29 @@ if (!gotTheLock) {
       win.focus()
     }
   })
+
+  // "Torn down with the run": a PRIVATE Electron must not outlive its spawner (issue #7). An
+  // orphaned private Electron holds nothing shared anymore (we skip the lock above), but it still
+  // leaks a process + its servers. Electron reparents to launchd shortly after startup, so
+  // process.ppid is useless — the launcher passes its own pid as HALTIJA_SPAWNER_PID and we poll
+  // it. On the spawner's death, or a SIGTERM/SIGINT, quit via app.quit() → 'will-quit' kills the
+  // child servers AND Electron reaps its own helper processes (which an EXTERNAL kill notoriously
+  // fails to do — the reason we self-terminate instead of asking the consumer to hunt the tree).
+  if (IS_PRIVATE) {
+    let quitting = false
+    const quitOnce = () => { if (quitting) return; quitting = true; try { app.quit() } catch {} }
+    process.on('SIGTERM', quitOnce)
+    process.on('SIGINT', quitOnce)
+    const spawnerPid = parseInt(process.env.HALTIJA_SPAWNER_PID || '', 10)
+    if (Number.isFinite(spawnerPid)) {
+      const iv = setInterval(() => {
+        let alive = true
+        try { process.kill(spawnerPid, 0) } catch { alive = false } // signal 0 = existence check
+        if (!alive) { clearInterval(iv); console.log('[Haltija Desktop] spawner gone — tearing down private instance'); quitOnce() }
+      }, 1000)
+      if (iv.unref) iv.unref()
+    }
+  }
 
   // App lifecycle
   app.whenReady().then(async () => {
