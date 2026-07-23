@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.6
+
+`hj console` now captures the errors that actually matter.
+
+It intercepted `console.*` calls, but the most important errors slipped through: an **uncaught
+exception** (`throw`) and an **unhandled promise rejection** were never captured (no `window`
+error / `unhandledrejection` listener), and `console.error(new Error(...))` recorded `{}` because
+`JSON.stringify` drops an Error's message and stack. A page could be throwing on every action while
+`hj console` showed it clean.
+
+- Uncaught exceptions and unhandled rejections are now captured as `error` entries, with the real
+  stack. The `error` listener uses the capture phase, so failed resource loads (img/script/…) are
+  seen too.
+- Error objects serialize to `{name, message, stack}` (at any depth), so the message survives.
+- Note: capture begins when the widget is injected, so errors thrown *before* injection are only
+  caught by the desktop app (which injects at document-start).
+
 ## 1.5.5
 
 `--private` now really is "torn down with the run" ([#7](https://github.com/tonioloewald/haltija/issues/7)).
