@@ -177,7 +177,10 @@ on the resulting UI/state.
 
 - `hj status` / `hj windows` — confirm the server is up and a tab is connected.
 - Restart clean: `bunx haltija@latest -f`.
-- `hj console` — surfaces page errors.
+- `hj console` — surfaces page errors, including **uncaught exceptions and unhandled promise
+  rejections** (not just `console.error` calls), with Error messages + stacks intact. Capture
+  begins at widget injection, so errors thrown before that are only caught in the desktop app
+  (which injects at document-start).
 - **Only tabs with the widget injected are controllable — and only those appear in `hj tabs`.**
   A page controls itself only if it loads the haltija widget (the desktop app auto-injects; a
   normal browser needs the bookmarklet, a `<script src=".../component.js">`, or the project's

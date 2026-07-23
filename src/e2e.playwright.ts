@@ -185,6 +185,32 @@ test.describe('haltija-dev CLI', () => {
     })
     expect(imgLoaded).toBe(true)
   })
+
+  test('captures uncaught errors, unhandled rejections, and Error objects — not just console.error strings', async ({ page }) => {
+    await injectDevChannel(page)
+
+    // Emit every kind of error a page produces. Before the fix, only the plain string survived:
+    // console.error(Error) serialized to "{}", and thrown/rejected errors were never seen at all.
+    await page.evaluate(() => {
+      console.error('CONSOLE_STRING_e2e')
+      console.error(new Error('ERROBJ_e2e'))
+      Promise.reject(new Error('REJECT_e2e'))
+      setTimeout(() => {
+        throw new Error('THROW_e2e')
+      }, 0)
+    })
+    // Let the rejection microtask + the setTimeout throw fire and buffer.
+    await page.waitForTimeout(500)
+
+    const res = await fetch(`${SERVER_URL}/console`)
+    const body = await res.json()
+    const text = JSON.stringify(body)
+
+    expect(text).toContain('CONSOLE_STRING_e2e') // baseline (always worked)
+    expect(text).toContain('ERROBJ_e2e') // console.error(new Error) now keeps its message
+    expect(text).toContain('REJECT_e2e') // unhandledrejection now captured
+    expect(text).toContain('THROW_e2e') // uncaught exception now captured
+  })
   
   test('status endpoint works', async () => {
     const res = await fetch(`${SERVER_URL}/status`)

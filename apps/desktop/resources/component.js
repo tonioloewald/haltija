@@ -1738,6 +1738,7 @@
     ws = null;
     state = "disconnected";
     consoleBuffer = [];
+    errorCaptureInstalled = false;
     eventWatchers = new Map;
     mutationObserver = null;
     shadowObservers = new Map;
@@ -7426,6 +7427,26 @@ ${elementSummary}${moreText}`;
         window.prompt = this.originalDialogs.prompt;
       this.originalDialogs = {};
     }
+    serializeConsoleArg(arg) {
+      try {
+        return JSON.parse(JSON.stringify(arg, (_k, v) => v instanceof Error ? { name: v.name, message: v.message, stack: v.stack } : v));
+      } catch {
+        return String(arg);
+      }
+    }
+    recordConsoleEntry(entry) {
+      try {
+        this.consoleBuffer.push(entry);
+        if (this.consoleBuffer.length > 1000) {
+          this.consoleBuffer = this.consoleBuffer.slice(-500);
+        }
+        if (entry.level === "error") {
+          if (this.state === "connected")
+            this.send("console", "error", entry);
+          this.updateUI();
+        }
+      } catch {}
+    }
     interceptConsole() {
       const levels = [
         "log",
@@ -7441,31 +7462,58 @@ ${elementSummary}${moreText}`;
           try {
             const entry = {
               level,
-              args: args.map((arg) => {
-                try {
-                  return JSON.parse(JSON.stringify(arg));
-                } catch {
-                  return String(arg);
-                }
-              }),
+              args: args.map((arg) => this.serializeConsoleArg(arg)),
               timestamp: Date.now()
             };
             if (level === "error") {
-              entry.stack = new Error().stack;
+              const errArg = args.find((a) => a instanceof Error);
+              entry.stack = errArg?.stack || new Error().stack;
             }
-            this.consoleBuffer.push(entry);
-            if (this.consoleBuffer.length > 1000) {
-              this.consoleBuffer = this.consoleBuffer.slice(-500);
-            }
-            if (level === "error") {
-              if (this.state === "connected") {
-                this.send("console", level, entry);
-              }
-              this.updateUI();
-            }
+            this.recordConsoleEntry(entry);
           } catch {}
         };
       }
+      this.installErrorCapture();
+    }
+    installErrorCapture() {
+      if (typeof window === "undefined" || this.errorCaptureInstalled)
+        return;
+      this.errorCaptureInstalled = true;
+      window.addEventListener("error", (event) => {
+        try {
+          const err = event.error;
+          let message;
+          let stack;
+          if (err instanceof Error) {
+            message = `Uncaught ${err.name}: ${err.message}`;
+            stack = err.stack;
+          } else if (event.target?.tagName) {
+            const el = event.target;
+            message = `Resource failed to load: <${String(el.tagName).toLowerCase()}> ${el.src || el.href || ""}`.trim();
+          } else {
+            message = `Uncaught error: ${event.message || "unknown"}`;
+          }
+          const where = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : "";
+          this.recordConsoleEntry({
+            level: "error",
+            args: [message + where],
+            timestamp: Date.now(),
+            stack
+          });
+        } catch {}
+      }, true);
+      window.addEventListener("unhandledrejection", (event) => {
+        try {
+          const reason = event.reason;
+          const args = reason instanceof Error ? [`Unhandled promise rejection: ${reason.name}: ${reason.message}`] : ["Unhandled promise rejection:", this.serializeConsoleArg(reason)];
+          this.recordConsoleEntry({
+            level: "error",
+            args,
+            timestamp: Date.now(),
+            stack: reason instanceof Error ? reason.stack : undefined
+          });
+        } catch {}
+      });
     }
     restoreConsole() {
       for (const [level, fn] of Object.entries(this.originalConsole)) {

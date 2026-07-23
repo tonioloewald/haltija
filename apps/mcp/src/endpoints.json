@@ -1143,7 +1143,7 @@
     "path": "/console",
     "method": "GET",
     "summary": "Get console output",
-    "description": "Returns captured console.log/warn/error/info from the page.\n\nResponse: { entries: [{ level, message, timestamp, stack? }] }\n\nGreat for debugging - check for errors after actions fail."
+    "description": "Returns captured console.log/warn/error/info/debug from the page — AND uncaught\nexceptions and unhandled promise rejections (as level 'error'), which never route through\nconsole.error. Error objects keep their message and stack (a plain console.error(err) used to\nserialize to {}).\n\nResponse: { entries: [{ level, args, timestamp, stack? }] }\n\nGreat for debugging — check for errors after actions fail. Note: capture starts when the widget is\ninjected, so errors thrown BEFORE injection are missed for bookmarklet/dev-server injection; the\ndesktop app injects at document-start and catches them."
   },
   {
     "path": "/eval",

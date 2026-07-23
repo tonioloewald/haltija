@@ -1500,11 +1500,16 @@ Response: { valid: boolean, errors?: [{ step?, message }] }
 
 **Get console output**
 
-Returns captured console.log/warn/error/info from the page.
+Returns captured console.log/warn/error/info/debug from the page — AND uncaught
+exceptions and unhandled promise rejections (as level 'error'), which never route through
+console.error. Error objects keep their message and stack (a plain console.error(err) used to
+serialize to {}).
 
-Response: { entries: [{ level, message, timestamp, stack? }] }
+Response: { entries: [{ level, args, timestamp, stack? }] }
 
-Great for debugging - check for errors after actions fail.
+Great for debugging — check for errors after actions fail. Note: capture starts when the widget is
+injected, so errors thrown BEFORE injection are missed for bookmarklet/dev-server injection; the
+desktop app injects at document-start and catches them.
 
 ---
 

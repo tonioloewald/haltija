@@ -2437,6 +2437,7 @@ export class DevChannel extends HTMLElement {
   private ws: WebSocket | null = null
   private state: ChannelState = 'disconnected'
   private consoleBuffer: ConsoleEntry[] = []
+  private errorCaptureInstalled = false
   private eventWatchers: Map<string, () => void> = new Map()
   private mutationObserver: MutationObserver | null = null
   private shadowObservers: Map<ShadowRoot, MutationObserver> = new Map()
@@ -10149,6 +10150,41 @@ export class DevChannel extends HTMLElement {
     this.originalDialogs = {}
   }
 
+  /**
+   * Serialize a console argument for capture. `JSON.stringify(new Error(...))` returns `"{}"` —
+   * message and stack are non-enumerable — so a plain round-trip silently drops the single most
+   * useful thing an agent wants. Convert Errors (at any depth, via the replacer) to a structured
+   * `{name, message, stack}` instead.
+   */
+  private serializeConsoleArg(arg: any): any {
+    try {
+      return JSON.parse(
+        JSON.stringify(arg, (_k, v) =>
+          v instanceof Error ? { name: v.name, message: v.message, stack: v.stack } : v,
+        ),
+      )
+    } catch {
+      return String(arg)
+    }
+  }
+
+  /** Record one console/error entry: buffer it, cap the buffer, and (for errors) push to the
+   * server and flag the UI. Shared by console interception AND the uncaught-error listeners. */
+  private recordConsoleEntry(entry: ConsoleEntry) {
+    try {
+      this.consoleBuffer.push(entry)
+      if (this.consoleBuffer.length > 1000) {
+        this.consoleBuffer = this.consoleBuffer.slice(-500)
+      }
+      if (entry.level === 'error') {
+        if (this.state === 'connected') this.send('console', 'error', entry)
+        this.updateUI() // show the error indicator
+      }
+    } catch {
+      // Never let capture break the page.
+    }
+  }
+
   private interceptConsole() {
     const levels: Array<'log' | 'info' | 'warn' | 'error' | 'debug'> = [
       'log',
@@ -10163,45 +10199,78 @@ export class DevChannel extends HTMLElement {
       console[level] = (...args: any[]) => {
         // Call original FIRST, before any capture logic that might fail
         this.originalConsole[level]!.apply(console, args)
-
-        // Capture - wrapped in try/catch to never break console output
         try {
           const entry: ConsoleEntry = {
             level,
-            args: args.map((arg) => {
-              try {
-                return JSON.parse(JSON.stringify(arg))
-              } catch {
-                return String(arg)
-              }
-            }),
+            args: args.map((arg) => this.serializeConsoleArg(arg)),
             timestamp: Date.now(),
           }
-
+          // Prefer a real Error's stack (points at the throw site) over one synthesized here.
           if (level === 'error') {
-            entry.stack = new Error().stack
+            const errArg = args.find((a) => a instanceof Error) as Error | undefined
+            entry.stack = errArg?.stack || new Error().stack
           }
-
-          this.consoleBuffer.push(entry)
-
-          // Limit buffer size
-          if (this.consoleBuffer.length > 1000) {
-            this.consoleBuffer = this.consoleBuffer.slice(-500)
-          }
-
-          // Only send errors to server automatically (others are queryable via REST)
-          if (level === 'error') {
-            if (this.state === 'connected') {
-              this.send('console', level, entry)
-            }
-            // Update UI to show error indicator
-            this.updateUI()
-          }
+          this.recordConsoleEntry(entry)
         } catch {
           // Never let capture errors break console output
         }
       }
     }
+
+    this.installErrorCapture()
+  }
+
+  /**
+   * Capture what `console.error` interception alone misses: uncaught exceptions and unhandled
+   * promise rejections — i.e. the errors that are actual bugs, which never route through
+   * `console.error`. Without these, `hj console` shows a page as clean while it's throwing.
+   */
+  private installErrorCapture() {
+    if (typeof window === 'undefined' || this.errorCaptureInstalled) return
+    this.errorCaptureInstalled = true
+
+    window.addEventListener('error', (event: ErrorEvent) => {
+      try {
+        const err = event.error
+        let message: string
+        let stack: string | undefined
+        if (err instanceof Error) {
+          message = `Uncaught ${err.name}: ${err.message}`
+          stack = err.stack
+        } else if ((event.target as any)?.tagName) {
+          // A resource (img/script/link/…) failed to load — also usually the bug.
+          const el = event.target as any
+          message = `Resource failed to load: <${String(el.tagName).toLowerCase()}> ${el.src || el.href || ''}`.trim()
+        } else {
+          message = `Uncaught error: ${event.message || 'unknown'}`
+        }
+        const where = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : ''
+        this.recordConsoleEntry({
+          level: 'error',
+          args: [message + where],
+          timestamp: Date.now(),
+          stack,
+        })
+      } catch {}
+    }, true) // capture phase so resource-load errors (which don't bubble) are seen
+
+    window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+      try {
+        const reason = event.reason
+        // A non-Error reason (e.g. a rejected string/object) can't go in the template literal
+        // ([object Object]); keep it as a structured second arg so it's not lost.
+        const args =
+          reason instanceof Error
+            ? [`Unhandled promise rejection: ${reason.name}: ${reason.message}`]
+            : ['Unhandled promise rejection:', this.serializeConsoleArg(reason)]
+        this.recordConsoleEntry({
+          level: 'error',
+          args,
+          timestamp: Date.now(),
+          stack: reason instanceof Error ? reason.stack : undefined,
+        })
+      } catch {}
+    })
   }
 
   private restoreConsole() {
