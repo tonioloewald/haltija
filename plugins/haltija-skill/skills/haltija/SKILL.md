@@ -43,6 +43,9 @@ silent: they look like a flaky page, not an error.
 
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
+When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`**
+lists them all — port, name, version, tabs, which is the desktop app — with `▸` on the one you'd
+drive. The desktop app is reachable as `hj --name desktop`.
 
 `hj` also warns on stderr when its version differs from the server's (`hj --version` prints its
 own). A mismatched `hj` can route or format wrongly — if you see that warning, believe it before

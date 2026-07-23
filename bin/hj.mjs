@@ -127,6 +127,71 @@ async function runWhere(port, portSource, jsonOutput) {
 }
 
 /**
+ * `hj servers` — enumerate every live haltija server so you can pick one when several coexist
+ * (e.g. a project server + the Electron desktop app). Sources: the registry, the well-known
+ * defaults 8700/8701 (to catch anything unregistered), and this shell's resolved target. Marks the
+ * one `hj` would drive. Pure probes + registry read; no side effects, never auto-launches.
+ */
+async function runServers(resolvedPort) {
+  const bold = (s) => `\x1b[1m${s}\x1b[0m`
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`
+  const green = (s) => `\x1b[32m${s}\x1b[0m`
+  const token = process.env.HALTIJA_TOKEN
+
+  const byPort = new Map()
+  for (const e of listLiveInstances()) {
+    byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd })
+  }
+  for (const p of ['8700', '8701', String(resolvedPort)]) {
+    if (!byPort.has(p)) byPort.set(p, { port: p, name: null, cwd: null })
+  }
+
+  const rows = await Promise.all(
+    [...byPort.values()].map(async (c) => {
+      try {
+        const resp = await fetch(`http://localhost:${c.port}/status`, {
+          headers: token ? { 'X-Haltija-Token': token } : {},
+          signal: AbortSignal.timeout(2000),
+        })
+        if (!resp.ok) return { ...c, up: false }
+        const s = await resp.json()
+        return {
+          ...c,
+          up: true,
+          version: s.serverVersion || '?',
+          desktopApp: !!s.desktopApp,
+          tabs: Array.isArray(s.windows) ? s.windows.length : s.browsers ?? 0,
+        }
+      } catch {
+        return { ...c, up: false }
+      }
+    }),
+  )
+
+  const up = rows.filter((r) => r.up).sort((a, b) => Number(a.port) - Number(b.port))
+  if (!up.length) {
+    console.log('No haltija servers are running.')
+    console.log(dim('Start one:  bunx haltija --server   (or the desktop app:  bunx haltija)'))
+    return
+  }
+
+  console.log(bold('Live haltija servers') + dim('  (▸ = what this shell targets)'))
+  for (const r of up) {
+    const here = String(r.port) === String(resolvedPort) ? green('▸') : ' '
+    const name = r.desktopApp ? 'desktop' : r.name || '(unnamed)'
+    const tabs = `${r.tabs} tab${r.tabs === 1 ? '' : 's'}`
+    const kind = r.desktopApp ? 'desktop app' : r.cwd || ''
+    console.log(
+      `  ${here} ${String(r.port).padEnd(6)} ${name.padEnd(14)} v${String(r.version).padEnd(8)} ${tabs.padEnd(9)} ${dim(kind)}`,
+    )
+  }
+  if (!up.some((r) => String(r.port) === String(resolvedPort))) {
+    console.log(dim(`\nThis shell targets :${resolvedPort}, but nothing is listening there.`))
+  }
+  console.log(dim('\nPick one:  ') + `hj --port <n> <cmd>` + dim('  or  ') + `hj --name <name> <cmd>`)
+}
+
+/**
  * Resolve a named haltija instance to its port by reading
  * ~/.haltija/servers/<name>.json. Returns null if the file is missing,
  * malformed, or the recorded pid is no longer alive.
@@ -214,6 +279,7 @@ ${dim('Overriding that (per-shell):')}
 
 ${dim('Lifecycle:')}
   ${dim('hj where')}                       # which server this shell targets + what is alive there
+  ${dim('hj servers')}                     # list ALL live servers (pick one with --port/--name)
   ${dim('hj shutdown')}                    # stop the targeted server (a private --app: Electron + all)
 ${listSubcommands()}
 Run ${dim('hj --help')} for this help.
@@ -368,6 +434,13 @@ if (windowTarget) subArgs = [...subArgs, '--window', windowTarget]
 // /status probe; no side effects, no auto-launch, safe to run anywhere.
 if (subcommand === 'where') {
   await runWhere(port, portSource, subArgs.includes('--json'))
+  process.exit(0)
+}
+
+// `hj servers` / `hj ls` — list every live haltija server (registry + defaults + this shell's
+// target), so you can pick one when several coexist. Diagnostic; never auto-launches.
+if (subcommand === 'servers' || subcommand === 'ls') {
+  await runServers(port)
   process.exit(0)
 }
 

@@ -4476,13 +4476,23 @@ if (IS_PRIVATE) {
 // `hj` and cwd-routing must not be able to discover or adopt it. The caller drives it by the port
 // it reported (HALTIJA_PRIVATE_READY / HALTIJA_PORT_FILE), not via the registry.
 const CAN_BE_REGISTERED = USE_HTTP && !IS_PRIVATE
-const REGISTRY_NAME = !CAN_BE_REGISTERED ? '' : (INSTANCE_NAME || (isDesktopApp ? '' : autoNameFor(PORT)))
+// The desktop app's PUBLIC server registers under a reserved name `desktop` so it's discoverable
+// (`hj --name desktop`, `hj servers`) when it coexists with a normal server — but cwd-LESS (below),
+// so it never wins cwd-routing (its launch directory says nothing about which project it serves).
+// The INTERNAL chrome server (HALTIJA_DESKTOP_PUBLIC=0) and a reused external server are excluded.
+const isPublicDesktopServer = isDesktopApp && process.env.HALTIJA_DESKTOP_PUBLIC === '1'
+const REGISTRY_NAME = !CAN_BE_REGISTERED
+  ? ''
+  : (INSTANCE_NAME || (isDesktopApp ? (isPublicDesktopServer ? 'desktop' : '') : autoNameFor(PORT)))
 if (!CAN_BE_REGISTERED && (INSTANCE_NAME || !isDesktopApp)) {
   console.log(`${LOG_PREFIX} HTTPS-only: not registering an instance (hj speaks HTTP; cwd routing and --name need an HTTP port)`)
 }
 if (REGISTRY_NAME) {
   try {
-    registerNamedInstance(REGISTRY_NAME, PORT, { auto: !INSTANCE_NAME })
+    // A cwd-less entry is skipped by cwd-routing (`resolveByCwd` requires `e.cwd`), so `desktop` is
+    // nameable without hijacking projects.
+    const reservedDesktop = REGISTRY_NAME === 'desktop' && !INSTANCE_NAME && isPublicDesktopServer
+    registerNamedInstance(REGISTRY_NAME, PORT, { auto: !INSTANCE_NAME, ...(reservedDesktop ? { cwd: '' } : {}) })
     const cleanup = () => {
       try { unregisterNamedInstance(REGISTRY_NAME) } catch {}
     }

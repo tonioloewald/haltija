@@ -480,7 +480,20 @@ The cwd step picks the live server whose recorded `cwd` is the *nearest ancestor
 
 Before this existed, every `hj` in every project resolved to 8700 and drove whatever tab was focused there. If you touch the resolution ladder, keep that failure mode in mind: **a misroute is silent and looks like a flaky test, not an error.**
 
-The desktop app is deliberately **not** auto-registered (it owns the default port and is launched from an arbitrary directory, so its cwd says nothing about which project it serves).
+The desktop app's **public** server registers under the reserved name **`desktop`**, but **cwd-less**
+(`cwd: ''`) — so `hj --name desktop` (and `hj servers`) can find it when it coexists with a normal
+server, yet it never wins **cwd routing** (`resolveByCwd` skips entries with no `cwd`; its launch
+directory says nothing about which project it serves). Only the public server registers: main.js
+sets `HALTIJA_DESKTOP_PUBLIC=1` on it and `0` on the **internal** chrome server (which agents never
+target and which stays unregistered). A **private** desktop app registers nothing (isolation). A
+reused external 8700 server keeps its own registration — `desktop` appears only when the app spawns
+its own server.
+
+**Listing what's alive.** `hj servers` (alias `hj ls`) enumerates every live server — registry
+entries, the well-known defaults 8700/8701 (probed, to catch anything unregistered), and this
+shell's resolved target — showing port, name, version, tab count, and whether it's the desktop app,
+with a `▸` on the one `hj` would drive. It's the answer to "several haltijas are running; which is
+which, and how do I pick?": target one with `hj --port <n>` or `hj --name <name>`.
 
 ### The `hj` binary on `~/.local/bin` is shared state
 

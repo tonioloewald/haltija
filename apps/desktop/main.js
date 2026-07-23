@@ -1212,6 +1212,10 @@ function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, compone
     HALTIJA_PORT: port.toString(),    // what src/server.ts actually reads
     DEV_CHANNEL_PORT: port.toString(),
     HALTIJA_DESKTOP: '1',
+    // Only the PUBLIC server (the one agents drive) registers under the reserved 'desktop' name so
+    // `hj --name desktop` / `hj servers` can find it; the internal chrome server stays unregistered.
+    // See src/server.ts REGISTRY_NAME. (Ignored for a private run — those never register.)
+    HALTIJA_DESKTOP_PUBLIC: role === 'public' ? '1' : '0',
   }
   if (IS_PRIVATE) {
     // Isolated instance: this child binds an EPHEMERAL port (HALTIJA_PRIVATE forces PORT=0) and

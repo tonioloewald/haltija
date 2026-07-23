@@ -509,6 +509,16 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
 
 ### Pre-existing
 
+- **[teardown] `--private --headless` can orphan its server when the launcher is SIGKILLed.**
+  Sibling of the fixed #7 (which was `--private --app`). Observed orphaned ephemeral `dist/server.js`
+  (ppid=1) after killing a `--private --headless` launcher — the launcher's SIGINT/SIGTERM handlers
+  close the Playwright browser but don't reliably reap the spawned server, and a SIGKILL bypasses
+  them entirely. The server should self-terminate when its spawner dies (the same
+  `HALTIJA_SPAWNER_PID`-poll idea as the Electron fix, applied to the server process), or the
+  launcher should spawn it in its own process group and kill the group. Lower urgency than #7 (no
+  single-instance lock, so it doesn't *block* the next run — it just leaks a process). `hj shutdown`
+  already stops it cleanly on demand.
+
 - ✅ **[desktop, isolation] `--private --app` single-instance lock + teardown (issue #7)** — fixed
   in 1.5.5. A private run no longer requests the single-instance lock (so an orphan can't block the
   next run and concurrent runs coexist); the private Electron self-terminates when its spawner dies

@@ -2010,6 +2010,60 @@ ${bold2("warning:")} hj ${HJ_VERSION} is driving server ${serverInfo.serverVersi
     console.log(dim3(`  This hj is ${process.argv[1]}`));
   }
 }
+async function runServers(resolvedPort) {
+  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
+  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
+  const green2 = (s) => `\x1B[32m${s}\x1B[0m`;
+  const token = process.env.HALTIJA_TOKEN;
+  const byPort = new Map;
+  for (const e of listLiveInstances()) {
+    byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd });
+  }
+  for (const p of ["8700", "8701", String(resolvedPort)]) {
+    if (!byPort.has(p))
+      byPort.set(p, { port: p, name: null, cwd: null });
+  }
+  const rows = await Promise.all([...byPort.values()].map(async (c) => {
+    try {
+      const resp = await fetch(`http://localhost:${c.port}/status`, {
+        headers: token ? { "X-Haltija-Token": token } : {},
+        signal: AbortSignal.timeout(2000)
+      });
+      if (!resp.ok)
+        return { ...c, up: false };
+      const s = await resp.json();
+      return {
+        ...c,
+        up: true,
+        version: s.serverVersion || "?",
+        desktopApp: !!s.desktopApp,
+        tabs: Array.isArray(s.windows) ? s.windows.length : s.browsers ?? 0
+      };
+    } catch {
+      return { ...c, up: false };
+    }
+  }));
+  const up = rows.filter((r) => r.up).sort((a, b) => Number(a.port) - Number(b.port));
+  if (!up.length) {
+    console.log("No haltija servers are running.");
+    console.log(dim3("Start one:  bunx haltija --server   (or the desktop app:  bunx haltija)"));
+    return;
+  }
+  console.log(bold2("Live haltija servers") + dim3("  (▸ = what this shell targets)"));
+  for (const r of up) {
+    const here = String(r.port) === String(resolvedPort) ? green2("▸") : " ";
+    const name = r.desktopApp ? "desktop" : r.name || "(unnamed)";
+    const tabs = `${r.tabs} tab${r.tabs === 1 ? "" : "s"}`;
+    const kind = r.desktopApp ? "desktop app" : r.cwd || "";
+    console.log(`  ${here} ${String(r.port).padEnd(6)} ${name.padEnd(14)} v${String(r.version).padEnd(8)} ${tabs.padEnd(9)} ${dim3(kind)}`);
+  }
+  if (!up.some((r) => String(r.port) === String(resolvedPort))) {
+    console.log(dim3(`
+This shell targets :${resolvedPort}, but nothing is listening there.`));
+  }
+  console.log(dim3(`
+Pick one:  `) + `hj --port <n> <cmd>` + dim3("  or  ") + `hj --name <name> <cmd>`);
+}
 function lookupNamedInstance(name) {
   const path = join2(REGISTRY_DIR, `${name}.json`);
   if (!existsSync2(path))
@@ -2084,6 +2138,7 @@ ${dim3("Overriding that (per-shell):")}
 
 ${dim3("Lifecycle:")}
   ${dim3("hj where")}                       # which server this shell targets + what is alive there
+  ${dim3("hj servers")}                     # list ALL live servers (pick one with --port/--name)
   ${dim3("hj shutdown")}                    # stop the targeted server (a private --app: Electron + all)
 ${listSubcommands()}
 Run ${dim3("hj --help")} for this help.
@@ -2178,6 +2233,10 @@ if (windowTarget)
   subArgs = [...subArgs, "--window", windowTarget];
 if (subcommand === "where") {
   await runWhere(port, portSource, subArgs.includes("--json"));
+  process.exit(0);
+}
+if (subcommand === "servers" || subcommand === "ls") {
+  await runServers(port);
   process.exit(0);
 }
 if (subcommand === "shutdown" || subcommand === "quit") {
