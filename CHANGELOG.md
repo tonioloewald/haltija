@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.7
+
+Pick between coexisting servers.
+
+When a normal haltija server and the Electron desktop app both ran, there was no way to see them or
+target the app — it was unregistered, invisible to `hj where` and the registry.
+
+- **`hj servers`** (alias `hj ls`) lists every live server: registry entries, the probed defaults
+  8700/8701, and this shell's target — with port, name, version, tab count, whether it's the
+  desktop app, and a `▸` on the one `hj` would drive.
+- **The desktop app is now reachable as `hj --name desktop`.** Its public server registers under
+  the reserved name `desktop`, but *cwd-less* — so it's nameable without ever hijacking cwd routing.
+  (The internal chrome server stays unregistered; a `--private` app registers nothing.)
+
 ## 1.5.6
 
 `hj console` now captures the errors that actually matter.
