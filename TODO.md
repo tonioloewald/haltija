@@ -507,6 +507,21 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
   `discoverPrivatePort` (tosijs-dev.mjs) are near-identical and drifted on timeout. *Deferred:* nit;
   touches timing behavior in two files.
 
+### From the 1.6.0 pre-release review (deferred nits)
+
+- **[dead code] Remove the now-unreachable `haltija.focusTab` / `'tabs' 'focus'` branch in
+  `src/component.ts`.** tabs-focus is fully server-side since #4, so the server never dispatches
+  `focus` to the widget. Either delete the handler, or (if the desktop *physical* raise follow-up
+  lands) repurpose it via a non-blocking dispatch. Tie to the deferred "raise the tab in the desktop
+  app" item.
+- **[coverage] Extract `runServers`' enumeration into a tested `src/` module** — `bin/hj.mjs` gained
+  ~106 lines of untested runtime logic (`runServers`, `hj shutdown`). Move the server-list
+  derivation into `src/` with unit tests; `hj.mjs` stays a thin caller. (review: practices)
+- **[coverage] Unit-test the tabs-open fallback→`warning` promotion and the `/shutdown` guard
+  predicates** (private→signal-parent, non-private-desktop→409). `src/api-handlers.ts`, `src/server.ts`.
+- **[nit] De-dup `hj servers`/`hj where`** — share one `/status` probe + hoist the `bold`/`dim`/
+  `green` ANSI helpers to a single definition in `bin/hj.mjs`.
+
 ### Pre-existing
 
 - **[teardown] `--private --headless` can orphan its server when the launcher is SIGKILLed.**
