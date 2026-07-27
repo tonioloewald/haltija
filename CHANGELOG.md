@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.6.0
+
+Consolidating release: rolls up everything from 1.5.2–1.5.7 (the last npm-published version was
+1.5.4) and adds the fixes from a full nine-lens pre-release review of the whole span.
+
+**Highlights since 1.5.4** (see the per-version entries below for detail):
+
+- **`--private --app` teardown** (1.5.5, #7) — private Electron no longer orphans: skips the
+  single-instance lock, self-terminates when its spawner dies, `hj shutdown` tears it all down.
+- **Console capture** (1.5.6) — uncaught exceptions, unhandled rejections, and `console.error(Error)`
+  messages/stacks are now captured (all were previously dropped).
+- **Server picker** (1.5.7) — `hj servers` lists every live server; the desktop app is reachable as
+  `hj --name desktop`.
+
+**Review-driven fixes in this release:**
+
+- **`hj shutdown` no longer orphans a running desktop app.** It refuses (with a clear message —
+  quit the app from its window) instead of killing just the embedded server and leaving the window
+  on screen with dead tabs. `--private` instances still tear down fully.
+- **`--name desktop` is reserved** — a normal server can no longer claim it and clobber the desktop
+  app's registry entry.
+- The uncaught-error listeners are removed on widget disconnect (no leak across re-injection).
+- `hj ls` is now an alias for `hj servers` (was `hj tree`); the old alias is gone.
+- Added tabs-focus regression tests and `hj servers` / `hj --name desktop` / `hj shutdown` to the
+  generated docs and the agent skill.
+
 ## 1.5.7
 
 Pick between coexisting servers.
