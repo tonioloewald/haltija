@@ -2803,9 +2803,12 @@ cd ~/my-project && bunx haltija --server   # this project now owns a server
 hj tree                                    # ...and plain hj reaches it
 
 hj where                                   # which port, WHY, and what is alive there
+hj servers                                 # list ALL live servers; pick with --port/--name
 \`\`\`
 
-If no server owns your directory, \`hj\` falls back to the shared default port
+When several haltijas run at once (e.g. a project server AND the desktop app),
+\`hj servers\` (alias \`hj ls\`) lists them all — the desktop app is reachable as
+\`hj --name desktop\`. If no server owns your directory, \`hj\` falls back to the shared default port
 8700 and **warns on stderr when other servers are running**. Heed that warning:
 it means the command may have driven a *different project's* browser. Misroutes
 are silent — they look like a flaky page, not an error. When something seems to
@@ -2972,7 +2975,9 @@ Two first-party ways to run (plus embedding, below):
   \`hj\` picks the one whose directory is the nearest ancestor of your cwd, so plain
   \`hj tree\` inside a project reaches that project's server with no flags. Falling
   back to the shared default port 8700 warns on stderr. Use \`hj where\` to see which
-  port a shell targets and WHY; override with \`--port\` or \`--name\`.
+  port a shell targets and WHY; override with \`--port\` or \`--name\`. When several servers
+  run at once (e.g. a project server AND the desktop app), \`hj servers\` lists them all —
+  the desktop app is reachable as \`hj --name desktop\`.
 - **CI:** two engines, and the choice matters — both need one external browser, but
   a *different* one:
   - \`haltija --ci\` (or \`--private --app\` for an isolated instance) drives **Electron**
@@ -4984,6 +4989,7 @@ export const COMPONENT_JS: string = `(() => {
       this.killed = true;
       this.disconnect();
       this.restoreConsole();
+      this.uninstallErrorCapture();
       this.restoreDialogs();
       this.clearEventWatchers();
       this.stopMutationWatch();
@@ -10489,11 +10495,13 @@ export const COMPONENT_JS: string = `(() => {
       }
       this.installErrorCapture();
     }
+    onWindowError = null;
+    onUnhandledRejection = null;
     installErrorCapture() {
       if (typeof window === "undefined" || this.errorCaptureInstalled)
         return;
       this.errorCaptureInstalled = true;
-      window.addEventListener("error", (event) => {
+      this.onWindowError = (event) => {
         try {
           const err = event.error;
           let message;
@@ -10515,8 +10523,9 @@ export const COMPONENT_JS: string = `(() => {
             stack
           });
         } catch {}
-      }, true);
-      window.addEventListener("unhandledrejection", (event) => {
+      };
+      window.addEventListener("error", this.onWindowError, true);
+      this.onUnhandledRejection = (event) => {
         try {
           const reason = event.reason;
           const args = reason instanceof Error ? [\`Unhandled promise rejection: \${reason.name}: \${reason.message}\`] : ["Unhandled promise rejection:", this.serializeConsoleArg(reason)];
@@ -10527,7 +10536,19 @@ export const COMPONENT_JS: string = `(() => {
             stack: reason instanceof Error ? reason.stack : undefined
           });
         } catch {}
-      });
+      };
+      window.addEventListener("unhandledrejection", this.onUnhandledRejection);
+    }
+    uninstallErrorCapture() {
+      if (typeof window !== "undefined") {
+        if (this.onWindowError)
+          window.removeEventListener("error", this.onWindowError, true);
+        if (this.onUnhandledRejection)
+          window.removeEventListener("unhandledrejection", this.onUnhandledRejection);
+      }
+      this.onWindowError = null;
+      this.onUnhandledRejection = null;
+      this.errorCaptureInstalled = false;
     }
     restoreConsole() {
       for (const [level, fn] of Object.entries(this.originalConsole)) {

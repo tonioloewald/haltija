@@ -1073,7 +1073,7 @@ const COMMAND_ALIASES = {
   'execute': 'eval',
   'shot': 'screenshot',
   'capture': 'screenshot',
-  'ls': 'tree',
+  // NB: `ls` is NOT an alias for `tree` — it's intercepted in hj.mjs as `hj servers` (list servers).
   'list': 'tree',
   'show': 'tree',
   'help': '--help',

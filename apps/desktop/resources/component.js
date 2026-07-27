@@ -1970,6 +1970,7 @@
       this.killed = true;
       this.disconnect();
       this.restoreConsole();
+      this.uninstallErrorCapture();
       this.restoreDialogs();
       this.clearEventWatchers();
       this.stopMutationWatch();
@@ -7475,11 +7476,13 @@ ${elementSummary}${moreText}`;
       }
       this.installErrorCapture();
     }
+    onWindowError = null;
+    onUnhandledRejection = null;
     installErrorCapture() {
       if (typeof window === "undefined" || this.errorCaptureInstalled)
         return;
       this.errorCaptureInstalled = true;
-      window.addEventListener("error", (event) => {
+      this.onWindowError = (event) => {
         try {
           const err = event.error;
           let message;
@@ -7501,8 +7504,9 @@ ${elementSummary}${moreText}`;
             stack
           });
         } catch {}
-      }, true);
-      window.addEventListener("unhandledrejection", (event) => {
+      };
+      window.addEventListener("error", this.onWindowError, true);
+      this.onUnhandledRejection = (event) => {
         try {
           const reason = event.reason;
           const args = reason instanceof Error ? [`Unhandled promise rejection: ${reason.name}: ${reason.message}`] : ["Unhandled promise rejection:", this.serializeConsoleArg(reason)];
@@ -7513,7 +7517,19 @@ ${elementSummary}${moreText}`;
             stack: reason instanceof Error ? reason.stack : undefined
           });
         } catch {}
-      });
+      };
+      window.addEventListener("unhandledrejection", this.onUnhandledRejection);
+    }
+    uninstallErrorCapture() {
+      if (typeof window !== "undefined") {
+        if (this.onWindowError)
+          window.removeEventListener("error", this.onWindowError, true);
+        if (this.onUnhandledRejection)
+          window.removeEventListener("unhandledrejection", this.onUnhandledRejection);
+      }
+      this.onWindowError = null;
+      this.onUnhandledRejection = null;
+      this.errorCaptureInstalled = false;
     }
     restoreConsole() {
       for (const [level, fn] of Object.entries(this.originalConsole)) {

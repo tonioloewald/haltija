@@ -105,6 +105,15 @@ const PORT_IS_STRICT = !!PORT_PREFERENCE && !IS_PRIVATE
 let PORT = IS_PRIVATE ? 0 : parseInt(PORT_PREFERENCE || '8700')
 let HTTPS_PORT = IS_PRIVATE ? 0 : parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
 const INSTANCE_NAME = process.env.HALTIJA_NAME || ''
+// `desktop` is reserved for the Haltija desktop app (it registers under that name, cwd-less, so
+// `hj --name desktop` reaches it). A normal server claiming it (`--name desktop` / HALTIJA_NAME=
+// desktop) would clobber the app's registry entry and re-open the cross-project misroute the
+// registry exists to prevent — so fail fast rather than mis-register. The app itself does NOT use
+// --name (it registers via the isDesktopApp path), so this only rejects a user misusing the name.
+if (INSTANCE_NAME === 'desktop' && process.env.HALTIJA_DESKTOP !== '1') {
+  console.error('[haltija] The name "desktop" is reserved for the Haltija desktop app. Use a different --name / HALTIJA_NAME.')
+  process.exit(1)
+}
 const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
 const DOCS_DIR = process.env.DEV_CHANNEL_DOCS_DIR || null
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -217,6 +226,20 @@ const agents = new Set<WebSocket>()
 
 // Track the currently focused window ID (for routing untargeted commands)
 let focusedWindowId: string | null = null
+
+/**
+ * Point untargeted commands at a specific tab — pure server state, no browser roundtrip (issue #4).
+ * Returns the window, or null if it isn't connected. THE single source of truth for the REST
+ * handler (`ctx.focusWindow`) and the test-runner `tabs-focus` step, so the two can't drift (the
+ * test path used to set `focusedWindowId` directly and skip `updateHjStatus()`).
+ */
+function setFocusedWindow(windowId: string): TrackedWindow | null {
+  const win = windows.get(windowId)
+  if (!win) return null
+  focusedWindowId = windowId
+  updateHjStatus()
+  return win
+}
 
 // Set by the Electron desktop app when it spawns this server. When true the
 // server emits __NEED_WINDOW__ to stdout for the parent process to react.
@@ -894,12 +917,10 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     // tab" still applies on a real visibilitychange, which is correct: if the user physically
     // switches tabs, that's genuine intent that should win over a stale CLI pin.
     focusWindow: (windowId: string) => {
-      const win = windows.get(windowId)
+      const win = setFocusedWindow(windowId)
       if (!win) {
         return { ok: false, error: `Tab ${windowId} not found (run \`hj tabs\` to list connected tabs)` }
       }
-      focusedWindowId = windowId
-      updateHjStatus()
       return { ok: true, active: win.active, windowType: win.windowType, title: win.title }
     },
     startRecordingSession,
@@ -1452,6 +1473,20 @@ async function handleRest(req: Request): Promise<Response> {
         process.exit(0)
       }, 100)
       return Response.json({ success: true, message: 'Private app shutting down (Electron + servers)...' }, { headers })
+    }
+    if (isDesktopApp) {
+      // A NON-private desktop app's OWN server (a reused external server is not isDesktopApp).
+      // Exiting just this server would leave the Electron window on screen with every tab's socket
+      // dead — the exact "never orphan a visible desktop app" invariant retirement honors. Refuse,
+      // and say how to actually stop it. (A --private instance IS torn down by hj shutdown, above.)
+      return Response.json({
+        success: false,
+        error:
+          "This is the Haltija desktop app's own server — refusing to shut it down and orphan the " +
+          'window (its tabs would go dead while the app stays on screen). Quit the app from its ' +
+          'window or menu (⌘Q) to stop it. `hj shutdown` fully tears down a --private instance, not ' +
+          'the interactive desktop app.',
+      }, { status: 409, headers })
     }
     setTimeout(() => process.exit(0), 100)
     return Response.json({ success: true, message: 'Server shutting down...' }, { headers })
@@ -3087,12 +3122,10 @@ Run 'hj --help' for all commands.`
           case 'tabs-focus': {
             // Server-side focus (issue #4): set the routing target, don't dispatch to the browser.
             // Dispatching timed out whenever the target tab was hidden — exactly when you'd want to
-            // focus it.
-            if (!step.window || !windows.has(step.window)) {
+            // focus it. Shares setFocusedWindow() with the REST handler so the two can't drift.
+            if (!step.window || !setFocusedWindow(step.window)) {
               stepPassed = false
               error = `Tab ${step.window ?? '(none)'} not found`
-            } else {
-              focusedWindowId = step.window
             }
             break
           }

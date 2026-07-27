@@ -787,6 +787,73 @@ describe('window focus management', () => {
     }
   })
 
+  // Regression tests for the issue #4 rewrite: tabs-focus is a SERVER-SIDE routing change, not a
+  // browser dispatch. A revert to browser-dispatch (the old hidden-tab timeout) must fail here.
+  it('POST /tabs/focus on an unknown window → 404, not a timeout', async () => {
+    const start = Date.now()
+    const res = await fetch(`${BASE_URL}/tabs/focus`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ window: 'no-such-window-xyz' }),
+    })
+    expect(res.status).toBe(404)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.error).toContain('not found')
+    expect(Date.now() - start).toBeLessThan(2000) // no 5s browser-dispatch timeout
+  })
+
+  it('POST /tabs/focus sets routing server-side (instant, no browser roundtrip)', async () => {
+    const ws = await connectBrowserWindow('tabs-focus-win')
+    try {
+      const start = Date.now()
+      const res = await fetch(`${BASE_URL}/tabs/focus`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ window: 'tabs-focus-win' }),
+      })
+      const elapsed = Date.now() - start
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.success).toBe(true)
+      expect(data.focused).toBe('tabs-focus-win')
+      expect(data.active).toBe(true)
+      expect(elapsed).toBeLessThan(2000) // instant: the old browser dispatch would time out on a hidden tab
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
+  it('POST /tabs/focus on a HIDDEN window succeeds but warns', async () => {
+    const ws = await connectBrowserWindow('tabs-focus-hidden')
+    try {
+      // Report the tab hidden (as the widget does on visibilitychange).
+      ws.send(JSON.stringify({
+        channel: 'system',
+        action: 'window-state',
+        payload: { windowId: 'tabs-focus-hidden', active: false },
+        timestamp: Date.now(),
+      }))
+      await new Promise(r => setTimeout(r, 100))
+
+      const res = await fetch(`${BASE_URL}/tabs/focus`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ window: 'tabs-focus-hidden' }),
+      })
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.success).toBe(true)
+      expect(data.active).toBe(false)
+      expect(typeof data.warning).toBe('string')
+      expect(data.warning).toContain('HIDDEN')
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
   it('focused window still receives commands after deactivate (webview stays visible)', async () => {
     const ws = await connectBrowserWindow('test-still-routes-win')
     try {

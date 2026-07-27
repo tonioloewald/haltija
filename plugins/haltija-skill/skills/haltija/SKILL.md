@@ -45,7 +45,9 @@ silent: they look like a flaky page, not an error.
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`**
 lists them all — port, name, version, tabs, which is the desktop app — with `▸` on the one you'd
-drive. The desktop app is reachable as `hj --name desktop`.
+drive. The desktop app is reachable as `hj --name desktop`. **`hj shutdown`** (alias `hj quit`) stops
+the targeted server; against a `--private` instance it tears down the whole thing (Electron + its
+servers), and it refuses to orphan the interactive desktop app (quit that from its window).
 
 `hj` also warns on stderr when its version differs from the server's (`hj --version` prints its
 own). A mismatched `hj` can route or format wrongly — if you see that warning, believe it before

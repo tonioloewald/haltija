@@ -1786,7 +1786,6 @@ var COMMAND_ALIASES = {
   execute: "eval",
   shot: "screenshot",
   capture: "screenshot",
-  ls: "tree",
   list: "tree",
   show: "tree",
   help: "--help",
@@ -2247,12 +2246,12 @@ if (subcommand === "shutdown" || subcommand === "quit") {
       headers: token ? { "X-Haltija-Token": token } : {},
       signal: AbortSignal.timeout(3000)
     });
+    const j = await resp.json().catch(() => ({}));
     if (resp.ok) {
-      const j = await resp.json().catch(() => ({}));
       console.log(j.message || `Shutdown requested on port ${port}.`);
       process.exit(0);
     }
-    console.error(`hj ${subcommand}: server on port ${port} returned HTTP ${resp.status}`);
+    console.error(`hj ${subcommand}: ${j.error || `server on port ${port} returned HTTP ${resp.status}`}`);
     process.exit(1);
   } catch (err) {
     if (err.code === "ConnectionRefused" || err.cause?.code === "ECONNREFUSED") {

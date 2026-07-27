@@ -131,9 +131,12 @@ cd ~/my-project && bunx haltija --server   # this project now owns a server
 hj tree                                    # ...and plain hj reaches it
 
 hj where                                   # which port, WHY, and what is alive there
+hj servers                                 # list ALL live servers; pick with --port/--name
 ```
 
-If no server owns your directory, `hj` falls back to the shared default port
+When several haltijas run at once (e.g. a project server AND the desktop app),
+`hj servers` (alias `hj ls`) lists them all — the desktop app is reachable as
+`hj --name desktop`. If no server owns your directory, `hj` falls back to the shared default port
 8700 and **warns on stderr when other servers are running**. Heed that warning:
 it means the command may have driven a *different project's* browser. Misroutes
 are silent — they look like a flaky page, not an error. When something seems to

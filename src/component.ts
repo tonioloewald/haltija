@@ -2818,6 +2818,7 @@ export class DevChannel extends HTMLElement {
     this.killed = true // Prevent any reconnection attempts
     this.disconnect()
     this.restoreConsole()
+    this.uninstallErrorCapture()
     this.restoreDialogs()
     this.clearEventWatchers()
     this.stopMutationWatch()
@@ -10225,11 +10226,14 @@ export class DevChannel extends HTMLElement {
    * promise rejections — i.e. the errors that are actual bugs, which never route through
    * `console.error`. Without these, `hj console` shows a page as clean while it's throwing.
    */
+  private onWindowError: ((event: ErrorEvent) => void) | null = null
+  private onUnhandledRejection: ((event: PromiseRejectionEvent) => void) | null = null
+
   private installErrorCapture() {
     if (typeof window === 'undefined' || this.errorCaptureInstalled) return
     this.errorCaptureInstalled = true
 
-    window.addEventListener('error', (event: ErrorEvent) => {
+    this.onWindowError = (event: ErrorEvent) => {
       try {
         const err = event.error
         let message: string
@@ -10252,9 +10256,11 @@ export class DevChannel extends HTMLElement {
           stack,
         })
       } catch {}
-    }, true) // capture phase so resource-load errors (which don't bubble) are seen
+    }
+    // Capture phase so resource-load errors (which don't bubble) are seen.
+    window.addEventListener('error', this.onWindowError, true)
 
-    window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+    this.onUnhandledRejection = (event: PromiseRejectionEvent) => {
       try {
         const reason = event.reason
         // A non-Error reason (e.g. a rejected string/object) can't go in the template literal
@@ -10270,7 +10276,19 @@ export class DevChannel extends HTMLElement {
           stack: reason instanceof Error ? reason.stack : undefined,
         })
       } catch {}
-    })
+    }
+    window.addEventListener('unhandledrejection', this.onUnhandledRejection)
+  }
+
+  /** Remove the uncaught-error/rejection listeners so they don't accumulate across re-injection. */
+  private uninstallErrorCapture() {
+    if (typeof window !== 'undefined') {
+      if (this.onWindowError) window.removeEventListener('error', this.onWindowError, true)
+      if (this.onUnhandledRejection) window.removeEventListener('unhandledrejection', this.onUnhandledRejection)
+    }
+    this.onWindowError = null
+    this.onUnhandledRejection = null
+    this.errorCaptureInstalled = false
   }
 
   private restoreConsole() {
