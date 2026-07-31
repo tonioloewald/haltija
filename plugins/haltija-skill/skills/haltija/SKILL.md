@@ -118,6 +118,21 @@ form (or the first form on the page if no selector given) as a structured
 object. Handles inputs, checkboxes, radios, selects, and most framework
 components. Add `--include-disabled` / `--include-hidden` for those fields.
 
+**Target by visible text, not by class.** Every `selector` argument accepts haltija's text
+pseudo-selectors, so you don't have to reverse-engineer someone's class names (which break the
+moment they restyle):
+
+```bash
+hj click 'button:text(sign in)'      # contains, case-insensitive
+hj click 'button:text-is(Save)'      # exact match
+hj click 'a:text(/docs|blog/i)'      # regex
+hj click '.menu :has-text("Edit")'   # Playwright-compatible alias for :text()
+```
+
+Prefer these (or `[data-testid=…]`, or a ref ID from `hj tree`) over structural selectors like
+`.some-lib-menu-item > div:nth-child(2)`. Works everywhere a selector is accepted — `click`,
+`type`, `query`, `inspect`, `tree`, and test JSON.
+
 ## Targeting a specific tab — and trusting the warnings
 
 An untargeted command drives the **focused** tab. On a shared server that's the whole point, but
