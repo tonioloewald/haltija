@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.8.0
+
+### New: `hj map` — what can I interact with, and what is it wired to?
+
+An affordance map of the page. Usually a better first move than `hj tree` or a screenshot when
+you're deciding what to *do*: structural, deterministic (no fonts/theme/viewport/animation timing),
+and dense — a small page is a few hundred bytes (~100 tokens) against ~1–1.5k vision tokens for a
+screenshot.
+
+Two tiers, and the response always says which one produced it:
+
+- **`source: "tosi-agent"`** — when the page exposes an agent surface (`globalThis.tosiAgent`, a
+  tosijs app calling `enableAgentInterface()`), the map is the app's **own wiring records**, passed
+  through unchanged. Those carry what the DOM cannot: which state path each control is bound to and
+  in which **direction** (`⟷` two-way/user-writable, `⟵` display-only, absent = static), the handler
+  path each event calls, and the callable actions. Act through the paths rather than synthesizing
+  input — `hj eval "tosiAgent.write('app.filter','milk')"` — and note that writing a `⟵`
+  display-only path via the DOM won't stick, which is exactly the "I typed into it and nothing
+  happened" trap.
+- **`source: "dom"`** — any other page: structural, visible-only, each node carrying a `ref` for
+  `hj click <ref>`. Labelled an approximation with **no** binding provenance, so it can't be
+  mistaken for real wiring.
+
+Credit to the tosijs agent for the idea (#12).
+
 ## 1.7.0
 
 ### New: capture a `<canvas>` directly — `hj screenshot --canvas <selector>`
