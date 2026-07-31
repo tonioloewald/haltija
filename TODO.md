@@ -507,6 +507,38 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
   `discoverPrivatePort` (tosijs-dev.mjs) are near-identical and drifted on timeout. *Deferred:* nit;
   touches timing behavior in two files.
 
+### Adopter-context test lanes (from issue #11's structural point) — HIGH VALUE
+
+The sharpest observation any reporter has made: **haltija is tested in a clean room, and adopters
+run it on a machine that already has haltija on it.** Every field bug we've shipped — #1 (shared
+routing), #7 (orphaned Electron), #8 (cross-project targeting), #11 (server up, zero windows) — is
+invisible to a test that starts from nothing and ends at nothing. The gap is *context*, not depth.
+Lanes to add (each maps to a shipped bug class):
+
+- **A server already running when the lane starts** — with windows, and with **none** (that's #11
+  as an executable test).
+- **Two projects at once**, different cwds, each expecting its own window (#1 and #2 as a test
+  rather than a report).
+- **A stale-but-satisfying version in the bunx cache** — `^1.5.0` is satisfied by a cached 1.5.0
+  that predates the 1.5.5 teardown fix. No range protects against this; only a lane that runs with
+  such a cache catches the next one.
+- **A half-dead instance** — server without windows, and the reverse.
+- **Pack-and-install**: install the tarball and drive it from outside the repo.
+
+Generalized into the shared KB (`practices/testing.md` → "Test the environment adopters have, not
+the clean room"), since tosijs-ui hit the identical shape with packaging.
+
+### Deferred from #8 (strict mode shipped; these did not)
+
+- **Refuse cross-project targeting by DEFAULT** (not just under `--strict`). Correct end state, but
+  a behavior break for every interactive user who relies on the 8700 fallback — wants a deprecation
+  cycle, not a patch. Strict mode covers the automation case today.
+- **Age out windows whose target no longer answers** (a 21-hour-old window pointing at a dead dev
+  server lingering as a navigation candidate). Deliberately deferred: this is the same trap as the
+  rejected `lastSeen` staleness idea — an idle-but-healthy tab is indistinguishable from a dead one
+  without a probe, so a naive timeout would invent a *new* false signal to fix a real one. Wants an
+  actual liveness probe before acting. `hj doctor` surfaces the condition in the meantime.
+
 ### From the 1.6.0 pre-release review (deferred nits)
 
 - **[dead code] Remove the now-unreachable `haltija.focusTab` / `'tabs' 'focus'` branch in

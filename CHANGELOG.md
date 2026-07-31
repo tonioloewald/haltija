@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.6.1
+
+Makes haltija's detection reachable by automation ([#8](https://github.com/tonioloewald/haltija/issues/8),
+[#11](https://github.com/tonioloewald/haltija/issues/11)).
+
+haltija already *detects* the situations that wreck a test lane — the wrong project's browser, a
+hidden tab returning stale results, a server with nothing to drive. It only ever **warned on
+stderr**, so scripts consumed plausible-but-wrong results and failed much later, pointing at the
+caller's own code.
+
+### New: `ready` — "server is up" is not "server is drivable"
+
+`/status` and `/windows` now return **`ready`**: true when at least one top-level tab is connected.
+A server running with *zero* windows answers `/status` 200, so an adopter's reuse probe skipped
+starting its own browser and then had nothing to navigate. Gate a lane on `ready`, not on the 200.
+
+### New: `hj doctor`
+
+One-command preflight that **exits non-zero**: server reachable → a tab is connected → the target
+isn't ambiguous → tabs aren't all hidden → versions aligned. `--json` for machine-readable output.
+Use it as the wait-loop condition in CI.
+
+### New: `hj --strict` / `HALTIJA_STRICT=1`
+
+Turns the advisory warnings into **non-zero exits**, and refuses to print a suspect result to
+stdout at all — a script must not consume a value that may be wrong. A warning is the right default
+for a human at a prompt and the wrong one for a lane.
+
+### Fixed
+
+- **Warning de-duplication silently defeated strict mode.** The server withheld a repeated warning
+  entirely, so the first command in a lane failed and every later one within the cooldown passed.
+  The server now always reports the condition and marks repeats (`warningRepeated`); de-dup is a
+  presentation concern, so `hj` stays quiet on a repeat while `--strict` fails on any warning.
+
 ## 1.6.0
 
 Consolidating release: rolls up everything from 1.5.2–1.5.7 (the last npm-published version was
