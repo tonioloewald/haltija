@@ -153,6 +153,9 @@ export const ARG_MAPS = {
       if (a === '--maxHeight' || a === '--max-height') { body.maxHeight = num(args[++i]); continue }
       if (a === '--delay') { body.delay = num(args[++i]); continue }
       if (a === '--no-chyron') { body.chyron = false; continue }
+      // Read a <canvas>'s own pixels (WebGL/2D) instead of capturing the screen: exact pixels, no
+      // screen-share grant, works off-screen. The route for 3D scenes / render-to-texture UI.
+      if (a === '--canvas') { body.canvas = args[++i]; continue }
       if (!a.startsWith('-')) { positional.push(a) }
     }
     return { ...body, ...parseTargetArgs(positional) }
@@ -724,7 +727,7 @@ export const KNOWN_FLAGS = {
   inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m'],
-  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron'],
+  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas'],
   'video-start': ['--maxDuration', '--max-duration'],
   refresh: ['--soft'],
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],

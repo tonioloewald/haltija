@@ -7877,6 +7877,125 @@ export class DevChannel extends HTMLElement {
           }
         }
 
+        // CANVAS CAPTURE — grab pixels straight off a <canvas> (WebGL/2D) with toDataURL().
+        //
+        // Checked BEFORE every other path on purpose: an explicit canvas request must never fall
+        // through to screen capture. This is the exact-pixel, zero-friction route for a 3D scene or
+        // a render-to-texture UI — no getDisplayMedia grant, no Electron needed, no compositing or
+        // scaling artifacts, and it captures the canvas even when it's scrolled off-screen or the
+        // tab isn't frontmost. Reuses the same format/quality/scale/chyron pipeline as a screenshot.
+        if (payload?.canvas) {
+          const el = resolveSelector(payload.canvas) as HTMLCanvasElement | null
+          if (!el) {
+            this.respond(msg.id, false, null, `Canvas not found: ${payload.canvas}`)
+            return
+          }
+          if (typeof (el as any).toDataURL !== 'function') {
+            this.respond(
+              msg.id, false, null,
+              `Element "${payload.canvas}" is a <${el.tagName.toLowerCase()}>, not a <canvas>. ` +
+                `Use selector/ref for a normal screenshot, or point --canvas at the canvas itself.`,
+            )
+            return
+          }
+          if (!el.width || !el.height) {
+            this.respond(msg.id, false, null, `Canvas "${payload.canvas}" has zero size (${el.width}x${el.height}) — nothing to capture.`)
+            return
+          }
+          try {
+            // Honour scale / maxWidth / maxHeight by drawing through an offscreen 2D canvas, so a
+            // huge 3D framebuffer can come back at a sane size.
+            let targetW = Math.max(1, Math.round(el.width * scale))
+            let targetH = Math.max(1, Math.round(el.height * scale))
+            if (maxWidth && targetW > maxWidth) {
+              targetH = Math.round(targetH * (maxWidth / targetW))
+              targetW = maxWidth
+            }
+            if (maxHeight && targetH > maxHeight) {
+              targetW = Math.round(targetW * (maxHeight / targetH))
+              targetH = maxHeight
+            }
+
+            const out = document.createElement('canvas')
+            out.width = targetW
+            out.height = targetH + (chyron ? 40 : 0)
+            const ctx = out.getContext('2d')!
+            ctx.drawImage(el, 0, 0, targetW, targetH)
+            if (chyron) drawChyron(ctx, targetW, targetH)
+
+            const image = out.toDataURL(mimeType, quality)
+
+            // A WebGL canvas clears its drawing buffer after compositing unless the context was
+            // created with `preserveDrawingBuffer: true`, so toDataURL can hand back a perfectly
+            // BLANK image with no error — a plausible-but-wrong result, which is the failure mode
+            // this tool exists not to produce. Sample the pixels and say so instead.
+            let warning: string | undefined
+            try {
+              const probe = document.createElement('canvas')
+              probe.width = 8
+              probe.height = 8
+              const pctx = probe.getContext('2d', { willReadFrequently: true })!
+              pctx.drawImage(el, 0, 0, 8, 8)
+              const px = pctx.getImageData(0, 0, 8, 8).data
+              let uniform = true
+              for (let i = 4; i < px.length; i += 4) {
+                if (px[i] !== px[0] || px[i + 1] !== px[1] || px[i + 2] !== px[2] || px[i + 3] !== px[3]) {
+                  uniform = false
+                  break
+                }
+              }
+              if (uniform && px[3] === 0) {
+                // Fully TRANSPARENT is the classic signature of reading a WebGL canvas whose
+                // drawing buffer was already cleared after compositing — a real render almost never
+                // leaves every pixel at alpha 0.
+                warning =
+                  `The captured canvas is fully transparent. For a WebGL canvas that almost always ` +
+                  `means the drawing buffer had already been cleared after compositing, not that the ` +
+                  `scene is empty. Create the context with { preserveDrawingBuffer: true }, or capture ` +
+                  `in the same frame as a render (e.g. inside the rAF callback that draws).`
+              } else if (uniform) {
+                // A single OPAQUE colour is genuinely ambiguous: a solid clear-colour background, a
+                // scene that hasn't drawn yet, or a cleared buffer on an { alpha: false } context.
+                // Say what was observed and let the caller judge — don't assert the cause.
+                warning =
+                  `The captured canvas is a single uniform colour. That may be exactly right (a solid ` +
+                  `background), but if you expected visible content: a WebGL drawing buffer is cleared ` +
+                  `after compositing unless the context was created with { preserveDrawingBuffer: true }, ` +
+                  `and capturing in the same frame as a render avoids it.`
+              }
+            } catch {
+              // Sampling is best-effort; never fail a capture because the probe couldn't run.
+            }
+
+            this.respond(msg.id, true, {
+              image,
+              viewport,
+              format,
+              width: targetW,
+              height: targetH,
+              source: 'canvas',
+              canvas: {
+                selector: payload.canvas,
+                intrinsic: { width: el.width, height: el.height },
+                displayed: { width: el.clientWidth, height: el.clientHeight },
+              },
+              ...(warning ? { warning } : {}),
+            })
+          } catch (err: any) {
+            // The classic: drawing cross-origin content without CORS taints the canvas and
+            // toDataURL throws SecurityError. Say which, and what to do.
+            const tainted = err?.name === 'SecurityError' || /tainted|cross-origin/i.test(err?.message || '')
+            this.respond(
+              msg.id, false, null,
+              tainted
+                ? `Canvas "${payload.canvas}" is tainted by cross-origin content, so its pixels cannot be read. ` +
+                    `Serve the textures/images with CORS headers and set crossOrigin="anonymous" when loading them.`
+                : `Canvas capture failed: ${err?.message || err}`,
+            )
+          }
+          return
+        }
+
         // Try Electron native capture first (best quality, works on any page)
         const haltija = (window as any).haltija
         if (haltija?.capturePage) {

@@ -186,6 +186,61 @@ test.describe('haltija-dev CLI', () => {
     expect(imgLoaded).toBe(true)
   })
 
+  test('captures a canvas directly — exact pixels, and warns instead of returning a blank image', async ({ page }) => {
+    await injectDevChannel(page)
+
+    // A canvas with VARIED content, and a WebGL canvas whose drawing buffer is cleared after
+    // compositing (the classic blank-toDataURL trap for 3D scenes).
+    await page.evaluate(() => {
+      const varied = document.createElement('canvas')
+      varied.id = 'varied-canvas'
+      varied.width = 120
+      varied.height = 80
+      const c = varied.getContext('2d')!
+      c.fillStyle = '#123'
+      c.fillRect(0, 0, 120, 80)
+      for (let i = 0; i < 20; i++) {
+        c.fillStyle = `hsl(${i * 18},80%,60%)`
+        c.fillRect(i * 6, 10 + (i % 5) * 10, 4, 24)
+      }
+      document.body.appendChild(varied)
+
+      const blank = document.createElement('canvas')
+      blank.id = 'blank-canvas'
+      blank.width = 120
+      blank.height = 80
+      const gl = blank.getContext('webgl') // no preserveDrawingBuffer
+      if (gl) {
+        gl.clearColor(0, 0, 0, 0)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+      }
+      document.body.appendChild(blank)
+    })
+
+    // Real content: captured from the canvas itself, no warning.
+    const okRes = await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ canvas: '#varied-canvas', file: false, chyron: false }),
+    })
+    const ok = await okRes.json()
+    expect(ok.success).toBe(true)
+    expect(ok.data.source).toBe('canvas') // not 'electron'/'getDisplayMedia' — read the canvas
+    expect(ok.data.image).toContain('data:image/png;base64,')
+    expect(ok.data.width).toBe(120)
+    expect(ok.warning).toBeFalsy() // must NOT cry wolf on a legitimate render
+
+    // A non-canvas target fails with an explanation rather than silently screenshotting the page.
+    const badRes = await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ canvas: 'body', file: false }),
+    })
+    const bad = await badRes.json()
+    expect(bad.success).toBe(false)
+    expect(bad.error).toContain('not a <canvas>')
+  })
+
   test('captures uncaught errors, unhandled rejections, and Error objects — not just console.error strings', async ({ page }) => {
     await injectDevChannel(page)
 

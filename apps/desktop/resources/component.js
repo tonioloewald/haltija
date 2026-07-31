@@ -5878,6 +5878,80 @@ ${elementSummary}${moreText}`;
               targetSelector = element.id ? `#${element.id}` : element.getAttribute("data-testid") ? `[data-testid="${element.getAttribute("data-testid")}"]` : undefined;
             }
           }
+          if (payload2?.canvas) {
+            const el = resolveSelector(payload2.canvas);
+            if (!el) {
+              this.respond(msg2.id, false, null, `Canvas not found: ${payload2.canvas}`);
+              return;
+            }
+            if (typeof el.toDataURL !== "function") {
+              this.respond(msg2.id, false, null, `Element "${payload2.canvas}" is a <${el.tagName.toLowerCase()}>, not a <canvas>. ` + `Use selector/ref for a normal screenshot, or point --canvas at the canvas itself.`);
+              return;
+            }
+            if (!el.width || !el.height) {
+              this.respond(msg2.id, false, null, `Canvas "${payload2.canvas}" has zero size (${el.width}x${el.height}) — nothing to capture.`);
+              return;
+            }
+            try {
+              let targetW = Math.max(1, Math.round(el.width * scale));
+              let targetH = Math.max(1, Math.round(el.height * scale));
+              if (maxWidth && targetW > maxWidth) {
+                targetH = Math.round(targetH * (maxWidth / targetW));
+                targetW = maxWidth;
+              }
+              if (maxHeight && targetH > maxHeight) {
+                targetW = Math.round(targetW * (maxHeight / targetH));
+                targetH = maxHeight;
+              }
+              const out = document.createElement("canvas");
+              out.width = targetW;
+              out.height = targetH + (chyron ? 40 : 0);
+              const ctx = out.getContext("2d");
+              ctx.drawImage(el, 0, 0, targetW, targetH);
+              if (chyron)
+                drawChyron(ctx, targetW, targetH);
+              const image = out.toDataURL(mimeType, quality);
+              let warning;
+              try {
+                const probe = document.createElement("canvas");
+                probe.width = 8;
+                probe.height = 8;
+                const pctx = probe.getContext("2d", { willReadFrequently: true });
+                pctx.drawImage(el, 0, 0, 8, 8);
+                const px = pctx.getImageData(0, 0, 8, 8).data;
+                let uniform = true;
+                for (let i = 4;i < px.length; i += 4) {
+                  if (px[i] !== px[0] || px[i + 1] !== px[1] || px[i + 2] !== px[2] || px[i + 3] !== px[3]) {
+                    uniform = false;
+                    break;
+                  }
+                }
+                if (uniform && px[3] === 0) {
+                  warning = `The captured canvas is fully transparent. For a WebGL canvas that almost always ` + `means the drawing buffer had already been cleared after compositing, not that the ` + `scene is empty. Create the context with { preserveDrawingBuffer: true }, or capture ` + `in the same frame as a render (e.g. inside the rAF callback that draws).`;
+                } else if (uniform) {
+                  warning = `The captured canvas is a single uniform colour. That may be exactly right (a solid ` + `background), but if you expected visible content: a WebGL drawing buffer is cleared ` + `after compositing unless the context was created with { preserveDrawingBuffer: true }, ` + `and capturing in the same frame as a render avoids it.`;
+                }
+              } catch {}
+              this.respond(msg2.id, true, {
+                image,
+                viewport,
+                format,
+                width: targetW,
+                height: targetH,
+                source: "canvas",
+                canvas: {
+                  selector: payload2.canvas,
+                  intrinsic: { width: el.width, height: el.height },
+                  displayed: { width: el.clientWidth, height: el.clientHeight }
+                },
+                ...warning ? { warning } : {}
+              });
+            } catch (err) {
+              const tainted = err?.name === "SecurityError" || /tainted|cross-origin/i.test(err?.message || "");
+              this.respond(msg2.id, false, null, tainted ? `Canvas "${payload2.canvas}" is tainted by cross-origin content, so its pixels cannot be read. ` + `Serve the textures/images with CORS headers and set crossOrigin="anonymous" when loading them.` : `Canvas capture failed: ${err?.message || err}`);
+            }
+            return;
+          }
           const haltija = window.haltija;
           if (haltija?.capturePage) {
             try {

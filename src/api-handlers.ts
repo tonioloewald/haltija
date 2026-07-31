@@ -787,6 +787,7 @@ registerHandler(api.screenshot, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('dom', 'screenshot', {
     ref: body.ref,
     selector: body.selector,
+    canvas: body.canvas,
     format: body.format,
     quality: body.quality,
     scale: body.scale,
@@ -800,6 +801,12 @@ registerHandler(api.screenshot, async (body, ctx) => {
   const enrichedResponse = {
     ...response,
     window: windowInfo || { id: windowId || 'unknown', url: 'unknown', title: 'unknown' },
+  }
+  // A canvas capture can succeed and still be blank (WebGL drawing buffer already cleared). The
+  // widget explains that in data.warning; promote it to the top level so `hj` prints it on stderr
+  // instead of handing back an empty image that looks like "the scene is broken".
+  if (enrichedResponse.data?.warning && !enrichedResponse.warning) {
+    enrichedResponse.warning = enrichedResponse.data.warning as string
   }
   
   // Save to disk by default (file defaults to true, pass file=false for base64)

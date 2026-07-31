@@ -1249,7 +1249,7 @@
     "path": "/screenshot",
     "method": "POST",
     "summary": "Capture a screenshot",
-    "description": "Capture the page or a specific element as PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\nWhen file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.\nWhen file=false, returns base64 data URL in response JSON.\n\nResponse: { success, path?, image?, width, height, source }",
+    "description": "Capture the page or a specific element as PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\n**`canvas` — capture a <canvas> directly (best for 3D / render-to-texture).** Pass a selector and\nhaltija reads the canvas's own pixels via toDataURL instead of capturing the screen. That means:\nexact pixels at native resolution, **no screen-share grant**, no Electron requirement, and it works\neven when the canvas is scrolled out of view or the tab isn't frontmost. Ideal for a WebGL scene\n(Babylon/three.js) or a UI rendered into a texture.\n\nCaveat it handles for you: a WebGL context clears its drawing buffer after compositing unless\ncreated with `{ preserveDrawingBuffer: true }`, so a naive toDataURL can silently return a BLANK\nimage. Haltija samples the result and returns a `warning` explaining that (rather than handing you\nan empty picture). A canvas tainted by cross-origin content returns a clear error, not a crash.\n\nWhen file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.\nWhen file=false, returns base64 data URL in response JSON.\n\nResponse: { success, path?, image?, width, height, source, canvas?, warning? }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1266,6 +1266,13 @@
             "null"
           ],
           "description": "Element to capture (omit for full page)"
+        },
+        "canvas": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. Best for 3D scenes and render-to-texture UI."
         },
         "format": {
           "type": [

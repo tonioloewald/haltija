@@ -103,7 +103,7 @@ hj --help              # All commands
 - `hj console` - Get console output
 - `hj eval [code, window]` - Execute JavaScript
 - `hj fetch [url, window]` - Fetch a URL from within the tab context
-- `hj screenshot [ref, selector, format, ...]` - Capture a screenshot
+- `hj screenshot [ref, selector, canvas, ...]` - Capture a screenshot
 - `hj snapshot [trigger, context]` - Capture page snapshot
 - `hj video-start [maxDuration, window]` - Start video recording
 - `hj video-stop [window]` - Stop video recording

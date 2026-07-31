@@ -1464,15 +1464,27 @@ export const screenshot = endpoint({
 
 Works automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.
 
+**\`canvas\` — capture a <canvas> directly (best for 3D / render-to-texture).** Pass a selector and
+haltija reads the canvas's own pixels via toDataURL instead of capturing the screen. That means:
+exact pixels at native resolution, **no screen-share grant**, no Electron requirement, and it works
+even when the canvas is scrolled out of view or the tab isn't frontmost. Ideal for a WebGL scene
+(Babylon/three.js) or a UI rendered into a texture.
+
+Caveat it handles for you: a WebGL context clears its drawing buffer after compositing unless
+created with \`{ preserveDrawingBuffer: true }\`, so a naive toDataURL can silently return a BLANK
+image. Haltija samples the result and returns a \`warning\` explaining that (rather than handing you
+an empty picture). A canvas tainted by cross-origin content returns a clear error, not a crash.
+
 When file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.
 When file=false, returns base64 data URL in response JSON.
 
-Response: { success, path?, image?, width, height, source }`,
+Response: { success, path?, image?, width, height, source, canvas?, warning? }`,
   category: 'debug',
   input: s.object({
     ref: s.string.describe('Ref ID from /tree output - capture specific element').optional,
     selector: s.string.describe('Element to capture (omit for full page)')
       .optional,
+    canvas: s.string.describe('Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. Best for 3D scenes and render-to-texture UI.').optional,
     format: s.string.describe('Image format: png (default), webp, or jpeg').optional,
     quality: s.number.describe('Quality 0-100 for lossy formats (webp/jpeg)').optional,
     scale: s.number.describe('Scale factor (default 1)').optional,

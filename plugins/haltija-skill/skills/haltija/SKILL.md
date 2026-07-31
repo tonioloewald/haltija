@@ -118,6 +118,25 @@ form (or the first form on the page if no selector given) as a structured
 object. Handles inputs, checkboxes, radios, selects, and most framework
 components. Add `--include-disabled` / `--include-hidden` for those fields.
 
+**Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
+canvas's own pixels instead of capturing the screen:
+
+```bash
+hj screenshot --canvas "#scene"              # saves a PNG, returns the path
+hj screenshot --canvas "canvas" --scale 0.5  # same resize/format flags as a screenshot
+```
+
+This is the right tool for a WebGL scene (Babylon/three.js) or a UI rendered into a texture:
+**exact pixels at native resolution, no screen-share grant, no desktop app required**, and it works
+even when the canvas is scrolled out of view or the tab isn't frontmost.
+
+One caveat it handles for you: a WebGL context clears its drawing buffer after compositing unless
+created with `{ preserveDrawingBuffer: true }`, so a naive capture can come back **blank with no
+error**. Haltija samples the pixels and returns a `warning` saying so (with the fix) rather than
+handing you an empty picture — if you see that warning, capture inside the rAF callback that
+draws, or set `preserveDrawingBuffer`. A canvas tainted by cross-origin textures gives a clear
+error naming CORS, not a crash.
+
 **Target by visible text, not by class.** Every `selector` argument accepts haltija's text
 pseudo-selectors, so you don't have to reverse-engineer someone's class names (which break the
 moment they restyle):

@@ -910,6 +910,10 @@ var ARG_MAPS = {
         body.chyron = false;
         continue;
       }
+      if (a === "--canvas") {
+        body.canvas = args[++i];
+        continue;
+      }
       if (!a.startsWith("-")) {
         positional.push(a);
       }
@@ -1462,7 +1466,7 @@ var KNOWN_FLAGS = {
   inspect: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
   inspectAll: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
   key: ["--ctrl", "-c", "--shift", "-s", "--alt", "-a", "--meta", "-m"],
-  screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron"],
+  screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron", "--canvas"],
   "video-start": ["--maxDuration", "--max-duration"],
   refresh: ["--soft"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
