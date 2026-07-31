@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.7.0
+
+### New: capture a `<canvas>` directly — `hj screenshot --canvas <selector>`
+
+Reads the canvas's own pixels (`toDataURL`) instead of capturing the screen. For a WebGL scene
+(Babylon/three.js) or a UI rendered into a texture that means **exact pixels at native resolution,
+no screen-share grant, no desktop app required** — and it works even when the canvas is scrolled
+out of view or the tab isn't frontmost. Takes the same `--scale`/`--format`/`--max-width`/file
+options as any screenshot.
+
+It also handles the trap that makes naive canvas capture untrustworthy: a WebGL context clears its
+drawing buffer after compositing unless created with `{ preserveDrawingBuffer: true }`, so
+`toDataURL` can hand back a **blank image with no error**. Haltija samples the result and returns a
+`warning` explaining the likely cause instead of a silent empty picture — and deliberately doesn't
+cry wolf: a canvas with real content warns not at all, and a uniform *opaque* colour (which may be a
+perfectly legitimate solid background) gets a softer note than a fully transparent one. A canvas
+tainted by cross-origin textures returns a clear CORS error rather than crashing.
+
+### New: adopter-context test lane
+
+The suite now includes tests that reproduce the *dirty machine* adopters actually have — a server
+already running with zero windows, two projects in different directories each expecting their own,
+and ambiguous targeting from an unrelated directory. Every field bug this project has shipped lived
+in that gap, invisible to a suite that starts from nothing.
+
 ## 1.6.1
 
 Makes haltija's detection reachable by automation ([#8](https://github.com/tonioloewald/haltija/issues/8),
