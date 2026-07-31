@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.9.0
+
+### New: `hj map --image` — the map as a rasterized schematic
+
+Renders the affordance map as a PNG: one labeled box per control, nested by structure, each showing
+its handle (`@ref` or `#index`) so the picture doubles as an **index** — glance at it, pick a
+target, act on that one record.
+
+It has to be a **bitmap** to be worth anything: an image of text costs a vision encoder far fewer
+tokens than the same text tokenized, but that applies to rendered pixels, not to SVG markup (which
+is just text tokens, and worse than the JSON it would replace). Rasterized in the browser, so there
+is no new dependency.
+
+**The win is density-dependent, and the response says so rather than assuming.** An image costs
+~1000–1600 vision tokens regardless of content, so a small page is cheaper as JSON; the image pays
+off once the map is large. `cost.approxJsonTokens` reports the JSON size for that page so the choice
+is measurable. The schematic is also deterministic, which makes a diff between two runs a regression
+a human can see.
+
 ## 1.8.0
 
 ### New: `hj map` — what can I interact with, and what is it wired to?

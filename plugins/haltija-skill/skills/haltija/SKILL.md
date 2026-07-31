@@ -142,6 +142,19 @@ Always check `source`:
   `ref` for `hj click <ref>`. Treat it as an **approximation**: it has *no* binding provenance,
   because the DOM doesn't contain that.
 
+`hj map --image` additionally returns the map as a **rasterized schematic PNG** — one labeled box
+per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an
+index you can glance at and then act on. Two things to know:
+
+- It must be a bitmap to be worth it. An image of text costs a vision encoder far fewer tokens than
+  the same text tokenized — but that's true of the **rendered pixels**, not of SVG markup (which is
+  just text tokens, and worse than the JSON).
+- **The win is density-dependent, so check before spending it.** An image costs ~1000-1600 vision
+  tokens no matter how little it contains, so for a small page the JSON map is cheaper. The response
+  includes `cost.approxJsonTokens` for that page — use the image when that number is clearly larger,
+  the JSON when it isn't. The schematic is also worth rendering for a human: it's deterministic, so
+  a diff between two runs is a regression you can see.
+
 **Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
 canvas's own pixels instead of capturing the screen:
 
