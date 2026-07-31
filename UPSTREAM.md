@@ -41,3 +41,18 @@ choices (`apps/desktop/main.js`):
 
 (The `--private --headless` server-orphan-on-SIGKILL leak — a sibling of #7 — is tracked in
 `TODO.md`, not here: it's a haltija fix, not an upstream one.)
+
+## tosijs-ui — stable agent-facing hooks for live examples
+
+**Status:** filed — https://github.com/tonioloewald/tosijs-ui/issues/41
+
+Agent-driven use of tosijs-ui live examples requires targeting internal class names
+(`button.source-menu` → `.xin-menu-item`), which breaks on restyle and is undiscoverable. Asked for
+`data-testid`-style hooks on the source-toggle / refresh / editor, plus documenting that Refresh
+re-runs the already-loaded ES module (so `src/` edits need a full reload).
+
+Deliberately NOT fixed in haltija: first-class `hj` verbs for one project's example UI would
+hard-code an app into a generic browser-control tool — wrong layer. haltija's side of it (the
+`:text()` selectors that make the class names unnecessary) shipped in 1.6.1; they were undocumented
+in the skill's Live-control section, which is why the reporter reached for classes.
+Origin: haltija#10.
