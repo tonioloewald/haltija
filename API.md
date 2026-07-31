@@ -439,6 +439,8 @@ or animation timing, and structure (nesting) is carried for free.
 |------|------|-------------|
 | `global` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
 | `maxNodes` | number,null | Cap on DOM-fallback nodes (default 400) |
+| `image` | boolean,null | Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both) |
+| `scale` | number,null | Device-pixel scale for the schematic image (default 2) |
 | `window` | string,null | Target window ID |
 
 **Examples:**

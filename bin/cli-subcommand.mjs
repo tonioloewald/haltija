@@ -165,6 +165,10 @@ export const ARG_MAPS = {
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--global') { body.global = args[++i]; continue }
       if (args[i] === '--max-nodes') { body.maxNodes = num(args[++i]); continue }
+      // Rasterized schematic. Must be a BITMAP to earn the vision-encoder discount — SVG markup
+      // sent to a model is just text tokens, and worse than the JSON it replaces.
+      if (args[i] === '--image' || args[i] === '--png') { body.image = true; continue }
+      if (args[i] === '--scale') { body.scale = num(args[++i]); continue }
     }
     return body
   },

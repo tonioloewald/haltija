@@ -1804,6 +1804,153 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
   }
 }
 
+/**
+ * Draw the affordance map as a **schematic bitmap**.
+ *
+ * The point is token economy for a model that has to *look* at a page. Following the DeepSeek-OCR
+ * result — an image of text costs a vision encoder far fewer tokens than the same text tokenized —
+ * a dense map is cheaper to send as pixels than as JSON. Two things follow, and both matter:
+ *
+ *  - It must be **rasterized**. SVG markup handed to a model is just text tokens (worse than the
+ *    JSON, since it adds syntax), so we render the SVG to a canvas and return a PNG. The SVG is an
+ *    intermediate representation, never the payload.
+ *  - The win is **density-dependent**. An image has a fixed cost (~1–1.5k vision tokens), so for a
+ *    trivial page the JSON is cheaper and you should just use it; the image pays off once the map
+ *    is large. `hj map --image` therefore reports both sizes so the choice is measurable, not
+ *    assumed.
+ *
+ * Layout carries information for free: containment = nesting, vertical order = document order, and
+ * each box shows its handle (`ref`, or the wiring index) so the picture doubles as an INDEX — glance
+ * at it, pick a target, then fetch/act on just that record.
+ */
+function renderMapSchematic(map: any): { svg: string; width: number; height: number } {
+  const PAD = 8
+  const ROW = 22
+  const FONT = '11px ui-monospace, Menlo, monospace'
+  // MEASURE the text rather than estimating from character count. An estimate that runs short makes
+  // labels overflow their boxes and collide with the next field — a picture that misreads, which is
+  // worse than no picture. The canvas 2D context measures the exact font we render with.
+  const measureCtx = document.createElement('canvas').getContext('2d')!
+  measureCtx.font = FONT
+  const textW = (s: string) => measureCtx.measureText(s).width
+  const esc = (s: string) =>
+    String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+  type Box = { label: string; handle: string; detail?: string; children: Box[] }
+
+  // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
+  const toBoxes = (): Box[] => {
+    if (map.source === 'tosi-agent') {
+      return (map.wiring || []).map((w: any, i: number) => {
+        const bound: string[] = []
+        for (const [k, v] of Object.entries(w)) {
+          if (['tag', 'id', 'part', 'role', 'label', 'text', 'on', 'list', 'detail'].includes(k)) continue
+          if (typeof v === 'string') bound.push(`${k}: ${v}`)
+        }
+        if (w.text && /[⟷⟵]/.test(w.text)) bound.push(String(w.text))
+        const handlers = w.on
+          ? Object.entries(w.on).map(([ev, path]) => `${ev} → ${Array.isArray(path) ? path.join(',') : path}`)
+          : []
+        return {
+          handle: `#${i}`,
+          label: `${w.tag}${w.id ? '#' + w.id : ''}${w.label ? ` "${w.label}"` : ''}`,
+          detail: [...bound, ...handlers].join('  |  ') || (typeof w.text === 'string' ? w.text : ''),
+          children: [],
+        }
+      })
+    }
+    const walk = (n: any): Box => ({
+      handle: n.ref ? `@${n.ref}` : '',
+      label: `${n.tag}${n.role ? `[${n.role}]` : ''}`,
+      detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : '', n.href]
+        .filter(Boolean).join('  ').slice(0, 60),
+      children: (n.children || []).map(walk),
+    })
+    return (map.nodes || []).map(walk)
+  }
+
+  // Measure bottom-up, then place top-down — a plain nested-box layout, no engine needed.
+  const headOf = (b: Box) => `${b.handle ? b.handle + ' ' : ''}${b.label}`
+  const GAP = 12 // keeps the detail column clear of the head, so they can never run together
+
+  const measure = (b: Box): { w: number; h: number } => {
+    const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0)
+    if (!b.children.length) return { w: Math.max(120, Math.ceil(own)), h: ROW }
+    const kids = b.children.map(measure)
+    const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2
+    const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD
+    return { w, h }
+  }
+
+  const parts: string[] = []
+  // Every top-level box gets the SAME width. Letting each size itself makes a run-to-run diff noisy
+  // (one longer label rewidens some rows and not others), and a schematic's value as a regression
+  // artifact depends on only *real* changes moving pixels.
+  let uniformW = 0
+  const draw = (b: Box, x: number, y: number, depth: number): number => {
+    const m = measure(b)
+    const w = depth === 0 && uniformW ? uniformW : m.w
+    const h = m.h
+    const fill = ['#f8fafc', '#eef2f7', '#e6ecf3', '#dde5ee'][Math.min(depth, 3)]
+    parts.push(
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="#94a3b8" stroke-width="1"/>`,
+    )
+    const head = headOf(b)
+    parts.push(
+      `<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f172a">${esc(head)}</text>`,
+    )
+    if (b.detail) {
+      parts.push(
+        `<text x="${x + PAD + textW(head) + GAP}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#475569">${esc(b.detail)}</text>`,
+      )
+    }
+    let cy = y + ROW
+    for (const c of b.children) {
+      cy += draw(c, x + PAD, cy, depth + 1) + 4
+    }
+    return h
+  }
+
+  const boxes = toBoxes()
+  let maxW = 0
+  for (const b of boxes) maxW = Math.max(maxW, measure(b).w)
+  uniformW = maxW
+  let y = PAD
+  for (const b of boxes) {
+    y += draw(b, PAD, y, 0) + 6
+  }
+  const width = Math.ceil(Math.max(320, maxW + PAD * 2))
+  const height = Math.ceil(y + PAD)
+
+  const title = `${map.source === 'tosi-agent' ? 'wiring' : 'dom'} · ${esc(map.title || '')}`
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
+    parts.join('') +
+    `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` +
+    `</svg>`
+  return { svg, width, height }
+}
+
+/** Rasterize the schematic SVG to a PNG data URL — the bitmap IS the payload (see above). */
+async function rasterizeSchematic(svg: string, width: number, height: number, scale = 2): Promise<string> {
+  const img = new Image()
+  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('could not rasterize the schematic SVG'))
+    img.src = url
+  })
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.ceil(width * scale)
+  canvas.height = Math.ceil(height * scale)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/png')
+}
+
 /** DOM-derived affordances: interactive + structural elements, nested, each with a haltija ref. */
 function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolean } {
   const INTERACTIVE = 'a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
@@ -7828,10 +7975,33 @@ export class DevChannel extends HTMLElement {
       // Affordance map: the app's own wiring when it exposes an agent surface, else a DOM
       // reconstruction. See buildAffordanceMap for why the two tiers differ so much.
       try {
-        this.respond(msg.id, true, buildAffordanceMap({
+        const map = buildAffordanceMap({
           global: payload?.global,
           maxNodes: payload?.maxNodes,
-        }))
+        })
+        if (payload?.image) {
+          // Rasterized schematic (see renderMapSchematic). Report BOTH sizes: the image only pays
+          // for itself on a dense map, and that should be measured per page, not assumed.
+          const { svg, width, height } = renderMapSchematic(map)
+          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
+          const jsonChars = JSON.stringify(map).length
+          this.respond(msg.id, true, {
+            ...map,
+            image,
+            width,
+            height,
+            cost: {
+              jsonChars,
+              approxJsonTokens: Math.round(jsonChars / 4),
+              note:
+                'A rendered image costs a vision encoder roughly 1000-1600 tokens regardless of ' +
+                'content, so it wins only once the JSON map is bigger than that. Compare against ' +
+                'approxJsonTokens for THIS page and use whichever is smaller.',
+            },
+          })
+        } else {
+          this.respond(msg.id, true, map)
+        }
       } catch (err: any) {
         this.respond(msg.id, false, null, err?.message || String(err))
       }

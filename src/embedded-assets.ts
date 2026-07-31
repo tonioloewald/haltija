@@ -1355,6 +1355,8 @@ or animation timing, and structure (nesting) is carried for free.
 |------|------|-------------|
 | \`global\` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
 | \`maxNodes\` | number,null | Cap on DOM-fallback nodes (default 400) |
+| \`image\` | boolean,null | Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both) |
+| \`scale\` | number,null | Device-pixel scale for the schematic image (default 2) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
@@ -2770,7 +2772,7 @@ hj --help              # All commands
 - \`hj inspectAll [ref, selector, limit, ...]\` - Inspect multiple elements
 - \`hj find [text, tag, exact, ...]\` - Find elements by text content
 - \`hj form [selector, includeDisabled, includeHidden, ...]\` - Extract all form values as structured JSON
-- \`hj map [global, maxNodes, window]\` - Affordance map — what can be interacted with, and what it is wired to
+- \`hj map [global, maxNodes, image, ...]\` - Affordance map — what can be interacted with, and what it is wired to
 
 ### Interact
 
@@ -4377,6 +4379,105 @@ export const COMPONENT_JS: string = `(() => {
       hint: \`No agent surface found at globalThis.\${globalName}. This map is reconstructed from the DOM, \` + \`so it has no binding provenance (what a control is wired to). A tosijs app can expose the \` + \`real wiring via enableAgentInterface().\`,
       ...buildDomAffordances(opts.maxNodes)
     };
+  }
+  function renderMapSchematic(map) {
+    const PAD = 8;
+    const ROW = 22;
+    const FONT = "11px ui-monospace, Menlo, monospace";
+    const measureCtx = document.createElement("canvas").getContext("2d");
+    measureCtx.font = FONT;
+    const textW = (s) => measureCtx.measureText(s).width;
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const toBoxes = () => {
+      if (map.source === "tosi-agent") {
+        return (map.wiring || []).map((w, i) => {
+          const bound = [];
+          for (const [k, v] of Object.entries(w)) {
+            if (["tag", "id", "part", "role", "label", "text", "on", "list", "detail"].includes(k))
+              continue;
+            if (typeof v === "string")
+              bound.push(\`\${k}: \${v}\`);
+          }
+          if (w.text && /[⟷⟵]/.test(w.text))
+            bound.push(String(w.text));
+          const handlers = w.on ? Object.entries(w.on).map(([ev, path]) => \`\${ev} → \${Array.isArray(path) ? path.join(",") : path}\`) : [];
+          return {
+            handle: \`#\${i}\`,
+            label: \`\${w.tag}\${w.id ? "#" + w.id : ""}\${w.label ? \` "\${w.label}"\` : ""}\`,
+            detail: [...bound, ...handlers].join("  |  ") || (typeof w.text === "string" ? w.text : ""),
+            children: []
+          };
+        });
+      }
+      const walk = (n) => ({
+        handle: n.ref ? \`@\${n.ref}\` : "",
+        label: \`\${n.tag}\${n.role ? \`[\${n.role}]\` : ""}\`,
+        detail: [n.label, n.text, n.value !== undefined ? \`= \${n.value}\` : "", n.href].filter(Boolean).join("  ").slice(0, 60),
+        children: (n.children || []).map(walk)
+      });
+      return (map.nodes || []).map(walk);
+    };
+    const headOf = (b) => \`\${b.handle ? b.handle + " " : ""}\${b.label}\`;
+    const GAP = 12;
+    const measure = (b) => {
+      const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0);
+      if (!b.children.length)
+        return { w: Math.max(120, Math.ceil(own)), h: ROW };
+      const kids = b.children.map(measure);
+      const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2;
+      const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD;
+      return { w, h };
+    };
+    const parts = [];
+    let uniformW = 0;
+    const draw = (b, x, y2, depth) => {
+      const m = measure(b);
+      const w = depth === 0 && uniformW ? uniformW : m.w;
+      const h = m.h;
+      const fill = ["#f8fafc", "#eef2f7", "#e6ecf3", "#dde5ee"][Math.min(depth, 3)];
+      parts.push(\`<rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}" rx="4" fill="\${fill}" stroke="#94a3b8" stroke-width="1"/>\`);
+      const head = headOf(b);
+      parts.push(\`<text x="\${x + PAD}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f172a">\${esc(head)}</text>\`);
+      if (b.detail) {
+        parts.push(\`<text x="\${x + PAD + textW(head) + GAP}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#475569">\${esc(b.detail)}</text>\`);
+      }
+      let cy = y2 + ROW;
+      for (const c of b.children) {
+        cy += draw(c, x + PAD, cy, depth + 1) + 4;
+      }
+      return h;
+    };
+    const boxes = toBoxes();
+    let maxW = 0;
+    for (const b of boxes)
+      maxW = Math.max(maxW, measure(b).w);
+    uniformW = maxW;
+    let y = PAD;
+    for (const b of boxes) {
+      y += draw(b, PAD, y, 0) + 6;
+    }
+    const width = Math.ceil(Math.max(320, maxW + PAD * 2));
+    const height = Math.ceil(y + PAD);
+    const title = \`\${map.source === "tosi-agent" ? "wiring" : "dom"} · \${esc(map.title || "")}\`;
+    const svg = \`<svg xmlns="http://www.w3.org/2000/svg" width="\${width}" height="\${height}" viewBox="0 0 \${width} \${height}">\` + \`<rect width="\${width}" height="\${height}" fill="#ffffff"/>\` + parts.join("") + \`<text x="\${PAD}" y="\${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">\${title}</text>\` + \`</svg>\`;
+    return { svg, width, height };
+  }
+  async function rasterizeSchematic(svg, width, height, scale = 2) {
+    const img = new Image;
+    const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("could not rasterize the schematic SVG"));
+      img.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
   }
   function buildDomAffordances(maxNodes = 400) {
     const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
@@ -8947,10 +9048,28 @@ export const COMPONENT_JS: string = `(() => {
         this.respond(msg2.id, true);
       } else if (action2 === "map") {
         try {
-          this.respond(msg2.id, true, buildAffordanceMap({
+          const map = buildAffordanceMap({
             global: payload2?.global,
             maxNodes: payload2?.maxNodes
-          }));
+          });
+          if (payload2?.image) {
+            const { svg, width, height } = renderMapSchematic(map);
+            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
+            const jsonChars = JSON.stringify(map).length;
+            this.respond(msg2.id, true, {
+              ...map,
+              image,
+              width,
+              height,
+              cost: {
+                jsonChars,
+                approxJsonTokens: Math.round(jsonChars / 4),
+                note: "A rendered image costs a vision encoder roughly 1000-1600 tokens regardless of " + "content, so it wins only once the JSON map is bigger than that. Compare against " + "approxJsonTokens for THIS page and use whichever is smaller."
+              }
+            });
+          } else {
+            this.respond(msg2.id, true, map);
+          }
         } catch (err) {
           this.respond(msg2.id, false, null, err?.message || String(err));
         }

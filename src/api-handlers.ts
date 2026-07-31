@@ -837,7 +837,9 @@ registerHandler(api.map, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('dom', 'map', {
     global: body.global,
     maxNodes: body.maxNodes,
-  }, 10000, windowId)
+    image: body.image,
+    scale: body.scale,
+  }, 15000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })
 

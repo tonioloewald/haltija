@@ -931,6 +931,14 @@ var ARG_MAPS = {
         body.maxNodes = num(args[++i]);
         continue;
       }
+      if (args[i] === "--image" || args[i] === "--png") {
+        body.image = true;
+        continue;
+      }
+      if (args[i] === "--scale") {
+        body.scale = num(args[++i]);
+        continue;
+      }
     }
     return body;
   },
