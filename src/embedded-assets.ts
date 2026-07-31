@@ -1326,6 +1326,46 @@ Works with standard forms and most framework components (React, Vue, etc).
 
 ---
 
+### \`POST /map\`
+
+**Affordance map — what can be interacted with, and what it is wired to**
+
+Returns a map of the page's affordances. Two tiers, and the difference matters:
+
+**Native (\`source: "tosi-agent"\`)** — when the page exposes an agent surface at
+\`globalThis.tosiAgent\` (a tosijs app calling \`enableAgentInterface()\`), the map is the app's OWN
+wiring records. That carries what the DOM cannot: which state path each control is bound to and in
+which **direction** — \`⟷\` two-way (user-writable), \`⟵\` bound-to-DOM (display only), absent
+(static) — plus the handler path each event calls, and the list of callable actions.
+
+With that you can act through paths instead of synthesized input:
+\`hj eval "tosiAgent.write('app.filter', 'milk')"\` or \`tosiAgent.call('app.addItem')\`.
+
+**Fallback (\`source: "dom"\`)** — any other page, reconstructed from tags/roles/labels/state, each
+node carrying a haltija \`ref\` for \`hj click <ref>\`. Deliberately approximate: it has NO binding
+provenance, because that information does not exist in the DOM. Always check \`source\` before
+trusting the map as wiring rather than as a guess.
+
+Cheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport
+or animation timing, and structure (nesting) is carried for free.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`global\` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
+| \`maxNodes\` | number,null | Cap on DOM-fallback nodes (default 400) |
+| \`window\` | string,null | Target window ID |
+
+**Examples:**
+
+- **map**: Affordance map of the focused tab
+  \`\`\`json
+  {}
+  \`\`\`
+
+---
+
 ## Do Things
 
 ### \`POST /click\`
@@ -2730,6 +2770,7 @@ hj --help              # All commands
 - \`hj inspectAll [ref, selector, limit, ...]\` - Inspect multiple elements
 - \`hj find [text, tag, exact, ...]\` - Find elements by text content
 - \`hj form [selector, includeDisabled, includeHidden, ...]\` - Extract all form values as structured JSON
+- \`hj map [global, maxNodes, window]\` - Affordance map — what can be interacted with, and what it is wired to
 
 ### Interact
 
@@ -2981,7 +3022,7 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 
 ## Capabilities
 - **Status & info**: \`GET /status\`, \`GET /stats\`, \`GET /version\`, \`GET /docs\`, \`GET /api\`
-- **See the page**: \`POST /tree\`, \`POST /query\`, \`POST /inspect\`, \`POST /inspectAll\`, \`POST /find\`, \`POST /form\`
+- **See the page**: \`POST /tree\`, \`POST /query\`, \`POST /inspect\`, \`POST /inspectAll\`, \`POST /find\`, \`POST /form\`, \`POST /map\`
 - **Interact**: \`POST /click\`, \`POST /type\`, \`POST /key\`, \`POST /drag\`, \`POST /highlight\`, \`POST /unhighlight\`, \`POST /scroll\`, \`POST /wait\`, \`POST /call\`
 - **Navigate**: \`POST /navigate\`, \`POST /refresh\`, \`GET /location\`
 - **Watch events**: \`POST /events/watch\`, \`POST /events/unwatch\`, \`GET /events\`, \`GET /events/stats\`
@@ -4297,6 +4338,112 @@ export const COMPONENT_JS: string = `(() => {
     if (htmlEl.placeholder)
       return htmlEl.placeholder;
     return;
+  }
+  function buildAffordanceMap(opts = {}) {
+    const globalName = opts.global || "tosiAgent";
+    const agent = globalThis[globalName];
+    if (agent && typeof agent.describe === "function") {
+      try {
+        const description = agent.describe();
+        return {
+          url: location.href,
+          title: document.title,
+          source: "tosi-agent",
+          global: globalName,
+          ...description,
+          act: {
+            note: \`Act through the paths, not synthesized input: \${globalName}.write(path, value) for a \` + \`⟷ two-way binding, \${globalName}.call(actionPath) for an action. \` + \`Run them with: hj eval "\${globalName}.write('some.path', 'value')"\`,
+            legend: {
+              "⟷": "two-way binding — user-writable; writing the path updates the UI and app state",
+              "⟵": "bound to DOM — display only; it reflects the path, writing the DOM will not stick",
+              none: "static content — not bound to app state"
+            }
+          }
+        };
+      } catch (err) {
+        return {
+          url: location.href,
+          title: document.title,
+          source: "dom",
+          agentError: \`\${globalName}.describe() threw: \${err?.message || err}. Falling back to DOM reconstruction.\`,
+          ...buildDomAffordances(opts.maxNodes)
+        };
+      }
+    }
+    return {
+      url: location.href,
+      title: document.title,
+      source: "dom",
+      hint: \`No agent surface found at globalThis.\${globalName}. This map is reconstructed from the DOM, \` + \`so it has no binding provenance (what a control is wired to). A tosijs app can expose the \` + \`real wiring via enableAgentInterface().\`,
+      ...buildDomAffordances(opts.maxNodes)
+    };
+  }
+  function buildDomAffordances(maxNodes = 400) {
+    const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
+    const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
+    let count = 0;
+    let truncated = false;
+    const describeEl = (el, hasKeptChildren) => {
+      const tag = el.tagName.toLowerCase();
+      const node = { ref: refRegistry.assign(el), tag };
+      const role = el.getAttribute("role");
+      if (role)
+        node.role = role;
+      const label = el.getAttribute("aria-label") || el.placeholder || el.getAttribute("title") || el.getAttribute("alt") || undefined;
+      if (label)
+        node.label = label;
+      if (!hasKeptChildren) {
+        const text = getVisibleText(el)?.trim();
+        if (text && text.length <= 80)
+          node.text = text;
+      }
+      const val = el.value;
+      if (val !== undefined && val !== "" && ["input", "textarea", "select"].includes(tag))
+        node.value = val;
+      if (el.type)
+        node.type = el.type;
+      if (el.disabled)
+        node.disabled = true;
+      if (el.checked)
+        node.checked = true;
+      if (el.href)
+        node.href = el.getAttribute("href");
+      return node;
+    };
+    const walk = (el) => {
+      if (count >= maxNodes) {
+        truncated = true;
+        return null;
+      }
+      const isInteractive = el.matches(INTERACTIVE);
+      const isStructural = el.matches(STRUCTURAL);
+      if (isInteractive || isStructural) {
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden")
+          return null;
+      }
+      const children = [];
+      for (const child of Array.from(el.children)) {
+        const c = walk(child);
+        if (c)
+          children.push(c);
+      }
+      if (isInteractive || isStructural) {
+        count++;
+        const node = describeEl(el, children.length > 0);
+        if (children.length)
+          node.children = children;
+        return node;
+      }
+      if (children.length === 1)
+        return children[0];
+      if (children.length > 1)
+        return { tag: el.tagName.toLowerCase(), children };
+      return null;
+    };
+    const root = walk(document.body);
+    const nodes = root ? root.children && !root.ref ? root.children : [root] : [];
+    return truncated ? { nodes, truncated: true } : { nodes };
   }
   function buildActionableSummary(root) {
     const summary = {
@@ -8798,6 +8945,15 @@ export const COMPONENT_JS: string = `(() => {
       } else if (action2 === "unhighlight") {
         hideHighlight();
         this.respond(msg2.id, true);
+      } else if (action2 === "map") {
+        try {
+          this.respond(msg2.id, true, buildAffordanceMap({
+            global: payload2?.global,
+            maxNodes: payload2?.maxNodes
+          }));
+        } catch (err) {
+          this.respond(msg2.id, false, null, err?.message || String(err));
+        }
       } else if (action2 === "tree") {
         try {
           const request = payload2;

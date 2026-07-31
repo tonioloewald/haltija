@@ -15,7 +15,7 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 
 ## Capabilities
 - **Status & info**: `GET /status`, `GET /stats`, `GET /version`, `GET /docs`, `GET /api`
-- **See the page**: `POST /tree`, `POST /query`, `POST /inspect`, `POST /inspectAll`, `POST /find`, `POST /form`
+- **See the page**: `POST /tree`, `POST /query`, `POST /inspect`, `POST /inspectAll`, `POST /find`, `POST /form`, `POST /map`
 - **Interact**: `POST /click`, `POST /type`, `POST /key`, `POST /drag`, `POST /highlight`, `POST /unhighlight`, `POST /scroll`, `POST /wait`, `POST /call`
 - **Navigate**: `POST /navigate`, `POST /refresh`, `GET /location`
 - **Watch events**: `POST /events/watch`, `POST /events/unwatch`, `GET /events`, `GET /events/stats`

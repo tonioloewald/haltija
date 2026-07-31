@@ -1244,6 +1244,112 @@
       return htmlEl.placeholder;
     return;
   }
+  function buildAffordanceMap(opts = {}) {
+    const globalName = opts.global || "tosiAgent";
+    const agent = globalThis[globalName];
+    if (agent && typeof agent.describe === "function") {
+      try {
+        const description = agent.describe();
+        return {
+          url: location.href,
+          title: document.title,
+          source: "tosi-agent",
+          global: globalName,
+          ...description,
+          act: {
+            note: `Act through the paths, not synthesized input: ${globalName}.write(path, value) for a ` + `⟷ two-way binding, ${globalName}.call(actionPath) for an action. ` + `Run them with: hj eval "${globalName}.write('some.path', 'value')"`,
+            legend: {
+              "⟷": "two-way binding — user-writable; writing the path updates the UI and app state",
+              "⟵": "bound to DOM — display only; it reflects the path, writing the DOM will not stick",
+              none: "static content — not bound to app state"
+            }
+          }
+        };
+      } catch (err) {
+        return {
+          url: location.href,
+          title: document.title,
+          source: "dom",
+          agentError: `${globalName}.describe() threw: ${err?.message || err}. Falling back to DOM reconstruction.`,
+          ...buildDomAffordances(opts.maxNodes)
+        };
+      }
+    }
+    return {
+      url: location.href,
+      title: document.title,
+      source: "dom",
+      hint: `No agent surface found at globalThis.${globalName}. This map is reconstructed from the DOM, ` + `so it has no binding provenance (what a control is wired to). A tosijs app can expose the ` + `real wiring via enableAgentInterface().`,
+      ...buildDomAffordances(opts.maxNodes)
+    };
+  }
+  function buildDomAffordances(maxNodes = 400) {
+    const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
+    const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
+    let count = 0;
+    let truncated = false;
+    const describeEl = (el, hasKeptChildren) => {
+      const tag = el.tagName.toLowerCase();
+      const node = { ref: refRegistry.assign(el), tag };
+      const role = el.getAttribute("role");
+      if (role)
+        node.role = role;
+      const label = el.getAttribute("aria-label") || el.placeholder || el.getAttribute("title") || el.getAttribute("alt") || undefined;
+      if (label)
+        node.label = label;
+      if (!hasKeptChildren) {
+        const text = getVisibleText(el)?.trim();
+        if (text && text.length <= 80)
+          node.text = text;
+      }
+      const val = el.value;
+      if (val !== undefined && val !== "" && ["input", "textarea", "select"].includes(tag))
+        node.value = val;
+      if (el.type)
+        node.type = el.type;
+      if (el.disabled)
+        node.disabled = true;
+      if (el.checked)
+        node.checked = true;
+      if (el.href)
+        node.href = el.getAttribute("href");
+      return node;
+    };
+    const walk = (el) => {
+      if (count >= maxNodes) {
+        truncated = true;
+        return null;
+      }
+      const isInteractive = el.matches(INTERACTIVE);
+      const isStructural = el.matches(STRUCTURAL);
+      if (isInteractive || isStructural) {
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden")
+          return null;
+      }
+      const children = [];
+      for (const child of Array.from(el.children)) {
+        const c = walk(child);
+        if (c)
+          children.push(c);
+      }
+      if (isInteractive || isStructural) {
+        count++;
+        const node = describeEl(el, children.length > 0);
+        if (children.length)
+          node.children = children;
+        return node;
+      }
+      if (children.length === 1)
+        return children[0];
+      if (children.length > 1)
+        return { tag: el.tagName.toLowerCase(), children };
+      return null;
+    };
+    const root = walk(document.body);
+    const nodes = root ? root.children && !root.ref ? root.children : [root] : [];
+    return truncated ? { nodes, truncated: true } : { nodes };
+  }
   function buildActionableSummary(root) {
     const summary = {
       url: window.location.href,
@@ -5744,6 +5850,15 @@ ${elementSummary}${moreText}`;
       } else if (action2 === "unhighlight") {
         hideHighlight();
         this.respond(msg2.id, true);
+      } else if (action2 === "map") {
+        try {
+          this.respond(msg2.id, true, buildAffordanceMap({
+            global: payload2?.global,
+            maxNodes: payload2?.maxNodes
+          }));
+        } catch (err) {
+          this.respond(msg2.id, false, null, err?.message || String(err));
+        }
       } else if (action2 === "tree") {
         try {
           const request = payload2;

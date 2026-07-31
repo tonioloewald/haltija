@@ -160,6 +160,14 @@ export const ARG_MAPS = {
     }
     return { ...body, ...parseTargetArgs(positional) }
   },
+  map: (args) => {
+    const body = {}
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--global') { body.global = args[++i]; continue }
+      if (args[i] === '--max-nodes') { body.maxNodes = num(args[++i]); continue }
+    }
+    return body
+  },
   snapshot: (args) => ({ context: args.join(' ') || undefined }),
   select: (args) => ({ action: args[0] }),
   'select-start': () => ({}),
@@ -697,6 +705,7 @@ const INFO_COMMANDS = new Set(['status', 'windows', 'version', 'help'])
 // Trailing command hint is suppressed for these so agents can pipe stdout
 // directly. Pass --json to get the full DevResponse envelope instead.
 const UNWRAP_DATA_SUBCOMMANDS = new Set([
+  'map',         // affordance map (the whole point is the map, not the envelope)
   'eval',        // JS expression result (any type)
   'call',        // method-call result on an element
   'fetch',       // fetched URL response (body + headers + status)
@@ -1050,7 +1059,7 @@ async function doRequest(url, method, body, context = {}) {
 
 /** Known valid subcommands */
 export const KNOWN_COMMANDS = new Set([
-  'tree', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form',
+  'tree', 'map', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form',
   'click', 'type', 'key', 'drag', 'scroll', 'call',
   'navigate', 'refresh', 'location',
   'events', 'events-watch', 'events-unwatch', 'console',

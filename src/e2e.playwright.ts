@@ -186,6 +186,58 @@ test.describe('haltija-dev CLI', () => {
     expect(imgLoaded).toBe(true)
   })
 
+  test('affordance map: DOM fallback is structural and dense; a tosijs agent surface passes through verbatim', async ({ page }) => {
+    await injectDevChannel(page)
+
+    // --- Tier 1: no agent surface → DOM reconstruction -----------------------------------------
+    await page.evaluate(() => {
+      const main = document.createElement('main')
+      main.innerHTML = `
+        <h1>Shopping</h1>
+        <form><input id="filter" placeholder="Filter items" value="milk"><button>Add item</button></form>
+        <button style="display:none">hidden button</button>`
+      document.body.appendChild(main)
+    })
+
+    const domMap = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    expect(domMap.success).toBe(true)
+    expect(domMap.data.source).toBe('dom')
+    expect(domMap.data.hint).toContain('no binding provenance')
+
+    const flat = JSON.stringify(domMap.data.nodes)
+    expect(flat).toContain('Filter items') // labels are captured
+    expect(flat).toContain('"ref"') // and each node is directly actionable
+    // An invisible control is not an affordance, and must not leak in via a container's text.
+    expect(flat).not.toContain('hidden button')
+
+    // --- Tier 2: an agent surface → the app's OWN wiring, unreshaped ----------------------------
+    await page.evaluate(() => {
+      ;(globalThis as any).tosiAgent = {
+        describe: () => ({
+          roots: { app: 'app' },
+          wiring: [
+            { tag: 'input', id: 'filter', label: 'Filter', value: 'milk ⟷ app.filter' },
+            { tag: 'button', text: 'Add', on: { click: 'app.addItem' } },
+          ],
+          actions: ['app.addItem'],
+          exposure: 'introspection',
+        }),
+      }
+    })
+
+    const tosiMap = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    expect(tosiMap.data.source).toBe('tosi-agent')
+    expect(tosiMap.data.actions).toEqual(['app.addItem'])
+    // The binding provenance + DIRECTION must survive verbatim — that's the whole point of tier 2,
+    // and it's information the DOM tier cannot reconstruct.
+    expect(JSON.stringify(tosiMap.data.wiring)).toContain('⟷ app.filter')
+    expect(tosiMap.data.act.note).toContain('write')
+  })
+
   test('captures a canvas directly — exact pixels, and warns instead of returning a blank image', async ({ page }) => {
     await injectDevChannel(page)
 

@@ -832,6 +832,15 @@ registerHandler(api.screenshot, async (body, ctx) => {
 })
 
 // Tabs handlers
+registerHandler(api.map, async (body, ctx) => {
+  const windowId = body.window || ctx.targetWindowId
+  const response = await ctx.requestFromBrowser('dom', 'map', {
+    global: body.global,
+    maxNodes: body.maxNodes,
+  }, 10000, windowId)
+  return Response.json(response, { headers: ctx.headers })
+})
+
 registerHandler(api.tabsOpen, async (body, ctx) => {
   const response = await ctx.requestFromBrowser('tabs', 'open', { url: body.url })
   // #5: `window.open` fallback opens a client-less tab that's invisible and uncontrollable. Promote

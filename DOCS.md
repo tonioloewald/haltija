@@ -36,6 +36,7 @@ hj --help              # All commands
 - `hj inspectAll [ref, selector, limit, ...]` - Inspect multiple elements
 - `hj find [text, tag, exact, ...]` - Find elements by text content
 - `hj form [selector, includeDisabled, includeHidden, ...]` - Extract all form values as structured JSON
+- `hj map [global, maxNodes, window]` - Affordance map — what can be interacted with, and what it is wired to
 
 ### Interact
 

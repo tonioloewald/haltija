@@ -118,6 +118,30 @@ form (or the first form on the page if no selector given) as a structured
 object. Handles inputs, checkboxes, radios, selects, and most framework
 components. Add `--include-disabled` / `--include-hidden` for those fields.
 
+**`hj map` — what can I interact with, and what is it wired to?** Usually a better first move than
+`hj tree` or a screenshot when you're deciding what to *do*: it's structural, compact (a small page
+is a few hundred bytes vs ~1–1.5k vision tokens for a screenshot), and deterministic — no fonts,
+theme, viewport or animation timing to shift under you.
+
+Always check `source`:
+
+- **`source: "tosi-agent"`** — the page exposes an agent surface (`globalThis.tosiAgent`, a tosijs
+  app calling `enableAgentInterface()`), so the map is the app's **own wiring records**. These carry
+  what the DOM cannot: which state path each control is bound to and in which direction —
+  **`⟷`** two-way (user-writable), **`⟵`** display-only, absent (static) — plus the handler path
+  each event calls, and a list of callable `actions`. Prefer acting through those paths rather than
+  synthesizing input:
+  ```bash
+  hj map                                              # see the wiring
+  hj eval "tosiAgent.write('app.filter', 'milk')"     # set a ⟷ two-way bound value
+  hj eval "tosiAgent.call('app.addItem')"             # invoke an action directly
+  ```
+  Writing a `⟵` display-only path via the DOM won't stick — the binding will overwrite it. That
+  distinction is exactly what saves you from "I typed into it and nothing happened".
+- **`source: "dom"`** — any other page, reconstructed from tags/roles/labels/state. Each node has a
+  `ref` for `hj click <ref>`. Treat it as an **approximation**: it has *no* binding provenance,
+  because the DOM doesn't contain that.
+
 **Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
 canvas's own pixels instead of capturing the screen:
 

@@ -1730,6 +1730,155 @@ function getInputLabel(el: Element): string | undefined {
 }
 
 /**
+ * Build an **affordance map** of the page — what can be interacted with, and (when the app can tell
+ * us) what each control is actually wired to.
+ *
+ * Two tiers, and the difference is the whole point:
+ *
+ * 1. **Native (`globalThis.tosiAgent`)** — a tosijs app exposes its own wiring records, so the map
+ *    carries information no amount of DOM scraping can recover: which state path a control is bound
+ *    to and **in which direction** (`⟷` two-way/user-writable, `⟵` display-only, absent = static),
+ *    plus the handler path each event calls. That turns "click it and see" into "I know what this
+ *    control does and what it will change". Act on it through the paths themselves
+ *    (`tosiAgent.write(path, value)` / `tosiAgent.call(actionPath)`) rather than synthesized input.
+ *
+ * 2. **DOM fallback** — reconstructed from tags/roles/labels/state for any other page. Deliberately
+ *    modest: it is an *approximation* of affordances, with no binding provenance, because that
+ *    information does not exist in the DOM. Each node carries a haltija `ref`, which is this tier's
+ *    natural addressing (`hj click <ref>`).
+ *
+ * The map reports which tier produced it (`source`) so a caller never mistakes the approximation for
+ * the real wiring.
+ */
+function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): any {
+  const globalName = opts.global || 'tosiAgent'
+  const agent = (globalThis as any)[globalName]
+
+  // --- Tier 2: the app tells us its own wiring -------------------------------------------------
+  if (agent && typeof agent.describe === 'function') {
+    try {
+      const description = agent.describe()
+      return {
+        url: location.href,
+        title: document.title,
+        source: 'tosi-agent',
+        global: globalName,
+        // Pass the framework's records through UNCHANGED — reshaping them would be exactly the
+        // lossy reconstruction this tier exists to avoid.
+        ...description,
+        act: {
+          note:
+            `Act through the paths, not synthesized input: ${globalName}.write(path, value) for a ` +
+            `⟷ two-way binding, ${globalName}.call(actionPath) for an action. ` +
+            `Run them with: hj eval "${globalName}.write('some.path', 'value')"`,
+          legend: {
+            '⟷': 'two-way binding — user-writable; writing the path updates the UI and app state',
+            '⟵': 'bound to DOM — display only; it reflects the path, writing the DOM will not stick',
+            none: 'static content — not bound to app state',
+          },
+        },
+      }
+    } catch (err: any) {
+      // A broken agent surface must not silently degrade to the weaker tier and look like the page
+      // simply isn't a tosijs app — say what happened, then fall through.
+      return {
+        url: location.href,
+        title: document.title,
+        source: 'dom',
+        agentError: `${globalName}.describe() threw: ${err?.message || err}. Falling back to DOM reconstruction.`,
+        ...buildDomAffordances(opts.maxNodes),
+      }
+    }
+  }
+
+  // --- Tier 1: reconstruct from the DOM --------------------------------------------------------
+  return {
+    url: location.href,
+    title: document.title,
+    source: 'dom',
+    hint:
+      `No agent surface found at globalThis.${globalName}. This map is reconstructed from the DOM, ` +
+      `so it has no binding provenance (what a control is wired to). A tosijs app can expose the ` +
+      `real wiring via enableAgentInterface().`,
+    ...buildDomAffordances(opts.maxNodes),
+  }
+}
+
+/** DOM-derived affordances: interactive + structural elements, nested, each with a haltija ref. */
+function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolean } {
+  const INTERACTIVE = 'a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
+  const STRUCTURAL = 'main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]'
+
+  let count = 0
+  let truncated = false
+
+  const describeEl = (el: Element, hasKeptChildren: boolean): any => {
+    const tag = el.tagName.toLowerCase()
+    const node: any = { ref: refRegistry.assign(el), tag }
+    const role = el.getAttribute('role')
+    if (role) node.role = role
+    const label =
+      el.getAttribute('aria-label') ||
+      (el as HTMLInputElement).placeholder ||
+      el.getAttribute('title') ||
+      el.getAttribute('alt') ||
+      undefined
+    if (label) node.label = label
+    // Text ONLY for leaves. A container's textContent is the concatenation of everything beneath it
+    // — it would repeat every child's label (defeating the density this map exists for) and would
+    // even surface text from elements we deliberately excluded as hidden.
+    if (!hasKeptChildren) {
+      const text = getVisibleText(el)?.trim()
+      if (text && text.length <= 80) node.text = text
+    }
+    const val = (el as HTMLInputElement).value
+    if (val !== undefined && val !== '' && ['input', 'textarea', 'select'].includes(tag)) node.value = val
+    if ((el as HTMLInputElement).type) node.type = (el as HTMLInputElement).type
+    if ((el as HTMLInputElement).disabled) node.disabled = true
+    if ((el as HTMLInputElement).checked) node.checked = true
+    if ((el as HTMLAnchorElement).href) node.href = (el as HTMLAnchorElement).getAttribute('href')
+    return node
+  }
+
+  const walk = (el: Element): any | null => {
+    if (count >= maxNodes) {
+      truncated = true
+      return null
+    }
+    const isInteractive = el.matches(INTERACTIVE)
+    const isStructural = el.matches(STRUCTURAL)
+
+    // Skip anything the user can't see — an invisible control is not an affordance.
+    if (isInteractive || isStructural) {
+      const style = getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return null
+    }
+
+    const children: any[] = []
+    for (const child of Array.from(el.children)) {
+      const c = walk(child)
+      if (c) children.push(c)
+    }
+
+    if (isInteractive || isStructural) {
+      count++
+      const node = describeEl(el, children.length > 0)
+      if (children.length) node.children = children
+      return node
+    }
+    // Not itself an affordance: hoist its children so containment stays meaningful without
+    // spending a node on every wrapper <div>.
+    if (children.length === 1) return children[0]
+    if (children.length > 1) return { tag: el.tagName.toLowerCase(), children }
+    return null
+  }
+
+  const root = walk(document.body)
+  const nodes = root ? (root.children && !root.ref ? root.children : [root]) : []
+  return truncated ? { nodes, truncated: true } : { nodes }
+}
+
+/**
  * Build an actionable summary of the page
  */
 function buildActionableSummary(root: Element): ActionableSummary {
@@ -7675,6 +7824,17 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'unhighlight') {
       hideHighlight()
       this.respond(msg.id, true)
+    } else if (action === 'map') {
+      // Affordance map: the app's own wiring when it exposes an agent surface, else a DOM
+      // reconstruction. See buildAffordanceMap for why the two tiers differ so much.
+      try {
+        this.respond(msg.id, true, buildAffordanceMap({
+          global: payload?.global,
+          maxNodes: payload?.maxNodes,
+        }))
+      } catch (err: any) {
+        this.respond(msg.id, false, null, err?.message || String(err))
+      }
     } else if (action === 'tree') {
       // Build a DOM tree representation or actionable summary
       try {

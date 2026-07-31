@@ -1431,6 +1431,40 @@
     "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles.\n\nResponse: { windows: [{ id, url, title, focused }], count, ready, hint }\n\nUse window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.\n\n**`ready` is the signal to gate a test lane on, not \"is the server up\".** A server can be running\nwith zero connected tabs — it answers /status 200 but there is nothing to drive, and a lane that\nadopts it fails later on a confusing timeout. `ready` is true when at least one top-level tab is\nconnected. (Hidden tabs count as ready — they're reachable, just possibly stale; see the hidden-tab\nwarning.) `hj doctor` checks this and exits non-zero, so a lane can fail fast on the real cause."
   },
   {
+    "path": "/map",
+    "method": "POST",
+    "summary": "Affordance map — what can be interacted with, and what it is wired to",
+    "description": "Returns a map of the page's affordances. Two tiers, and the difference matters:\n\n**Native (`source: \"tosi-agent\"`)** — when the page exposes an agent surface at\n`globalThis.tosiAgent` (a tosijs app calling `enableAgentInterface()`), the map is the app's OWN\nwiring records. That carries what the DOM cannot: which state path each control is bound to and in\nwhich **direction** — `⟷` two-way (user-writable), `⟵` bound-to-DOM (display only), absent\n(static) — plus the handler path each event calls, and the list of callable actions.\n\nWith that you can act through paths instead of synthesized input:\n`hj eval \"tosiAgent.write('app.filter', 'milk')\"` or `tosiAgent.call('app.addItem')`.\n\n**Fallback (`source: \"dom\"`)** — any other page, reconstructed from tags/roles/labels/state, each\nnode carrying a haltija `ref` for `hj click <ref>`. Deliberately approximate: it has NO binding\nprovenance, because that information does not exist in the DOM. Always check `source` before\ntrusting the map as wiring rather than as a guess.\n\nCheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport\nor animation timing, and structure (nesting) is carried for free.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "global": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Global to probe for the agent surface (default 'tosiAgent')"
+        },
+        "maxNodes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Cap on DOM-fallback nodes (default 400)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/tabs/open",
     "method": "POST",
     "summary": "Open a new tab",

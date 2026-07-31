@@ -920,6 +920,20 @@ var ARG_MAPS = {
     }
     return { ...body, ...parseTargetArgs(positional) };
   },
+  map: (args) => {
+    const body = {};
+    for (let i = 0;i < args.length; i++) {
+      if (args[i] === "--global") {
+        body.global = args[++i];
+        continue;
+      }
+      if (args[i] === "--max-nodes") {
+        body.maxNodes = num(args[++i]);
+        continue;
+      }
+    }
+    return body;
+  },
   snapshot: (args) => ({ context: args.join(" ") || undefined }),
   select: (args) => ({ action: args[0] }),
   "select-start": () => ({}),
@@ -1447,6 +1461,7 @@ async function ensureBrowserConnected(port, { explicitTarget = false } = {}) {
 }
 var INFO_COMMANDS = new Set(["status", "windows", "version", "help"]);
 var UNWRAP_DATA_SUBCOMMANDS = new Set([
+  "map",
   "eval",
   "call",
   "fetch",
@@ -1714,6 +1729,7 @@ hj ${subcommand} : ${hint}`));
 }
 var KNOWN_COMMANDS = new Set([
   "tree",
+  "map",
   "query",
   "inspect",
   "inspectAll",

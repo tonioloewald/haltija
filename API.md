@@ -410,6 +410,46 @@ Works with standard forms and most framework components (React, Vue, etc).
 
 ---
 
+### `POST /map`
+
+**Affordance map — what can be interacted with, and what it is wired to**
+
+Returns a map of the page's affordances. Two tiers, and the difference matters:
+
+**Native (`source: "tosi-agent"`)** — when the page exposes an agent surface at
+`globalThis.tosiAgent` (a tosijs app calling `enableAgentInterface()`), the map is the app's OWN
+wiring records. That carries what the DOM cannot: which state path each control is bound to and in
+which **direction** — `⟷` two-way (user-writable), `⟵` bound-to-DOM (display only), absent
+(static) — plus the handler path each event calls, and the list of callable actions.
+
+With that you can act through paths instead of synthesized input:
+`hj eval "tosiAgent.write('app.filter', 'milk')"` or `tosiAgent.call('app.addItem')`.
+
+**Fallback (`source: "dom"`)** — any other page, reconstructed from tags/roles/labels/state, each
+node carrying a haltija `ref` for `hj click <ref>`. Deliberately approximate: it has NO binding
+provenance, because that information does not exist in the DOM. Always check `source` before
+trusting the map as wiring rather than as a guess.
+
+Cheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport
+or animation timing, and structure (nesting) is carried for free.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `global` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
+| `maxNodes` | number,null | Cap on DOM-fallback nodes (default 400) |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **map**: Affordance map of the focused tab
+  ```json
+  {}
+  ```
+
+---
+
 ## Do Things
 
 ### `POST /click`
