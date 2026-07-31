@@ -24,6 +24,8 @@ export interface DevResponse {
   timestamp: number
   /** Hidden-tab / focus-ambiguity caveat attached by the server (see requestFromBrowser). */
   warning?: string
+  /** True when this exact warning was already reported within the cooldown (see types.ts). */
+  warningRepeated?: boolean
 }
 
 /**
@@ -33,7 +35,12 @@ export interface DevResponse {
  * would come back empty with nothing saying why.
  */
 function withWarning(body: Record<string, unknown>, response: DevResponse): Record<string, unknown> {
-  return response.warning ? { ...body, warning: response.warning } : body
+  if (!response.warning) return body
+  // Carry `warningRepeated` too, or the client can't tell a repeat from a first report and would
+  // re-print it on every command (see server.ts attachWarning).
+  return response.warningRepeated
+    ? { ...body, warning: response.warning, warningRepeated: true }
+    : { ...body, warning: response.warning }
 }
 
 /** Function to send request to browser widget */

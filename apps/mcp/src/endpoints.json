@@ -1421,7 +1421,7 @@
     "path": "/windows",
     "method": "GET",
     "summary": "List connected windows",
-    "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles.\n\nResponse: { windows: [{ id, url, title, focused }] }\n\nUse window IDs in other endpoints (e.g., /click, /tree) to target specific tabs."
+    "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles.\n\nResponse: { windows: [{ id, url, title, focused }], count, ready, hint }\n\nUse window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.\n\n**`ready` is the signal to gate a test lane on, not \"is the server up\".** A server can be running\nwith zero connected tabs — it answers /status 200 but there is nothing to drive, and a lane that\nadopts it fails later on a confusing timeout. `ready` is true when at least one top-level tab is\nconnected. (Hidden tabs count as ready — they're reachable, just possibly stale; see the hidden-tab\nwarning.) `hj doctor` checks this and exits non-zero, so a lane can fail fast on the real cause."
   },
   {
     "path": "/tabs/open",
@@ -1910,7 +1910,7 @@
     "path": "/status",
     "method": "GET",
     "summary": "Server status",
-    "description": "Returns server info and connected browser count.\n\nResponse: { version, uptime, browsers: n, focused?: windowId }\n\nUse to verify server is running and browsers are connected before testing."
+    "description": "Returns server info and connected browser count.\n\nResponse: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }\n\nUse to verify the server is running — but gate a test lane on **`ready`**, not on the 200. A\nserver can be up with zero connected tabs: /status answers fine and there is still nothing to\ndrive, so a lane that adopts it fails later on a timeout that points at the caller's own code.\n`ready` is true when at least one top-level tab is connected. `hj doctor` checks this (plus\nambiguous targeting) and exits non-zero, which is the one-command preflight for a lane."
   },
   {
     "path": "/stats",

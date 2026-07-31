@@ -34,6 +34,12 @@ export interface DevResponse {
    * mounted. The command succeeded; the number may still be wrong. See src/tab-liveness.ts.
    */
   warning?: string
+  /**
+   * True when `warning` describes a condition already reported within the recent cooldown. The
+   * condition still holds — this only says "you've been told". Clients suppress the repeat for
+   * humans; strict/CI consumers must fail on `warning` regardless of this flag.
+   */
+  warningRepeated?: boolean
 }
 
 // ============================================

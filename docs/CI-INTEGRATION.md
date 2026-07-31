@@ -168,28 +168,45 @@ xvfb-run --auto-servernum npx electron . &
 
 ## Waiting for Ready State
 
-Don't use `sleep` — use a proper wait loop:
+Don't use `sleep`, and **don't gate on "the server answered"** — that is the single most common
+way a lane fails confusingly. A haltija server can be up with **zero connected tabs**: `/status`
+returns 200, your lane decides haltija is available and skips starting its own browser, and then
+`navigate` fails with "no browser reachable" — or worse, times out somewhere that looks like your
+code's fault. *Server up ≠ drivable.*
+
+Use the built-in preflight, which exits non-zero on exactly that case:
 
 ```bash
-# Wait for server
+# Wait until the target is actually drivable (not merely alive)
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:8700/status | jq -e '.serverVersion' > /dev/null 2>&1; then
-    echo "Haltija server ready after ${i}s"
-    break
-  fi
+  if hj doctor >/dev/null 2>&1; then break; fi
   sleep 1
 done
 
-# Wait for browser connection (if using Electron app)
-for i in $(seq 1 30); do
-  WINDOWS=$(curl -sf http://localhost:8700/windows 2>/dev/null | jq '.windows | length' 2>/dev/null || echo 0)
-  if [ "$WINDOWS" -gt 0 ]; then
-    echo "Browser connected after ${i}s"
-    break
-  fi
-  sleep 1
-done
+hj doctor   # print the verdict; exits 1 if it's not drivable or the target is ambiguous
 ```
+
+`hj doctor` checks, in the order they bite: server reachable → a tab is actually connected → the
+target isn't ambiguous (your cwd matches, or you chose explicitly) → tabs aren't all hidden →
+versions aligned. Add `--json` for machine-readable output.
+
+Checking by hand instead? Gate on the **`ready`** field, not on the HTTP status:
+
+```bash
+curl -sf http://localhost:8700/status | jq -e '.ready'   # true only when a tab is connected
+```
+
+And for a lane, add **`--strict`** (or `HALTIJA_STRICT=1`) to your `hj` calls so advisory warnings —
+cross-project targeting, a hidden tab returning stale results — become non-zero exits instead of
+stderr noise your script ignores:
+
+```bash
+hj --strict navigate "$URL"
+```
+
+Best of all, don't share state at all: `haltija --private --app` (or `--private --headless`) gives
+the lane its own isolated server and browser on an ephemeral port, which nothing else can adopt and
+which tears down with the run.
 
 ## The hj CLI
 

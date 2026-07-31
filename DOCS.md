@@ -132,7 +132,15 @@ hj tree                                    # ...and plain hj reaches it
 
 hj where                                   # which port, WHY, and what is alive there
 hj servers                                 # list ALL live servers; pick with --port/--name
+hj doctor                                  # preflight for a script: EXITS 1 if not drivable
+hj --strict <cmd>                          # warnings (wrong project / hidden tab) become errors
 ```
+
+**In a script or CI lane, gate on `hj doctor` (or the `ready` field), not on "the server
+answered".** A server can be up with zero connected tabs — `/status` returns 200 and there
+is still nothing to drive, so a lane that adopts it fails later on a timeout that points at
+your own code. `hj doctor` exits non-zero on exactly that, and `--strict` turns the advisory
+warnings into failures so a suspect result is never consumed.
 
 When several haltijas run at once (e.g. a project server AND the desktop app),
 `hj servers` (alias `hj ls`) lists them all — the desktop app is reachable as

@@ -942,7 +942,19 @@ async function doRequest(url, method, body, context = {}) {
       // content never mounted, so an empty selector means "not mounted", not "broken" (issue #3).
       // Print it on stderr so it can't be mistaken for output, and so --json stdout stays clean.
       if (json && typeof json.warning === 'string' && json.warning) {
-        console.error(`hj: warning — ${json.warning}`)
+        if (process.env.HALTIJA_STRICT === '1') {
+          // Strict mode (issue #8): if the result may be wrong, a script must not consume it. Fail
+          // fast with the real reason instead of emitting a plausible-but-wrong value that makes the
+          // lane fail later, pointing at the caller's own code. stdout stays empty on purpose.
+          // NB: fails on `warningRepeated` too — the condition still holds, and suppressing repeats
+          // here would let every command after the first silently pass.
+          console.error(`hj: ERROR (strict) — ${json.warning}`)
+          console.error(`hj: refusing to return a result that may be wrong. Fix the condition above, or drop --strict/HALTIJA_STRICT to proceed anyway.`)
+          process.exit(1)
+        }
+        // Non-strict: stay quiet on a repeat within the cooldown, so a burst of commands doesn't
+        // re-print the same block and train the reader to ignore it.
+        if (!json.warningRepeated) console.error(`hj: warning — ${json.warning}`)
       }
 
       // Text format for supported subcommands (unless --json)

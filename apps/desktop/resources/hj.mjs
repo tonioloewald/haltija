@@ -1629,7 +1629,13 @@ async function doRequest(url, method, body, context = {}) {
     if (contentType.includes("application/json")) {
       const json = await resp.json();
       if (json && typeof json.warning === "string" && json.warning) {
-        console.error(`hj: warning — ${json.warning}`);
+        if (process.env.HALTIJA_STRICT === "1") {
+          console.error(`hj: ERROR (strict) — ${json.warning}`);
+          console.error(`hj: refusing to return a result that may be wrong. Fix the condition above, or drop --strict/HALTIJA_STRICT to proceed anyway.`);
+          process.exit(1);
+        }
+        if (!json.warningRepeated)
+          console.error(`hj: warning — ${json.warning}`);
       }
       if (!jsonOutput && subcommand === "tree" && json.success && json.data) {
         console.log(formatTree(json.data, 0, { depth: body?.depth }));
@@ -2063,6 +2069,77 @@ This shell targets :${resolvedPort}, but nothing is listening there.`));
   console.log(dim3(`
 Pick one:  `) + `hj --port <n> <cmd>` + dim3("  or  ") + `hj --name <name> <cmd>`);
 }
+async function runDoctor(port, portSource, jsonOutput) {
+  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
+  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
+  const green2 = (s) => `\x1B[32m${s}\x1B[0m`;
+  const red2 = (s) => `\x1B[31m${s}\x1B[0m`;
+  const yellow2 = (s) => `\x1B[33m${s}\x1B[0m`;
+  const token = process.env.HALTIJA_TOKEN;
+  const problems = [];
+  const notes = [];
+  let status = null;
+  try {
+    const resp = await fetch(`http://localhost:${port}/status`, {
+      headers: token ? { "X-Haltija-Token": token } : {},
+      signal: AbortSignal.timeout(3000)
+    });
+    if (resp.ok)
+      status = await resp.json();
+    else
+      problems.push(`server on port ${port} returned HTTP ${resp.status}`);
+  } catch (err) {
+    const refused = err.code === "ConnectionRefused" || err.cause?.code === "ECONNREFUSED";
+    problems.push(refused ? `no haltija server is listening on port ${port} — start one (bunx haltija) or check the target` : `could not reach the server on port ${port}: ${err.message}`);
+  }
+  if (status) {
+    const tabs = Array.isArray(status.windows) ? status.windows : [];
+    const ready = typeof status.ready === "boolean" ? status.ready : tabs.length > 0;
+    if (!ready) {
+      problems.push(`the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` + `Open a tab in the desktop app, or inject the widget into a page. ` + `("server is up" is not "server is drivable" — that's what this check exists for.)`);
+    }
+    const hidden = tabs.filter((w) => w.hidden);
+    if (ready && hidden.length === tabs.length) {
+      problems.push(`every connected tab reports HIDDEN — results from a backgrounded tab can be ` + `plausible-but-wrong (rAF/timers throttled). Bring one to the front.`);
+    } else if (hidden.length) {
+      notes.push(`${hidden.length} of ${tabs.length} tab(s) are hidden; commands targeting them may return stale results`);
+    }
+    if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
+      notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`);
+    }
+  }
+  const live = listLiveInstances();
+  const ambiguous = portSource === "8700 (default)" && live.length > 0;
+  if (ambiguous) {
+    problems.push(`targeting the shared default port 8700, but ${live.length} other haltija server(s) are ` + `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` + `Pick one with --name/--port, or run from the project's directory.`);
+  }
+  const ok = problems.length === 0;
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      ok,
+      port,
+      portSource,
+      serverVersion: status?.serverVersion ?? null,
+      ready: status ? typeof status.ready === "boolean" ? status.ready : (status.windows?.length ?? 0) > 0 : false,
+      tabs: status?.windows?.length ?? 0,
+      problems,
+      notes
+    }, null, 2));
+    return ok;
+  }
+  console.log(`${bold2("target:")} port ${port} ${dim3(`(${portSource})`)}`);
+  if (status) {
+    const tabCount = status.windows?.length ?? 0;
+    console.log(`${bold2("server:")} haltija ${status.serverVersion || "?"}${status.desktopApp ? dim3(" (desktop app)") : ""}, ${tabCount} tab${tabCount === 1 ? "" : "s"}`);
+  }
+  for (const n of notes)
+    console.log(`${yellow2("!")} ${n}`);
+  for (const p of problems)
+    console.log(`${red2("✗")} ${p}`);
+  if (ok)
+    console.log(`${green2("✓")} ready to drive`);
+  return ok;
+}
 function lookupNamedInstance(name) {
   const path = join2(REGISTRY_DIR, `${name}.json`);
   if (!existsSync2(path))
@@ -2138,13 +2215,25 @@ ${dim3("Overriding that (per-shell):")}
 ${dim3("Lifecycle:")}
   ${dim3("hj where")}                       # which server this shell targets + what is alive there
   ${dim3("hj servers")}                     # list ALL live servers (pick one with --port/--name)
+  ${dim3("hj doctor")}                      # preflight: drivable + unambiguous? EXITS 1 if not
   ${dim3("hj shutdown")}                    # stop the targeted server (a private --app: Electron + all)
+
+${dim3("For scripts / CI:")}
+  ${dim3("hj --strict <cmd>")}              # turn advisory warnings (wrong project, hidden tab)
+  ${dim3("HALTIJA_STRICT=1")}               # into non-zero exits, so a lane fails fast on the
+                                  ${dim3("# real cause instead of a later timeout")}
 ${listSubcommands()}
 Run ${dim3("hj --help")} for this help.
 Run ${dim3("haltija --help")} for server/app options.
 `);
   process.exit(0);
 }
+var strictIdx = args.indexOf("--strict");
+if (strictIdx !== -1) {
+  process.env.HALTIJA_STRICT = "1";
+  args.splice(strictIdx, 1);
+}
+var STRICT = process.env.HALTIJA_STRICT === "1";
 var resolvedName = process.env.HALTIJA_NAME || "";
 var nameSource = resolvedName ? "HALTIJA_NAME env" : "";
 var nameIdx = args.indexOf("--name");
@@ -2190,6 +2279,12 @@ if (portFlag) {
     portSource = "8700 (default)";
     if (live.length) {
       const names = live.map((e) => `${e.name} (${e.cwd})`).join(", ");
+      if (STRICT) {
+        console.error(`hj: ERROR (strict) — refusing to fall back to the default port 8700 while other haltija servers are running: ${names}`);
+        console.error(`hj: this shell's cwd (${process.cwd()}) matches none of them, so the target is ambiguous.`);
+        console.error(`hj: pick one explicitly with --name/--port (or cd into its directory), or drop --strict to proceed anyway.`);
+        process.exit(1);
+      }
       console.error(`hj: warning — targeting the default port 8700, but these haltija servers are running: ${names}`);
       console.error(`hj: if you meant one of them, cd into its directory, or use --name/--port. See \`hj where\`.`);
     }
@@ -2237,6 +2332,10 @@ if (subcommand === "where") {
 if (subcommand === "servers" || subcommand === "ls") {
   await runServers(port);
   process.exit(0);
+}
+if (subcommand === "doctor") {
+  const ok = await runDoctor(port, portSource, subArgs.includes("--json"));
+  process.exit(ok ? 0 : 1);
 }
 if (subcommand === "shutdown" || subcommand === "quit") {
   const token = process.env.HALTIJA_TOKEN;

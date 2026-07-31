@@ -787,6 +787,39 @@ describe('window focus management', () => {
     }
   })
 
+  // Issue #11: "server is up" is NOT "server is drivable". An adopter's lane probed for a live
+  // server, got yes, skipped spawning its own browser, and then failed on a timeout with nothing
+  // to drive. `ready` is the signal that actually predicts success.
+  it('GET /windows and /status report ready:false when no window is connected', async () => {
+    // The exact reported shape: server alive (200), windows empty. Asserted as the INVARIANT
+    // (ready === there-is-a-tab) rather than count===0, so a neighbouring test that leaves a window
+    // connected can't flake this — and a server that hardcoded ready:true would still fail.
+    const win = await (await fetch(`${BASE_URL}/windows`)).json()
+    expect(win.ready).toBe(win.count > 0)
+
+    const status = await (await fetch(`${BASE_URL}/status`)).json()
+    const statusTabs = (status.windows || []).length
+    expect(status.ready).toBe(statusTabs > 0)
+
+    // And the server is definitely UP — which is the whole point: up != drivable.
+    expect(status.serverVersion).toBeTruthy()
+  })
+
+  it('GET /windows and /status report ready:true once a tab connects', async () => {
+    const ws = await connectBrowserWindow('ready-signal-win')
+    try {
+      const win = await (await fetch(`${BASE_URL}/windows`)).json()
+      expect(win.count).toBeGreaterThan(0)
+      expect(win.ready).toBe(true)
+
+      const status = await (await fetch(`${BASE_URL}/status`)).json()
+      expect(status.ready).toBe(true)
+    } finally {
+      ws.close()
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
+
   // Regression tests for the issue #4 rewrite: tabs-focus is a SERVER-SIDE routing change, not a
   // browser dispatch. A revert to browser-dispatch (the old hidden-tab timeout) must fail here.
   it('POST /tabs/focus on an unknown window → 404, not a timeout', async () => {

@@ -944,9 +944,13 @@ curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
 
 Returns server info and connected browser count.
 
-Response: { version, uptime, browsers: n, focused?: windowId }
+Response: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }
 
-Use to verify server is running and browsers are connected before testing.
+Use to verify the server is running — but gate a test lane on **\`ready\`**, not on the 200. A
+server can be up with zero connected tabs: /status answers fine and there is still nothing to
+drive, so a lane that adopts it fails later on a timeout that points at the caller's own code.
+\`ready\` is true when at least one top-level tab is connected. \`hj doctor\` checks this (plus
+ambiguous targeting) and exits non-zero, which is the one-command preflight for a lane.
 
 ---
 
@@ -2102,9 +2106,15 @@ Deprecated: Use POST /select {"action":"clear"} instead.
 
 Returns all connected browser windows/tabs with IDs, URLs, and titles.
 
-Response: { windows: [{ id, url, title, focused }] }
+Response: { windows: [{ id, url, title, focused }], count, ready, hint }
 
 Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
+
+**\`ready\` is the signal to gate a test lane on, not "is the server up".** A server can be running
+with zero connected tabs — it answers /status 200 but there is nothing to drive, and a lane that
+adopts it fails later on a confusing timeout. \`ready\` is true when at least one top-level tab is
+connected. (Hidden tabs count as ready — they're reachable, just possibly stale; see the hidden-tab
+warning.) \`hj doctor\` checks this and exits non-zero, so a lane can fail fast on the real cause.
 
 ---
 
@@ -2804,7 +2814,15 @@ hj tree                                    # ...and plain hj reaches it
 
 hj where                                   # which port, WHY, and what is alive there
 hj servers                                 # list ALL live servers; pick with --port/--name
+hj doctor                                  # preflight for a script: EXITS 1 if not drivable
+hj --strict <cmd>                          # warnings (wrong project / hidden tab) become errors
 \`\`\`
+
+**In a script or CI lane, gate on \`hj doctor\` (or the \`ready\` field), not on "the server
+answered".** A server can be up with zero connected tabs — \`/status\` returns 200 and there
+is still nothing to drive, so a lane that adopts it fails later on a timeout that points at
+your own code. \`hj doctor\` exits non-zero on exactly that, and \`--strict\` turns the advisory
+warnings into failures so a suspect result is never consumed.
 
 When several haltijas run at once (e.g. a project server AND the desktop app),
 \`hj servers\` (alias \`hj ls\`) lists them all — the desktop app is reachable as
@@ -2978,6 +2996,11 @@ Two first-party ways to run (plus embedding, below):
   port a shell targets and WHY; override with \`--port\` or \`--name\`. When several servers
   run at once (e.g. a project server AND the desktop app), \`hj servers\` lists them all —
   the desktop app is reachable as \`hj --name desktop\`.
+- **Scripts/CI:** gate on \`hj doctor\` (exits non-zero when the target is not drivable or is
+  ambiguous) or on the \`ready\` field of \`/status\`/\`/windows\` — NOT on "the server answered".
+  A server can be up with zero connected tabs, so a lane that adopts it fails later on a
+  confusing timeout. \`hj --strict\` (or HALTIJA_STRICT=1) turns the hidden-tab and
+  cross-project warnings into non-zero exits so a suspect result is never consumed.
 - **CI:** two engines, and the choice matters — both need one external browser, but
   a *different* one:
   - \`haltija --ci\` (or \`--private --app\` for an isolated instance) drives **Electron**

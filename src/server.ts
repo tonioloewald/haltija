@@ -667,13 +667,14 @@ async function requestFromBrowser(
       })
       const warning = [hidden, ambiguous].filter(Boolean).join('\n\n')
       if (!warning) return res
-      // Suppress an identical repeat within the cooldown so a burst of commands from one agent
-      // doesn't re-print the same block every time. A changed condition (different text) always
-      // warns; see warning-dedupe.ts for why it's a short cooldown, not "once forever".
-      if (!shouldEmitWarning(warning, recentTabWarnings, Date.now(), TAB_WARN_COOLDOWN_MS)) {
-        return res
-      }
-      return { ...res, warning }
+      // ALWAYS report the condition; only mark whether it's a repeat. De-duplication is a
+      // *presentation* concern (don't spam a human with the same block on every command), so the
+      // client decides — `hj` stays quiet on a repeat, but `--strict` fails on ANY warning.
+      // Withholding the field instead (as this did originally) silently defeated strict mode: the
+      // first command in a lane failed, every later one within the cooldown saw no warning and
+      // passed — the exact "detection doesn't reach the exit code" bug strict mode exists to fix.
+      const repeated = !shouldEmitWarning(warning, recentTabWarnings, Date.now(), TAB_WARN_COOLDOWN_MS)
+      return repeated ? { ...res, warning, warningRepeated: true } : { ...res, warning }
     }
 
     const timeout = setTimeout(() => {
@@ -1259,6 +1260,11 @@ async function handleRest(req: Request): Promise<Response> {
     return Response.json({
       ok: allWindows.length > 0,
       windows: windowList,
+      // "Server is up" is NOT "server is drivable" (issue #11). A 200 from /status only proves the
+      // former; an adopter that treats it as the latter skips spawning its own browser and then
+      // fails much later on a timeout. `ready` is the signal that actually predicts success: at
+      // least one top-level TAB is connected. Mirrors /windows.
+      ready: allWindows.filter((w) => (w.windowType || 'tab') === 'tab').length > 0,
       serverVersion: SERVER_VERSION,
       // Lets a newer server identify us without shelling out to lsof.
       pid: process.pid,
@@ -3786,6 +3792,15 @@ Run 'hj --help' for all commands.`
       windowType: w.windowType || 'tab',
     }))
 
+    // "Server is up" is NOT "server is drivable" (issue #11): an adopter's lane probes for a live
+    // server, gets yes, skips spawning its own — and then has nothing to navigate, failing much
+    // later with a confusing timeout. `ready` is that missing signal, so nobody has to reimplement
+    // "count > 0" (and forget to, until a release gate). It counts top-level TABS only: an iframe or
+    // popup can't be the target of an untargeted command. Hidden tabs DO count as ready — they are
+    // reachable, just possibly stale, which is what the hidden-tab warning is for.
+    const drivableTabs = windowList.filter((w) => (w.windowType || 'tab') === 'tab')
+    const ready = drivableTabs.length > 0
+
     const hint = windowList.length > 1
       ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
       : windowList.length === 1
@@ -3796,6 +3811,7 @@ Run 'hj --help' for all commands.`
       windows: windowList,
       focused: focusedWindowId,
       count: windowList.length,
+      ready,
       hint,
     }, { headers })
   }

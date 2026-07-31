@@ -42,6 +42,11 @@ Two first-party ways to run (plus embedding, below):
   port a shell targets and WHY; override with `--port` or `--name`. When several servers
   run at once (e.g. a project server AND the desktop app), `hj servers` lists them all —
   the desktop app is reachable as `hj --name desktop`.
+- **Scripts/CI:** gate on `hj doctor` (exits non-zero when the target is not drivable or is
+  ambiguous) or on the `ready` field of `/status`/`/windows` — NOT on "the server answered".
+  A server can be up with zero connected tabs, so a lane that adopts it fails later on a
+  confusing timeout. `hj --strict` (or HALTIJA_STRICT=1) turns the hidden-tab and
+  cross-project warnings into non-zero exits so a suspect result is never consumed.
 - **CI:** two engines, and the choice matters — both need one external browser, but
   a *different* one:
   - `haltija --ci` (or `--private --app` for an isolated instance) drives **Electron**

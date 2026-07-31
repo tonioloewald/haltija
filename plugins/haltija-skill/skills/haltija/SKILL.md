@@ -49,6 +49,28 @@ drive. The desktop app is reachable as `hj --name desktop`. **`hj shutdown`** (a
 the targeted server; against a `--private` instance it tears down the whole thing (Electron + its
 servers), and it refuses to orphan the interactive desktop app (quit that from its window).
 
+## Scripts and CI: `hj doctor` and `--strict`
+
+**"Is the server up?" does NOT mean "can I drive it".** A server can be running with **zero connected
+tabs**: it answers `/status` 200, your lane adopts it instead of starting its own browser, and then
+fails much later on a timeout that looks like your code's fault. Two things close that gap:
+
+```bash
+hj doctor          # preflight: reachable + drivable + unambiguous target? EXITS 1 if not
+hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRICT=1)
+```
+
+- **`hj doctor`** is the one-line pre-flight for a test lane. It checks, in the order they bite:
+  server reachable → a tab is actually connected → the target isn't ambiguous (your cwd matches, or
+  you chose explicitly) → tabs aren't all hidden → versions aligned. **Non-zero exit** when any of
+  those fails, so the lane stops on the real cause. `--json` for machine-readable output.
+- **`--strict` / `HALTIJA_STRICT=1`** makes the warnings you'd otherwise only *read* into failures:
+  cross-project targeting, hidden tab, focus ambiguity. In strict mode a suspect result is **not
+  printed to stdout at all** — a script must not consume a value that may be wrong.
+- Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand.
+- Best of all, don't share: `haltija --private` (with `--app` or `--headless`) gives a lane its own
+  isolated server + browser on an ephemeral port that nothing else can adopt.
+
 `hj` also warns on stderr when its version differs from the server's (`hj --version` prints its
 own). A mismatched `hj` can route or format wrongly — if you see that warning, believe it before
 you spend time debugging the page.
