@@ -150,6 +150,36 @@ describe('adopter context: a server is ALREADY RUNNING (issue #11)', () => {
   })
 })
 
+describe('adopter context: stdout stays machine-parseable (issue #14)', () => {
+  const port = uniqueTestPort()
+
+  beforeAll(async () => {
+    await startServer(port)
+  })
+
+  it('hj windows emits ONLY JSON on stdout — advisory text goes to stderr', async () => {
+    // An adopter shipped `JSON.parse(await $`hj windows`)`. It worked on the maintainer's machine and
+    // was inert on every npm install, because there a dim hint was appended to STDOUT and the parse
+    // threw into an open catch. Anything advisory belongs on stderr; stdout is the data channel.
+    const { stdout, exitCode } = await runHj(['--port', String(port), 'windows'], REPO_ROOT)
+    expect(exitCode).toBe(0)
+    expect(() => JSON.parse(stdout)).not.toThrow()
+  })
+
+  it('the hint is still emitted — on stderr, where it cannot corrupt output', async () => {
+    const { stderr } = await runHj(['--port', String(port), 'windows'], REPO_ROOT)
+    // `windows` has a hint in the generated table; it must reach the user, just not via stdout.
+    expect(stderr.length).toBeGreaterThan(0)
+  })
+
+  it('hj <cmd> --help describes THAT command, not the global help', async () => {
+    // Falling through to global help reads exactly like "unknown command" — a reporter concluded
+    // `doctor`/`map` did not exist in their build. haltija's own errors recommend this form.
+    const { stdout } = await runHj(['doctor', '--help'], REPO_ROOT)
+    expect(stdout.toLowerCase()).toContain('doctor')
+  })
+})
+
 describe('adopter context: TWO PROJECTS at once (issues #1, #2)', () => {
   // The original complaint as an executable test: two projects, two servers, one machine. Each
   // project's `hj` must reach its OWN server with no flags — a misroute here is silent and looks

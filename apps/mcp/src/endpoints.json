@@ -1272,7 +1272,7 @@
             "string",
             "null"
           ],
-          "description": "Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. Best for 3D scenes and render-to-texture UI."
+          "description": "Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. PIERCES SHADOW DOM: accepts `host >>> canvas`, a plain selector (light DOM then shadow roots), a host element, or an EMPTY string to capture the largest canvas on the page. Best for 3D scenes and render-to-texture UI."
         },
         "format": {
           "type": [

@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.11.2
+
+Patch. Four field reports from tosijs-3d and tosijs-ui, all confirmed.
+
+### Fixed: `--canvas` couldn't reach a canvas in a shadow root ([#15](https://github.com/tonioloewald/haltija/issues/15))
+
+Which is where every component-based renderer puts it — so the exact-pixels escape hatch failed on
+exactly the pages where pixels are the only thing worth looking at. Canvas resolution now pierces
+shadow DOM and accepts every shape someone would reasonably write:
+
+```bash
+hj screenshot --canvas "tosi-b3d canvas"       # descendant, crossing the boundary
+hj screenshot --canvas "tosi-b3d >>> canvas"   # explicit piercing form
+hj screenshot --canvas "canvas"                # found inside shadow roots too
+hj screenshot --canvas                         # no selector: the largest canvas on the page
+```
+
+A genuine miss now lists the canvases that *do* exist, with working selectors. The **schematic**
+embeds shadow-root canvases as well — previously it silently showed none on these pages.
+
+### Fixed: advisory hints were printed to stdout ([#14](https://github.com/tonioloewald/haltija/issues/14))
+
+A dim hint line was appended to **stdout** after JSON output, so `JSON.parse(await $\`hj windows\`)`
+threw — and an adopter's readiness probe fell into an open catch and silently did nothing. All
+advisory text is on stderr now; stdout is the data channel.
+
+Two related fixes from the same report:
+
+- **`hj <cmd> --help` now describes that command** instead of falling through to global help, which
+  read exactly like "unknown command" (a reporter concluded `doctor` and `map` didn't exist in their
+  build). haltija's own error messages recommend this form, so the remedy we printed was broken.
+- **The standalone `hj` bundle now carries its hints.** They were read from a sibling `hints.json`,
+  which doesn't exist next to `~/.local/bin/hj` — so two distributions reporting the same version
+  produced different output. Hints are compiled in, like the version and semver helpers.
+
+### Fixed: contrast false positives on text-less ancestors ([#13](https://github.com/tonioloewald/haltija/issues/13))
+
+A container propagates `color`/`background` but has no font size, so `large` is *unknowable* —
+defaulting it to false held it to 4.5:1 and manufactured failures for text that passes as large on
+the child that actually renders it. About half the findings on a typical page. Only elements with
+their own direct text are graded now.
+
 ## 1.11.1
 
 Patch, per the rule that a minor bump waits for a cleared backlog and a nine-lens review.

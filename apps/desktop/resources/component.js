@@ -46,7 +46,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.11.1";
+  var VERSION = "1.11.2";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -1294,9 +1294,90 @@
       ...buildDomAffordances(opts.maxNodes)
     };
   }
+  function findCanvasesDeep(root = document) {
+    const found = [];
+    const visit = (node) => {
+      for (const el of Array.from(node.querySelectorAll("*"))) {
+        if (el.tagName === "CANVAS")
+          found.push(el);
+        const sr = el.shadowRoot;
+        if (sr)
+          visit(sr);
+      }
+    };
+    visit(root);
+    return found;
+  }
+  function resolveCanvasDeep(selector) {
+    const all = findCanvasesDeep();
+    if (!selector || !String(selector).trim()) {
+      if (!all.length)
+        return { canvas: null };
+      const largest = all.slice().sort((a, b) => b.width * b.height - a.width * a.height)[0];
+      return {
+        canvas: largest,
+        note: all.length > 1 ? `page has ${all.length} canvases; captured the largest (${largest.width}×${largest.height}). Pass a selector to choose another.` : undefined
+      };
+    }
+    const sel = String(selector).trim();
+    if (sel.includes(">>>")) {
+      const parts = sel.split(">>>").map((p) => p.trim()).filter(Boolean);
+      let scope = document;
+      let el = null;
+      for (const part of parts) {
+        if (!scope)
+          return { canvas: null };
+        el = scope.querySelector(part);
+        if (!el)
+          return { canvas: null };
+        scope = el.shadowRoot || el;
+      }
+      return { canvas: el && el.tagName === "CANVAS" ? el : scope?.querySelector?.("canvas") || null };
+    }
+    const light = resolveSelector(sel);
+    if (light && light.tagName === "CANVAS")
+      return { canvas: light };
+    if (light) {
+      const inHost = light.shadowRoot?.querySelector("canvas");
+      if (inHost)
+        return { canvas: inHost };
+    }
+    const tokens = sel.split(/\s+/).filter(Boolean);
+    if (tokens.length > 1) {
+      const descend = (scope, i) => {
+        if (i >= tokens.length)
+          return null;
+        const rest = tokens.slice(i).join(" ");
+        const direct = scope.querySelector(rest);
+        if (direct && direct.tagName === "CANVAS")
+          return direct;
+        for (const cand of Array.from(scope.querySelectorAll(tokens[i]))) {
+          const sr = cand.shadowRoot;
+          if (!sr)
+            continue;
+          const hit = descend(sr, i + 1);
+          if (hit)
+            return hit;
+        }
+        return null;
+      };
+      const crossed = descend(document, 0);
+      if (crossed)
+        return { canvas: crossed };
+    }
+    for (const el of Array.from(document.querySelectorAll("*"))) {
+      const sr = el.shadowRoot;
+      if (!sr)
+        continue;
+      const hit = sr.querySelector(sel);
+      if (hit && hit.tagName === "CANVAS")
+        return { canvas: hit };
+    }
+    return { canvas: null };
+  }
   function collectCanvasThumbnails(maxEdge = 320) {
     const out = [];
-    for (const el of Array.from(document.querySelectorAll("canvas"))) {
+    for (const el of findCanvasesDeep()) {
       const c = el;
       if (!c.width || !c.height)
         continue;
@@ -1565,7 +1646,8 @@
       try {
         const c = probeColors(el);
         node.colors = c;
-        const hasReadableText = !!(node.text || node.label || node.value);
+        const hasOwnText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent || "").trim().length > 0);
+        const hasReadableText = hasOwnText || !!(node.label || node.value);
         if (!c.passes && hasReadableText && !c.uncertain) {
           node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`;
         }
@@ -6286,10 +6368,16 @@ ${elementSummary}${moreText}`;
             });
             return;
           }
-          if (payload2?.canvas) {
-            const el = resolveSelector(payload2.canvas);
+          if (payload2?.canvas !== undefined) {
+            const resolved = resolveCanvasDeep(payload2.canvas);
+            const el = resolved.canvas;
             if (!el) {
-              this.respond(msg2.id, false, null, `Canvas not found: ${payload2.canvas}`);
+              const all = findCanvasesDeep();
+              const inventory = all.length ? `Found ${all.length} canvas element(s): ` + all.map((c) => {
+                const host = c.getRootNode()?.host;
+                return `${host ? host.tagName.toLowerCase() + " >>> " : ""}canvas${c.id ? "#" + c.id : ""} (${c.width}×${c.height})`;
+              }).join(", ") + `. Try one of those, or omit the selector to capture the largest.` : `No <canvas> exists on this page (shadow roots included). \`hj map\` shows what is here.`;
+              this.respond(msg2.id, false, null, `Canvas not found: ${payload2.canvas || "(largest)"}. ${inventory}`);
               return;
             }
             if (typeof el.toDataURL !== "function") {
@@ -6348,9 +6436,11 @@ ${elementSummary}${moreText}`;
                 height: targetH,
                 source: "canvas",
                 canvas: {
-                  selector: payload2.canvas,
+                  selector: payload2.canvas || "(largest)",
                   intrinsic: { width: el.width, height: el.height },
-                  displayed: { width: el.clientWidth, height: el.clientHeight }
+                  displayed: { width: el.clientWidth, height: el.clientHeight },
+                  inShadowRoot: el.getRootNode()?.host ? el.getRootNode().host.tagName.toLowerCase() : undefined,
+                  ...resolved.note ? { note: resolved.note } : {}
                 },
                 ...warning ? { warning } : {}
               });

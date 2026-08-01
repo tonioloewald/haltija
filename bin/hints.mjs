@@ -1,0 +1,27 @@
+/** ⚠️  AUTO-GENERATED FROM src/api-schema.ts — DO NOT EDIT. Run: bun run build */
+export const COMMAND_HINTS = {
+  "tree": "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
+  "query": "@ref or \"selector\", --all | see: tree, inspect",
+  "inspect": "@ref or \"selector\", --styles, --rules, --ancestors | see: tree, query",
+  "click": "@ref or \"selector\", :text(Button), --diff | see: tree, wait, type",
+  "type": "@ref, --clear, --humanlike false (fast) | see: click, key",
+  "key": "<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click",
+  "drag": "@ref or \"selector\" <deltaX> <deltaY>, --duration 500 | see: click, scroll",
+  "highlight": "@ref or \"selector\", --label \"text\", --color #f00, --duration 3000 | see: unhighlight, screenshot",
+  "scroll": "@ref or \"selector\" or <deltaY>, --duration 500 | see: click, wait",
+  "wait": "\"selector\", --text \"content\", --timeout 5000 | see: click, navigate",
+  "events": "events-watch first | see: recording, console, mutations-watch",
+  "eval": "\"code\" (returns result) | see: console, snapshot",
+  "call": "@ref or \"selector\" <method>, --args [...]  | see: eval, inspect",
+  "screenshot": "[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
+  "windows": "--json | see: tabs-open, tabs-close, tabs-focus, status",
+  "map": "--json | see: tree, query, inspect",
+  "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
+  "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
+  "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
+  "recording": "start, stop, list, replay <id|index> | see: test-run, events",
+  "video-start": "--maxDuration 120 | see: video-stop, video-status, screenshot",
+  "video-stop": "| see: video-start, video-status",
+  "video-status": "| see: video-start, video-stop",
+  "status": "--json | see: windows, stats, console"
+}

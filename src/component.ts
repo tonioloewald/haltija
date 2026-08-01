@@ -1838,6 +1838,100 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
  * at it, pick a target, then fetch/act on just that record.
  */
 /**
+ * Every `<canvas>` on the page, including inside open shadow roots.
+ *
+ * `document.querySelectorAll` stops at a shadow boundary, and a component-based renderer puts its
+ * canvas exactly there — so the light-DOM query returns nothing on the pages where the canvas is the
+ * only thing worth looking at (issue #15). Walks open roots; a closed root is genuinely unreachable
+ * and nothing can be done about that.
+ */
+function findCanvasesDeep(root: ParentNode = document): HTMLCanvasElement[] {
+  const found: HTMLCanvasElement[] = []
+  const visit = (node: ParentNode) => {
+    for (const el of Array.from(node.querySelectorAll('*'))) {
+      if (el.tagName === 'CANVAS') found.push(el as HTMLCanvasElement)
+      const sr = (el as HTMLElement).shadowRoot
+      if (sr) visit(sr)
+    }
+  }
+  visit(root)
+  return found
+}
+
+/**
+ * Resolve the canvas a caller asked for, piercing shadow DOM.
+ *
+ * Three ways to ask, in the order they're tried:
+ *  - `a >>> b` — the Playwright/legacy-CSS piercing form, and the one people guess first.
+ *  - a normal selector — matched in the light DOM, then re-tried across shadow roots.
+ *  - nothing at all — take the largest canvas on the page. With one interesting canvas (the common
+ *    case) that's unambiguous, and it makes `hj screenshot --canvas` work with no selector.
+ */
+function resolveCanvasDeep(selector?: string): { canvas: HTMLCanvasElement | null; note?: string } {
+  const all = findCanvasesDeep()
+  if (!selector || !String(selector).trim()) {
+    if (!all.length) return { canvas: null }
+    const largest = all.slice().sort((a, b) => b.width * b.height - a.width * a.height)[0]
+    return {
+      canvas: largest,
+      note: all.length > 1 ? `page has ${all.length} canvases; captured the largest (${largest.width}×${largest.height}). Pass a selector to choose another.` : undefined,
+    }
+  }
+
+  const sel = String(selector).trim()
+  if (sel.includes('>>>')) {
+    const parts = sel.split('>>>').map((p) => p.trim()).filter(Boolean)
+    let scope: ParentNode | null = document
+    let el: Element | null = null
+    for (const part of parts) {
+      if (!scope) return { canvas: null }
+      el = scope.querySelector(part)
+      if (!el) return { canvas: null }
+      scope = (el as HTMLElement).shadowRoot || el
+    }
+    return { canvas: el && el.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : (scope as ParentNode)?.querySelector?.('canvas') || null }
+  }
+
+  const light = resolveSelector(sel)
+  if (light && light.tagName === 'CANVAS') return { canvas: light as HTMLCanvasElement }
+  // A host element was matched — take the canvas inside its shadow root.
+  if (light) {
+    const inHost = (light as HTMLElement).shadowRoot?.querySelector('canvas')
+    if (inHost) return { canvas: inHost as HTMLCanvasElement }
+  }
+  // A descendant selector that CROSSES a shadow boundary — `tosi-b3d canvas` — is what people
+  // write first, and plain CSS can't express it. Split at each space and let a matched host become
+  // the scope for the remainder, so the natural form works instead of merely being diagnosed.
+  const tokens = sel.split(/\s+/).filter(Boolean)
+  if (tokens.length > 1) {
+    const descend = (scope: ParentNode, i: number): HTMLCanvasElement | null => {
+      if (i >= tokens.length) return null
+      const rest = tokens.slice(i).join(' ')
+      const direct = scope.querySelector(rest)
+      if (direct && direct.tagName === 'CANVAS') return direct as HTMLCanvasElement
+      for (const cand of Array.from(scope.querySelectorAll(tokens[i]))) {
+        const sr = (cand as HTMLElement).shadowRoot
+        if (!sr) continue
+        const hit = descend(sr, i + 1)
+        if (hit) return hit
+      }
+      return null
+    }
+    const crossed = descend(document, 0)
+    if (crossed) return { canvas: crossed }
+  }
+
+  // Finally, try the selector INSIDE each shadow root (e.g. `--canvas canvas` on a shadow page).
+  for (const el of Array.from(document.querySelectorAll('*'))) {
+    const sr = (el as HTMLElement).shadowRoot
+    if (!sr) continue
+    const hit = sr.querySelector(sel)
+    if (hit && hit.tagName === 'CANVAS') return { canvas: hit as HTMLCanvasElement }
+  }
+  return { canvas: null }
+}
+
+/**
  * Grab a thumbnail of every visible `<canvas>` on the page.
  *
  * Canvas pixels need **no permission** — unlike `getDisplayMedia`, which requires a user gesture and
@@ -1847,7 +1941,10 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
  */
 function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> {
   const out: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = []
-  for (const el of Array.from(document.querySelectorAll('canvas'))) {
+  // Pierce shadow roots: a web-component renderer (<tosi-b3d>, <model-viewer>, most Babylon/Three
+  // wrappers) owns its canvas inside its shadow root, so a light-DOM-only query finds nothing on
+  // exactly the pages where the canvas IS the content (issue #15).
+  for (const el of findCanvasesDeep()) {
     const c = el as HTMLCanvasElement
     if (!c.width || !c.height) continue
     const style = getComputedStyle(c)
@@ -2232,10 +2329,18 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     try {
       const c = probeColors(el)
       node.colors = c
-      // Only flag something a user actually READS. A container with no text of its own inherits a
-      // colour but displays nothing, so a "failure" there is pure noise in an audit list — and an
-      // audit people learn to skim is worth nothing. Likewise skip an uncertain verdict.
-      const hasReadableText = !!(node.text || node.label || node.value)
+      // Grade only an element with its OWN direct text (issue #13). A container merely propagates
+      // `color`/`background`: it has no font size, so `large` is UNKNOWABLE — and defaulting the
+      // unknown to `false` holds it to the stricter 4.5:1 and manufactures a failure for text that
+      // passes as large on the child that actually renders it. The reporter saw header+a fail at
+      // 3.5:1 while the h2 holding the text passed at 3:1 — same colours, same everything.
+      //
+      // Checks direct text NODES rather than the `text` field: an element with both its own text and
+      // element children has a real font size and must still be graded.
+      const hasOwnText = Array.from(el.childNodes).some(
+        (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0,
+      )
+      const hasReadableText = hasOwnText || !!(node.label || node.value)
       if (!c.passes && hasReadableText && !c.uncertain) {
         node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
       }
@@ -8493,10 +8598,24 @@ export class DevChannel extends HTMLElement {
         // a render-to-texture UI — no getDisplayMedia grant, no Electron needed, no compositing or
         // scaling artifacts, and it captures the canvas even when it's scrolled off-screen or the
         // tab isn't frontmost. Reuses the same format/quality/scale/chyron pipeline as a screenshot.
-        if (payload?.canvas) {
-          const el = resolveSelector(payload.canvas) as HTMLCanvasElement | null
+        if (payload?.canvas !== undefined) {
+          // Shadow-piercing resolution (issue #15): a component-based renderer owns its canvas in a
+          // shadow root, so a light-DOM query fails on exactly the pages where the canvas is the
+          // content. Accepts `host >>> canvas`, a plain selector (light DOM, then shadow roots), a
+          // host element (takes the canvas inside it), or nothing at all (largest canvas on the page).
+          const resolved = resolveCanvasDeep(payload.canvas)
+          const el = resolved.canvas
           if (!el) {
-            this.respond(msg.id, false, null, `Canvas not found: ${payload.canvas}`)
+            const all = findCanvasesDeep()
+            const inventory = all.length
+              ? `Found ${all.length} canvas element(s): ` +
+                all.map((c) => {
+                  const host = (c.getRootNode() as ShadowRoot)?.host
+                  return `${host ? host.tagName.toLowerCase() + ' >>> ' : ''}canvas${c.id ? '#' + c.id : ''} (${c.width}×${c.height})`
+                }).join(', ') +
+                `. Try one of those, or omit the selector to capture the largest.`
+              : `No <canvas> exists on this page (shadow roots included). \`hj map\` shows what is here.`
+            this.respond(msg.id, false, null, `Canvas not found: ${payload.canvas || '(largest)'}. ${inventory}`)
             return
           }
           if (typeof (el as any).toDataURL !== 'function') {
@@ -8584,9 +8703,13 @@ export class DevChannel extends HTMLElement {
               height: targetH,
               source: 'canvas',
               canvas: {
-                selector: payload.canvas,
+                selector: payload.canvas || '(largest)',
                 intrinsic: { width: el.width, height: el.height },
                 displayed: { width: el.clientWidth, height: el.clientHeight },
+                inShadowRoot: (el.getRootNode() as ShadowRoot)?.host
+                  ? (el.getRootNode() as ShadowRoot).host.tagName.toLowerCase()
+                  : undefined,
+                ...(resolved.note ? { note: resolved.note } : {}),
               },
               ...(warning ? { warning } : {}),
             })

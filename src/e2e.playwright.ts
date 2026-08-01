@@ -346,6 +346,50 @@ test.describe('haltija-dev CLI', () => {
     expect(strict.error).toContain('No screenshot capture available')
   })
 
+  test('--canvas pierces shadow DOM (where component renderers put their canvas)', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      class TosiB3d extends HTMLElement {
+        connectedCallback() {
+          const sr = this.attachShadow({ mode: 'open' })
+          const c = document.createElement('canvas')
+          c.width = 120; c.height = 90
+          const g = c.getContext('2d')!
+          g.fillStyle = '#7c3aed'; g.fillRect(0, 0, 120, 90)
+          sr.appendChild(c)
+        }
+      }
+      if (!customElements.get('tosi-b3d')) customElements.define('tosi-b3d', TosiB3d)
+      document.body.appendChild(document.createElement('tosi-b3d'))
+    })
+
+    const shoot = async (canvas: string) =>
+      (await (await fetch(`${SERVER_URL}/screenshot`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ canvas, file: false, chyron: false }),
+      })).json())
+
+    // Every shape a caller might reasonably write — all previously failed with "Canvas not found".
+    for (const sel of ['tosi-b3d canvas', 'canvas', 'tosi-b3d >>> canvas', '']) {
+      const r = await shoot(sel)
+      expect(r.success, `selector ${JSON.stringify(sel)} should resolve`).toBe(true)
+      expect(r.data.width).toBe(120)
+      expect(r.data.canvas.inShadowRoot).toBe('tosi-b3d')
+    }
+
+    // A genuine miss lists what IS available, rather than only saying no.
+    const miss = await shoot('#nope')
+    expect(miss.success).toBe(false)
+    expect(miss.error).toContain('tosi-b3d >>> canvas')
+
+    // The schematic embeds the shadow canvas too — that's the page where pixels are all that matter.
+    const schematic = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: false, schematic: true }),
+    })).json()
+    expect(schematic.data.canvasesRendered).toBeGreaterThan(0)
+  })
+
   test('captures a canvas directly — exact pixels, and warns instead of returning a blank image', async ({ page }) => {
     await injectDevChannel(page)
 

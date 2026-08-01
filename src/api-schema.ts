@@ -1484,7 +1484,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }`,
     ref: s.string.describe('Ref ID from /tree output - capture specific element').optional,
     selector: s.string.describe('Element to capture (omit for full page)')
       .optional,
-    canvas: s.string.describe('Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. Best for 3D scenes and render-to-texture UI.').optional,
+    canvas: s.string.describe('Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. PIERCES SHADOW DOM: accepts `host >>> canvas`, a plain selector (light DOM then shadow roots), a host element, or an EMPTY string to capture the largest canvas on the page. Best for 3D scenes and render-to-texture UI.').optional,
     format: s.string.describe('Image format: png (default), webp, or jpeg').optional,
     quality: s.number.describe('Quality 0-100 for lossy formats (webp/jpeg)').optional,
     scale: s.number.describe('Scale factor (default 1)').optional,

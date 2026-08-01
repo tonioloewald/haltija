@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.11.1
+// haltija-cli:do-not-edit v1.11.2
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
@@ -756,7 +756,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.11.1";
+var HJ_VERSION = "1.11.2";
 
 // bin/semver.mjs
 function parseVersion(v) {
@@ -778,10 +778,35 @@ function differsBeyondPatch(a, b) {
   return pa.major !== pb.major || pa.minor !== pb.minor;
 }
 
+// bin/hints.mjs
+var COMMAND_HINTS = {
+  tree: "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
+  query: '@ref or "selector", --all | see: tree, inspect',
+  inspect: '@ref or "selector", --styles, --rules, --ancestors | see: tree, query',
+  click: '@ref or "selector", :text(Button), --diff | see: tree, wait, type',
+  type: "@ref, --clear, --humanlike false (fast) | see: click, key",
+  key: "<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click",
+  drag: '@ref or "selector" <deltaX> <deltaY>, --duration 500 | see: click, scroll',
+  highlight: '@ref or "selector", --label "text", --color #f00, --duration 3000 | see: unhighlight, screenshot',
+  scroll: '@ref or "selector" or <deltaY>, --duration 500 | see: click, wait',
+  wait: '"selector", --text "content", --timeout 5000 | see: click, navigate',
+  events: "events-watch first | see: recording, console, mutations-watch",
+  eval: '"code" (returns result) | see: console, snapshot',
+  call: '@ref or "selector" <method>, --args [...]  | see: eval, inspect',
+  screenshot: "[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
+  windows: "--json | see: tabs-open, tabs-close, tabs-focus, status",
+  map: "--json | see: tree, query, inspect",
+  "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
+  "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
+  "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
+  recording: "start, stop, list, replay <id|index> | see: test-run, events",
+  "video-start": "--maxDuration 120 | see: video-stop, video-status, screenshot",
+  "video-stop": "| see: video-start, video-status",
+  "video-status": "| see: video-start, video-stop",
+  status: "--json | see: windows, stats, console"
+};
 // bin/cli-subcommand.mjs
 var __dirname2 = dirname(fileURLToPath(import.meta.url));
-var hintsPath = join(__dirname2, "hints.json");
-var COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hintsPath, "utf-8")) : {};
 var warnedAboutSkew = false;
 function warnOnVersionSkew(resp) {
   if (warnedAboutSkew)
@@ -911,7 +936,8 @@ var ARG_MAPS = {
         continue;
       }
       if (a === "--canvas") {
-        body.canvas = args[++i];
+        const next = args[i + 1];
+        body.canvas = next && !next.startsWith("-") ? args[++i] : "";
         continue;
       }
       if (a === "--no-fallback") {
@@ -1689,7 +1715,7 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path));
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(", ");
         if (meta)
-          console.log(dim2(meta));
+          console.error(dim2(meta));
       } else if (!jsonOutput && (subcommand === "network" || subcommand === "network-watch") && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json));
       } else if (!jsonOutput && subcommand === "network-stats") {
@@ -1700,7 +1726,7 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path));
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(", ");
         if (meta)
-          console.log(dim2(meta));
+          console.error(dim2(meta));
       } else if (!jsonOutput && UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
         if (json.success === false) {
           console.error(`${subcommand} failed: ${json.error || "unknown error"}`);
@@ -1729,8 +1755,7 @@ async function doRequest(url, method, body, context = {}) {
       const hint = COMMAND_HINTS[subcommand];
       if (hint) {
         const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
-        console.log(dim2(`
-hj ${subcommand} : ${hint}`));
+        console.error(dim2(`hj ${subcommand} : ${hint}`));
       }
     }
     if (!resp.ok) {
@@ -2297,6 +2322,10 @@ function resolveByCwd(cwd, instances) {
     return null;
   candidates.sort((a, b) => b.cwd.length - a.cwd.length || (b.startedAt || 0) - (a.startedAt || 0));
   return candidates[0];
+}
+if ((args.includes("--help") || args.includes("-h")) && args[0] && !args[0].startsWith("-")) {
+  filterHelp(args[0]);
+  process.exit(0);
 }
 if (!args.length || args.includes("--help") || args.includes("-h")) {
   const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;

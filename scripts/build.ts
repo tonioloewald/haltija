@@ -82,6 +82,15 @@ for (const ep of ALL_ENDPOINTS) {
   }
 }
 writeFileSync('bin/hints.json', JSON.stringify(cliHints, null, 2))
+// ALSO emit a module. bin/hints.json is read from disk relative to __dirname, which works for the
+// npm package and NOT for dist/hj.js installed as a lone file in ~/.local/bin — so the standalone
+// CLI silently had no hints while reporting the same version. Two artifacts, one version number,
+// different behaviour (issue #14). A module gets inlined by `bun build`, so both carry it.
+writeFileSync(
+  'bin/hints.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/api-schema.ts — DO NOT EDIT. Run: bun run build */\n` +
+    `export const COMMAND_HINTS = ${JSON.stringify(cliHints, null, 2)}\n`,
+)
 
 
 /**

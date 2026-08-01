@@ -31,10 +31,12 @@ import { differsBeyondPatch } from './semver.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// Command hints - generated from api-schema.ts during build
-// Use readFileSync instead of JSON import to avoid Node.js ExperimentalWarning
-const hintsPath = join(__dirname, 'hints.json')
-export const COMMAND_HINTS = existsSync(hintsPath) ? JSON.parse(readFileSync(hintsPath, 'utf-8')) : {}
+// Command hints — generated from api-schema.ts during build and IMPORTED, not read from disk.
+// Reading a sibling hints.json works for the npm package but not for dist/hj.js installed as a lone
+// file in ~/.local/bin, so the standalone CLI silently had no hints while claiming the same version
+// (issue #14). An import is inlined by the bundler, so both distributions behave identically.
+export { COMMAND_HINTS } from './hints.mjs'
+import { COMMAND_HINTS as COMMAND_HINTS_LOCAL } from './hints.mjs'
 
 let warnedAboutSkew = false
 
@@ -155,7 +157,13 @@ export const ARG_MAPS = {
       if (a === '--no-chyron') { body.chyron = false; continue }
       // Read a <canvas>'s own pixels (WebGL/2D) instead of capturing the screen: exact pixels, no
       // screen-share grant, works off-screen. The route for 3D scenes / render-to-texture UI.
-      if (a === '--canvas') { body.canvas = args[++i]; continue }
+      if (a === '--canvas') {
+        // Bare `--canvas` (no selector) captures the largest canvas on the page — which is
+        // unambiguous when there's one interesting canvas, the common case.
+        const next = args[i + 1]
+        body.canvas = next && !next.startsWith('-') ? args[++i] : ''
+        continue
+      }
       // Hard-fail instead of returning a labelled schematic when pixels aren't capturable.
       if (a === '--no-fallback') { body.fallback = false; continue }
       // Prefer the schematic outright: cheaper, deterministic, and it carries the contrast audit.
@@ -997,7 +1005,7 @@ async function doRequest(url, method, body, context = {}) {
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
         console.log(bold(json.data.path))
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
-        if (meta) console.log(dim(meta))
+        if (meta) console.error(dim(meta))
       } else if (!jsonOutput && (subcommand === 'network' || subcommand === 'network-watch') && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json))
       } else if (!jsonOutput && subcommand === 'network-stats') {
@@ -1007,7 +1015,7 @@ async function doRequest(url, method, body, context = {}) {
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
         console.log(bold(json.data.path))
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(', ')
-        if (meta) console.log(dim(meta))
+        if (meta) console.error(dim(meta))
       } else if (!jsonOutput && UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
         // Print the inner DevResponse.data unwrapped so agents (and humans) can
         // read it directly. Strings go to stdout as-is — no JSON escaping of
@@ -1050,10 +1058,13 @@ async function doRequest(url, method, body, context = {}) {
     // Skip for commands whose stdout is meant to be piped/consumed verbatim
     // — agents shouldn't have to strip a trailing hint line.
     if (resp.ok && !jsonOutput && !UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
-      const hint = COMMAND_HINTS[subcommand]
+      const hint = COMMAND_HINTS_LOCAL[subcommand]
       if (hint) {
         const dim = (s) => `\x1b[2m${s}\x1b[0m`
-        console.log(dim(`\nhj ${subcommand} : ${hint}`))
+        // stderr, NOT stdout. A hint appended to stdout turns parseable JSON into garbage —
+        // an adopter's `JSON.parse(await $`hj windows`)` threw, their catch fell open, and the
+        // readiness probe silently did nothing (issue #14). Advisory text belongs on stderr.
+        console.error(dim(`hj ${subcommand} : ${hint}`))
       }
     }
 

@@ -351,6 +351,15 @@ function resolveByCwd(cwd, instances) {
   return candidates[0]
 }
 
+// `hj <cmd> --help` shows help for THAT command. It used to fall into the global help below, which
+// reads exactly like "unknown command" — a reporter reasonably concluded `doctor` and `map` didn't
+// exist in their build (issue #14). Worse, haltija's own error messages tell you to run
+// `hj <cmd> --help`, so the remedy we print was broken: a printed remedy is a testable claim.
+if ((args.includes('--help') || args.includes('-h')) && args[0] && !args[0].startsWith('-')) {
+  filterHelp(args[0])
+  process.exit(0)
+}
+
 if (!args.length || args.includes('--help') || args.includes('-h')) {
   const bold = (s) => `\x1b[1m${s}\x1b[0m`
   const dim = (s) => `\x1b[2m${s}\x1b[0m`
