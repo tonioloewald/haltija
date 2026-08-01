@@ -238,6 +238,40 @@ test.describe('haltija-dev CLI', () => {
     expect(tosiMap.data.act.note).toContain('write')
   })
 
+  test('map surfaces contrast failures with the page\'s real colours and a WCAG verdict', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('main')
+      wrap.innerHTML =
+        '<button id="ok" style="background:#166534;color:#fff;padding:8px">Readable</button>' +
+        '<button id="bad" style="background:#e5e7eb;color:#d1d5db;padding:8px">Barely visible</button>'
+      document.body.appendChild(wrap)
+    })
+
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+
+    const flat: any[] = []
+    const walk = (n: any) => { flat.push(n); (n.children || []).forEach(walk) }
+    ;(map.data.nodes || []).forEach(walk)
+
+    const ok = flat.find((n) => n.text === 'Readable')
+    const bad = flat.find((n) => n.text === 'Barely visible')
+    expect(ok).toBeTruthy()
+    expect(bad).toBeTruthy()
+
+    // Real colours are captured, so the schematic can be drawn in the page's own palette.
+    expect(ok.colors.bg).toMatch(/^rgb\(/)
+    expect(ok.colors.fg).toMatch(/^rgb\(/)
+
+    // And the verdict is machine-checkable, not just eyeballable.
+    expect(ok.contrastFail).toBeUndefined()
+    expect(bad.contrastFail).toBeTruthy()
+    expect(bad.colors.passes).toBe(false)
+    expect(bad.colors.contrast).toBeLessThan(4.5)
+  })
+
   test('screenshot with no capture path returns a LABELLED schematic, with canvases as real pixels', async ({ page }) => {
     await injectDevChannel(page)
     // A plain Playwright page: no Electron capturePage, no getDisplayMedia grant — the exact

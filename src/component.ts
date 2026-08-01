@@ -1875,7 +1875,7 @@ function renderMapSchematic(
   const esc = (s: string) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  type Box = { label: string; handle: string; detail?: string; children: Box[] }
+  type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string }
 
   // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
   const toBoxes = (): Box[] => {
@@ -1903,6 +1903,8 @@ function renderMapSchematic(
       label: `${n.tag}${n.role ? `[${n.role}]` : ''}`,
       detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : '', n.href]
         .filter(Boolean).join('  ').slice(0, 60),
+      colors: n.colors,
+      contrastFail: n.contrastFail,
       children: (n.children || []).map(walk),
     })
     return (map.nodes || []).map(walk)
@@ -1912,8 +1914,11 @@ function renderMapSchematic(
   const headOf = (b: Box) => `${b.handle ? b.handle + ' ' : ''}${b.label}`
   const GAP = 12 // keeps the detail column clear of the head, so they can never run together
 
+  const detailOf = (b: Box) =>
+    [b.detail, b.contrastFail ? `⚠ contrast ${b.contrastFail}` : ''].filter(Boolean).join('   ')
+
   const measure = (b: Box): { w: number; h: number } => {
-    const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0)
+    const own = PAD * 2 + textW(headOf(b)) + (detailOf(b) ? GAP + textW(detailOf(b)) : 0)
     if (!b.children.length) return { w: Math.max(120, Math.ceil(own)), h: ROW }
     const kids = b.children.map(measure)
     const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2
@@ -1930,17 +1935,38 @@ function renderMapSchematic(
     const m = measure(b)
     const w = depth === 0 && uniformW ? uniformW : m.w
     const h = m.h
-    const fill = ['#f8fafc', '#eef2f7', '#e6ecf3', '#dde5ee'][Math.min(depth, 3)]
+    // Paint in the PAGE's colours when we have them: background as fill, border as stroke, text
+    // colour for the caption. A control the user can't read is then a box you can't read — the
+    // contrast bug shows itself. Fall back to a neutral palette only when colours are unknown, and
+    // keep a hairline outline when an element has no border so structure stays locatable.
+    const fill = b.colors?.bg || ['#f8fafc', '#eef2f7', '#e6ecf3', '#dde5ee'][Math.min(depth, 3)]
+    const stroke = b.colors?.border || (b.colors ? 'rgba(0,0,0,.15)' : '#94a3b8')
+    const strokeW = b.colors?.border ? 1.5 : 1
     parts.push(
-      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="#94a3b8" stroke-width="1"/>`,
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`,
     )
+    if (b.contrastFail) {
+      // Flag it unmissably — the whole point is that this is easy to miss in the real UI.
+      parts.push(`<rect x="${x}" y="${y}" width="4" height="${h}" fill="#dc2626"/>`)
+    }
     const head = headOf(b)
+    const fg = b.colors?.fg || '#0f172a'
     parts.push(
-      `<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f172a">${esc(head)}</text>`,
+      `<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`,
     )
+    let dx = x + PAD + textW(head) + GAP
     if (b.detail) {
       parts.push(
-        `<text x="${x + PAD + textW(head) + GAP}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#475569">${esc(b.detail)}</text>`,
+        `<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}" opacity="0.85">${esc(b.detail)}</text>`,
+      )
+      dx += textW(b.detail) + GAP
+    }
+    if (b.contrastFail) {
+      // Fixed, high-contrast red ON PURPOSE. The caption above is rendered in the page's own colours
+      // so you can SEE the problem; the diagnosis must stay readable or the warning shares the bug
+      // it is reporting.
+      parts.push(
+        `<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc('⚠ contrast ' + b.contrastFail)}</text>`,
       )
     }
     let cy = y + ROW
@@ -2027,6 +2053,96 @@ async function rasterizeSchematic(svg: string, width: number, height: number, sc
   return canvas.toDataURL('image/png')
 }
 
+/**
+ * Colour + contrast probing for the schematic.
+ *
+ * Drawing each box with the element's REAL background, border and text colours turns the schematic
+ * into a contrast audit: a control the user can barely read is a control you can barely read in the
+ * picture. That's a whole class of usability bug a JSON map cannot express and a screenshot only
+ * shows if you happen to look carefully.
+ *
+ * We also compute the WCAG ratio, so it's machine-checkable rather than eyeball-only — an agent gets
+ * a list of failures instead of having to notice them.
+ */
+function parseCssColor(v: string): { r: number; g: number; b: number; a: number } | null {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,/\s]+([\d.]+))?/i.exec(v || '')
+  if (!m) return null
+  return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] }
+}
+
+/** Composite a possibly-translucent colour over a backdrop. */
+function over(fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number }) {
+  return {
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+  }
+}
+
+/** What the user actually sees behind this element — walk up through transparent ancestors. */
+function effectiveBackground(el: Element): { r: number; g: number; b: number } {
+  let node: Element | null = el
+  let acc: { r: number; g: number; b: number } = { r: 255, g: 255, b: 255 } // page default
+  const stack: Array<{ r: number; g: number; b: number; a: number }> = []
+  while (node) {
+    const c = parseCssColor(getComputedStyle(node).backgroundColor)
+    if (c && c.a > 0) {
+      stack.push(c)
+      if (c.a === 1) break // fully opaque: nothing below it shows through
+    }
+    node = node.parentElement
+  }
+  for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc)
+  return acc
+}
+
+const relLuminance = (c: { r: number; g: number; b: number }) => {
+  const ch = (v: number) => {
+    const s = v / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b)
+}
+
+/** WCAG contrast ratio, 1..21. */
+function contrastRatio(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }) {
+  const l1 = relLuminance(a)
+  const l2 = relLuminance(b)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
+
+const cssRgb = (c: { r: number; g: number; b: number }) =>
+  `rgb(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)})`
+
+/**
+ * Real colours + a WCAG verdict for one element. `large` follows WCAG: >=18.66px bold or >=24px
+ * text needs only 3:1, everything else 4.5:1.
+ */
+function probeColors(el: Element): {
+  fg: string; bg: string; border?: string; contrast: number; passes: boolean; large: boolean
+} {
+  const cs = getComputedStyle(el)
+  const bg = effectiveBackground(el)
+  const fgRaw = parseCssColor(cs.color) || { r: 0, g: 0, b: 0, a: 1 }
+  const fg = over(fgRaw, bg)
+  const size = parseFloat(cs.fontSize) || 16
+  const weight = parseInt(cs.fontWeight, 10) || 400
+  const large = size >= 24 || (size >= 18.66 && weight >= 700)
+  const ratio = contrastRatio(fg, bg)
+  // Only treat a border as a border if it's actually drawn.
+  const bw = parseFloat(cs.borderTopWidth) || 0
+  const bc = parseCssColor(cs.borderTopColor)
+  const border = bw > 0 && bc && bc.a > 0 ? cssRgb(over(bc, bg)) : undefined
+  return {
+    fg: cssRgb(fg),
+    bg: cssRgb(bg),
+    border,
+    contrast: Math.round(ratio * 10) / 10,
+    passes: ratio >= (large ? 3 : 4.5),
+    large,
+  }
+}
+
 /** DOM-derived affordances: interactive + structural elements, nested, each with a haltija ref. */
 function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolean } {
   const INTERACTIVE = 'a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
@@ -2060,6 +2176,13 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     if ((el as HTMLInputElement).disabled) node.disabled = true
     if ((el as HTMLInputElement).checked) node.checked = true
     if ((el as HTMLAnchorElement).href) node.href = (el as HTMLAnchorElement).getAttribute('href')
+    // Real colours + WCAG verdict: renders the schematic in the page's own palette (so poor contrast
+    // is visible at a glance) AND gives an agent a checkable number instead of "looks a bit faint".
+    try {
+      const c = probeColors(el)
+      node.colors = c
+      if (!c.passes) node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
+    } catch {}
     return node
   }
 

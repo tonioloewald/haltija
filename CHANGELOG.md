@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.10.0
+
+### New: a screenshot you can't take now degrades to a labelled schematic
+
+In a plain browser with no desktop app and no screen-share grant, `hj screenshot` used to just fail.
+It now returns a **schematic** of the page instead — and because canvases need **no permission**, any
+`<canvas>` is embedded as **real pixels** inside it. For a 3D app or a chart that's the actual visual
+content, so the substitute is genuinely useful rather than a consolation prize.
+
+Labelled three ways, because a schematic quietly standing in for a screenshot would be exactly the
+plausible-but-wrong result this tool exists to prevent: `source: "schematic"`, a `warning` naming
+both routes to real pixels, and a red banner burned across the image. `--no-fallback` restores the
+hard error, and `--strict` turns the warning into a non-zero exit.
+
+### New: the schematic surfaces contrast problems
+
+The schematic is drawn in the **page's own colours** — element background as fill, border as stroke,
+text colour for the caption — so a control the user can barely read is a box you can barely read.
+Poor contrast shows itself instead of hiding in a JSON blob. It's machine-checkable too: DOM-tier
+nodes carry `colors: {fg, bg, contrast, passes}` and a `contrastFail` string when they miss WCAG AA.
+(The verdict is drawn in legible red on purpose — a warning about unreadable text mustn't itself be
+unreadable.)
+
+### Fixed: the widget was served without a charset
+
+`Content-Type: application/javascript` carried no `; charset=utf-8`, so browsers parsed
+`component.js` as Latin-1 and **every non-ASCII string literal in the widget was corrupted at parse
+time** — em-dashes, `×`, `·`, and the `⟷`/`⟵` binding-arrow legend. The bytes on disk were always
+valid UTF-8; the browser was mis-decoding them. Fixed on all five JS responses.
+
 ## 1.9.0
 
 ### New: `hj map --image` — the map as a rasterized schematic

@@ -3144,7 +3144,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.9.0";
+  var VERSION = "1.10.0";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;
@@ -4440,14 +4440,17 @@ export const COMPONENT_JS: string = `(() => {
         handle: n.ref ? \`@\${n.ref}\` : "",
         label: \`\${n.tag}\${n.role ? \`[\${n.role}]\` : ""}\`,
         detail: [n.label, n.text, n.value !== undefined ? \`= \${n.value}\` : "", n.href].filter(Boolean).join("  ").slice(0, 60),
+        colors: n.colors,
+        contrastFail: n.contrastFail,
         children: (n.children || []).map(walk)
       });
       return (map.nodes || []).map(walk);
     };
     const headOf = (b) => \`\${b.handle ? b.handle + " " : ""}\${b.label}\`;
     const GAP = 12;
+    const detailOf = (b) => [b.detail, b.contrastFail ? \`⚠ contrast \${b.contrastFail}\` : ""].filter(Boolean).join("   ");
     const measure = (b) => {
-      const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0);
+      const own = PAD * 2 + textW(headOf(b)) + (detailOf(b) ? GAP + textW(detailOf(b)) : 0);
       if (!b.children.length)
         return { w: Math.max(120, Math.ceil(own)), h: ROW };
       const kids = b.children.map(measure);
@@ -4461,12 +4464,23 @@ export const COMPONENT_JS: string = `(() => {
       const m = measure(b);
       const w = depth === 0 && uniformW ? uniformW : m.w;
       const h = m.h;
-      const fill = ["#f8fafc", "#eef2f7", "#e6ecf3", "#dde5ee"][Math.min(depth, 3)];
-      parts.push(\`<rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}" rx="4" fill="\${fill}" stroke="#94a3b8" stroke-width="1"/>\`);
+      const fill = b.colors?.bg || ["#f8fafc", "#eef2f7", "#e6ecf3", "#dde5ee"][Math.min(depth, 3)];
+      const stroke = b.colors?.border || (b.colors ? "rgba(0,0,0,.15)" : "#94a3b8");
+      const strokeW = b.colors?.border ? 1.5 : 1;
+      parts.push(\`<rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}" rx="4" fill="\${fill}" stroke="\${stroke}" stroke-width="\${strokeW}"/>\`);
+      if (b.contrastFail) {
+        parts.push(\`<rect x="\${x}" y="\${y2}" width="4" height="\${h}" fill="#dc2626"/>\`);
+      }
       const head = headOf(b);
-      parts.push(\`<text x="\${x + PAD}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f172a">\${esc(head)}</text>\`);
+      const fg = b.colors?.fg || "#0f172a";
+      parts.push(\`<text x="\${x + PAD}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="\${fg}">\${esc(head)}</text>\`);
+      let dx = x + PAD + textW(head) + GAP;
       if (b.detail) {
-        parts.push(\`<text x="\${x + PAD + textW(head) + GAP}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#475569">\${esc(b.detail)}</text>\`);
+        parts.push(\`<text x="\${dx}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="\${fg}" opacity="0.85">\${esc(b.detail)}</text>\`);
+        dx += textW(b.detail) + GAP;
+      }
+      if (b.contrastFail) {
+        parts.push(\`<text x="\${dx}" y="\${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">\${esc("⚠ contrast " + b.contrastFail)}</text>\`);
       }
       let cy = y2 + ROW;
       for (const c of b.children) {
@@ -4528,6 +4542,70 @@ export const COMPONENT_JS: string = `(() => {
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/png");
   }
+  function parseCssColor(v) {
+    const m = /rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,/\\s]+([\\d.]+))?/i.exec(v || "");
+    if (!m)
+      return null;
+    return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+  }
+  function over(fg, bg) {
+    return {
+      r: fg.r * fg.a + bg.r * (1 - fg.a),
+      g: fg.g * fg.a + bg.g * (1 - fg.a),
+      b: fg.b * fg.a + bg.b * (1 - fg.a)
+    };
+  }
+  function effectiveBackground(el) {
+    let node = el;
+    let acc = { r: 255, g: 255, b: 255 };
+    const stack = [];
+    while (node) {
+      const c = parseCssColor(getComputedStyle(node).backgroundColor);
+      if (c && c.a > 0) {
+        stack.push(c);
+        if (c.a === 1)
+          break;
+      }
+      node = node.parentElement;
+    }
+    for (let i = stack.length - 1;i >= 0; i--)
+      acc = over(stack[i], acc);
+    return acc;
+  }
+  var relLuminance = (c) => {
+    const ch = (v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+  };
+  function contrastRatio(a, b) {
+    const l1 = relLuminance(a);
+    const l2 = relLuminance(b);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  }
+  var cssRgb = (c) => \`rgb(\${Math.round(c.r)},\${Math.round(c.g)},\${Math.round(c.b)})\`;
+  function probeColors(el) {
+    const cs = getComputedStyle(el);
+    const bg = effectiveBackground(el);
+    const fgRaw = parseCssColor(cs.color) || { r: 0, g: 0, b: 0, a: 1 };
+    const fg = over(fgRaw, bg);
+    const size = parseFloat(cs.fontSize) || 16;
+    const weight = parseInt(cs.fontWeight, 10) || 400;
+    const large = size >= 24 || size >= 18.66 && weight >= 700;
+    const ratio = contrastRatio(fg, bg);
+    const bw = parseFloat(cs.borderTopWidth) || 0;
+    const bc = parseCssColor(cs.borderTopColor);
+    const border = bw > 0 && bc && bc.a > 0 ? cssRgb(over(bc, bg)) : undefined;
+    return {
+      fg: cssRgb(fg),
+      bg: cssRgb(bg),
+      border,
+      contrast: Math.round(ratio * 10) / 10,
+      passes: ratio >= (large ? 3 : 4.5),
+      large
+    };
+  }
   function buildDomAffordances(maxNodes = 400) {
     const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
     const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
@@ -4558,6 +4636,12 @@ export const COMPONENT_JS: string = `(() => {
         node.checked = true;
       if (el.href)
         node.href = el.getAttribute("href");
+      try {
+        const c = probeColors(el);
+        node.colors = c;
+        if (!c.passes)
+          node.contrastFail = \`\${c.contrast}:1 (needs \${c.large ? 3 : 4.5}:1)\`;
+      } catch {}
       return node;
     };
     const walk = (el) => {

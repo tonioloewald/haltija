@@ -142,6 +142,19 @@ Always check `source`:
   `ref` for `hj click <ref>`. Treat it as an **approximation**: it has *no* binding provenance,
   because the DOM doesn't contain that.
 
+**The schematic is drawn in the page's own colours** — element background as box fill, border as
+stroke, text colour for the caption — so a control the user can barely read is a box *you* can
+barely read. Poor contrast shows itself. It's machine-checkable too: every DOM-tier node carries
+`colors: {fg, bg, contrast, passes}` and a `contrastFail` string when it misses WCAG AA, so you can
+list failures instead of eyeballing them. (The verdict itself is drawn in legible red on purpose —
+a warning about unreadable text mustn't be unreadable.)
+
+**If a screenshot isn't possible you get a schematic instead, clearly labelled.** In a plain browser
+with no desktop app and no screen-share grant, `hj screenshot` returns `source: "schematic"` with a
+warning and a red banner burned into the image, rather than failing. Canvases need no permission, so
+any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's the actual content.
+Use `--no-fallback` if you need the hard error instead.
+
 `hj map --image` additionally returns the map as a **rasterized schematic PNG** — one labeled box
 per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an
 index you can glance at and then act on. Two things to know:
