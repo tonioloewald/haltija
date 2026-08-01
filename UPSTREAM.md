@@ -56,3 +56,16 @@ hard-code an app into a generic browser-control tool — wrong layer. haltija's 
 `:text()` selectors that make the class names unnecessary) shipped in 1.6.1; they were undocumented
 in the skill's Live-control section, which is why the reporter reached for classes.
 Origin: haltija#10.
+
+## tosijs-ui — contrast-audit noise heads-up (informational)
+
+**Status:** filed — https://github.com/tonioloewald/tosijs-ui/issues/42
+
+Told tosijs-ui about two false-positive sources in haltija's contrast audit that I found and fixed
+in 1.11.1 (text-less containers flagged; text over a background-image judged against the colour
+beneath it, which could give a false PASS as well as a false fail), so they re-run before working
+their findings list. Also flagged the `<button>` UA-background result that looks wrong but is a true
+positive, and offered to tune anything still noisy.
+
+Not a defect in tosijs-ui — informational, and an invitation to report noise back. Origin: their
+audit surfacing a systemic backlog after haltija's console/contrast/map signals improved.
