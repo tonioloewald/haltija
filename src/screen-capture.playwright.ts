@@ -218,7 +218,7 @@ test.describe('getDisplayMedia screenshot path', () => {
     }, null, { timeout: 5000 })
   })
 
-  test('without an open stream, /screenshot reports the actionable error', async ({ page }) => {
+  test('without an open stream, /screenshot degrades to a labelled schematic explaining why', async ({ page }) => {
     await injectWidget(page)
     // Do NOT start the screen-share session.
 
@@ -228,8 +228,19 @@ test.describe('getDisplayMedia screenshot path', () => {
       body: JSON.stringify({ file: false }),
     })
     const json = await res.json()
-    expect(json.success).toBe(false)
-    // The error should mention BOTH paths the user could take.
-    expect(json.error).toMatch(/desktop app|🖥|share/i)
+    expect(json.success).toBe(true)
+    expect(json.data.source).toBe('schematic')
+    // The explanation must still mention BOTH routes to real pixels — that's what this test guards.
+    const warning = json.warning || json.data.warning
+    expect(warning).toMatch(/desktop app|🖥|share/i)
+
+    // The hard error remains available for callers that need it.
+    const strict = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: false, fallback: false }),
+    })).json()
+    expect(strict.success).toBe(false)
+    expect(strict.error).toMatch(/desktop app|🖥|share/i)
   })
 })

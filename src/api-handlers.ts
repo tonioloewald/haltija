@@ -794,6 +794,7 @@ registerHandler(api.screenshot, async (body, ctx) => {
     maxWidth: body.maxWidth,
     maxHeight: body.maxHeight,
     delay: body.delay,
+    fallback: body.fallback,
   }, 15000 + (body.delay || 0), windowId) // 15s timeout + any delay
   
   // Add window context to response so agent knows what they captured

@@ -1689,6 +1689,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }
 | `chyron` | boolean,null | Burn page title, URL, timestamp into image (default true, set false for clean screenshot) |
 | `delay` | number,null | Wait ms before capturing (e.g. 1000 to let page settle after navigation) |
 | `file` | boolean,null | Save to disk and return file path instead of data URL (default true — pass false for base64) |
+| `fallback` | boolean,null | When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead. |
 
 **Examples:**
 

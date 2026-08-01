@@ -238,6 +238,47 @@ test.describe('haltija-dev CLI', () => {
     expect(tosiMap.data.act.note).toContain('write')
   })
 
+  test('screenshot with no capture path returns a LABELLED schematic, with canvases as real pixels', async ({ page }) => {
+    await injectDevChannel(page)
+    // A plain Playwright page: no Electron capturePage, no getDisplayMedia grant — the exact
+    // situation where /screenshot used to simply fail.
+    await page.evaluate(() => {
+      const c = document.createElement('canvas')
+      c.id = 'scene'
+      c.width = 80
+      c.height = 50
+      const g = c.getContext('2d')!
+      g.fillStyle = '#09f'
+      g.fillRect(0, 0, 80, 50)
+      document.body.appendChild(c)
+      const b = document.createElement('button')
+      b.textContent = 'Play'
+      document.body.appendChild(b)
+    })
+
+    const res = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: false }),
+    })).json()
+
+    expect(res.success).toBe(true)
+    // Labelled unmistakably: never claims to be a real capture.
+    expect(res.data.source).toBe('schematic')
+    expect(res.data.image).toContain('data:image/png;base64,')
+    // Canvases need no permission, so the actual visual content is still real pixels.
+    expect(res.data.canvasesRendered).toBeGreaterThan(0)
+    const warning = res.warning || res.data.warning
+    expect(warning).toContain('NOT a screenshot')
+
+    // A caller that must not receive a substitute can still demand a hard failure.
+    const strict = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: false, fallback: false }),
+    })).json()
+    expect(strict.success).toBe(false)
+    expect(strict.error).toContain('No screenshot capture available')
+  })
+
   test('captures a canvas directly — exact pixels, and warns instead of returning a blank image', async ({ page }) => {
     await injectDevChannel(page)
 
@@ -1742,17 +1783,31 @@ test.describe('haltija-dev screenshot endpoint', () => {
     await page.waitForTimeout(500)
   })
   
-  test('screenshot returns clear error in non-Electron browser', async ({ page }) => {
+  test('screenshot in a non-Electron browser returns a labelled schematic (and can still hard-fail)', async ({ page }) => {
+    // Behaviour change: this used to be a flat failure. It now degrades to a SCHEMATIC substitute,
+    // which is more useful — but the guarantee this test has always protected is unchanged: the
+    // caller is never left without an actionable explanation of why there are no real pixels.
     const res = await fetch(`${SERVER_URL}/screenshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     })
-    
+
     const data = await res.json()
-    // Screenshots require the Electron desktop app — regular browsers get a clear error
-    expect(data.success).toBe(false)
-    expect(data.error).toContain('Haltija Desktop app')
+    expect(data.success).toBe(true)
+    expect(data.data.source).toBe('schematic') // never claims to be a real capture
+    const warning = data.warning || data.data.warning
+    expect(warning).toContain('NOT a screenshot')
+    expect(warning).toMatch(/desktop app|🖥|share/i) // still names the routes to real pixels
+
+    // And a caller that must not receive a substitute can still demand the hard error.
+    const strict = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fallback: false })
+    })).json()
+    expect(strict.success).toBe(false)
+    expect(strict.error).toContain('Haltija Desktop app')
   })
 })
 

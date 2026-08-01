@@ -156,6 +156,8 @@ export const ARG_MAPS = {
       // Read a <canvas>'s own pixels (WebGL/2D) instead of capturing the screen: exact pixels, no
       // screen-share grant, works off-screen. The route for 3D scenes / render-to-texture UI.
       if (a === '--canvas') { body.canvas = args[++i]; continue }
+      // Hard-fail instead of returning a labelled schematic when pixels aren't capturable.
+      if (a === '--no-fallback') { body.fallback = false; continue }
       if (!a.startsWith('-')) { positional.push(a) }
     }
     return { ...body, ...parseTargetArgs(positional) }
@@ -740,7 +742,7 @@ export const KNOWN_FLAGS = {
   inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m'],
-  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas'],
+  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas', '--no-fallback'],
   'video-start': ['--maxDuration', '--max-duration'],
   refresh: ['--soft'],
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],

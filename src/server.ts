@@ -977,7 +977,7 @@ async function handleRest(req: Request): Promise<Response> {
       .replace('__VERSION__', VERSION)
     
     return new Response(code, { 
-      headers: { ...headers, 'Content-Type': 'application/javascript' } 
+      headers: { ...headers, 'Content-Type': 'application/javascript; charset=utf-8' } 
     })
   }
   
@@ -991,12 +991,12 @@ async function handleRest(req: Request): Promise<Response> {
         '// dist/component.js and embeds it in the server bundle).',
         {
           status: 503,
-          headers: { ...headers, 'Content-Type': 'application/javascript' }
+          headers: { ...headers, 'Content-Type': 'application/javascript; charset=utf-8' }
         }
       )
     }
     return new Response(componentJs, { 
-      headers: { ...headers, 'Content-Type': 'application/javascript' } 
+      headers: { ...headers, 'Content-Type': 'application/javascript; charset=utf-8' } 
     })
   }
   
@@ -1051,7 +1051,7 @@ async function handleRest(req: Request): Promise<Response> {
 })();
 `
     return new Response(devCode, { 
-      headers: { ...headers, 'Content-Type': 'application/javascript' } 
+      headers: { ...headers, 'Content-Type': 'application/javascript; charset=utf-8' } 
     })
   }
   
@@ -2253,7 +2253,7 @@ Run 'hj --help' for all commands.`
           return new Response('CodeMirror bundle not found — run bun run build', { status: 404, headers })
         }
       }
-      return new Response(cmCode, { headers: { ...headers, 'Content-Type': 'application/javascript', 'Cache-Control': 'public, max-age=86400' } })
+      return new Response(cmCode, { headers: { ...headers, 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } })
     } catch (err: any) {
       return new Response(`Error: ${err.message}`, { status: 500, headers })
     }

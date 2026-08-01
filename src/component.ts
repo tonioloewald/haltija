@@ -1823,7 +1823,46 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
  * each box shows its handle (`ref`, or the wiring index) so the picture doubles as an INDEX — glance
  * at it, pick a target, then fetch/act on just that record.
  */
-function renderMapSchematic(map: any): { svg: string; width: number; height: number } {
+/**
+ * Grab a thumbnail of every visible `<canvas>` on the page.
+ *
+ * Canvas pixels need **no permission** — unlike `getDisplayMedia`, which requires a user gesture and
+ * a grant. So when real screen capture isn't available, the canvases are still capturable, and for a
+ * 3D app or a chart the canvas IS the visual content. That makes the schematic fallback genuinely
+ * useful rather than merely better-than-nothing.
+ */
+function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> {
+  const out: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = []
+  for (const el of Array.from(document.querySelectorAll('canvas'))) {
+    const c = el as HTMLCanvasElement
+    if (!c.width || !c.height) continue
+    const style = getComputedStyle(c)
+    if (style.display === 'none' || style.visibility === 'hidden') continue
+    const scale = Math.min(1, maxEdge / Math.max(c.width, c.height))
+    const w = Math.max(1, Math.round(c.width * scale))
+    const h = Math.max(1, Math.round(c.height * scale))
+    const label = `canvas${c.id ? '#' + c.id : ''} ${c.width}×${c.height}`
+    const ref = refRegistry.assign(c)
+    try {
+      const tmp = document.createElement('canvas')
+      tmp.width = w
+      tmp.height = h
+      tmp.getContext('2d')!.drawImage(c, 0, 0, w, h)
+      out.push({ ref, label, image: tmp.toDataURL('image/png'), w, h })
+    } catch (err: any) {
+      // Tainted by cross-origin content — say so in the picture instead of omitting the canvas,
+      // which would read as "there is no canvas here".
+      out.push({ ref, label, w, h: 24, error: /security|tainted/i.test(err?.message || err?.name || '') ? 'cross-origin: pixels unreadable' : 'unreadable' })
+    }
+  }
+  return out
+}
+
+function renderMapSchematic(
+  map: any,
+  canvases: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = [],
+  banner?: string,
+): { svg: string; width: number; height: number } {
   const PAD = 8
   const ROW = 22
   const FONT = '11px ui-monospace, Menlo, monospace'
@@ -1914,8 +1953,33 @@ function renderMapSchematic(map: any): { svg: string; width: number; height: num
   const boxes = toBoxes()
   let maxW = 0
   for (const b of boxes) maxW = Math.max(maxW, measure(b).w)
+  for (const c of canvases) maxW = Math.max(maxW, c.w + PAD * 2)
+  // The banner is often the widest thing on the page — size for it, or the warning gets cut off,
+  // which is the one line that must never be truncated.
+  if (banner) {
+    measureCtx.font = `bold ${FONT}`
+    maxW = Math.max(maxW, Math.ceil(measureCtx.measureText(banner).width) + PAD * 2)
+    measureCtx.font = FONT
+  }
   uniformW = maxW
-  let y = PAD
+
+  const BANNER_H = banner ? 26 : 0
+  let y = PAD + BANNER_H
+
+  // Canvases FIRST: where the page has one, that's the real visual content, and we can read its
+  // pixels without any permission — so the "substitute for a screenshot" actually shows the thing.
+  for (const c of canvases) {
+    const boxH = (c.image ? c.h : 20) + 18
+    parts.push(`<rect x="${PAD}" y="${y}" width="${maxW}" height="${boxH}" rx="4" fill="#0f172a" stroke="#334155"/>`)
+    parts.push(
+      `<text x="${PAD + 6}" y="${y + 13}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">@${esc(c.ref)} ${esc(c.label)}${c.error ? ' — ' + esc(c.error) : ''}</text>`,
+    )
+    if (c.image) {
+      parts.push(`<image x="${PAD + 6}" y="${y + 16}" width="${c.w}" height="${c.h}" href="${c.image}" preserveAspectRatio="xMinYMin meet"/>`)
+    }
+    y += boxH + 6
+  }
+
   for (const b of boxes) {
     y += draw(b, PAD, y, 0) + 6
   }
@@ -1923,9 +1987,15 @@ function renderMapSchematic(map: any): { svg: string; width: number; height: num
   const height = Math.ceil(y + PAD)
 
   const title = `${map.source === 'tosi-agent' ? 'wiring' : 'dom'} · ${esc(map.title || '')}`
+  const bannerSvg = banner
+    ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` +
+      `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>`
+    : ''
   const svg =
+    `<?xml version="1.0" encoding="UTF-8"?>` +
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
+    bannerSvg +
     parts.join('') +
     `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` +
     `</svg>`
@@ -1935,7 +2005,13 @@ function renderMapSchematic(map: any): { svg: string; width: number; height: num
 /** Rasterize the schematic SVG to a PNG data URL — the bitmap IS the payload (see above). */
 async function rasterizeSchematic(svg: string, width: number, height: number, scale = 2): Promise<string> {
   const img = new Image()
-  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+  // Base64 the UTF-8 BYTES. A percent-encoded data URL was being decoded as Latin-1 by the SVG
+  // parser, so every non-ASCII glyph came out as mojibake — including the arrow glyphs that are the
+  // whole point of the wiring tier. btoa() is byte-oriented, so encode explicitly first.
+  const bytes = new TextEncoder().encode(svg)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  const url = 'data:image/svg+xml;base64,' + btoa(bin)
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve()
     img.onerror = () => reject(new Error('could not rasterize the schematic SVG'))
@@ -8399,14 +8475,60 @@ export class DevChannel extends HTMLElement {
           }
         }
 
-        // No capture path available — Electron app missing AND user hasn't
-        // started a screen-share session yet.
-        this.respond(
-          msg.id,
-          false,
-          null,
-          'No screenshot capture available. Either run the Haltija Desktop app (npx haltija@latest -f) or click the 🖥 button in the Haltija widget to share your screen.',
-        )
+        // No PIXEL capture path — no Electron, and the user hasn't granted a screen share. Rather
+        // than fail outright, return a SCHEMATIC of the page, clearly labelled as a substitute.
+        //
+        // Two things make this genuinely useful rather than a consolation prize: canvases can be
+        // read WITHOUT any permission, so a 3D scene or chart — usually the actual visual content —
+        // appears as real pixels inside the schematic; and the boxes carry refs, so the picture is
+        // still an index you can act on.
+        //
+        // It is labelled three ways, because a schematic silently standing in for a screenshot would
+        // be precisely the plausible-but-wrong result this tool exists to prevent: `source` is
+        // 'schematic' (never 'electron'/'getDisplayMedia'), the response carries a `warning`, and the
+        // image itself has a red banner across the top. Pass `fallback: false` to get the old hard
+        // error instead — and note `--strict` turns the warning into a non-zero exit for free.
+        if (payload?.fallback === false) {
+          this.respond(
+            msg.id,
+            false,
+            null,
+            'No screenshot capture available. Either run the Haltija Desktop app (npx haltija@latest -f) or click the 🖥 button in the Haltija widget to share your screen.',
+          )
+          return
+        }
+        try {
+          const map = buildAffordanceMap({})
+          const canvases = collectCanvasThumbnails()
+          const banner = 'SCHEMATIC — not a screenshot (no pixel capture available)'
+          const { svg, width, height } = renderMapSchematic(map, canvases, banner)
+          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
+          const shown = canvases.filter((c) => c.image).length
+          this.respond(msg.id, true, {
+            image,
+            viewport,
+            format: 'png',
+            width,
+            height,
+            source: 'schematic',
+            canvasesRendered: shown,
+            map,
+            warning:
+              `This is NOT a screenshot. No pixel capture was available (no Haltija desktop app, and ` +
+              `no screen-share grant), so haltija returned a schematic of the page's affordances` +
+              (shown ? `, with ${shown} canvas element(s) rendered as real pixels (canvases need no permission)` : '') +
+              `. Layout, styling and non-canvas visuals are NOT represented. For real pixels: run the ` +
+              `desktop app, click the 🖥 button in the widget to grant screen share, or use ` +
+              `\`--canvas <selector>\` to capture a specific canvas exactly.`,
+          })
+        } catch (err: any) {
+          this.respond(
+            msg.id,
+            false,
+            null,
+            `No screenshot capture available, and the schematic fallback failed: ${err?.message || err}`,
+          )
+        }
       } catch (err: any) {
         this.respond(msg.id, false, null, err.message)
       }

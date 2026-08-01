@@ -1336,6 +1336,13 @@
             "null"
           ],
           "description": "Save to disk and return file path instead of data URL (default true — pass false for base64)"
+        },
+        "fallback": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead."
         }
       },
       "required": [],

@@ -1494,6 +1494,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }`,
     chyron: s.boolean.describe('Burn page title, URL, timestamp into image (default true, set false for clean screenshot)').optional,
     delay: s.number.describe('Wait ms before capturing (e.g. 1000 to let page settle after navigation)').optional,
     file: s.boolean.describe('Save to disk and return file path instead of data URL (default true — pass false for base64)').optional,
+    fallback: s.boolean.describe('When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead.').optional,
   }),
   examples: [
     { name: 'full-page', input: {}, description: 'Capture entire page with chyron showing URL/title' },
