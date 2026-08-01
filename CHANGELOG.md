@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.11.0
+
+### Errors now tell you what to do
+
+Following the tjs lesson that an error's job is the next action, not the diagnosis:
+
+- **"Element not found"** branches on what you passed. A stale **ref** explains that refs are only
+  valid while the element is in the DOM and to re-run `hj tree` (or target by text, which survives
+  re-renders); a **selector** gets the recovery order — `hj map`/`hj tree` to see what's there, the
+  hidden-elements rule, prefer `:text()`/`[data-testid]` over structural selectors, and `hj wait` if
+  the page is still loading.
+- **Unknown-action errors list the valid actions** instead of only rejecting yours.
+- **"No active recording" / "No selection available" / "url is required"** now say how to reach a
+  valid state.
+- **Schema-validation failures** carry a `hint` with the CLI form and a runnable example body — and
+  `hj` now prints `hint` on errors, which it previously discarded, so the teachable half reached
+  nobody.
+
+### Fixed: six endpoints were missing from every generated doc
+
+All three doc generators iterated a hardcoded category list and silently dropped anything not in it,
+so every `/network/*` and `/dialog/*` endpoint appeared in **no** generated documentation. They now
+append unlisted categories, so a new category can't vanish.
+
+### New: a docs-coverage gate
+
+`docs-drift` catches generated files going stale against the schema; it can't catch a feature
+shipping that the prose never mentions — which is how `hj map`, `--canvas` and `hj shutdown` all
+shipped undiscoverable. A test now asserts every public endpoint reaches the reference and
+`llms.txt`, every agent-facing command is named in `SKILL.md`, and headline capabilities are
+explained rather than merely listed — failing with exactly what to add.
+
 ## 1.10.0
 
 ### New: a screenshot you can't take now degrades to a labelled schematic
