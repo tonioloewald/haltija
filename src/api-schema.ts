@@ -1494,6 +1494,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }`,
     chyron: s.boolean.describe('Burn page title, URL, timestamp into image (default true, set false for clean screenshot)').optional,
     delay: s.number.describe('Wait ms before capturing (e.g. 1000 to let page settle after navigation)').optional,
     file: s.boolean.describe('Save to disk and return file path instead of data URL (default true — pass false for base64)').optional,
+    schematic: s.boolean.describe('Return a schematic of the page INSTEAD of pixels, even when real capture is available. Cheaper, deterministic, and carries the contrast audit; canvases are still embedded as real pixels.').optional,
     fallback: s.boolean.describe('When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead.').optional,
   }),
   examples: [

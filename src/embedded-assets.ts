@@ -2605,6 +2605,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }
 | \`chyron\` | boolean,null | Burn page title, URL, timestamp into image (default true, set false for clean screenshot) |
 | \`delay\` | number,null | Wait ms before capturing (e.g. 1000 to let page settle after navigation) |
 | \`file\` | boolean,null | Save to disk and return file path instead of data URL (default true — pass false for base64) |
+| \`schematic\` | boolean,null | Return a schematic of the page INSTEAD of pixels, even when real capture is available. Cheaper, deterministic, and carries the contrast audit; canvases are still embedded as real pixels. |
 | \`fallback\` | boolean,null | When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead. |
 
 **Examples:**
@@ -3310,7 +3311,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.11.0";
+  var VERSION = "1.11.1";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;
@@ -9524,6 +9525,24 @@ export const COMPONENT_JS: string = `(() => {
             if (element) {
               targetSelector = element.id ? \`#\${element.id}\` : element.getAttribute("data-testid") ? \`[data-testid="\${element.getAttribute("data-testid")}"]\` : undefined;
             }
+          }
+          if (payload2?.schematic) {
+            const map = buildAffordanceMap({});
+            const canvases = collectCanvasThumbnails();
+            const { svg, width, height } = renderMapSchematic(map, canvases, "SCHEMATIC — requested (not a screenshot)");
+            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
+            this.respond(msg2.id, true, {
+              image,
+              viewport,
+              format: "png",
+              width,
+              height,
+              source: "schematic",
+              requested: true,
+              canvasesRendered: canvases.filter((c) => c.image).length,
+              map
+            });
+            return;
           }
           if (payload2?.canvas) {
             const el = resolveSelector(payload2.canvas);

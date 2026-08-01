@@ -41,6 +41,20 @@ desktop app) and **warns on stderr when other servers are running** — heed tha
 means the command you just ran may have driven a *different project's* browser. Misroutes are
 silent: they look like a flaky page, not an error.
 
+**Declare your project's origins and `hj` will pin commands to YOUR tab.** On a shared server,
+which tab answers otherwise falls back to whatever is focused — so two projects can drive each
+other's pages. Put a `.haltija.json` at your project root:
+
+```json
+{ "origins": ["https://localhost:8030", "http://localhost:3000"] }
+```
+
+Now `hj` (run anywhere inside that project) targets a connected tab on one of those origins,
+regardless of focus. Entirely opt-in — no file means behaviour is unchanged — and it never guesses:
+if you declared origins and no connected tab matches, `hj` says so loudly rather than quietly
+driving someone else's page (and fails outright under `--strict`). `HALTIJA_ORIGINS=…` overrides for
+one-off shells and CI.
+
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`**
@@ -153,7 +167,8 @@ a warning about unreadable text mustn't be unreadable.)
 with no desktop app and no screen-share grant, `hj screenshot` returns `source: "schematic"` with a
 warning and a red banner burned into the image, rather than failing. Canvases need no permission, so
 any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's the actual content.
-Use `--no-fallback` if you need the hard error instead.
+Use `--no-fallback` if you need the hard error instead — or `--schematic` to *prefer* the schematic
+even when real capture is available (cheaper, deterministic, and it carries the contrast audit).
 
 `hj map --image` additionally returns the map as a **rasterized schematic PNG** — one labeled box
 per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an

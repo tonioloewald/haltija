@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.11.0
+// haltija-cli:do-not-edit v1.11.1
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
@@ -756,7 +756,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.11.0";
+var HJ_VERSION = "1.11.1";
 
 // bin/semver.mjs
 function parseVersion(v) {
@@ -916,6 +916,10 @@ var ARG_MAPS = {
       }
       if (a === "--no-fallback") {
         body.fallback = false;
+        continue;
+      }
+      if (a === "--schematic") {
+        body.schematic = true;
         continue;
       }
       if (!a.startsWith("-")) {
@@ -1493,7 +1497,7 @@ var KNOWN_FLAGS = {
   inspect: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
   inspectAll: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
   key: ["--ctrl", "-c", "--shift", "-s", "--alt", "-a", "--meta", "-m"],
-  screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron", "--canvas", "--no-fallback"],
+  screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron", "--canvas", "--no-fallback", "--schematic"],
   "video-start": ["--maxDuration", "--max-duration"],
   refresh: ["--soft"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
@@ -1957,12 +1961,84 @@ function extractWindowTarget(args) {
   return { windowTarget: args[i + 1], args: rest };
 }
 
+// bin/project-origins.mjs
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "fs";
+import { dirname as dirname2, join as join2, parse as parsePath } from "path";
+function normalizeOrigin(value) {
+  const v = String(value || "").trim();
+  if (!v)
+    return null;
+  const parse = (candidate) => {
+    try {
+      const origin = new URL(candidate).origin;
+      return origin && origin !== "null" ? origin : null;
+    } catch {
+      return null;
+    }
+  };
+  return parse(v) ?? parse(`http://${v}`);
+}
+function findProjectOrigins(cwd, env = process.env) {
+  const fromEnv = env.HALTIJA_ORIGINS;
+  if (fromEnv && fromEnv.trim()) {
+    const origins = fromEnv.split(",").map(normalizeOrigin).filter((o) => !!o);
+    if (origins.length)
+      return { origins, source: "HALTIJA_ORIGINS env" };
+  }
+  let dir = cwd;
+  const { root } = parsePath(cwd);
+  for (let depth = 0;depth < 64; depth++) {
+    const file = join2(dir, ".haltija.json");
+    if (existsSync2(file)) {
+      try {
+        const parsed = JSON.parse(readFileSync2(file, "utf-8"));
+        const raw = Array.isArray(parsed?.origins) ? parsed.origins : [];
+        const origins = raw.map(normalizeOrigin).filter((o) => !!o);
+        return { origins, source: file };
+      } catch {
+        return { origins: [], source: `${file} (unreadable or invalid JSON)` };
+      }
+    }
+    if (dir === root)
+      break;
+    const parent = dirname2(dir);
+    if (parent === dir)
+      break;
+    dir = parent;
+  }
+  return null;
+}
+function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
+  if (!declared.length)
+    return { kind: "no-declaration" };
+  const wanted = new Set(declared);
+  const topLevel = tabs.filter((t) => (t.windowType || "tab") === "tab");
+  const matches = topLevel.filter((t) => {
+    const o = normalizeOrigin(t.url || "");
+    return o !== null && wanted.has(o);
+  });
+  if (!matches.length) {
+    const sawOrigins = [...new Set(topLevel.map((t) => normalizeOrigin(t.url || "")).filter((o) => !!o))];
+    return { kind: "no-match", declared, sawOrigins };
+  }
+  const visible = matches.filter((t) => t.active !== false);
+  const pool = visible.length ? visible : matches;
+  const focused = pool.find((t) => t.id === focusedWindowId);
+  const chosen = focused || pool[0];
+  return {
+    kind: "matched",
+    windowId: chosen.id,
+    origin: normalizeOrigin(chosen.url || ""),
+    candidates: matches.length
+  };
+}
+
 // bin/hj.mjs
-import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 var args = process.argv.slice(2);
-var REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join2(homedir2(), ".haltija", "servers");
+var REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join3(homedir2(), ".haltija", "servers");
 if (args[0] === "--version" || args[0] === "-v") {
   console.log(HJ_VERSION);
   process.exit(0);
@@ -1985,12 +2061,12 @@ async function runWhere(port, portSource, jsonOutput) {
   let instanceName = null;
   try {
     const dir = REGISTRY_DIR;
-    if (existsSync2(dir)) {
+    if (existsSync3(dir)) {
       for (const file of readdirSync2(dir)) {
         if (!file.endsWith(".json"))
           continue;
         try {
-          const entry = JSON.parse(readFileSync2(join2(dir, file), "utf-8"));
+          const entry = JSON.parse(readFileSync3(join3(dir, file), "utf-8"));
           if (entry.port === Number(port)) {
             try {
               process.kill(entry.pid, 0);
@@ -2176,12 +2252,12 @@ async function runDoctor(port, portSource, jsonOutput) {
   return ok;
 }
 function lookupNamedInstance(name) {
-  const path = join2(REGISTRY_DIR, `${name}.json`);
-  if (!existsSync2(path))
+  const path = join3(REGISTRY_DIR, `${name}.json`);
+  if (!existsSync3(path))
     return null;
   let entry;
   try {
-    entry = JSON.parse(readFileSync2(path, "utf-8"));
+    entry = JSON.parse(readFileSync3(path, "utf-8"));
   } catch {
     return null;
   }
@@ -2196,7 +2272,7 @@ function lookupNamedInstance(name) {
 }
 function listLiveInstances() {
   const dir = REGISTRY_DIR;
-  if (!existsSync2(dir))
+  if (!existsSync3(dir))
     return [];
   const out = [];
   for (const file of readdirSync2(dir)) {
@@ -2394,6 +2470,36 @@ if (subcommand === "shutdown" || subcommand === "quit") {
     }
     console.error(`hj ${subcommand}: ${err.message}`);
     process.exit(1);
+  }
+}
+var DIAGNOSTIC = new Set(["where", "servers", "ls", "doctor", "shutdown", "quit", "status", "windows", "version"]);
+if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
+  const declared = findProjectOrigins(process.cwd(), process.env);
+  if (declared && declared.origins.length) {
+    try {
+      const token = process.env.HALTIJA_TOKEN;
+      const resp = await fetch(`http://localhost:${port}/windows`, {
+        headers: token ? { "X-Haltija-Token": token } : {},
+        signal: AbortSignal.timeout(2500)
+      });
+      if (resp.ok) {
+        const { windows: tabs = [], focused } = await resp.json();
+        const routed = routeByDeclaredOrigin(declared.origins, tabs, focused);
+        if (routed.kind === "matched") {
+          subArgs = [...subArgs, "--window", routed.windowId];
+        } else if (routed.kind === "no-match" && tabs.length) {
+          const saw = routed.sawOrigins.length ? routed.sawOrigins.join(", ") : "(none with a readable origin)";
+          const msg = `declared origins ${declared.origins.join(", ")} (from ${declared.source}) match no connected tab. ` + `Connected: ${saw}.`;
+          if (STRICT) {
+            console.error(`hj: ERROR (strict) — ${msg}`);
+            console.error(`hj: open one of your declared origins, fix .haltija.json, or pass --window <id> to choose explicitly.`);
+            process.exit(1);
+          }
+          console.error(`hj: warning — ${msg}`);
+          console.error(`hj: proceeding against the FOCUSED tab, which may be another project's page. Pass --window <id> to be sure.`);
+        }
+      }
+    } catch {}
   }
 }
 if (!isSubcommand(subcommand)) {

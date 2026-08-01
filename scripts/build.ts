@@ -49,6 +49,16 @@ writeFileSync(
     readFileSync('bin/semver.mjs', 'utf-8'),
 )
 
+// 0d. Compile src/project-origins.ts into bin/ for the same reason as semver: hj and the server must
+// share ONE implementation of declared-origin routing. CLAUDE.md already flags the hand-copied
+// cwd-routing rule as a mistake that drifted — don't add a second instance of it.
+await $`bun build ./src/project-origins.ts --outfile=bin/project-origins.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/project-origins.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/project-origins.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/project-origins.mjs', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

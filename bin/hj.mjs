@@ -12,6 +12,7 @@
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 import { extractWindowTarget } from './arg-utils.mjs'
+import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -606,6 +607,50 @@ if (subcommand === 'shutdown' || subcommand === 'quit') {
     }
     console.error(`hj ${subcommand}: ${err.message}`)
     process.exit(1)
+  }
+}
+
+// Declared-origin routing (issues #1/#2). cwd routing found the right SERVER; if this project has
+// declared which origins are its pages, pin the command to the matching TAB instead of letting focus
+// decide. Purely opt-in — no `.haltija.json` (or HALTIJA_ORIGINS) means nothing changes.
+//
+// Skipped when the caller already pinned a window (they own the choice), and for the diagnostic
+// commands, which must describe the world rather than act on one tab.
+const DIAGNOSTIC = new Set(['where', 'servers', 'ls', 'doctor', 'shutdown', 'quit', 'status', 'windows', 'version'])
+if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
+  const declared = findProjectOrigins(process.cwd(), process.env)
+  if (declared && declared.origins.length) {
+    try {
+      const token = process.env.HALTIJA_TOKEN
+      const resp = await fetch(`http://localhost:${port}/windows`, {
+        headers: token ? { 'X-Haltija-Token': token } : {},
+        signal: AbortSignal.timeout(2500),
+      })
+      if (resp.ok) {
+        const { windows: tabs = [], focused } = await resp.json()
+        const routed = routeByDeclaredOrigin(declared.origins, tabs, focused)
+        if (routed.kind === 'matched') {
+          subArgs = [...subArgs, '--window', routed.windowId]
+        } else if (routed.kind === 'no-match' && tabs.length) {
+          // NEVER fall through silently: this project said which pages are its own, and none is
+          // connected. Driving whatever happens to be focused is the exact bug the declaration was
+          // added to prevent.
+          const saw = routed.sawOrigins.length ? routed.sawOrigins.join(', ') : '(none with a readable origin)'
+          const msg =
+            `declared origins ${declared.origins.join(', ')} (from ${declared.source}) match no connected tab. ` +
+            `Connected: ${saw}.`
+          if (STRICT) {
+            console.error(`hj: ERROR (strict) — ${msg}`)
+            console.error(`hj: open one of your declared origins, fix .haltija.json, or pass --window <id> to choose explicitly.`)
+            process.exit(1)
+          }
+          console.error(`hj: warning — ${msg}`)
+          console.error(`hj: proceeding against the FOCUSED tab, which may be another project's page. Pass --window <id> to be sure.`)
+        }
+      }
+    } catch {
+      // Routing is an enhancement; never let a probe failure block the command.
+    }
   }
 }
 

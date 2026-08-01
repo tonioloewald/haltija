@@ -1337,6 +1337,13 @@
           ],
           "description": "Save to disk and return file path instead of data URL (default true — pass false for base64)"
         },
+        "schematic": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return a schematic of the page INSTEAD of pixels, even when real capture is available. Cheaper, deterministic, and carries the contrast audit; canvases are still embedded as real pixels."
+        },
         "fallback": {
           "type": [
             "boolean",

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.11.1
+
+Patch, per the rule that a minor bump waits for a cleared backlog and a nine-lens review.
+
+### Per-tab routing, by declaration ([#1](https://github.com/tonioloewald/haltija/issues/1), [#2](https://github.com/tonioloewald/haltija/issues/2))
+
+cwd routing gets a command to the right *server*; which **tab** answers then fell back to focus, so
+two projects on a shared server could drive each other's pages. Ranking tabs by "this origin looks
+like your project" was rejected twice — there's no reliable origin→directory map, and a
+usually-right guess reintroduces the silent misroute cwd routing exists to prevent.
+
+So the project declares it. A `.haltija.json` at the project root:
+
+```json
+{ "origins": ["https://localhost:8030", "http://localhost:3000"] }
+```
+
+…and `hj`, run anywhere inside that project, pins commands to a connected tab on one of those
+origins regardless of focus. **Entirely opt-in** (no file = unchanged behaviour) and it never
+guesses: if you declared origins and no connected tab matches, `hj` says so loudly instead of
+quietly driving another project's page — and refuses outright under `--strict`. `HALTIJA_ORIGINS`
+overrides for one-off shells and CI.
+
+### `hj screenshot --schematic`
+
+Ask for the schematic even when real capture *is* available — it's cheaper, deterministic, and
+carries the contrast audit. Canvases are still embedded as real pixels.
+
 ## 1.11.0
 
 ### Errors now tell you what to do

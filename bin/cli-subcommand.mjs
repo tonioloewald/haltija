@@ -158,6 +158,8 @@ export const ARG_MAPS = {
       if (a === '--canvas') { body.canvas = args[++i]; continue }
       // Hard-fail instead of returning a labelled schematic when pixels aren't capturable.
       if (a === '--no-fallback') { body.fallback = false; continue }
+      // Prefer the schematic outright: cheaper, deterministic, and it carries the contrast audit.
+      if (a === '--schematic') { body.schematic = true; continue }
       if (!a.startsWith('-')) { positional.push(a) }
     }
     return { ...body, ...parseTargetArgs(positional) }
@@ -742,7 +744,7 @@ export const KNOWN_FLAGS = {
   inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m'],
-  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas', '--no-fallback'],
+  screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas', '--no-fallback', '--schematic'],
   'video-start': ['--maxDuration', '--max-duration'],
   refresh: ['--soft'],
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],

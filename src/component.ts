@@ -8447,6 +8447,29 @@ export class DevChannel extends HTMLElement {
           }
         }
 
+        // EXPLICIT SCHEMATIC — a consumer may *prefer* the schematic even when real capture works:
+        // it's cheaper, deterministic (no fonts/theme/animation timing), and carries the contrast
+        // audit. Honour that before attempting any pixel path, and label it the same way the
+        // fallback does so the two are indistinguishable to a consumer.
+        if (payload?.schematic) {
+          const map = buildAffordanceMap({})
+          const canvases = collectCanvasThumbnails()
+          const { svg, width, height } = renderMapSchematic(map, canvases, 'SCHEMATIC — requested (not a screenshot)')
+          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
+          this.respond(msg.id, true, {
+            image,
+            viewport,
+            format: 'png',
+            width,
+            height,
+            source: 'schematic',
+            requested: true,
+            canvasesRendered: canvases.filter((c) => c.image).length,
+            map,
+          })
+          return
+        }
+
         // CANVAS CAPTURE — grab pixels straight off a <canvas> (WebGL/2D) with toDataURL().
         //
         // Checked BEFORE every other path on purpose: an explicit canvas request must never fall

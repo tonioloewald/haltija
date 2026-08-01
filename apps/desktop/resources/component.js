@@ -46,7 +46,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.11.0";
+  var VERSION = "1.11.1";
 
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\(/;
@@ -6260,6 +6260,24 @@ ${elementSummary}${moreText}`;
             if (element) {
               targetSelector = element.id ? `#${element.id}` : element.getAttribute("data-testid") ? `[data-testid="${element.getAttribute("data-testid")}"]` : undefined;
             }
+          }
+          if (payload2?.schematic) {
+            const map = buildAffordanceMap({});
+            const canvases = collectCanvasThumbnails();
+            const { svg, width, height } = renderMapSchematic(map, canvases, "SCHEMATIC — requested (not a screenshot)");
+            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
+            this.respond(msg2.id, true, {
+              image,
+              viewport,
+              format: "png",
+              width,
+              height,
+              source: "schematic",
+              requested: true,
+              canvasesRendered: canvases.filter((c) => c.image).length,
+              map
+            });
+            return;
           }
           if (payload2?.canvas) {
             const el = resolveSelector(payload2.canvas);
