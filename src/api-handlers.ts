@@ -571,7 +571,13 @@ registerHandler(api.drag, async (body, ctx) => {
   // Get element center (pass ref or selector to inspect)
   const inspectResponse = await ctx.requestFromBrowser('dom', 'inspect', { ref, selector }, 5000, windowId)
   if (!inspectResponse.success || !inspectResponse.data) {
-    return Response.json({ success: false, error: `Element not found: ${targetDesc}` }, { headers: ctx.headers })
+    return Response.json({
+      success: false,
+      error:
+        `Element not found: ${targetDesc}. Run \`hj map\` or \`hj tree\` to see what is on the page; ` +
+        `prefer text selectors (\`:text(save)\`, \`:text-is(Save)\`) or \`[data-testid=…]\` over ` +
+        `structural ones, and \`hj wait --selector <sel>\` if the page may still be loading.`,
+    }, { headers: ctx.headers })
   }
   const box = inspectResponse.data.box
   const startX = box.x + box.width / 2

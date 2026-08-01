@@ -9,14 +9,32 @@ click elements, type text, run JavaScript, and watch for changes.
 
 ```
 hj status              # Check connection
+hj doctor              # Preflight for a script: EXITS 1 if not drivable
+hj map                 # What can I interact with, and what is it wired to?
 hj tree                # See page structure (ref IDs for targeting)
 hj click 42            # Click element by ref ID
 hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into input (realistic keystroke simulation)
 hj key Enter           # Press keys
 hj screenshot          # Capture page
+hj screenshot --canvas "#scene"   # Read a <canvas> exactly (3D/WebGL; no grant needed)
+hj servers             # List every live server; hj shutdown stops one
 hj --help              # All commands
 ```
+
+### Seeing the page: three options, cheapest first
+
+- **`hj map`** — the affordances, structural and deterministic. On a tosijs app it also carries
+  each control's bound state path and direction (`⟷` two-way, `⟵` display-only), which the DOM
+  cannot tell you. Usually the right first move when deciding what to DO.
+- **`hj screenshot --canvas <sel>`** — exact pixels from a `<canvas>` (WebGL/2D). No screen-share
+  grant, works off-screen. The right tool for a 3D scene or a chart.
+- **`hj screenshot`** — real pixels of the page. Needs the desktop app or a screen-share grant;
+  without either it returns a clearly-labelled *schematic* instead of failing (`source:
+  "schematic"`, with any canvases embedded as real pixels). `--no-fallback` to hard-fail.
+
+The schematic is drawn in the page's own colours, so poor contrast is visible at a glance —
+and every node carries `colors` + a `contrastFail` verdict so it is machine-checkable too.
 
 ## Commands by Category
 
@@ -109,6 +127,18 @@ hj --help              # All commands
 - `hj video-start [maxDuration, window]` - Start video recording
 - `hj video-stop [window]` - Stop video recording
 - `hj video-status` - Check video recording status
+
+### dialog
+
+- `hj dialog-configure [alert, confirm, prompt, ...]` - Configure native dialog auto-response policy
+- `hj dialog-history` - Get recent dialog history
+
+### network
+
+- `hj network` - Get captured network requests
+- `hj network-watch [preset, includePatterns, excludePatterns, ...]` - Start capturing network traffic
+- `hj network-unwatch` - Stop capturing network traffic
+- `hj network-stats` - Network traffic summary
 
 ## Tips
 

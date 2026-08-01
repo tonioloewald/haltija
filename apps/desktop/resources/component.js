@@ -604,7 +604,7 @@
         return { element: result.element, targetDesc: `@${ref}` };
       }
       stats.refsStale++;
-      const errorMsg = result.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+      const errorMsg = refFailureMessage(ref, result.status);
       return { element: null, targetDesc: `@${ref}`, error: errorMsg };
     }
     if (selector) {
@@ -612,6 +612,17 @@
       return { element: el, targetDesc: selector };
     }
     return { element: null, targetDesc: "(none)", error: "ref or selector is required" };
+  }
+  function refFailureMessage(ref, status) {
+    const high = refRegistry.getStats().highWaterMark;
+    const fresh = "Run `hj tree` (or `hj map`) for current refs, or target by text instead — " + "`hj click 'button:text(save)'` survives re-renders, refs do not.";
+    if (status === "never_assigned") {
+      return high === 0 ? `Ref @${ref} was never assigned — no refs exist yet because nothing has been listed on this page. Run \`hj tree\` (or \`hj map\`) first; it assigns the refs that \`hj click <ref>\` uses.` : `Ref @${ref} was never assigned (highest ref is @${high}). ${fresh}`;
+    }
+    if (status === "removed_from_dom") {
+      return `Ref @${ref} pointed to an element that has since been removed from the DOM — the page re-rendered or navigated. ${fresh}`;
+    }
+    return `Ref @${ref} is stale (its element was garbage collected). ${fresh}`;
   }
   function resolveRefOrSelectorAll(ref, selector) {
     if (ref) {
@@ -621,7 +632,7 @@
         return { elements: [result.element], targetDesc: `@${ref}` };
       }
       stats.refsStale++;
-      const errorMsg = result.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+      const errorMsg = refFailureMessage(ref, result.status);
       return { elements: [], targetDesc: `@${ref}`, error: errorMsg };
     }
     if (selector) {
@@ -1507,6 +1518,14 @@
       passes: ratio >= (large ? 3 : 4.5),
       large
     };
+  }
+  function elementNotFoundMessage(target) {
+    const isRef = /^@?\d+$/.test(String(target).trim());
+    const base = `Element not found: ${target}.`;
+    if (isRef) {
+      return `${base} Ref IDs are assigned by \`hj tree\` and only stay valid while that element is in the ` + `DOM — a re-render or navigation invalidates them. Run \`hj tree\` again for fresh refs, or ` + `target by text instead (\`hj click 'button:text(save)'\`), which survives re-renders.`;
+    }
+    return `${base} Check in this order: (1) \`hj map\` or \`hj tree\` to see what is actually there; ` + `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` + `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` + `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` + `(4) if the page is still loading, \`hj wait --selector <sel>\` before acting.`;
   }
   function buildDomAffordances(maxNodes = 400) {
     const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
@@ -5672,7 +5691,7 @@ ${elementSummary}${moreText}`;
       } else if (action2 === "history") {
         this.respond(msg2.id, true, { history: this.dialogHistory });
       } else {
-        this.respond(msg2.id, false, undefined, `Unknown dialog action: ${action2}`);
+        this.respond(msg2.id, false, undefined, `Unknown dialog action: ${action2}. Valid actions: configure, get-config, history.`);
       }
     }
     handleVideoMessage(msg2) {
@@ -5717,7 +5736,7 @@ ${elementSummary}${moreText}`;
           this.respond(msg2.id, true, { recording: false });
         });
       } else {
-        this.respond(msg2.id, false, undefined, `Unknown video action: ${action2}`);
+        this.respond(msg2.id, false, undefined, `Unknown video action: ${action2}. Valid actions: start, stop, status (desktop app only).`);
       }
     }
     handleNetworkMessage(msg2) {
@@ -5775,7 +5794,7 @@ ${elementSummary}${moreText}`;
           this.respond(msg2.id, false, undefined, err.message);
         });
       } else {
-        this.respond(msg2.id, false, undefined, `Unknown network action: ${action2}`);
+        this.respond(msg2.id, false, undefined, `Unknown network action: ${action2}. Valid actions: watch, unwatch, get, stats. Start with \`hj network-watch\`, then \`hj network\`.`);
       }
     }
     handleSemanticMessage(msg2) {
@@ -5997,7 +6016,7 @@ ${elementSummary}${moreText}`;
           this.respond(msg2.id, false, null, "Tab focus not available outside Electron app");
         }
       } else {
-        this.respond(msg2.id, false, null, `Unknown tabs action: ${action2}`);
+        this.respond(msg2.id, false, null, `Unknown tabs action: ${action2}. Valid actions: open, close, focus. Try \`hj windows\` to list tabs first.`);
       }
     }
     async handleDomMessage(msg2) {
@@ -6031,7 +6050,7 @@ ${elementSummary}${moreText}`;
             return;
           }
           if (!el) {
-            this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(targetDesc));
             return;
           }
           const opts = {
@@ -6066,7 +6085,7 @@ ${elementSummary}${moreText}`;
             return;
           }
           if (!el) {
-            this.respond(msg2.id, false, null, `Element not found: ${targetDesc}`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(targetDesc));
             return;
           }
           if (payload2.duration) {
@@ -6113,7 +6132,7 @@ ${elementSummary}${moreText}`;
           const request = payload2;
           const el = resolveSelector(request.selector);
           if (!el) {
-            this.respond(msg2.id, false, null, `Element not found: ${request.selector}`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(request.selector));
             return;
           }
           if (request.mode === "actionable") {
@@ -6456,7 +6475,7 @@ ${elementSummary}${moreText}`;
     async handleFetchMessage(msg2) {
       const { url } = msg2.payload;
       if (!url) {
-        this.respond(msg2.id, false, null, "url is required");
+        this.respond(msg2.id, false, null, "url is required. Usage: `hj navigate <url>` (absolute, e.g. https://example.com/page, or a path like /docs).");
         return;
       }
       try {
@@ -6510,7 +6529,7 @@ ${elementSummary}${moreText}`;
       } else if (action2 === "key") {
         this.performKey(payload2, msg2.id);
       } else {
-        this.respond(msg2.id, false, null, `Unknown interaction action: ${action2}`);
+        this.respond(msg2.id, false, null, `Unknown interaction action: ${action2}. Run \`hj --help\` for the command list, or \`hj api\` for the full REST reference.`);
       }
     }
     async performRealisticType(payload2, responseId) {
@@ -6536,7 +6555,7 @@ ${elementSummary}${moreText}`;
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+          const errorMsg = refFailureMessage(ref, result.status);
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -6545,7 +6564,7 @@ ${elementSummary}${moreText}`;
         targetDesc = selector;
       }
       if (!el) {
-        this.respond(responseId, false, null, `Element not found: ${targetDesc}`);
+        this.respond(responseId, false, null, elementNotFoundMessage(targetDesc));
         return;
       }
       try {
@@ -6888,7 +6907,7 @@ ${elementSummary}${moreText}`;
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result.status === "never_assigned" ? `Ref @${payload2.ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result.status === "removed_from_dom" ? `Ref @${payload2.ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${payload2.ref} is stale - element was garbage collected (try refreshing /tree)`;
+          const errorMsg = refFailureMessage(payload2.ref, result.status);
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -6897,7 +6916,7 @@ ${elementSummary}${moreText}`;
         targetDesc = payload2.selector;
       }
       if (!el) {
-        this.respond(responseId, false, null, `Element not found: ${targetDesc}`);
+        this.respond(responseId, false, null, elementNotFoundMessage(targetDesc));
         return;
       }
       const hiddenReason = this.getHiddenReason(el);
@@ -6965,7 +6984,7 @@ ${elementSummary}${moreText}`;
             target.focus();
           } else {
             stats.refsStale++;
-            const errorMsg = result.status === "never_assigned" ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})` : result.status === "removed_from_dom" ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)` : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`;
+            const errorMsg = refFailureMessage(ref, result.status);
             this.respond(responseId, false, null, errorMsg);
             return;
           }
@@ -6973,7 +6992,7 @@ ${elementSummary}${moreText}`;
           target = resolveSelector(selector);
           targetDesc = selector;
           if (!target) {
-            this.respond(responseId, false, null, `Element not found: ${selector}`);
+            this.respond(responseId, false, null, elementNotFoundMessage(selector));
             return;
           }
           target.focus();
@@ -7311,7 +7330,7 @@ ${elementSummary}${moreText}`;
           this.recordingEvents = [];
           this.respond(msg2.id, true, { stopped: true });
         } else {
-          this.respond(msg2.id, false, null, "No active recording");
+          this.respond(msg2.id, false, null, 'No active recording. Start one with `hj recording-start "<name>"`, perform the actions in the browser, then `hj recording-stop`.');
         }
       } else if (action2 === "resume") {
         console.log("[Haltija] Resuming recording session from server");
@@ -7361,13 +7380,13 @@ ${elementSummary}${moreText}`;
           this.clearSelection();
           this.respond(msg2.id, true, result);
         } else {
-          this.respond(msg2.id, false, null, "No selection available");
+          this.respond(msg2.id, false, null, "No selection available yet. Run `hj select-start` to put the page into selection mode, ask the user to click an element, then read it with `hj select-result`.");
         }
       } else if (action2 === "clear") {
         this.clearSelection();
         this.respond(msg2.id, true, { cleared: true });
       } else {
-        this.respond(msg2.id, false, null, `Unknown selection action: ${action2}`);
+        this.respond(msg2.id, false, null, `Unknown selection action: ${action2}. Valid actions: start, cancel, clear, status, result. Begin with \`hj select-start\`, then ask the user to select, then \`hj select-result\`.`);
       }
     }
     handleMutationsMessage(msg2) {

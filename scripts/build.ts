@@ -73,6 +73,21 @@ for (const ep of ALL_ENDPOINTS) {
 }
 writeFileSync('bin/hints.json', JSON.stringify(cliHints, null, 2))
 
+
+/**
+ * Ordered categories, then ANY category the list forgot.
+ *
+ * These generators used to iterate a hardcoded order and silently drop endpoints whose category
+ * wasn't in it — which is exactly how /network/* and /dialog/* ended up in no generated doc at all.
+ * A doc generator that quietly omits things is worse than one that looks ugly: nobody notices.
+ */
+function orderedCategories(order: string[], present: Iterable<string>): string[] {
+  const seen = new Set(present)
+  const known = order.filter((c) => seen.has(c))
+  const extra = [...seen].filter((c) => !order.includes(c)).sort()
+  return [...known, ...extra]
+}
+
 // 6. Generate API.md from api-schema (single source of truth)
 function generateApiMd(): string {
   const lines: string[] = [
@@ -126,10 +141,12 @@ function generateApiMd(): string {
     recording: 'Record & Replay',
     testing: 'Run Tests',
     debug: 'Escape Hatches',
+    network: 'Network Traffic',
+    dialog: 'Dialogs (alert/confirm/prompt)',
     other: 'Other',
   }
 
-  for (const cat of categoryOrder) {
+  for (const cat of orderedCategories(categoryOrder, byCategory.keys())) {
     const eps = byCategory.get(cat)
     if (!eps || eps.length === 0) continue
 
@@ -220,14 +237,32 @@ function generateDocsMd(): string {
     '',
     '```',
     'hj status              # Check connection',
+    'hj doctor              # Preflight for a script: EXITS 1 if not drivable',
+    'hj map                 # What can I interact with, and what is it wired to?',
     'hj tree                # See page structure (ref IDs for targeting)',
     'hj click 42            # Click element by ref ID',
     'hj click "#submit"     # Click by CSS selector',
     'hj type 10 "hello"     # Type into input (realistic keystroke simulation)',
     'hj key Enter           # Press keys',
     'hj screenshot          # Capture page',
+    'hj screenshot --canvas "#scene"   # Read a <canvas> exactly (3D/WebGL; no grant needed)',
+    'hj servers             # List every live server; hj shutdown stops one',
     'hj --help              # All commands',
     '```',
+    '',
+    '### Seeing the page: three options, cheapest first',
+    '',
+    '- **`hj map`** — the affordances, structural and deterministic. On a tosijs app it also carries',
+    '  each control\'s bound state path and direction (`⟷` two-way, `⟵` display-only), which the DOM',
+    '  cannot tell you. Usually the right first move when deciding what to DO.',
+    '- **`hj screenshot --canvas <sel>`** — exact pixels from a `<canvas>` (WebGL/2D). No screen-share',
+    '  grant, works off-screen. The right tool for a 3D scene or a chart.',
+    '- **`hj screenshot`** — real pixels of the page. Needs the desktop app or a screen-share grant;',
+    '  without either it returns a clearly-labelled *schematic* instead of failing (`source:',
+    '  "schematic"`, with any canvases embedded as real pixels). `--no-fallback` to hard-fail.',
+    '',
+    'The schematic is drawn in the page\'s own colours, so poor contrast is visible at a glance —',
+    'and every node carries `colors` + a `contrastFail` verdict so it is machine-checkable too.',
     '',
     '## Commands by Category',
     '',
@@ -264,7 +299,7 @@ function generateDocsMd(): string {
     return `hj ${sub}`
   }
 
-  for (const cat of categoryOrder) {
+  for (const cat of orderedCategories(categoryOrder, byCategory.keys())) {
     const eps = byCategory.get(cat)
     if (!eps || eps.length === 0) continue
 
@@ -486,9 +521,10 @@ function generateLlmsTxt(): string {
     meta: 'Status & info', dom: 'See the page', interaction: 'Interact',
     navigation: 'Navigate', events: 'Watch events', mutations: 'Watch DOM changes',
     selection: 'User selection', windows: 'Multiple tabs', recording: 'Record & replay',
-    testing: 'Run tests', debug: 'Debug & eval', other: 'Other',
+    testing: 'Run tests', debug: 'Debug & eval', network: 'Network traffic',
+    dialog: 'Dialogs', other: 'Other',
   }
-  for (const cat of categoryOrder) {
+  for (const cat of orderedCategories(categoryOrder, byCategory.keys())) {
     const eps = byCategory.get(cat)
     if (!eps || eps.length === 0) continue
     const summary = eps.map(ep => `\`${ep.method} ${ep.path}\``).join(', ')
@@ -544,6 +580,25 @@ function generateLlmsTxt(): string {
   lines.push('```')
   lines.push('')
 
+  lines.push('## Seeing the page: pick the cheapest representation that answers the question')
+  lines.push('')
+  lines.push('- `POST /map` (`hj map`) — the **affordance map**: what can be interacted with, structural and')
+  lines.push('  deterministic (no fonts/theme/viewport/animation). On a page exposing `globalThis.tosiAgent`')
+  lines.push('  it returns the app\'s OWN wiring records, carrying what the DOM cannot: the state path each')
+  lines.push('  control is bound to and the DIRECTION (`⟷` two-way/user-writable, `⟵` display-only, absent =')
+  lines.push('  static), plus each event\'s handler path and the callable actions — act via')
+  lines.push('  `tosiAgent.write(path, value)` / `.call(actionPath)` instead of synthesizing input. Otherwise')
+  lines.push('  it reconstructs from the DOM (`source: "dom"`), which is an approximation with NO binding')
+  lines.push('  provenance. Always check `source`.')
+  lines.push('- `POST /screenshot {canvas: "<selector>"}` — read a `<canvas>`\'s own pixels. Exact, needs no')
+  lines.push('  screen-share grant, works when the canvas is off-screen. The route for WebGL/3D scenes.')
+  lines.push('- `POST /screenshot` — real pixels, but needs the desktop app or a screen-share grant. Without')
+  lines.push('  either it returns a **labelled schematic** (`source: "schematic"`, plus a `warning` and a')
+  lines.push('  banner in the image) rather than failing, with any canvases embedded as real pixels.')
+  lines.push('  Pass `fallback: false` to get a hard error instead.')
+  lines.push('- The schematic is drawn in the page\'s own colours, so contrast problems are visible; map')
+  lines.push('  nodes also carry `colors` and a `contrastFail` verdict (WCAG AA) for machine checking.')
+  lines.push('')
   lines.push('## Gotcha: a tab can read as unreachable while its main thread is suspended')
   lines.push('- The widget proves liveness with a heartbeat. If the page\'s main thread or its `requestAnimationFrame` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It\'s the instrument going quiet, not a page bug.')
   lines.push('- **A tab that is not visible on screen** — backgrounded, minimized, or maximized on another Space / fully occluded (macOS) — counts as `hidden`. Browsers stop `requestAnimationFrame` and throttle timers while hidden, AND the widget deliberately deactivates a hidden tab so untargeted commands go to the front tab. So a page you can\'t see may not answer an untargeted `hj eval`/`hj tree`, and rAF-driven state (scroll/animation) is frozen. Fix: bring it to the front, or **target it explicitly** — `hj --window <id> eval …` (id from `hj windows`) reaches a specific tab regardless of visibility.')

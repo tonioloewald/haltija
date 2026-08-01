@@ -959,6 +959,12 @@ async function doRequest(url, method, body, context = {}) {
       // A result can be REAL but MISLEADING — e.g. it came from a hidden tab where rAF-driven
       // content never mounted, so an empty selector means "not mounted", not "broken" (issue #3).
       // Print it on stderr so it can't be mistaken for output, and so --json stdout stays clean.
+      // A `hint` accompanies an error to say what to do next — printing the error without it
+      // throws away the teachable half.
+      if (json && json.success === false && typeof json.hint === 'string' && json.hint) {
+        console.error(`hj: ${json.hint}`)
+      }
+
       if (json && typeof json.warning === 'string' && json.warning) {
         if (process.env.HALTIJA_STRICT === '1') {
           // Strict mode (issue #8): if the result may be wrong, a script must not consume it. Fail

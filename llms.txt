@@ -25,6 +25,8 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 - **Record & replay**: `POST /recording`, `POST /recording/start`, `POST /recording/stop`, `POST /recording/generate`, `GET /recordings`
 - **Run tests**: `POST /test/run`, `POST /test/suite`, `POST /test/validate`
 - **Debug & eval**: `GET /console`, `POST /eval`, `POST /fetch`, `POST /screenshot`, `POST /snapshot`, `POST /video/start`, `POST /video/stop`, `GET /video/status`
+- **Dialogs**: `POST /dialog/configure`, `GET /dialog/history`
+- **Network traffic**: `GET /network`, `POST /network/watch`, `POST /network/unwatch`, `GET /network/stats`
 
 ## Running Haltija
 
@@ -72,6 +74,25 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server):
 ```html
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>
 ```
+
+## Seeing the page: pick the cheapest representation that answers the question
+
+- `POST /map` (`hj map`) — the **affordance map**: what can be interacted with, structural and
+  deterministic (no fonts/theme/viewport/animation). On a page exposing `globalThis.tosiAgent`
+  it returns the app's OWN wiring records, carrying what the DOM cannot: the state path each
+  control is bound to and the DIRECTION (`⟷` two-way/user-writable, `⟵` display-only, absent =
+  static), plus each event's handler path and the callable actions — act via
+  `tosiAgent.write(path, value)` / `.call(actionPath)` instead of synthesizing input. Otherwise
+  it reconstructs from the DOM (`source: "dom"`), which is an approximation with NO binding
+  provenance. Always check `source`.
+- `POST /screenshot {canvas: "<selector>"}` — read a `<canvas>`'s own pixels. Exact, needs no
+  screen-share grant, works when the canvas is off-screen. The route for WebGL/3D scenes.
+- `POST /screenshot` — real pixels, but needs the desktop app or a screen-share grant. Without
+  either it returns a **labelled schematic** (`source: "schematic"`, plus a `warning` and a
+  banner in the image) rather than failing, with any canvases embedded as real pixels.
+  Pass `fallback: false` to get a hard error instead.
+- The schematic is drawn in the page's own colours, so contrast problems are visible; map
+  nodes also carry `colors` and a `contrastFail` verdict (WCAG AA) for machine checking.
 
 ## Gotcha: a tab can read as unreachable while its main thread is suspended
 - The widget proves liveness with a heartbeat. If the page's main thread or its `requestAnimationFrame` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It's the instrument going quiet, not a page bug.

@@ -2733,6 +2733,121 @@ Response: { recording, recordingId?, duration?, window? }
   \`\`\`
 
 ---
+
+## Dialogs (alert/confirm/prompt)
+
+### \`POST /dialog/configure\`
+
+**Configure native dialog auto-response policy**
+
+Set how native browser dialogs (alert, confirm, prompt) are handled.
+
+By default, Haltija intercepts all native dialogs and auto-responds:
+- alert: dismissed immediately
+- confirm: accepted (returns true)
+- prompt: dismissed (returns null)
+
+Configure the policy **before** triggering actions that cause dialogs.
+Each dialog is logged and reported via the dialog/opened push event.
+
+Response: { policy: { alert, confirm, prompt, beforeunload } }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`alert\` | string,null | "dismiss" (only option for alerts) |
+| \`confirm\` | string,null | "accept" or "dismiss" |
+| \`prompt\` | ,null | "dismiss" or { "response": "text" } to auto-fill |
+| \`beforeunload\` | string,null | "allow" or "block" — controls page unload |
+| \`window\` | string,null | Target window ID |
+
+**Examples:**
+
+- **accept-confirms**: Auto-accept all confirm dialogs
+  \`\`\`json
+  {"confirm":"accept"}
+  \`\`\`
+- **dismiss-confirms**: Auto-dismiss (cancel) all confirm dialogs
+  \`\`\`json
+  {"confirm":"dismiss"}
+  \`\`\`
+- **auto-fill-prompt**: Auto-fill prompt dialogs with text
+  \`\`\`json
+  {"prompt":{"response":"my answer"}}
+  \`\`\`
+
+---
+
+### \`GET /dialog/history\`
+
+**Get recent dialog history**
+
+Returns a list of recently intercepted native dialogs.
+
+Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Buffer holds the last 50 dialogs.
+
+Response: { history: [{ type, message, defaultValue?, response, timestamp }] }
+
+---
+
+## Network Traffic
+
+### \`GET /network\`
+
+**Get captured network requests**
+
+Returns buffered network entries in compact format.
+
+Each entry: { m: method, s: status, url: trimmed_url, t: time_ms, sz: human_size, type: resource_type }
+Status -1 means failed (timeout, CORS, canceled). Summary line always included.
+
+Use preset parameter to override the watch preset for this query.
+
+---
+
+### \`POST /network/watch\`
+
+**Start capturing network traffic**
+
+Begin monitoring HTTP requests and responses via Chrome DevTools Protocol.
+Requires the Haltija Desktop app (uses Electron's CDP access).
+
+Presets control what's captured:
+- errors: only 4xx, 5xx, timeouts, CORS failures
+- minimal: errors + XHR/fetch requests (no images, scripts, CSS)
+- standard: all requests except analytics/tracking noise (default)
+- verbose: everything including preflights and tracking
+
+Output is token-optimized: ~10 tokens per request vs 200+ for raw HAR.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`preset\` | string,null | Filter preset: errors, minimal, standard, verbose |
+| \`includePatterns\` | array,null | URL regex patterns to always include |
+| \`excludePatterns\` | array,null | URL regex patterns to exclude |
+| \`maxBuffer\` | number,null | Max entries to buffer (default 200) |
+
+---
+
+### \`POST /network/unwatch\`
+
+**Stop capturing network traffic**
+
+Stop monitoring network requests. Clears the capture buffer.
+
+---
+
+### \`GET /network/stats\`
+
+**Network traffic summary**
+
+Returns: total requests, failures, pending, average latency, total bytes, and a one-line summary string.
+
+---
 `
 
 export const DOCS_MD: string = `# Haltija: Browser Control for AI Agents
@@ -2746,14 +2861,32 @@ click elements, type text, run JavaScript, and watch for changes.
 
 \`\`\`
 hj status              # Check connection
+hj doctor              # Preflight for a script: EXITS 1 if not drivable
+hj map                 # What can I interact with, and what is it wired to?
 hj tree                # See page structure (ref IDs for targeting)
 hj click 42            # Click element by ref ID
 hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into input (realistic keystroke simulation)
 hj key Enter           # Press keys
 hj screenshot          # Capture page
+hj screenshot --canvas "#scene"   # Read a <canvas> exactly (3D/WebGL; no grant needed)
+hj servers             # List every live server; hj shutdown stops one
 hj --help              # All commands
 \`\`\`
+
+### Seeing the page: three options, cheapest first
+
+- **\`hj map\`** — the affordances, structural and deterministic. On a tosijs app it also carries
+  each control's bound state path and direction (\`⟷\` two-way, \`⟵\` display-only), which the DOM
+  cannot tell you. Usually the right first move when deciding what to DO.
+- **\`hj screenshot --canvas <sel>\`** — exact pixels from a \`<canvas>\` (WebGL/2D). No screen-share
+  grant, works off-screen. The right tool for a 3D scene or a chart.
+- **\`hj screenshot\`** — real pixels of the page. Needs the desktop app or a screen-share grant;
+  without either it returns a clearly-labelled *schematic* instead of failing (\`source:
+  "schematic"\`, with any canvases embedded as real pixels). \`--no-fallback\` to hard-fail.
+
+The schematic is drawn in the page's own colours, so poor contrast is visible at a glance —
+and every node carries \`colors\` + a \`contrastFail\` verdict so it is machine-checkable too.
 
 ## Commands by Category
 
@@ -2846,6 +2979,18 @@ hj --help              # All commands
 - \`hj video-start [maxDuration, window]\` - Start video recording
 - \`hj video-stop [window]\` - Stop video recording
 - \`hj video-status\` - Check video recording status
+
+### dialog
+
+- \`hj dialog-configure [alert, confirm, prompt, ...]\` - Configure native dialog auto-response policy
+- \`hj dialog-history\` - Get recent dialog history
+
+### network
+
+- \`hj network\` - Get captured network requests
+- \`hj network-watch [preset, includePatterns, excludePatterns, ...]\` - Start capturing network traffic
+- \`hj network-unwatch\` - Stop capturing network traffic
+- \`hj network-stats\` - Network traffic summary
 
 ## Tips
 
@@ -3035,6 +3180,8 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 - **Record & replay**: \`POST /recording\`, \`POST /recording/start\`, \`POST /recording/stop\`, \`POST /recording/generate\`, \`GET /recordings\`
 - **Run tests**: \`POST /test/run\`, \`POST /test/suite\`, \`POST /test/validate\`
 - **Debug & eval**: \`GET /console\`, \`POST /eval\`, \`POST /fetch\`, \`POST /screenshot\`, \`POST /snapshot\`, \`POST /video/start\`, \`POST /video/stop\`, \`GET /video/status\`
+- **Dialogs**: \`POST /dialog/configure\`, \`GET /dialog/history\`
+- **Network traffic**: \`GET /network\`, \`POST /network/watch\`, \`POST /network/unwatch\`, \`GET /network/stats\`
 
 ## Running Haltija
 
@@ -3082,6 +3229,25 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server):
 \`\`\`html
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>
 \`\`\`
+
+## Seeing the page: pick the cheapest representation that answers the question
+
+- \`POST /map\` (\`hj map\`) — the **affordance map**: what can be interacted with, structural and
+  deterministic (no fonts/theme/viewport/animation). On a page exposing \`globalThis.tosiAgent\`
+  it returns the app's OWN wiring records, carrying what the DOM cannot: the state path each
+  control is bound to and the DIRECTION (\`⟷\` two-way/user-writable, \`⟵\` display-only, absent =
+  static), plus each event's handler path and the callable actions — act via
+  \`tosiAgent.write(path, value)\` / \`.call(actionPath)\` instead of synthesizing input. Otherwise
+  it reconstructs from the DOM (\`source: "dom"\`), which is an approximation with NO binding
+  provenance. Always check \`source\`.
+- \`POST /screenshot {canvas: "<selector>"}\` — read a \`<canvas>\`'s own pixels. Exact, needs no
+  screen-share grant, works when the canvas is off-screen. The route for WebGL/3D scenes.
+- \`POST /screenshot\` — real pixels, but needs the desktop app or a screen-share grant. Without
+  either it returns a **labelled schematic** (\`source: "schematic"\`, plus a \`warning\` and a
+  banner in the image) rather than failing, with any canvases embedded as real pixels.
+  Pass \`fallback: false\` to get a hard error instead.
+- The schematic is drawn in the page's own colours, so contrast problems are visible; map
+  nodes also carry \`colors\` and a \`contrastFail\` verdict (WCAG AA) for machine checking.
 
 ## Gotcha: a tab can read as unreachable while its main thread is suspended
 - The widget proves liveness with a heartbeat. If the page's main thread or its \`requestAnimationFrame\` loop is suspended, the heartbeat stalls and commands time out or report "no browser connected" — even though the PAGE is fine. It's the instrument going quiet, not a page bug.
@@ -3702,7 +3868,7 @@ export const COMPONENT_JS: string = `(() => {
         return { element: result.element, targetDesc: \`@\${ref}\` };
       }
       stats.refsStale++;
-      const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+      const errorMsg = refFailureMessage(ref, result.status);
       return { element: null, targetDesc: \`@\${ref}\`, error: errorMsg };
     }
     if (selector) {
@@ -3710,6 +3876,17 @@ export const COMPONENT_JS: string = `(() => {
       return { element: el, targetDesc: selector };
     }
     return { element: null, targetDesc: "(none)", error: "ref or selector is required" };
+  }
+  function refFailureMessage(ref, status) {
+    const high = refRegistry.getStats().highWaterMark;
+    const fresh = "Run \`hj tree\` (or \`hj map\`) for current refs, or target by text instead — " + "\`hj click 'button:text(save)'\` survives re-renders, refs do not.";
+    if (status === "never_assigned") {
+      return high === 0 ? \`Ref @\${ref} was never assigned — no refs exist yet because nothing has been listed on this page. Run \\\`hj tree\\\` (or \\\`hj map\\\`) first; it assigns the refs that \\\`hj click <ref>\\\` uses.\` : \`Ref @\${ref} was never assigned (highest ref is @\${high}). \${fresh}\`;
+    }
+    if (status === "removed_from_dom") {
+      return \`Ref @\${ref} pointed to an element that has since been removed from the DOM — the page re-rendered or navigated. \${fresh}\`;
+    }
+    return \`Ref @\${ref} is stale (its element was garbage collected). \${fresh}\`;
   }
   function resolveRefOrSelectorAll(ref, selector) {
     if (ref) {
@@ -3719,7 +3896,7 @@ export const COMPONENT_JS: string = `(() => {
         return { elements: [result.element], targetDesc: \`@\${ref}\` };
       }
       stats.refsStale++;
-      const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+      const errorMsg = refFailureMessage(ref, result.status);
       return { elements: [], targetDesc: \`@\${ref}\`, error: errorMsg };
     }
     if (selector) {
@@ -4605,6 +4782,14 @@ export const COMPONENT_JS: string = `(() => {
       passes: ratio >= (large ? 3 : 4.5),
       large
     };
+  }
+  function elementNotFoundMessage(target) {
+    const isRef = /^@?\\d+$/.test(String(target).trim());
+    const base = \`Element not found: \${target}.\`;
+    if (isRef) {
+      return \`\${base} Ref IDs are assigned by \\\`hj tree\\\` and only stay valid while that element is in the \` + \`DOM — a re-render or navigation invalidates them. Run \\\`hj tree\\\` again for fresh refs, or \` + \`target by text instead (\\\`hj click 'button:text(save)'\\\`), which survives re-renders.\`;
+    }
+    return \`\${base} Check in this order: (1) \\\`hj map\\\` or \\\`hj tree\\\` to see what is actually there; \` + \`(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore \` + \`invisible elements; (3) prefer text over structure — \\\`:text(save)\\\`, \\\`:text-is(Save)\\\` or \` + \`\\\`[data-testid=…]\\\` survive restyling where \\\`.some-class > div:nth-child(2)\\\` does not; \` + \`(4) if the page is still loading, \\\`hj wait --selector <sel>\\\` before acting.\`;
   }
   function buildDomAffordances(maxNodes = 400) {
     const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
@@ -8770,7 +8955,7 @@ export const COMPONENT_JS: string = `(() => {
       } else if (action2 === "history") {
         this.respond(msg2.id, true, { history: this.dialogHistory });
       } else {
-        this.respond(msg2.id, false, undefined, \`Unknown dialog action: \${action2}\`);
+        this.respond(msg2.id, false, undefined, \`Unknown dialog action: \${action2}. Valid actions: configure, get-config, history.\`);
       }
     }
     handleVideoMessage(msg2) {
@@ -8815,7 +9000,7 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, true, { recording: false });
         });
       } else {
-        this.respond(msg2.id, false, undefined, \`Unknown video action: \${action2}\`);
+        this.respond(msg2.id, false, undefined, \`Unknown video action: \${action2}. Valid actions: start, stop, status (desktop app only).\`);
       }
     }
     handleNetworkMessage(msg2) {
@@ -8873,7 +9058,7 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, undefined, err.message);
         });
       } else {
-        this.respond(msg2.id, false, undefined, \`Unknown network action: \${action2}\`);
+        this.respond(msg2.id, false, undefined, \`Unknown network action: \${action2}. Valid actions: watch, unwatch, get, stats. Start with \\\`hj network-watch\\\`, then \\\`hj network\\\`.\`);
       }
     }
     handleSemanticMessage(msg2) {
@@ -9095,7 +9280,7 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, false, null, "Tab focus not available outside Electron app");
         }
       } else {
-        this.respond(msg2.id, false, null, \`Unknown tabs action: \${action2}\`);
+        this.respond(msg2.id, false, null, \`Unknown tabs action: \${action2}. Valid actions: open, close, focus. Try \\\`hj windows\\\` to list tabs first.\`);
       }
     }
     async handleDomMessage(msg2) {
@@ -9129,7 +9314,7 @@ export const COMPONENT_JS: string = `(() => {
             return;
           }
           if (!el) {
-            this.respond(msg2.id, false, null, \`Element not found: \${targetDesc}\`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(targetDesc));
             return;
           }
           const opts = {
@@ -9164,7 +9349,7 @@ export const COMPONENT_JS: string = `(() => {
             return;
           }
           if (!el) {
-            this.respond(msg2.id, false, null, \`Element not found: \${targetDesc}\`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(targetDesc));
             return;
           }
           if (payload2.duration) {
@@ -9211,7 +9396,7 @@ export const COMPONENT_JS: string = `(() => {
           const request = payload2;
           const el = resolveSelector(request.selector);
           if (!el) {
-            this.respond(msg2.id, false, null, \`Element not found: \${request.selector}\`);
+            this.respond(msg2.id, false, null, elementNotFoundMessage(request.selector));
             return;
           }
           if (request.mode === "actionable") {
@@ -9554,7 +9739,7 @@ export const COMPONENT_JS: string = `(() => {
     async handleFetchMessage(msg2) {
       const { url } = msg2.payload;
       if (!url) {
-        this.respond(msg2.id, false, null, "url is required");
+        this.respond(msg2.id, false, null, "url is required. Usage: \`hj navigate <url>\` (absolute, e.g. https://example.com/page, or a path like /docs).");
         return;
       }
       try {
@@ -9608,7 +9793,7 @@ export const COMPONENT_JS: string = `(() => {
       } else if (action2 === "key") {
         this.performKey(payload2, msg2.id);
       } else {
-        this.respond(msg2.id, false, null, \`Unknown interaction action: \${action2}\`);
+        this.respond(msg2.id, false, null, \`Unknown interaction action: \${action2}. Run \\\`hj --help\\\` for the command list, or \\\`hj api\\\` for the full REST reference.\`);
       }
     }
     async performRealisticType(payload2, responseId) {
@@ -9634,7 +9819,7 @@ export const COMPONENT_JS: string = `(() => {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+          const errorMsg = refFailureMessage(ref, result.status);
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -9643,7 +9828,7 @@ export const COMPONENT_JS: string = `(() => {
         targetDesc = selector;
       }
       if (!el) {
-        this.respond(responseId, false, null, \`Element not found: \${targetDesc}\`);
+        this.respond(responseId, false, null, elementNotFoundMessage(targetDesc));
         return;
       }
       try {
@@ -9986,7 +10171,7 @@ export const COMPONENT_JS: string = `(() => {
           stats.refsResolved++;
         } else {
           stats.refsStale++;
-          const errorMsg = result.status === "never_assigned" ? \`Ref @\${payload2.ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${payload2.ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${payload2.ref} is stale - element was garbage collected (try refreshing /tree)\`;
+          const errorMsg = refFailureMessage(payload2.ref, result.status);
           this.respond(responseId, false, null, errorMsg);
           return;
         }
@@ -9995,7 +10180,7 @@ export const COMPONENT_JS: string = `(() => {
         targetDesc = payload2.selector;
       }
       if (!el) {
-        this.respond(responseId, false, null, \`Element not found: \${targetDesc}\`);
+        this.respond(responseId, false, null, elementNotFoundMessage(targetDesc));
         return;
       }
       const hiddenReason = this.getHiddenReason(el);
@@ -10063,7 +10248,7 @@ export const COMPONENT_JS: string = `(() => {
             target.focus();
           } else {
             stats.refsStale++;
-            const errorMsg = result.status === "never_assigned" ? \`Ref @\${ref} was never assigned (highest ref is @\${refRegistry.getStats().highWaterMark})\` : result.status === "removed_from_dom" ? \`Ref @\${ref} points to an element that was removed from the DOM (try refreshing /tree)\` : \`Ref @\${ref} is stale - element was garbage collected (try refreshing /tree)\`;
+            const errorMsg = refFailureMessage(ref, result.status);
             this.respond(responseId, false, null, errorMsg);
             return;
           }
@@ -10071,7 +10256,7 @@ export const COMPONENT_JS: string = `(() => {
           target = resolveSelector(selector);
           targetDesc = selector;
           if (!target) {
-            this.respond(responseId, false, null, \`Element not found: \${selector}\`);
+            this.respond(responseId, false, null, elementNotFoundMessage(selector));
             return;
           }
           target.focus();
@@ -10409,7 +10594,7 @@ export const COMPONENT_JS: string = `(() => {
           this.recordingEvents = [];
           this.respond(msg2.id, true, { stopped: true });
         } else {
-          this.respond(msg2.id, false, null, "No active recording");
+          this.respond(msg2.id, false, null, 'No active recording. Start one with \`hj recording-start "<name>"\`, perform the actions in the browser, then \`hj recording-stop\`.');
         }
       } else if (action2 === "resume") {
         console.log("[Haltija] Resuming recording session from server");
@@ -10459,13 +10644,13 @@ export const COMPONENT_JS: string = `(() => {
           this.clearSelection();
           this.respond(msg2.id, true, result);
         } else {
-          this.respond(msg2.id, false, null, "No selection available");
+          this.respond(msg2.id, false, null, "No selection available yet. Run \`hj select-start\` to put the page into selection mode, ask the user to click an element, then read it with \`hj select-result\`.");
         }
       } else if (action2 === "clear") {
         this.clearSelection();
         this.respond(msg2.id, true, { cleared: true });
       } else {
-        this.respond(msg2.id, false, null, \`Unknown selection action: \${action2}\`);
+        this.respond(msg2.id, false, null, \`Unknown selection action: \${action2}. Valid actions: start, cancel, clear, status, result. Begin with \\\`hj select-start\\\`, then ask the user to select, then \\\`hj select-result\\\`.\`);
       }
     }
     handleMutationsMessage(msg2) {

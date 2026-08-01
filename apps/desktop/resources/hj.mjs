@@ -1659,6 +1659,9 @@ async function doRequest(url, method, body, context = {}) {
     const contentType = resp.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const json = await resp.json();
+      if (json && json.success === false && typeof json.hint === "string" && json.hint) {
+        console.error(`hj: ${json.hint}`);
+      }
       if (json && typeof json.warning === "string" && json.warning) {
         if (process.env.HALTIJA_STRICT === "1") {
           console.error(`hj: ERROR (strict) — ${json.warning}`);

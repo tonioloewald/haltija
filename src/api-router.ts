@@ -184,9 +184,17 @@ export function createRouter(contextFactory: ContextFactory) {
     // Validate input against schema
     const validation = validateInput(endpoint, body)
     if (!validation.valid) {
+      // The raw validator says things like "root: Missing url" — accurate, and useless as
+      // instruction. Attach what to actually do: the CLI form, the example from the schema, and
+      // where the full reference lives. An error's job is the next action, not the diagnosis.
+      const cli = endpoint.path.replace(/^\//, '').replace(/\//g, '-')
+      const example = (endpoint as any).examples?.[0]
       return Response.json({
         success: false,
         error: validation.error,
+        hint:
+          `${endpoint.method} ${endpoint.path} — see \`hj ${cli} --help\`, or \`hj api\` for the full reference.` +
+          (example ? ` Example body: ${JSON.stringify(example.input)}` : ''),
         schema: endpoint.input?.schema,
       }, { status: 400, headers: ctx.headers })
     }

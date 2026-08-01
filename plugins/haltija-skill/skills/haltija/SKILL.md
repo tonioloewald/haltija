@@ -228,6 +228,37 @@ answer.** Two can appear on an untargeted command:
   different page (another project's tab on a shared server), re-run pinned with `--window <id>`
   from the list the warning prints.
 
+## Watching what the page does
+
+```bash
+hj events-watch --preset interactive   # start aggregating semantic events; hj events to read them
+hj events                              # "user typed 'x'", not 18 keydowns
+hj mutations-watch                     # DOM changes (added/removed/changed), debounced
+hj network-watch                       # XHR/fetch traffic; hj network to read, hj network-stats to summarize
+hj console                             # console output + uncaught errors and rejections
+```
+
+Use these when "did my click actually do anything?" matters: watch, act, then read. `hj click`/`hj
+type` also accept `--diff` to return a semantic before/after diff of that single action.
+
+## Multiple tabs
+
+```bash
+hj windows                    # list tabs (id, url, hidden)
+hj tabs-open <url>            # open a tab (desktop app; elsewhere it warns it can't be controlled)
+hj tabs-focus <id>            # point untargeted commands at a tab (server-side; never times out)
+hj tabs-close <id>            # close a tab
+hj <cmd> --window <id>        # pin ONE command to a tab, either position
+```
+
+## Recording a flow into a test
+
+```bash
+hj recording-start "my-flow"   # perform the actions in the browser…
+hj recording-stop
+hj recording-generate          # emits test JSON — then swap brittle selectors for text/testid ones
+```
+
 ## Writing & running regression tests
 
 Tests are JSON files in a directory, run **alphabetically** (numeric prefixes order them:

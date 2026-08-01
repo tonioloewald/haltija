@@ -800,11 +800,7 @@ function resolveRefOrSelector(
       return { element: result.element, targetDesc: `@${ref}` }
     }
     stats.refsStale++
-    const errorMsg = result.status === 'never_assigned'
-      ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
-      : result.status === 'removed_from_dom'
-      ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
-      : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+    const errorMsg = refFailureMessage(ref, result.status)
     return { element: null, targetDesc: `@${ref}`, error: errorMsg }
   }
   if (selector) {
@@ -812,6 +808,28 @@ function resolveRefOrSelector(
     return { element: el, targetDesc: selector }
   }
   return { element: null, targetDesc: '(none)', error: 'ref or selector is required' }
+}
+
+/**
+ * Why a ref didn't resolve — and what to do about it. Ref IDs are only valid while the element is
+ * in the DOM, so every failure here has the same remedy shape ("get fresh refs, or stop depending
+ * on them"), and saying it beats making the caller infer it. One function because this was five
+ * copies that had already drifted: two branches offered a remedy, one didn't.
+ */
+function refFailureMessage(ref: string, status: string): string {
+  const high = refRegistry.getStats().highWaterMark
+  const fresh =
+    'Run `hj tree` (or `hj map`) for current refs, or target by text instead — ' +
+    '`hj click \'button:text(save)\'` survives re-renders, refs do not.'
+  if (status === 'never_assigned') {
+    return high === 0
+      ? `Ref @${ref} was never assigned — no refs exist yet because nothing has been listed on this page. Run \`hj tree\` (or \`hj map\`) first; it assigns the refs that \`hj click <ref>\` uses.`
+      : `Ref @${ref} was never assigned (highest ref is @${high}). ${fresh}`
+  }
+  if (status === 'removed_from_dom') {
+    return `Ref @${ref} pointed to an element that has since been removed from the DOM — the page re-rendered or navigated. ${fresh}`
+  }
+  return `Ref @${ref} is stale (its element was garbage collected). ${fresh}`
 }
 
 /**
@@ -829,11 +847,7 @@ function resolveRefOrSelectorAll(
       return { elements: [result.element], targetDesc: `@${ref}` }
     }
     stats.refsStale++
-    const errorMsg = result.status === 'never_assigned'
-      ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
-      : result.status === 'removed_from_dom'
-      ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
-      : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+    const errorMsg = refFailureMessage(ref, result.status)
     return { elements: [], targetDesc: `@${ref}`, error: errorMsg }
   }
   if (selector) {
@@ -2141,6 +2155,33 @@ function probeColors(el: Element): {
     passes: ratio >= (large ? 3 : 4.5),
     large,
   }
+}
+
+/**
+ * "Element not found" is the error agents hit most, and on its own it teaches nothing — it names the
+ * failure and leaves the caller to guess whether the selector is wrong, the element is hidden, the
+ * page moved on, or a ref went stale. Say what to do next instead.
+ *
+ * Tailored to the shape of what was passed, because the right recovery differs: a stale REF wants a
+ * fresh `hj tree`; a brittle CSS selector wants `:text()`; nothing-matched wants `hj map`.
+ */
+function elementNotFoundMessage(target: string): string {
+  const isRef = /^@?\d+$/.test(String(target).trim())
+  const base = `Element not found: ${target}.`
+  if (isRef) {
+    return (
+      `${base} Ref IDs are assigned by \`hj tree\` and only stay valid while that element is in the ` +
+      `DOM — a re-render or navigation invalidates them. Run \`hj tree\` again for fresh refs, or ` +
+      `target by text instead (\`hj click 'button:text(save)'\`), which survives re-renders.`
+    )
+  }
+  return (
+    `${base} Check in this order: (1) \`hj map\` or \`hj tree\` to see what is actually there; ` +
+    `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` +
+    `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` +
+    `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` +
+    `(4) if the page is still loading, \`hj wait --selector <sel>\` before acting.`
+  )
 }
 
 /** DOM-derived affordances: interactive + structural elements, nested, each with a haltija ref. */
@@ -7620,7 +7661,7 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'history') {
       this.respond(msg.id, true, { history: this.dialogHistory })
     } else {
-      this.respond(msg.id, false, undefined, `Unknown dialog action: ${action}`)
+      this.respond(msg.id, false, undefined, `Unknown dialog action: ${action}. Valid actions: configure, get-config, history.`)
     }
   }
 
@@ -7672,7 +7713,7 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, true, { recording: false })
       })
     } else {
-      this.respond(msg.id, false, undefined, `Unknown video action: ${action}`)
+      this.respond(msg.id, false, undefined, `Unknown video action: ${action}. Valid actions: start, stop, status (desktop app only).`)
     }
   }
 
@@ -7732,7 +7773,7 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, false, undefined, err.message)
       })
     } else {
-      this.respond(msg.id, false, undefined, `Unknown network action: ${action}`)
+      this.respond(msg.id, false, undefined, `Unknown network action: ${action}. Valid actions: watch, unwatch, get, stats. Start with \`hj network-watch\`, then \`hj network\`.`)
     }
   }
 
@@ -8072,7 +8113,7 @@ export class DevChannel extends HTMLElement {
         )
       }
     } else {
-      this.respond(msg.id, false, null, `Unknown tabs action: ${action}`)
+      this.respond(msg.id, false, null, `Unknown tabs action: ${action}. Valid actions: open, close, focus. Try \`hj windows\` to list tabs first.`)
     }
   }
 
@@ -8112,7 +8153,7 @@ export class DevChannel extends HTMLElement {
             msg.id,
             false,
             null,
-            `Element not found: ${targetDesc}`,
+            elementNotFoundMessage(targetDesc),
           )
           return
         }
@@ -8154,7 +8195,7 @@ export class DevChannel extends HTMLElement {
             msg.id,
             false,
             null,
-            `Element not found: ${targetDesc}`,
+            elementNotFoundMessage(targetDesc),
           )
           return
         }
@@ -8214,7 +8255,7 @@ export class DevChannel extends HTMLElement {
             msg.id,
             false,
             null,
-            `Element not found: ${request.selector}`,
+            elementNotFoundMessage(request.selector),
           )
           return
         }
@@ -8729,7 +8770,7 @@ export class DevChannel extends HTMLElement {
     const { url } = msg.payload
 
     if (!url) {
-      this.respond(msg.id, false, null, 'url is required')
+      this.respond(msg.id, false, null, 'url is required. Usage: `hj navigate <url>` (absolute, e.g. https://example.com/page, or a path like /docs).')
       return
     }
 
@@ -8803,7 +8844,7 @@ export class DevChannel extends HTMLElement {
     } else if (action === 'key') {
       this.performKey(payload, msg.id)
     } else {
-      this.respond(msg.id, false, null, `Unknown interaction action: ${action}`)
+      this.respond(msg.id, false, null, `Unknown interaction action: ${action}. Run \`hj --help\` for the command list, or \`hj api\` for the full REST reference.`)
     }
   }
 
@@ -8852,11 +8893,7 @@ export class DevChannel extends HTMLElement {
       } else {
         stats.refsStale++
         // Provide specific error message based on why the ref failed
-        const errorMsg = result.status === 'never_assigned'
-          ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
-          : result.status === 'removed_from_dom'
-          ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
-          : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+        const errorMsg = refFailureMessage(ref, result.status)
         this.respond(responseId, false, null, errorMsg)
         return
       }
@@ -8866,7 +8903,7 @@ export class DevChannel extends HTMLElement {
     }
 
     if (!el) {
-      this.respond(responseId, false, null, `Element not found: ${targetDesc}`)
+      this.respond(responseId, false, null, elementNotFoundMessage(targetDesc))
       return
     }
 
@@ -9414,11 +9451,7 @@ export class DevChannel extends HTMLElement {
       } else {
         stats.refsStale++
         // Provide specific error message based on why the ref failed
-        const errorMsg = result.status === 'never_assigned'
-          ? `Ref @${payload.ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
-          : result.status === 'removed_from_dom'
-          ? `Ref @${payload.ref} points to an element that was removed from the DOM (try refreshing /tree)`
-          : `Ref @${payload.ref} is stale - element was garbage collected (try refreshing /tree)`
+        const errorMsg = refFailureMessage(payload.ref, result.status)
         this.respond(responseId, false, null, errorMsg)
         return
       }
@@ -9428,7 +9461,7 @@ export class DevChannel extends HTMLElement {
     }
 
     if (!el) {
-      this.respond(responseId, false, null, `Element not found: ${targetDesc}`)
+      this.respond(responseId, false, null, elementNotFoundMessage(targetDesc))
       return
     }
 
@@ -9545,11 +9578,7 @@ export class DevChannel extends HTMLElement {
         } else {
           stats.refsStale++
           // Provide specific error message based on why the ref failed
-          const errorMsg = result.status === 'never_assigned'
-            ? `Ref @${ref} was never assigned (highest ref is @${refRegistry.getStats().highWaterMark})`
-            : result.status === 'removed_from_dom'
-            ? `Ref @${ref} points to an element that was removed from the DOM (try refreshing /tree)`
-            : `Ref @${ref} is stale - element was garbage collected (try refreshing /tree)`
+          const errorMsg = refFailureMessage(ref, result.status)
           this.respond(responseId, false, null, errorMsg)
           return
         }
@@ -9561,7 +9590,7 @@ export class DevChannel extends HTMLElement {
             responseId,
             false,
             null,
-            `Element not found: ${selector}`,
+            elementNotFoundMessage(selector),
           )
           return
         }
@@ -10042,7 +10071,7 @@ export class DevChannel extends HTMLElement {
         
         this.respond(msg.id, true, { stopped: true })
       } else {
-        this.respond(msg.id, false, null, 'No active recording')
+        this.respond(msg.id, false, null, 'No active recording. Start one with `hj recording-start "<name>"`, perform the actions in the browser, then `hj recording-stop`.')
       }
     } else if (action === 'resume') {
       // Server is telling us to resume an active recording session (after page navigation)
@@ -10108,13 +10137,13 @@ export class DevChannel extends HTMLElement {
         this.clearSelection()
         this.respond(msg.id, true, result)
       } else {
-        this.respond(msg.id, false, null, 'No selection available')
+        this.respond(msg.id, false, null, 'No selection available yet. Run `hj select-start` to put the page into selection mode, ask the user to click an element, then read it with `hj select-result`.')
       }
     } else if (action === 'clear') {
       this.clearSelection()
       this.respond(msg.id, true, { cleared: true })
     } else {
-      this.respond(msg.id, false, null, `Unknown selection action: ${action}`)
+      this.respond(msg.id, false, null, `Unknown selection action: ${action}. Valid actions: start, cancel, clear, status, result. Begin with \`hj select-start\`, then ask the user to select, then \`hj select-result\`.`)
     }
   }
 

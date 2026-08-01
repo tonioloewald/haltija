@@ -484,10 +484,16 @@ function validateBody(
   }
   
   if (errors.length > 0) {
+    // Name the endpoint and show a runnable shape. "root: Missing url" tells a caller what broke but
+    // not how to fix it; the point of an error is the next action, not the diagnosis.
+    const cli = endpoint.replace(/^\//, '').replace(/\//g, '-')
     return {
       valid: false,
       error: `${endpoint}: ${errors.join(', ')}`,
-      hint: `Expected: { ${expectedFields.join(', ')} }`
+      hint:
+        `Expected body: { ${expectedFields.join(', ')} }. ` +
+        `Try \`hj ${cli} --help\` for usage, \`hj api\` for the full reference, or GET ${endpoint} ` +
+        `to see this endpoint's schema.`,
     }
   }
   

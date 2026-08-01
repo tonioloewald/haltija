@@ -1817,3 +1817,118 @@ Response: { recording, recordingId?, duration?, window? }
   ```
 
 ---
+
+## Dialogs (alert/confirm/prompt)
+
+### `POST /dialog/configure`
+
+**Configure native dialog auto-response policy**
+
+Set how native browser dialogs (alert, confirm, prompt) are handled.
+
+By default, Haltija intercepts all native dialogs and auto-responds:
+- alert: dismissed immediately
+- confirm: accepted (returns true)
+- prompt: dismissed (returns null)
+
+Configure the policy **before** triggering actions that cause dialogs.
+Each dialog is logged and reported via the dialog/opened push event.
+
+Response: { policy: { alert, confirm, prompt, beforeunload } }
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `alert` | string,null | "dismiss" (only option for alerts) |
+| `confirm` | string,null | "accept" or "dismiss" |
+| `prompt` | ,null | "dismiss" or { "response": "text" } to auto-fill |
+| `beforeunload` | string,null | "allow" or "block" — controls page unload |
+| `window` | string,null | Target window ID |
+
+**Examples:**
+
+- **accept-confirms**: Auto-accept all confirm dialogs
+  ```json
+  {"confirm":"accept"}
+  ```
+- **dismiss-confirms**: Auto-dismiss (cancel) all confirm dialogs
+  ```json
+  {"confirm":"dismiss"}
+  ```
+- **auto-fill-prompt**: Auto-fill prompt dialogs with text
+  ```json
+  {"prompt":{"response":"my answer"}}
+  ```
+
+---
+
+### `GET /dialog/history`
+
+**Get recent dialog history**
+
+Returns a list of recently intercepted native dialogs.
+
+Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Buffer holds the last 50 dialogs.
+
+Response: { history: [{ type, message, defaultValue?, response, timestamp }] }
+
+---
+
+## Network Traffic
+
+### `GET /network`
+
+**Get captured network requests**
+
+Returns buffered network entries in compact format.
+
+Each entry: { m: method, s: status, url: trimmed_url, t: time_ms, sz: human_size, type: resource_type }
+Status -1 means failed (timeout, CORS, canceled). Summary line always included.
+
+Use preset parameter to override the watch preset for this query.
+
+---
+
+### `POST /network/watch`
+
+**Start capturing network traffic**
+
+Begin monitoring HTTP requests and responses via Chrome DevTools Protocol.
+Requires the Haltija Desktop app (uses Electron's CDP access).
+
+Presets control what's captured:
+- errors: only 4xx, 5xx, timeouts, CORS failures
+- minimal: errors + XHR/fetch requests (no images, scripts, CSS)
+- standard: all requests except analytics/tracking noise (default)
+- verbose: everything including preflights and tracking
+
+Output is token-optimized: ~10 tokens per request vs 200+ for raw HAR.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `preset` | string,null | Filter preset: errors, minimal, standard, verbose |
+| `includePatterns` | array,null | URL regex patterns to always include |
+| `excludePatterns` | array,null | URL regex patterns to exclude |
+| `maxBuffer` | number,null | Max entries to buffer (default 200) |
+
+---
+
+### `POST /network/unwatch`
+
+**Stop capturing network traffic**
+
+Stop monitoring network requests. Clears the capture buffer.
+
+---
+
+### `GET /network/stats`
+
+**Network traffic summary**
+
+Returns: total requests, failures, pending, average latency, total bytes, and a one-line summary string.
+
+---
