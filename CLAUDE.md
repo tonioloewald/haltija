@@ -395,6 +395,17 @@ The build script (`scripts/build.ts`) generates:
 
 Version is managed in `package.json` only. The build script generates `src/version.ts` automatically. Never edit `version.ts` directly.
 
+**A minor bump is a gated event, not a label for "this felt like a feature."** Ongoing work — fixes
+*and* new capability — ships as **patches**. A breaking change goes out as a **beta** tag first. You
+cut a real minor only when the backlog is genuinely clear AND the
+[nine-lens pre-release review](#ciqa) (`/pre-release-review`) has run and its findings are addressed.
+
+This exists because the rule was broken: 1.7.0 → 1.11.0 were cut in a single session with **zero**
+reviews between them, while `tosijs-coding-practices/practices/review.md` says every minor gets one.
+The review is slow and expensive and repeatedly catches real blockers — minting minors faster than
+you can review them means either skipping the gate (so the number lies about the scrutiny applied)
+or reviewing so often it gets skipped. Accumulate patches; let the review certify the minor.
+
 ## Environment Variables
 
 | Variable | Purpose | Default |
