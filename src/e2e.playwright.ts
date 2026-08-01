@@ -238,6 +238,39 @@ test.describe('haltija-dev CLI', () => {
     expect(tosiMap.data.act.note).toContain('write')
   })
 
+  test('contrast audit stays quiet on text-less containers and uncertain backgrounds', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('main')
+      wrap.innerHTML =
+        // A container with low-contrast inherited colours but NO text of its own: noise, not a finding.
+        '<div id="wrap" style="background:#e5e7eb;color:#d1d5db;padding:10px">' +
+        '  <button id="fine" style="background:#123;color:#fff">Fine</button></div>' +
+        // Text over a background-IMAGE: the colour-based ratio is not a verdict we can assert.
+        '<button id="onimage" style="background-image:linear-gradient(90deg,#000,#fff);color:#888">Gradient</button>' +
+        // A genuine failure must still be caught.
+        '<button id="bad" style="background:#e5e7eb;color:#d1d5db">Unreadable</button>'
+      document.body.appendChild(wrap)
+    })
+
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    const flat: any[] = []
+    const walk = (n: any) => { flat.push(n); (n.children || []).forEach(walk) }
+    ;(map.data.nodes || []).forEach(walk)
+
+    const byText = (t: string) => flat.find((n) => n.text === t)
+    expect(byText('Unreadable')?.contrastFail).toBeTruthy() // true positive survives
+    expect(byText('Fine')?.contrastFail).toBeFalsy()
+    expect(byText('Gradient')?.contrastFail).toBeFalsy() // uncertain, so not asserted
+    expect(byText('Gradient')?.colors?.uncertain).toBe(true) // …but the uncertainty IS reported
+
+    // No node without readable text may carry a verdict — that's the noise this guards against.
+    const textlessFails = flat.filter((n) => n.contrastFail && !(n.text || n.label || n.value))
+    expect(textlessFails).toEqual([])
+  })
+
   test('map surfaces contrast failures with the page\'s real colours and a WCAG verdict', async ({ page }) => {
     await injectDevChannel(page)
     await page.evaluate(() => {

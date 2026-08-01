@@ -4737,8 +4737,12 @@ export const COMPONENT_JS: string = `(() => {
     let node = el;
     let acc = { r: 255, g: 255, b: 255 };
     const stack = [];
+    let imaged = false;
     while (node) {
-      const c = parseCssColor(getComputedStyle(node).backgroundColor);
+      const cs = getComputedStyle(node);
+      if (cs.backgroundImage && cs.backgroundImage !== "none")
+        imaged = true;
+      const c = parseCssColor(cs.backgroundColor);
       if (c && c.a > 0) {
         stack.push(c);
         if (c.a === 1)
@@ -4748,7 +4752,7 @@ export const COMPONENT_JS: string = `(() => {
     }
     for (let i = stack.length - 1;i >= 0; i--)
       acc = over(stack[i], acc);
-    return acc;
+    return { ...acc, imaged };
   }
   var relLuminance = (c) => {
     const ch = (v) => {
@@ -4781,7 +4785,8 @@ export const COMPONENT_JS: string = `(() => {
       border,
       contrast: Math.round(ratio * 10) / 10,
       passes: ratio >= (large ? 3 : 4.5),
-      large
+      large,
+      ...bg.imaged ? { uncertain: true } : {}
     };
   }
   function elementNotFoundMessage(target) {
@@ -4825,8 +4830,10 @@ export const COMPONENT_JS: string = `(() => {
       try {
         const c = probeColors(el);
         node.colors = c;
-        if (!c.passes)
+        const hasReadableText = !!(node.text || node.label || node.value);
+        if (!c.passes && hasReadableText && !c.uncertain) {
           node.contrastFail = \`\${c.contrast}:1 (needs \${c.large ? 3 : 4.5}:1)\`;
+        }
       } catch {}
       return node;
     };

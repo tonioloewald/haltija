@@ -4,6 +4,19 @@
 
 Patch, per the rule that a minor bump waits for a cleared backlog and a nine-lens review.
 
+### Fixed: contrast audit noise
+
+Two sources of false findings, fixed before anyone acts on a long list of them:
+
+- **Containers with no text of their own were flagged.** A `<div>`/`<form>` inherits a colour but
+  displays nothing, so a "failure" there is noise. Only elements that actually render text, a label
+  or a value get a verdict now.
+- **Text over a `background-image`** (gradient, photo) was judged against whatever background-*color*
+  sat beneath it — which can be wrong in either direction. Those are now reported as
+  `colors.uncertain` rather than asserted as pass or fail.
+
+An audit people learn to skim is worth nothing, so the bar is: only claim what can be justified.
+
 ### Per-tab routing, by declaration ([#1](https://github.com/tonioloewald/haltija/issues/1), [#2](https://github.com/tonioloewald/haltija/issues/2))
 
 cwd routing gets a command to the right *server*; which **tab** answers then fell back to focus, so

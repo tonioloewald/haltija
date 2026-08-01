@@ -2094,12 +2094,19 @@ function over(fg: { r: number; g: number; b: number; a: number }, bg: { r: numbe
 }
 
 /** What the user actually sees behind this element — walk up through transparent ancestors. */
-function effectiveBackground(el: Element): { r: number; g: number; b: number } {
+function effectiveBackground(el: Element): { r: number; g: number; b: number; imaged: boolean } {
   let node: Element | null = el
   let acc: { r: number; g: number; b: number } = { r: 255, g: 255, b: 255 } // page default
   const stack: Array<{ r: number; g: number; b: number; a: number }> = []
+  // A background IMAGE (gradient, photo) makes any colour-based verdict unreliable: the pixels
+  // behind the text are not the background-color we can read. Report that instead of asserting a
+  // ratio we can't actually compute — a confidently wrong accessibility finding wastes more time
+  // than no finding.
+  let imaged = false
   while (node) {
-    const c = parseCssColor(getComputedStyle(node).backgroundColor)
+    const cs = getComputedStyle(node)
+    if (cs.backgroundImage && cs.backgroundImage !== 'none') imaged = true
+    const c = parseCssColor(cs.backgroundColor)
     if (c && c.a > 0) {
       stack.push(c)
       if (c.a === 1) break // fully opaque: nothing below it shows through
@@ -2107,7 +2114,7 @@ function effectiveBackground(el: Element): { r: number; g: number; b: number } {
     node = node.parentElement
   }
   for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc)
-  return acc
+  return { ...acc, imaged }
 }
 
 const relLuminance = (c: { r: number; g: number; b: number }) => {
@@ -2134,6 +2141,8 @@ const cssRgb = (c: { r: number; g: number; b: number }) =>
  */
 function probeColors(el: Element): {
   fg: string; bg: string; border?: string; contrast: number; passes: boolean; large: boolean
+  /** True when a background-image sits behind the text, so the ratio is an estimate, not a verdict. */
+  uncertain?: boolean
 } {
   const cs = getComputedStyle(el)
   const bg = effectiveBackground(el)
@@ -2154,6 +2163,7 @@ function probeColors(el: Element): {
     contrast: Math.round(ratio * 10) / 10,
     passes: ratio >= (large ? 3 : 4.5),
     large,
+    ...(bg.imaged ? { uncertain: true } : {}),
   }
 }
 
@@ -2222,7 +2232,13 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     try {
       const c = probeColors(el)
       node.colors = c
-      if (!c.passes) node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
+      // Only flag something a user actually READS. A container with no text of its own inherits a
+      // colour but displays nothing, so a "failure" there is pure noise in an audit list — and an
+      // audit people learn to skim is worth nothing. Likewise skip an uncertain verdict.
+      const hasReadableText = !!(node.text || node.label || node.value)
+      if (!c.passes && hasReadableText && !c.uncertain) {
+        node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
+      }
     } catch {}
     return node
   }
