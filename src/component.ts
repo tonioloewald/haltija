@@ -1867,7 +1867,12 @@ function findCanvasesDeep(root: ParentNode = document): HTMLCanvasElement[] {
  *  - nothing at all — take the largest canvas on the page. With one interesting canvas (the common
  *    case) that's unambiguous, and it makes `hj screenshot --canvas` work with no selector.
  */
-function resolveCanvasDeep(selector?: string): { canvas: HTMLCanvasElement | null; note?: string } {
+function resolveCanvasDeep(selector?: string): {
+  canvas: HTMLCanvasElement | null
+  /** A selector that matched something that is NOT a canvas — so we can say which, specifically. */
+  matchedNonCanvas?: Element
+  note?: string
+} {
   const all = findCanvasesDeep()
   if (!selector || !String(selector).trim()) {
     if (!all.length) return { canvas: null }
@@ -1899,6 +1904,10 @@ function resolveCanvasDeep(selector?: string): { canvas: HTMLCanvasElement | nul
     const inHost = (light as HTMLElement).shadowRoot?.querySelector('canvas')
     if (inHost) return { canvas: inHost as HTMLCanvasElement }
   }
+  // Remember a light-DOM match that isn't a canvas and has no canvas inside: pointing --canvas at a
+  // <div> deserves "that's a div, not a canvas", which is more useful than "not found". Recorded
+  // rather than returned immediately, so the shadow-piercing attempts below still get their turn.
+  const nonCanvas = light && light.tagName !== 'CANVAS' ? light : undefined
   // A descendant selector that CROSSES a shadow boundary — `tosi-b3d canvas` — is what people
   // write first, and plain CSS can't express it. Split at each space and let a matched host become
   // the scope for the remainder, so the natural form works instead of merely being diagnosed.
@@ -1920,6 +1929,7 @@ function resolveCanvasDeep(selector?: string): { canvas: HTMLCanvasElement | nul
     const crossed = descend(document, 0)
     if (crossed) return { canvas: crossed }
   }
+  if (nonCanvas) return { canvas: null, matchedNonCanvas: nonCanvas }
 
   // Finally, try the selector INSIDE each shadow root (e.g. `--canvas canvas` on a shadow page).
   for (const el of Array.from(document.querySelectorAll('*'))) {
@@ -1928,7 +1938,7 @@ function resolveCanvasDeep(selector?: string): { canvas: HTMLCanvasElement | nul
     const hit = sr.querySelector(sel)
     if (hit && hit.tagName === 'CANVAS') return { canvas: hit as HTMLCanvasElement }
   }
-  return { canvas: null }
+  return nonCanvas ? { canvas: null, matchedNonCanvas: nonCanvas } : { canvas: null }
 }
 
 /**
@@ -2287,7 +2297,7 @@ function elementNotFoundMessage(target: string): string {
     `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` +
     `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` +
     `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` +
-    `(4) if the page is still loading, \`hj wait --selector <sel>\` before acting.`
+    `(4) if the page is still loading, \`hj wait <selector>\` before acting.`
   )
 }
 
@@ -8614,6 +8624,16 @@ export class DevChannel extends HTMLElement {
           // host element (takes the canvas inside it), or nothing at all (largest canvas on the page).
           const resolved = resolveCanvasDeep(payload.canvas)
           const el = resolved.canvas
+          if (!el && resolved.matchedNonCanvas) {
+            const wrong = resolved.matchedNonCanvas
+            this.respond(
+              msg.id, false, null,
+              `Element "${payload.canvas}" is a <${wrong.tagName.toLowerCase()}>, not a <canvas>, ` +
+                `and contains no canvas. Use selector/ref for a normal screenshot, point --canvas at ` +
+                `the canvas itself, or omit the selector to capture the largest canvas on the page.`,
+            )
+            return
+          }
           if (!el) {
             const all = findCanvasesDeep()
             const inventory = all.length

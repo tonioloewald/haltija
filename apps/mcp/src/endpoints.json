@@ -1480,6 +1480,13 @@
           ],
           "description": "Device-pixel scale for the schematic image (default 2)"
         },
+        "file": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "With image: save the PNG to /tmp/haltija-schematics and return its path (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
+        },
         "window": {
           "type": [
             "string",

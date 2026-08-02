@@ -441,6 +441,7 @@ or animation timing, and structure (nesting) is carried for free.
 | `maxNodes` | number,null | Cap on DOM-fallback nodes (default 400) |
 | `image` | boolean,null | Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both) |
 | `scale` | number,null | Device-pixel scale for the schematic image (default 2) |
+| `file` | boolean,null | With image: save the PNG to /tmp/haltija-schematics and return its path (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image. |
 | `window` | string,null | Target window ID |
 
 **Examples:**

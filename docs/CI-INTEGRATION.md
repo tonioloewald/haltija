@@ -471,7 +471,7 @@ wait_for_haltija() {
 wait_for_element() {
   local selector="$1"
   local timeout="${2:-10}"
-  hj wait --selector "$selector" --timeout "${timeout}000"
+  hj wait "$selector" --timeout "${timeout}000"
 }
 
 assert_url_contains() {

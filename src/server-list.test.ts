@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { collectCandidates, describeServer, sortRows, labelFor } from './server-list'
+import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list'
 
 describe('collectCandidates', () => {
   it('includes the well-known defaults even when the registry is empty', () => {
@@ -74,5 +74,31 @@ describe('sortRows / labelFor', () => {
     expect(labelFor({ port: '8700', name: 'auto-8700', cwd: null, up: true, desktopApp: true })).toBe('desktop')
     expect(labelFor({ port: '9000', name: 'proj', cwd: null, up: true, desktopApp: false })).toBe('proj')
     expect(labelFor({ port: '9000', name: null, cwd: null, up: true, desktopApp: false })).toBe('(unnamed)')
+  })
+})
+
+describe('isAmbiguousTarget', () => {
+  const live = (...ports: number[]) => ports.map((p) => ({ name: `auto-${p}`, port: p, cwd: '/x' }))
+
+  it('does NOT count the resolved server as "other" — the doctor false-fail', () => {
+    // Reproduces the reported bug: one live server, on 8700, and `hj doctor` declared the target
+    // ambiguous because of it. `until hj doctor` in the CI docs could never break.
+    expect(isAmbiguousTarget('8700 (default)', 8700, live(8700)).ambiguous).toBe(false)
+  })
+
+  it('IS ambiguous when a genuinely different server is live', () => {
+    const r = isAmbiguousTarget('8700 (default)', 8700, live(8700, 9001))
+    expect(r.ambiguous).toBe(true)
+    expect(r.others.map((o) => o.port)).toEqual([9001])
+  })
+
+  it('is never ambiguous when the target was chosen explicitly', () => {
+    // --port/--name is a decision; warning about it would be noise on every command.
+    expect(isAmbiguousTarget('--port flag', 9001, live(8700, 9001)).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('name "api" via --name flag', 9001, live(8700)).ambiguous).toBe(false)
+  })
+
+  it('is not ambiguous when nothing else is running', () => {
+    expect(isAmbiguousTarget('8700 (default)', 8700, []).ambiguous).toBe(false)
   })
 })

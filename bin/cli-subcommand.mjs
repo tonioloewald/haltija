@@ -180,6 +180,7 @@ export const ARG_MAPS = {
       // Rasterized schematic. Must be a BITMAP to earn the vision-encoder discount — SVG markup
       // sent to a model is just text tokens, and worse than the JSON it replaces.
       if (args[i] === '--image' || args[i] === '--png') { body.image = true; continue }
+      if (args[i] === '--data-url') { body.file = false; continue }
       if (args[i] === '--scale') { body.scale = num(args[++i]); continue }
     }
     return body
@@ -201,7 +202,14 @@ export const ARG_MAPS = {
     return body
   },
   'video-stop': () => ({}),
-  'events-watch': (args) => ({ preset: args[0] || 'interactive' }),
+  'events-watch': (args) => {
+    // Accept `--preset x` as well as a bare `x`. Taking args[0] blindly turned
+    // `events-watch --preset interactive` into {preset:'--preset'}, which silently subscribed to
+    // EVERY category while the server echoed back an empty list — and SKILL.md printed that form.
+    const i = args.indexOf('--preset')
+    const preset = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith('-'))
+    return { preset: preset || 'interactive' }
+  },
   'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
   'network-watch': (args) => ({ preset: args[0] || 'standard' }),
   // send <agent> <message> or send selection/recording
@@ -1084,7 +1092,7 @@ async function doRequest(url, method, body, context = {}) {
 
 /** Known valid subcommands */
 export const KNOWN_COMMANDS = new Set([
-  'tree', 'map', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form',
+  'tree', 'map', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form', 'wait',
   'click', 'type', 'key', 'drag', 'scroll', 'call',
   'navigate', 'refresh', 'location',
   'events', 'events-watch', 'events-unwatch', 'console',

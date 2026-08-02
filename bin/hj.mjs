@@ -13,7 +13,7 @@
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
-import { collectCandidates, describeServer, sortRows, labelFor } from './server-list.mjs'
+import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -21,6 +21,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
+
+/** Commands hj handles itself rather than routing to the server. */
+const HJ_LOCAL_COMMANDS = new Set(['where', 'servers', 'ls', 'doctor', 'shutdown', 'quit'])
 
 // One definition. These were redeclared inside a dozen functions, which is how `green` ended up in
 // some outputs and not others — small enough that nobody notices, exactly the kind of duplication
@@ -240,11 +243,13 @@ async function runDoctor(port, portSource, jsonOutput) {
   }
 
   // Ambiguous targeting: we fell back to the shared default while other projects' servers are live.
-  const live = listLiveInstances()
-  const ambiguous = portSource === '8700 (default)' && live.length > 0
+  // ONE predicate, shared with the resolution-time warning above and unit-tested — the two hand-
+  // written copies both counted the resolved server as "other", so `hj doctor` failed against the
+  // server it had just validated.
+  const { ambiguous, others } = isAmbiguousTarget(portSource, port, listLiveInstances())
   if (ambiguous) {
     problems.push(
-      `targeting the shared default port 8700, but ${live.length} other haltija server(s) are ` +
+      `targeting the shared default port 8700, but ${others.length} other haltija server(s) are ` +
         `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` +
         `Pick one with --name/--port, or run from the project's directory.`,
     )
@@ -340,7 +345,8 @@ function resolveByCwd(cwd, instances) {
 // exist in their build (issue #14). Worse, haltija's own error messages tell you to run
 // `hj <cmd> --help`, so the remedy we print was broken: a printed remedy is a testable claim.
 if ((args.includes('--help') || args.includes('-h')) && args[0] && !args[0].startsWith('-')) {
-  filterHelp(args[0])
+  // Command help first; fall back to a text search so `hj help <topic>` still works.
+  if (!commandHelp(args[0])) filterHelp(args[0])
   process.exit(0)
 }
 
@@ -469,8 +475,9 @@ if (portFlag) {
     // and you're driving someone else's. Say so rather than doing it quietly.
     // Reached only when nothing else selected a port, so it can't contradict an
     // explicit choice.
-    if (live.length) {
-      const names = live.map((e) => `${e.name} (${e.cwd})`).join(', ')
+    const { ambiguous, others } = isAmbiguousTarget('8700 (default)', port, live)
+    if (ambiguous) {
+      const names = others.map((e) => `${e.name} (${e.cwd})`).join(', ')
       if (STRICT) {
         // A lane must not silently drive another project's browser (issue #8, case 1).
         console.error(`hj: ERROR (strict) — refusing to fall back to the default port 8700 while other haltija servers are running: ${names}`)
@@ -669,6 +676,43 @@ if (!isSubcommand(subcommand)) {
   }
 } else {
   runSubcommand(subcommand, subArgs, port, { noLaunch, explicitTarget })
+}
+
+/**
+ * Help for one command, from the sources that actually define the surface: KNOWN_COMMANDS (what the
+ * CLI accepts), COMMAND_HINTS (generated from api-schema at build time), and the hj-local commands.
+ *
+ * `filterHelp` greps a hand-maintained blurb that lists ~26 of ~66 commands, so routing
+ * `hj <cmd> --help` at it made 40 commands report "No commands matching '<cmd>'" — worse than the
+ * global help it replaced, because it asserts the command does not exist. `map` and `doctor` were
+ * among them, which are exactly the two a reporter had already concluded were missing, and exactly
+ * what this release's teachable errors tell people to run.
+ *
+ * Returns false when the topic isn't a command, so `hj help <topic>` can still do a text search.
+ */
+function commandHelp(cmd) {
+  const hint = COMMAND_HINTS[cmd]
+  const known = isSubcommand(cmd) || HJ_LOCAL_COMMANDS.has(cmd)
+  if (!known && !hint) return false
+
+  console.log(`${bold('hj ' + cmd)}${hint ? '  ' + dim(hint) : ''}`)
+  console.log('')
+
+  // Any blurb lines that mention it (usage examples live there), best-effort.
+  const lines = listSubcommands().split('\n')
+  const shown = lines.filter((l) => {
+    const plain = l.replace(/\x1b\[[0-9;]*m/g, '')
+    return new RegExp(`\\b${cmd}\\b`).test(plain)
+  })
+  for (const l of shown) console.log(l)
+  if (shown.length) console.log('')
+
+  if (HJ_LOCAL_COMMANDS.has(cmd)) {
+    console.log(dim('  Runs client-side (no page interaction).'))
+  } else {
+    console.log(dim(`  Full reference: hj api   |   machine-readable: hj ${cmd} --json`))
+  }
+  return true
 }
 
 function filterHelp(topic) {

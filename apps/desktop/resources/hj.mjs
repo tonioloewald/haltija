@@ -969,6 +969,10 @@ var ARG_MAPS = {
         body.image = true;
         continue;
       }
+      if (args[i] === "--data-url") {
+        body.file = false;
+        continue;
+      }
       if (args[i] === "--scale") {
         body.scale = num(args[++i]);
         continue;
@@ -994,7 +998,11 @@ var ARG_MAPS = {
     return body;
   },
   "video-stop": () => ({}),
-  "events-watch": (args) => ({ preset: args[0] || "interactive" }),
+  "events-watch": (args) => {
+    const i = args.indexOf("--preset");
+    const preset = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith("-"));
+    return { preset: preset || "interactive" };
+  },
   "mutations-watch": (args) => ({ preset: args[0] || "smart" }),
   "network-watch": (args) => ({ preset: args[0] || "standard" }),
   "test-run": (args) => {
@@ -1780,6 +1788,7 @@ var KNOWN_COMMANDS = new Set([
   "styles",
   "find",
   "form",
+  "wait",
   "click",
   "type",
   "key",
@@ -2089,12 +2098,18 @@ function sortRows(rows) {
 function labelFor(row) {
   return row.desktopApp ? "desktop" : row.name || "(unnamed)";
 }
+function isAmbiguousTarget(portSource, resolvedPort, liveInstances) {
+  const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort));
+  const fellBackToDefault = /^8700 \(default\)/.test(portSource);
+  return { ambiguous: fellBackToDefault && others.length > 0, others };
+}
 
 // bin/hj.mjs
 import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 var args = process.argv.slice(2);
+var HJ_LOCAL_COMMANDS = new Set(["where", "servers", "ls", "doctor", "shutdown", "quit"]);
 var bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
 var dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
 var green2 = (s) => `\x1B[32m${s}\x1B[0m`;
@@ -2254,10 +2269,9 @@ async function runDoctor(port, portSource, jsonOutput) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`);
     }
   }
-  const live = listLiveInstances();
-  const ambiguous = portSource === "8700 (default)" && live.length > 0;
+  const { ambiguous, others } = isAmbiguousTarget(portSource, port, listLiveInstances());
   if (ambiguous) {
-    problems.push(`targeting the shared default port 8700, but ${live.length} other haltija server(s) are ` + `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` + `Pick one with --name/--port, or run from the project's directory.`);
+    problems.push(`targeting the shared default port 8700, but ${others.length} other haltija server(s) are ` + `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` + `Pick one with --name/--port, or run from the project's directory.`);
   }
   const ok = problems.length === 0;
   if (jsonOutput) {
@@ -2334,7 +2348,8 @@ function resolveByCwd(cwd, instances) {
   return candidates[0];
 }
 if ((args.includes("--help") || args.includes("-h")) && args[0] && !args[0].startsWith("-")) {
-  filterHelp(args[0]);
+  if (!commandHelp(args[0]))
+    filterHelp(args[0]);
   process.exit(0);
 }
 if (!args.length || args.includes("--help") || args.includes("-h")) {
@@ -2425,8 +2440,9 @@ if (portFlag) {
   } else {
     port = "8700";
     portSource = "8700 (default)";
-    if (live.length) {
-      const names = live.map((e) => `${e.name} (${e.cwd})`).join(", ");
+    const { ambiguous, others } = isAmbiguousTarget("8700 (default)", port, live);
+    if (ambiguous) {
+      const names = others.map((e) => `${e.name} (${e.cwd})`).join(", ");
       if (STRICT) {
         console.error(`hj: ERROR (strict) — refusing to fall back to the default port 8700 while other haltija servers are running: ${names}`);
         console.error(`hj: this shell's cwd (${process.cwd()}) matches none of them, so the target is ambiguous.`);
@@ -2561,6 +2577,30 @@ Examples: hj tree, hj navigate <url>, hj click @42`);
   }
 } else {
   runSubcommand(subcommand, subArgs, port, { noLaunch, explicitTarget });
+}
+function commandHelp(cmd) {
+  const hint = COMMAND_HINTS[cmd];
+  const known = isSubcommand(cmd) || HJ_LOCAL_COMMANDS.has(cmd);
+  if (!known && !hint)
+    return false;
+  console.log(`${bold2("hj " + cmd)}${hint ? "  " + dim3(hint) : ""}`);
+  console.log("");
+  const lines = listSubcommands().split(`
+`);
+  const shown = lines.filter((l) => {
+    const plain = l.replace(/\x1b\[[0-9;]*m/g, "");
+    return new RegExp(`\\b${cmd}\\b`).test(plain);
+  });
+  for (const l of shown)
+    console.log(l);
+  if (shown.length)
+    console.log("");
+  if (HJ_LOCAL_COMMANDS.has(cmd)) {
+    console.log(dim3("  Runs client-side (no page interaction)."));
+  } else {
+    console.log(dim3(`  Full reference: hj api   |   machine-readable: hj ${cmd} --json`));
+  }
+  return true;
 }
 function filterHelp(topic) {
   const needle = topic.toLowerCase();

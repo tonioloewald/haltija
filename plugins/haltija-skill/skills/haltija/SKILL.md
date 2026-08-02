@@ -246,7 +246,7 @@ answer.** Two can appear on an untargeted command:
 ## Watching what the page does
 
 ```bash
-hj events-watch --preset interactive   # start aggregating semantic events; hj events to read them
+hj events-watch interactive   # start aggregating semantic events; hj events to read them
 hj events                              # "user typed 'x'", not 18 keydowns
 hj mutations-watch                     # DOM changes (added/removed/changed), debounced
 hj network-watch                       # XHR/fetch traffic; hj network to read, hj network-stats to summarize

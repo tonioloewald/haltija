@@ -85,3 +85,24 @@ export function sortRows(rows: ServerRow[]): ServerRow[] {
 export function labelFor(row: ServerRow): string {
   return row.desktopApp ? 'desktop' : row.name || '(unnamed)'
 }
+
+/**
+ * Is this shell's target genuinely ambiguous?
+ *
+ * Only when we fell back to the shared default AND another *different* server is live. The subtle
+ * part is `port !== resolvedPort`: without it the resolved server counts itself as "other", so
+ * `hj doctor` probed 8700 successfully and then failed with "1 other haltija server(s) are
+ * running… ambiguous" — naming 8700. `docs/CI-INTEGRATION.md` loops `until hj doctor`, so that loop
+ * could never break. The desktop app hit it by construction: its public server registers cwd-less,
+ * so it never wins cwd routing and always looked like somebody else.
+ */
+export function isAmbiguousTarget(
+  portSource: string,
+  resolvedPort: string | number,
+  liveInstances: RegistryEntry[],
+): { ambiguous: boolean; others: RegistryEntry[] } {
+  const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort))
+  // Only the unqualified fallback is ambiguous — an explicit --port/--name is a choice, not a guess.
+  const fellBackToDefault = /^8700 \(default\)/.test(portSource)
+  return { ambiguous: fellBackToDefault && others.length > 0, others }
+}

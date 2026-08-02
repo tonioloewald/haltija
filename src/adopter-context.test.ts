@@ -172,12 +172,23 @@ describe('adopter context: stdout stays machine-parseable (issue #14)', () => {
     expect(stderr.length).toBeGreaterThan(0)
   })
 
-  it('hj <cmd> --help describes THAT command, not the global help', async () => {
-    // Falling through to global help reads exactly like "unknown command" — a reporter concluded
-    // `doctor`/`map` did not exist in their build. haltija's own errors recommend this form.
-    const { stdout } = await runHj(['doctor', '--help'], REPO_ROOT)
-    expect(stdout.toLowerCase()).toContain('doctor')
-  })
+  it('hj <cmd> --help describes EVERY command the CLI accepts', async () => {
+    // This assertion used to be `stdout.contains('doctor')` — which the FAILURE message
+    // ("No commands matching 'doctor'.") also satisfies, so the guard certified the bug it was
+    // written to prevent. Assert the negative, and over the whole surface rather than one sample:
+    // the breakage covered 40 of ~66 commands while the single-sample test stayed green.
+    const { KNOWN_COMMANDS } = await import('../bin/cli-subcommand.mjs')
+    const all = [...(KNOWN_COMMANDS as Set<string>), 'where', 'servers', 'doctor', 'shutdown']
+
+    const broken: string[] = []
+    for (const cmd of all) {
+      const { stdout } = await runHj([cmd, '--help'], REPO_ROOT)
+      if (/No commands matching/.test(stdout)) broken.push(cmd)
+      // And it must actually be about that command, not the global blurb.
+      else if (!stdout.includes(`hj ${cmd}`)) broken.push(`${cmd} (no per-command header)`)
+    }
+    expect(broken).toEqual([])
+  }, 120_000)
 })
 
 describe('adopter context: TWO PROJECTS at once (issues #1, #2)', () => {

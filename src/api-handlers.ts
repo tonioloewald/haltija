@@ -576,7 +576,7 @@ registerHandler(api.drag, async (body, ctx) => {
       error:
         `Element not found: ${targetDesc}. Run \`hj map\` or \`hj tree\` to see what is on the page; ` +
         `prefer text selectors (\`:text(save)\`, \`:text-is(Save)\`) or \`[data-testid=…]\` over ` +
-        `structural ones, and \`hj wait --selector <sel>\` if the page may still be loading.`,
+        `structural ones, and \`hj wait <selector>\` if the page may still be loading.`,
     }, { headers: ctx.headers })
   }
   const box = inspectResponse.data.box
@@ -848,6 +848,29 @@ registerHandler(api.map, async (body, ctx) => {
     image: body.image,
     scale: body.scale,
   }, 15000, windowId)
+
+  // Write the schematic to disk instead of returning ~700KB of base64 on stdout. Measured on
+  // haltija's own homepage: `hj map --image` emitted 736k chars (~184k tokens) where the plain map
+  // is 18k — 40x the thing it was supposed to be cheaper than, and unusable besides, because
+  // nothing renders a data URL out of a terminal. The vision-encoder discount is only earned when
+  // the bytes reach a model AS an image, which means a file. Mirrors /screenshot.
+  const img = (response as any)?.data?.image as string | undefined
+  if (body.file !== false && img) {
+    const match = img.match(/^data:image\/(\w+);base64,(.+)$/)
+    if (match) {
+      try {
+        const dir = '/tmp/haltija-schematics'
+        const { mkdirSync, writeFileSync } = await import('fs')
+        mkdirSync(dir, { recursive: true })
+        const filepath = `${dir}/map-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${match[1]}`
+        writeFileSync(filepath, Buffer.from(match[2], 'base64'))
+        ;(response as any).data.path = filepath
+        delete (response as any).data.image
+      } catch {
+        // If the write fails, keep the data URL rather than losing the capture entirely.
+      }
+    }
+  }
   return Response.json(response, { headers: ctx.headers })
 })
 

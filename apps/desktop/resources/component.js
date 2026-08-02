@@ -1342,6 +1342,7 @@
       if (inHost)
         return { canvas: inHost };
     }
+    const nonCanvas = light && light.tagName !== "CANVAS" ? light : undefined;
     const tokens = sel.split(/\s+/).filter(Boolean);
     if (tokens.length > 1) {
       const descend = (scope, i) => {
@@ -1365,6 +1366,8 @@
       if (crossed)
         return { canvas: crossed };
     }
+    if (nonCanvas)
+      return { canvas: null, matchedNonCanvas: nonCanvas };
     for (const el of Array.from(document.querySelectorAll("*"))) {
       const sr = el.shadowRoot;
       if (!sr)
@@ -1373,7 +1376,7 @@
       if (hit && hit.tagName === "CANVAS")
         return { canvas: hit };
     }
-    return { canvas: null };
+    return nonCanvas ? { canvas: null, matchedNonCanvas: nonCanvas } : { canvas: null };
   }
   function collectCanvasThumbnails(maxEdge = 320) {
     const out = [];
@@ -1611,7 +1614,7 @@
     if (isRef) {
       return `${base} Ref IDs are assigned by \`hj tree\` and only stay valid while that element is in the ` + `DOM — a re-render or navigation invalidates them. Run \`hj tree\` again for fresh refs, or ` + `target by text instead (\`hj click 'button:text(save)'\`), which survives re-renders.`;
     }
-    return `${base} Check in this order: (1) \`hj map\` or \`hj tree\` to see what is actually there; ` + `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` + `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` + `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` + `(4) if the page is still loading, \`hj wait --selector <sel>\` before acting.`;
+    return `${base} Check in this order: (1) \`hj map\` or \`hj tree\` to see what is actually there; ` + `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` + `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` + `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` + `(4) if the page is still loading, \`hj wait <selector>\` before acting.`;
   }
   function buildDomAffordances(maxNodes = 400) {
     const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
@@ -6372,6 +6375,11 @@ ${elementSummary}${moreText}`;
           if (payload2?.canvas !== undefined) {
             const resolved = resolveCanvasDeep(payload2.canvas);
             const el = resolved.canvas;
+            if (!el && resolved.matchedNonCanvas) {
+              const wrong = resolved.matchedNonCanvas;
+              this.respond(msg2.id, false, null, `Element "${payload2.canvas}" is a <${wrong.tagName.toLowerCase()}>, not a <canvas>, ` + `and contains no canvas. Use selector/ref for a normal screenshot, point --canvas at ` + `the canvas itself, or omit the selector to capture the largest canvas on the page.`);
+              return;
+            }
             if (!el) {
               const all = findCanvasesDeep();
               const inventory = all.length ? `Found ${all.length} canvas element(s): ` + all.map((c) => {
