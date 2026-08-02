@@ -2017,7 +2017,11 @@ function isTopLevelTab(w) {
   return (w.windowType || "tab") === "tab";
 }
 function isVisible(w) {
-  return w.active !== false;
+  if (w.hidden === true)
+    return false;
+  if (w.active === false)
+    return false;
+  return true;
 }
 function normalizeOrigin(value) {
   const v = String(value || "").trim();
@@ -2101,7 +2105,10 @@ function collectCandidates(instances, resolvedPort, defaults = [8700, 8701]) {
   }
   return [...byPort.values()];
 }
-function describeServer(candidate, status) {
+function describeServer(candidate, status, probe = {}) {
+  if (!status && probe.authRefused) {
+    return { ...candidate, up: true, authRefused: true, version: "?", tabs: 0 };
+  }
   if (!status)
     return { ...candidate, up: false };
   return {
@@ -2130,7 +2137,14 @@ function isTopLevelTab2(w) {
   return (w.windowType || "tab") === "tab";
 }
 function isVisible2(w) {
-  return w.active !== false;
+  if (w.hidden === true)
+    return false;
+  if (w.active === false)
+    return false;
+  return true;
+}
+function visibilityKnown(w) {
+  return typeof w.active === "boolean" || typeof w.hidden === "boolean";
 }
 function isDrivable(windows) {
   return windows.some(isTopLevelTab2);
@@ -2155,12 +2169,17 @@ if (args[0] === "--version" || args[0] === "-v") {
 async function runWhere(port, portSource, jsonOutput) {
   let serverInfo = null;
   let serverError = null;
+  let serverAuthRefused = false;
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
+      headers: process.env.HALTIJA_TOKEN ? { "X-Haltija-Token": process.env.HALTIJA_TOKEN } : {},
       signal: AbortSignal.timeout(2000)
     });
     if (resp.ok) {
       serverInfo = await resp.json();
+    } else if (resp.status === 401 || resp.status === 403) {
+      serverAuthRefused = true;
+      serverError = process.env.HALTIJA_TOKEN ? `a server IS running here, but it rejected the token in HALTIJA_TOKEN — check the value matches what the server was started with (haltija --token <secret>)` : `a server IS running here, but it requires a token and this shell has none — export HALTIJA_TOKEN=<secret> (the value passed to haltija --token), or use hj --token <secret>`;
     } else {
       serverError = `HTTP ${resp.status}`;
     }
@@ -2192,7 +2211,8 @@ async function runWhere(port, portSource, jsonOutput) {
     console.log(JSON.stringify({
       port: Number(port),
       portSource,
-      reachable: !!serverInfo,
+      reachable: !!serverInfo || serverAuthRefused,
+      authRefused: serverAuthRefused,
       error: serverError,
       client: HJ_VERSION,
       versionSkew: serverInfo ? differsBeyondPatch(serverInfo.serverVersion || "", HJ_VERSION) : null,
@@ -2209,7 +2229,7 @@ async function runWhere(port, portSource, jsonOutput) {
   }
   console.log(`${bold2("port:")}   ${port} ${dim3(`(${portSource})`)}`);
   if (!serverInfo) {
-    console.log(`${bold2("server:")} ${dim3(`unreachable — ${serverError}`)}`);
+    console.log(serverAuthRefused ? `${bold2("server:")} ${yellow2("running, but not readable by this shell")} ${dim3(`— ${serverError}`)}` : `${bold2("server:")} ${dim3(`unreachable — ${serverError}`)}`);
     return;
   }
   const desc = [
@@ -2241,7 +2261,10 @@ async function runServers(resolvedPort) {
         headers: token ? { "X-Haltija-Token": token } : {},
         signal: AbortSignal.timeout(2000)
       });
-      return describeServer(c, resp.ok ? await resp.json() : null);
+      if (resp.ok)
+        return describeServer(c, await resp.json());
+      const authRefused = resp.status === 401 || resp.status === 403;
+      return describeServer(c, null, { authRefused });
     } catch {
       return describeServer(c, null);
     }
@@ -2256,8 +2279,8 @@ async function runServers(resolvedPort) {
   for (const r of up) {
     const here = String(r.port) === String(resolvedPort) ? green2("▸") : " ";
     const name = labelFor(r);
-    const tabs = `${r.tabs} tab${r.tabs === 1 ? "" : "s"}`;
-    const kind = r.desktopApp ? "desktop app" : r.cwd || "";
+    const tabs = r.authRefused ? yellow2("auth required") : `${r.tabs} tab${r.tabs === 1 ? "" : "s"}`;
+    const kind = r.authRefused ? dim3("needs HALTIJA_TOKEN to inspect") : r.desktopApp ? "desktop app" : r.cwd || "";
     console.log(`  ${here} ${String(r.port).padEnd(6)} ${name.padEnd(14)} v${String(r.version).padEnd(8)} ${tabs.padEnd(9)} ${dim3(kind)}`);
   }
   if (!up.some((r) => String(r.port) === String(resolvedPort))) {
@@ -2271,6 +2294,7 @@ async function runDoctor(port, portSource, jsonOutput) {
   const token = process.env.HALTIJA_TOKEN;
   const problems = [];
   const notes = [];
+  const unchecked = [];
   let status = null;
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
@@ -2292,6 +2316,10 @@ async function runDoctor(port, portSource, jsonOutput) {
       problems.push(`the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` + `Open a tab in the desktop app, or inject the widget into a page. ` + `("server is up" is not "server is drivable" — that's what this check exists for.)`);
     }
     const hidden = tabs.filter((w) => !isVisible2(w));
+    const silent = tabs.filter((w) => !visibilityKnown(w));
+    if (ready && silent.length) {
+      unchecked.push(`${silent.length} of ${tabs.length} tab(s) did not report visibility${status.serverVersion ? ` (server ${status.serverVersion} is too old to send it)` : ""} — this check ASSUMED they are on screen and cannot confirm it. ` + `A backgrounded tab returns plausible-but-wrong results (rAF/timers throttled), so if ` + `something looks stale, that assumption is the first thing to doubt. ` + `Upgrade the server to make this checkable.`);
+    }
     if (ready && hidden.length === tabs.length) {
       problems.push(`every connected tab reports HIDDEN — results from a backgrounded tab can be ` + `plausible-but-wrong (rAF/timers throttled). Bring one to the front.`);
     } else if (hidden.length) {
@@ -2305,7 +2333,7 @@ async function runDoctor(port, portSource, jsonOutput) {
   if (ambiguous) {
     problems.push(`targeting the shared default port 8700, but ${others.length} other haltija server(s) are ` + `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` + `Pick one with --name/--port, or run from the project's directory.`);
   }
-  const ok = problems.length === 0;
+  const ok = problems.length === 0 && !(STRICT && unchecked.length > 0);
   if (jsonOutput) {
     console.log(JSON.stringify({
       ok,
@@ -2315,7 +2343,8 @@ async function runDoctor(port, portSource, jsonOutput) {
       ready: status ? typeof status.ready === "boolean" ? status.ready : (status.windows?.length ?? 0) > 0 : false,
       tabs: status?.windows?.length ?? 0,
       problems,
-      notes
+      notes,
+      unchecked
     }, null, 2));
     return ok;
   }
@@ -2326,10 +2355,13 @@ async function runDoctor(port, portSource, jsonOutput) {
   }
   for (const n of notes)
     console.log(`${yellow2("!")} ${n}`);
+  for (const u of unchecked)
+    console.log(`${dim3("?")} ${u}`);
   for (const p of problems)
     console.log(`${red2("✗")} ${p}`);
-  if (ok)
-    console.log(`${green2("✓")} ready to drive`);
+  if (ok) {
+    console.log(unchecked.length ? `${green2("✓")} ready to drive ${dim3(`(${unchecked.length} check${unchecked.length === 1 ? "" : "s"} could not be performed — see ? above)`)}` : `${green2("✓")} ready to drive`);
+  }
   return ok;
 }
 function lookupNamedInstance(name) {

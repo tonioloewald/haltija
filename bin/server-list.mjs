@@ -12,7 +12,10 @@ function collectCandidates(instances, resolvedPort, defaults = [8700, 8701]) {
   }
   return [...byPort.values()];
 }
-function describeServer(candidate, status) {
+function describeServer(candidate, status, probe = {}) {
+  if (!status && probe.authRefused) {
+    return { ...candidate, up: true, authRefused: true, version: "?", tabs: 0 };
+  }
   if (!status)
     return { ...candidate, up: false };
   return {

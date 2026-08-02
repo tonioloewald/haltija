@@ -4,7 +4,14 @@ function isTopLevelTab(w) {
   return (w.windowType || "tab") === "tab";
 }
 function isVisible(w) {
-  return w.active !== false;
+  if (w.hidden === true)
+    return false;
+  if (w.active === false)
+    return false;
+  return true;
+}
+function visibilityKnown(w) {
+  return typeof w.active === "boolean" || typeof w.hidden === "boolean";
 }
 function isVisibleTab(w) {
   return isTopLevelTab(w) && isVisible(w);
@@ -23,6 +30,7 @@ function summarizeWindow(w) {
   };
 }
 export {
+  visibilityKnown,
   summarizeWindow,
   isVisibleTab,
   isVisible,

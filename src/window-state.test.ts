@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { isTopLevelTab, isVisible, isVisibleTab, isDrivable, summarizeWindow } from './window-state'
+import { isTopLevelTab, isVisible, isVisibleTab, isDrivable, summarizeWindow, visibilityKnown } from './window-state'
 
 const tab = (over: Partial<{ active: boolean; windowType: string }> = {}) => ({ id: 'w', ...over })
 
@@ -58,5 +58,40 @@ describe('summarizeWindow', () => {
       const s = summarizeWindow(w)
       expect(s.active).toBe(!s.hidden)
     }
+  })
+})
+
+describe('isVisible reads BOTH field names (M3 — the false-green bug)', () => {
+  it('honours `hidden: true`, the shape /status sent before 1.11.4', () => {
+    // This is the whole bug. `w.active !== false` is TRUE for {hidden:true}, so `hj doctor`
+    // printed "✓ ready to drive" at a server whose every tab was asleep — and CI consumed it.
+    expect(isVisible({ id: 'w', hidden: true })).toBe(false)
+    expect(isVisible({ id: 'w', hidden: false })).toBe(true)
+  })
+
+  it('honours `active: false`, the shape /windows sends', () => {
+    expect(isVisible({ id: 'w', active: false })).toBe(false)
+  })
+
+  it('either field alone is enough to call a tab hidden', () => {
+    // Servers in the wild send one, the other, or both. Agreeing with whichever says "hidden"
+    // fails closed; requiring both would let a half-speaking server look awake.
+    expect(isVisible({ id: 'w', hidden: true, active: true })).toBe(false)
+    expect(isVisible({ id: 'w', hidden: false, active: false })).toBe(false)
+  })
+})
+
+describe('visibilityKnown separates a check from an assumption', () => {
+  it('a tab that reported neither field is UNKNOWN, not confirmed-visible', () => {
+    // isVisible must still answer something, and `true` is the right guess — but a diagnostic
+    // that prints that guess as a passed check is the failure this release exists to end.
+    const w = { id: 'w' }
+    expect(isVisible(w)).toBe(true)
+    expect(visibilityKnown(w)).toBe(false)
+  })
+
+  it('either field being present makes it known', () => {
+    expect(visibilityKnown({ id: 'w', active: true })).toBe(true)
+    expect(visibilityKnown({ id: 'w', hidden: false })).toBe(true)
   })
 })

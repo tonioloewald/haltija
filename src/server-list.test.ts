@@ -102,3 +102,31 @@ describe('isAmbiguousTarget', () => {
     expect(isAmbiguousTarget('8700 (default)', 8700, []).ambiguous).toBe(false)
   })
 })
+
+describe('a server that refuses our token is alive, not absent', () => {
+  const cand = { port: 9999, name: 'locked', cwd: '/x' } as any
+
+  it('401/403 is reported as up, so `hj servers` cannot erase it', () => {
+    // Before: describeServer(c, null) → up:false → sortRows filters it out → "No haltija servers
+    // are running." about a server that had just answered us. The worst kind of wrong: confident,
+    // total, and about the one thing this command exists to report.
+    const row = describeServer(cand, null, { authRefused: true })
+    expect(row.up).toBe(true)
+    expect(row.authRefused).toBe(true)
+    expect(sortRows([row])).toHaveLength(1)
+  })
+
+  it('a genuinely dead server is still down — the check above can fail', () => {
+    const row = describeServer(cand, null)
+    expect(row.up).toBe(false)
+    expect(row.authRefused).toBeUndefined()
+    expect(sortRows([row])).toHaveLength(0)
+  })
+
+  it('does not claim 0 tabs for a server it could not read', () => {
+    // `tabs: 0` would render as "0 tabs", i.e. an assertion about contents we never saw.
+    const row = describeServer(cand, null, { authRefused: true })
+    expect(row.version).toBe('?')
+    expect(row.ready).toBeUndefined()
+  })
+})

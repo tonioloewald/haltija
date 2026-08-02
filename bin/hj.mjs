@@ -14,7 +14,7 @@ import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HI
 import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
-import { isDrivable, isVisible } from './window-state.mjs'
+import { isDrivable, isVisible, visibilityKnown } from './window-state.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -53,12 +53,25 @@ if (args[0] === '--version' || args[0] === '-v') {
 async function runWhere(port, portSource, jsonOutput) {
   let serverInfo = null
   let serverError = null
+  // Alive but refusing us — tracked separately so neither the label nor the JSON can call it dead.
+  let serverAuthRefused = false
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
+      // Send the token. Without it a `--token` server 401s and every branch below describes it as
+      // broken or absent — so the command whose entire job is "which server am I talking to?"
+      // answered "none" about a server that was running fine and had just replied to us.
+      headers: process.env.HALTIJA_TOKEN ? { 'X-Haltija-Token': process.env.HALTIJA_TOKEN } : {},
       signal: AbortSignal.timeout(2000),
     })
     if (resp.ok) {
       serverInfo = await resp.json()
+    } else if (resp.status === 401 || resp.status === 403) {
+      serverAuthRefused = true
+      // Name the actual cause and its remedy. "HTTP 401" sends someone to look at the server;
+      // the problem is in this shell.
+      serverError = process.env.HALTIJA_TOKEN
+        ? `a server IS running here, but it rejected the token in HALTIJA_TOKEN — check the value matches what the server was started with (haltija --token <secret>)`
+        : `a server IS running here, but it requires a token and this shell has none — export HALTIJA_TOKEN=<secret> (the value passed to haltija --token), or use hj --token <secret>`
     } else {
       serverError = `HTTP ${resp.status}`
     }
@@ -92,7 +105,14 @@ async function runWhere(port, portSource, jsonOutput) {
     console.log(JSON.stringify({
       port: Number(port),
       portSource,
-      reachable: !!serverInfo,
+      // "Reachable" means it answered — which a 401 is. It used to mean "and I could read it",
+      // so a token-protected server reported `reachable: false` and any consumer printing
+      // "start a server" gave advice that could never work against a server that was already up.
+      // `server: null` + `authRefused` carry the "couldn't read it" half.
+      reachable: !!serverInfo || serverAuthRefused,
+      // A consumer branching on `server === null` would otherwise read an auth refusal as "no
+      // server" — the same conflation the human output just stopped making.
+      authRefused: serverAuthRefused,
       error: serverError,
       client: HJ_VERSION,
       // Same policy as the human output: patch drift is not "skew", it's normal.
@@ -110,7 +130,14 @@ async function runWhere(port, portSource, jsonOutput) {
   }
   console.log(`${bold('port:')}   ${port} ${dim(`(${portSource})`)}`)
   if (!serverInfo) {
-    console.log(`${bold('server:')} ${dim(`unreachable — ${serverError}`)}`)
+    // Don't label an auth refusal "unreachable" — the body then contradicts its own headline
+    // ("unreachable — a server IS running here"), and a line that argues with itself teaches the
+    // reader to discount the whole report.
+    console.log(
+      serverAuthRefused
+        ? `${bold('server:')} ${yellow('running, but not readable by this shell')} ${dim(`— ${serverError}`)}`
+        : `${bold('server:')} ${dim(`unreachable — ${serverError}`)}`,
+    )
     return
   }
   const desc = [
@@ -155,7 +182,11 @@ async function runServers(resolvedPort) {
           headers: token ? { 'X-Haltija-Token': token } : {},
           signal: AbortSignal.timeout(2000),
         })
-        return describeServer(c, resp.ok ? await resp.json() : null)
+        if (resp.ok) return describeServer(c, await resp.json())
+        // 401/403 means "alive, and not for you" — a different fact from "nothing there", and the
+        // only one of the two the user can act on.
+        const authRefused = resp.status === 401 || resp.status === 403
+        return describeServer(c, null, { authRefused })
       } catch {
         return describeServer(c, null)
       }
@@ -173,8 +204,14 @@ async function runServers(resolvedPort) {
   for (const r of up) {
     const here = String(r.port) === String(resolvedPort) ? green('▸') : ' '
     const name = labelFor(r)
-    const tabs = `${r.tabs} tab${r.tabs === 1 ? '' : 's'}`
-    const kind = r.desktopApp ? 'desktop app' : r.cwd || ''
+    // Don't print "0 tabs" for a server that refused to tell us — that reads as an empty server
+    // and is the same laundered-guess mistake as a bare ✓ from doctor.
+    const tabs = r.authRefused ? yellow('auth required') : `${r.tabs} tab${r.tabs === 1 ? '' : 's'}`
+    const kind = r.authRefused
+      ? dim('needs HALTIJA_TOKEN to inspect')
+      : r.desktopApp
+        ? 'desktop app'
+        : r.cwd || ''
     console.log(
       `  ${here} ${String(r.port).padEnd(6)} ${name.padEnd(14)} v${String(r.version).padEnd(8)} ${tabs.padEnd(9)} ${dim(kind)}`,
     )
@@ -199,6 +236,11 @@ async function runDoctor(port, portSource, jsonOutput) {
 
   const problems = [] // fatal → exit 1
   const notes = [] // advisory
+  // Checks we could NOT perform. Deliberately a third state, not folded into either list above:
+  // "I checked and it's fine" and "I couldn't check" are different claims, and a diagnostic that
+  // renders the second as ✓ puts itself back inside the user's hypothesis space — the exact cost
+  // this command exists to remove.
+  const unchecked = []
   let status = null
 
   try {
@@ -234,6 +276,19 @@ async function runDoctor(port, portSource, jsonOutput) {
     // Reads `active` via the shared predicate: /status and /windows disagreed on polarity, and
     // keying on one endpoint's field name is what made this diverge from the origin router.
     const hidden = tabs.filter((w) => !isVisible(w))
+    // A tab that reported NEITHER field hasn't told us anything; `isVisible` had to assume. Say so
+    // rather than counting the assumption as a passed check.
+    const silent = tabs.filter((w) => !visibilityKnown(w))
+    if (ready && silent.length) {
+      unchecked.push(
+        `${silent.length} of ${tabs.length} tab(s) did not report visibility${
+          status.serverVersion ? ` (server ${status.serverVersion} is too old to send it)` : ''
+        } — this check ASSUMED they are on screen and cannot confirm it. ` +
+          `A backgrounded tab returns plausible-but-wrong results (rAF/timers throttled), so if ` +
+          `something looks stale, that assumption is the first thing to doubt. ` +
+          `Upgrade the server to make this checkable.`,
+      )
+    }
     if (ready && hidden.length === tabs.length) {
       problems.push(
         `every connected tab reports HIDDEN — results from a backgrounded tab can be ` +
@@ -260,7 +315,11 @@ async function runDoctor(port, portSource, jsonOutput) {
     )
   }
 
-  const ok = problems.length === 0
+  // In strict mode an unperformed check is a failure: a lane that asked for no-surprises would
+  // rather stop on "I couldn't verify the tabs are awake" than consume a green built on a guess.
+  // By default it stays advisory, because exiting 1 at every older server would be crying wolf —
+  // and a diagnostic nobody believes is no better than one that lies.
+  const ok = problems.length === 0 && !(STRICT && unchecked.length > 0)
 
   if (jsonOutput) {
     console.log(JSON.stringify({
@@ -269,6 +328,9 @@ async function runDoctor(port, portSource, jsonOutput) {
       ready: status ? (typeof status.ready === 'boolean' ? status.ready : (status.windows?.length ?? 0) > 0) : false,
       tabs: status?.windows?.length ?? 0,
       problems, notes,
+      // Machine-readable third state. A consumer that only knows `ok` still behaves as before;
+      // one that wants certainty can require `unchecked` to be empty.
+      unchecked,
     }, null, 2))
     return ok
   }
@@ -279,8 +341,18 @@ async function runDoctor(port, portSource, jsonOutput) {
     console.log(`${bold('server:')} haltija ${status.serverVersion || '?'}${status.desktopApp ? dim(' (desktop app)') : ''}, ${tabCount} tab${tabCount === 1 ? '' : 's'}`)
   }
   for (const n of notes) console.log(`${yellow('!')} ${n}`)
+  // `?` — its own glyph, because the whole point is that this is neither a pass nor a failure.
+  for (const u of unchecked) console.log(`${dim('?')} ${u}`)
   for (const p of problems) console.log(`${red('✗')} ${p}`)
-  if (ok) console.log(`${green('✓')} ready to drive`)
+  if (ok) {
+    // Never a bare ✓ when something went unverified. The verdict has to carry its own caveat or
+    // the caveat above it may as well not be printed.
+    console.log(
+      unchecked.length
+        ? `${green('✓')} ready to drive ${dim(`(${unchecked.length} check${unchecked.length === 1 ? '' : 's'} could not be performed — see ? above)`)}`
+        : `${green('✓')} ready to drive`,
+    )
+  }
   return ok
 }
 

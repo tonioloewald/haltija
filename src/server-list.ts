@@ -34,6 +34,11 @@ export interface ServerRow extends ServerCandidate {
   desktopApp?: boolean
   tabs?: number
   ready?: boolean
+  /**
+   * It is listening and it rejected our credentials, so everything else on this row is unknown
+   * rather than false. Distinct from `up: false` on purpose — see `describeServer`.
+   */
+  authRefused?: boolean
 }
 
 /**
@@ -62,7 +67,18 @@ export function collectCandidates(
 }
 
 /** Fold a `/status` response into a display row. `null` status means the probe failed. */
-export function describeServer(candidate: ServerCandidate, status: StatusLike | null): ServerRow {
+export function describeServer(
+  candidate: ServerCandidate,
+  status: StatusLike | null,
+  probe: { authRefused?: boolean } = {},
+): ServerRow {
+  // A server that REFUSED us is not a server that is absent. It answered — we simply can't see
+  // inside it. Collapsing that into `up: false` made `hj servers` erase a live `--token` server
+  // from the listing, and print "No haltija servers are running." when it was the only one: a
+  // flat denial of something we had just spoken to. Report it as up, with the reason blank.
+  if (!status && probe.authRefused) {
+    return { ...candidate, up: true, authRefused: true, version: '?', tabs: 0 }
+  }
   if (!status) return { ...candidate, up: false }
   return {
     ...candidate,

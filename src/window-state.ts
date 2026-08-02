@@ -18,6 +18,11 @@ export interface WindowLike {
   title?: string
   /** The tab reported itself visible. `undefined` means it never said — treated as visible. */
   active?: boolean
+  /**
+   * The inverse of `active`, as `/status` reported it before this release. Both names are accepted
+   * because both are on the wire from servers we still have to drive; see `isVisible`.
+   */
+  hidden?: boolean
   /** 'tab' | 'popup' | 'iframe'. `undefined` means a widget too old to say — treated as 'tab'. */
   windowType?: string
 }
@@ -33,9 +38,30 @@ export function isTopLevelTab(w: WindowLike): boolean {
 /**
  * The tab is on screen. Note the polarity: only an explicit `false` means hidden — `undefined` is
  * "never reported", and treating that as hidden would silently drop every older widget.
+ *
+ * Reads **both** field names on purpose. `/status` emitted only `hidden` before this release and
+ * `/windows` only `active`; a predicate keyed on one of them silently returns "visible" for every
+ * server that speaks the other. That is precisely how `hj doctor` came to print "✓ ready to drive"
+ * at a server whose every tab was reporting `hidden: true` (M3) — the worst failure shape we have,
+ * because a false green is consumed by CI and a false red is not.
  */
 export function isVisible(w: WindowLike): boolean {
-  return w.active !== false
+  if (w.hidden === true) return false
+  if (w.active === false) return false
+  return true
+}
+
+/**
+ * Did the tab actually *tell* us whether it was visible?
+ *
+ * `isVisible` has to return a boolean, so for a window that reported neither field it returns
+ * `true` — a guess, and the right guess, but still a guess. Callers that publish a verdict need to
+ * know the difference: "I checked and it is visible" and "nobody told me, so I assumed visible" are
+ * different claims, and printing the second as the first is the whole class of bug this release is
+ * about. Diagnostics should report *unknown* rather than launder an assumption into a ✓.
+ */
+export function visibilityKnown(w: WindowLike): boolean {
+  return typeof w.active === 'boolean' || typeof w.hidden === 'boolean'
 }
 
 /** A tab we can send a command to and trust the answer: top-level AND on screen. */

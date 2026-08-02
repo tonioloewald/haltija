@@ -7,7 +7,11 @@ function isTopLevelTab(w) {
   return (w.windowType || "tab") === "tab";
 }
 function isVisible(w) {
-  return w.active !== false;
+  if (w.hidden === true)
+    return false;
+  if (w.active === false)
+    return false;
+  return true;
 }
 
 // src/project-origins.ts
