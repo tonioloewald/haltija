@@ -14,7 +14,7 @@
 
 import { spawn, execSync as execSyncImported } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { homedir, platform } from 'os'
+import { homedir, platform, tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 

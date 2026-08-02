@@ -1531,6 +1531,20 @@ async function ensureServer() {
   }
 }
 
+/**
+ * Hand the renderer this instance's REAL addresses.
+ *
+ * The renderer learns them from `process.env` via the preload, but private mode only reassigns the
+ * module-level `let`s — which does not touch `process.env`. Without this, a private app's chrome
+ * widget attached to the SHARED 8701 and its first tab loaded the shared 8700. Must run on EVERY
+ * path that reaches `createWindow()`, including the startup-failure one, or the leak returns
+ * through the error path. 0 / '' mean "no server", and the renderer treats them as such.
+ */
+function publishResolvedAddresses() {
+  process.env.HALTIJA_INTERNAL_PORT = String(HALTIJA_INTERNAL_PORT)
+  process.env.HALTIJA_PUBLIC_URL = HALTIJA_SERVER
+}
+
 // Single-instance lock — prevent multiple Electron windows from launching.
 // A PRIVATE run must NOT contend for it (issue #7): private instances are isolated on ephemeral
 // ports and are meant to run many at once / back-to-back. Taking the shared lock means an orphaned
@@ -1596,13 +1610,7 @@ if (!gotTheLock) {
         // Continue anyway - user might start server manually
       }
 
-          // Publish the RESOLVED addresses into the environment before any window (and therefore any
-      // preload) exists. The renderer reads these to know which server it belongs to; private mode
-      // reassigns the module-level `let`s but that does NOT change process.env, so without this a
-      // private app's chrome widget connected to the SHARED 8701 and its first tab loaded the
-      // SHARED 8700 — an isolation leak in the feature whose entire purpose is isolation.
-      process.env.HALTIJA_INTERNAL_PORT = String(HALTIJA_INTERNAL_PORT)
-      process.env.HALTIJA_PUBLIC_URL = HALTIJA_SERVER
+      publishResolvedAddresses()
 
       setupMenu()
       setupHeaderStripping()
@@ -1614,6 +1622,10 @@ if (!gotTheLock) {
       console.log('[Haltija Desktop] Window created successfully')
     } catch (err) {
       console.error('[Haltija Desktop] Fatal error during startup:', err)
+      // Publish here too. This path still creates a window, so without it the preload would see
+      // NEITHER variable and fall back to the shared 8701/8700 — the isolation leak, via the
+      // error path. On a failed startup the values are 0/'' , which is the safe state.
+      publishResolvedAddresses()
       // Still try to create a window so user sees something
       try {
         createWindow()

@@ -19,6 +19,12 @@ export function loadSettings() {
     const saved = localStorage.getItem('haltija-settings')
     if (saved) {
       settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }
+      // …but NEVER let a persisted serverUrl override the address main injected for this instance.
+      // localStorage is per-origin and shared across runs, so a value saved by an earlier (or
+      // shared) session would point a --private app straight back at the shared server — defeating
+      // the injection added to prevent exactly that. The live instance always wins.
+      const injected = typeof window !== 'undefined' && window.haltija?.serverUrl
+      if (injected) settings.serverUrl = injected
     }
   } catch (e) {
     console.error('[Haltija Desktop] Failed to load settings:', e)
