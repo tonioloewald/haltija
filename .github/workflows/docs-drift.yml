@@ -28,12 +28,25 @@ jobs:
       - name: Rebuild generated docs
         run: bun run build
 
-      - name: Check generated docs are in sync
+      - name: Check every generated artifact is in sync
         run: |
-          if ! git diff --exit-code -- \
-              API.md DOCS.md llms.txt bin/hints.json apps/mcp/src/endpoints.json; then
+          # No path list. The previous version named five files, all derived from api-schema.ts,
+          # so it could not see the SIX generated-and-committed twins next to them —
+          # bin/cli-commands.mjs, bin/window-state.mjs, bin/server-list.mjs, bin/project-origins.mjs,
+          # bin/hints.mjs, apps/desktop/server-env.js — which are what npm actually ships
+          # (package.json `files` includes bin and apps/desktop/*.js). unit-tests.yml builds BEFORE
+          # it tests, so CI always exercises fresh output and structurally cannot notice a stale
+          # committed twin; `bun test src/` alone does not build, so a local run tests the stale one.
+          # That divergence presents as flake, which is the most expensive way to learn about it.
+          #
+          # A list can only ever omit the next generated file. The build leaves the tree clean, so
+          # assert exactly that instead.
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::'bun run build' changed committed files — a generated artifact is stale."
+            echo "Run 'bun run build' locally and commit the result. Changed:"
+            git status --porcelain
             echo ""
-            echo "::error::Generated docs are stale. Run 'bun run build' and commit the result."
+            git diff --stat
             exit 1
           fi
-          echo "Generated docs are up to date."
+          echo "Every generated artifact is up to date."
