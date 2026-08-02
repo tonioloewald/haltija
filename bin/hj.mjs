@@ -21,6 +21,15 @@ import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 
+// One definition. These were redeclared inside a dozen functions, which is how `green` ended up in
+// some outputs and not others — small enough that nobody notices, exactly the kind of duplication
+// that quietly diverges.
+const bold = (s) => `\x1b[1m${s}\x1b[0m`
+const dim = (s) => `\x1b[2m${s}\x1b[0m`
+const green = (s) => `\x1b[32m${s}\x1b[0m`
+const red = (s) => `\x1b[31m${s}\x1b[0m`
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`
+
 /** Where instance entries live. Mirrors DEFAULT_REGISTRY_DIR in src/sessions.ts. */
 const REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join(homedir(), '.haltija', 'servers')
 
@@ -94,9 +103,6 @@ async function runWhere(port, portSource, jsonOutput) {
     }, null, 2))
     return
   }
-
-  const bold = (s) => `\x1b[1m${s}\x1b[0m`
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
   console.log(`${bold('port:')}   ${port} ${dim(`(${portSource})`)}`)
   if (!serverInfo) {
     console.log(`${bold('server:')} ${dim(`unreachable — ${serverError}`)}`)
@@ -134,9 +140,6 @@ async function runWhere(port, portSource, jsonOutput) {
  * one `hj` would drive. Pure probes + registry read; no side effects, never auto-launches.
  */
 async function runServers(resolvedPort) {
-  const bold = (s) => `\x1b[1m${s}\x1b[0m`
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
-  const green = (s) => `\x1b[32m${s}\x1b[0m`
   const token = process.env.HALTIJA_TOKEN
 
   const byPort = new Map()
@@ -202,11 +205,6 @@ async function runServers(resolvedPort) {
  * unambiguous (cwd matches, or the choice was explicit) → tabs visible → versions aligned.
  */
 async function runDoctor(port, portSource, jsonOutput) {
-  const bold = (s) => `\x1b[1m${s}\x1b[0m`
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
-  const green = (s) => `\x1b[32m${s}\x1b[0m`
-  const red = (s) => `\x1b[31m${s}\x1b[0m`
-  const yellow = (s) => `\x1b[33m${s}\x1b[0m`
   const token = process.env.HALTIJA_TOKEN
 
   const problems = [] // fatal → exit 1
@@ -361,8 +359,6 @@ if ((args.includes('--help') || args.includes('-h')) && args[0] && !args[0].star
 }
 
 if (!args.length || args.includes('--help') || args.includes('-h')) {
-  const bold = (s) => `\x1b[1m${s}\x1b[0m`
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
   console.log(`
 ${bold('hj')} - Haltija command-line interface
 
@@ -690,8 +686,6 @@ if (!isSubcommand(subcommand)) {
 }
 
 function filterHelp(topic) {
-  const bold = (s) => `\x1b[1m${s}\x1b[0m`
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
   const needle = topic.toLowerCase()
   const helpText = listSubcommands()
   const lines = helpText.split('\n')

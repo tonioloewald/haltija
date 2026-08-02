@@ -2063,6 +2063,11 @@ import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync a
 import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 var args = process.argv.slice(2);
+var bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
+var dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green2 = (s) => `\x1B[32m${s}\x1B[0m`;
+var red2 = (s) => `\x1B[31m${s}\x1B[0m`;
+var yellow2 = (s) => `\x1B[33m${s}\x1B[0m`;
 var REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join3(homedir2(), ".haltija", "servers");
 if (args[0] === "--version" || args[0] === "-v") {
   console.log(HJ_VERSION);
@@ -2123,8 +2128,6 @@ async function runWhere(port, portSource, jsonOutput) {
     }, null, 2));
     return;
   }
-  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
   console.log(`${bold2("port:")}   ${port} ${dim3(`(${portSource})`)}`);
   if (!serverInfo) {
     console.log(`${bold2("server:")} ${dim3(`unreachable — ${serverError}`)}`);
@@ -2152,9 +2155,6 @@ ${bold2("warning:")} hj ${HJ_VERSION} is driving server ${serverInfo.serverVersi
   }
 }
 async function runServers(resolvedPort) {
-  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
-  const green2 = (s) => `\x1B[32m${s}\x1B[0m`;
   const token = process.env.HALTIJA_TOKEN;
   const byPort = new Map;
   for (const e of listLiveInstances()) {
@@ -2206,11 +2206,6 @@ This shell targets :${resolvedPort}, but nothing is listening there.`));
 Pick one:  `) + `hj --port <n> <cmd>` + dim3("  or  ") + `hj --name <name> <cmd>`);
 }
 async function runDoctor(port, portSource, jsonOutput) {
-  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
-  const green2 = (s) => `\x1B[32m${s}\x1B[0m`;
-  const red2 = (s) => `\x1B[31m${s}\x1B[0m`;
-  const yellow2 = (s) => `\x1B[33m${s}\x1B[0m`;
   const token = process.env.HALTIJA_TOKEN;
   const problems = [];
   const notes = [];
@@ -2328,8 +2323,6 @@ if ((args.includes("--help") || args.includes("-h")) && args[0] && !args[0].star
   process.exit(0);
 }
 if (!args.length || args.includes("--help") || args.includes("-h")) {
-  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
   console.log(`
 ${bold2("hj")} - Haltija command-line interface
 
@@ -2555,8 +2548,6 @@ Examples: hj tree, hj navigate <url>, hj click @42`);
   runSubcommand(subcommand, subArgs, port, { noLaunch, explicitTarget });
 }
 function filterHelp(topic) {
-  const bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-  const dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
   const needle = topic.toLowerCase();
   const helpText = listSubcommands();
   const lines = helpText.split(`

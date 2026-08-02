@@ -1345,8 +1345,14 @@ async function startEmbeddedServer() {
     spawnHaltijaServer({ port: 0, role: 'public', serverPath, useCompiledBinary, componentDir, portFile: pubFile })
     spawnHaltijaServer({ port: 0, role: 'internal', serverPath, useCompiledBinary, componentDir, portFile: intFile })
 
+    // Poll a child server's port-file. 10s, DELIBERATELY shorter than the launcher's 30s in
+    // bin/tosijs-dev.mjs (discoverPrivatePort) — these wait on different things and the numbers are
+    // not drift: here we await a local server process we just spawned (sub-second normally), there
+    // the launcher awaits a full Electron boot. If you change one, don't "align" the other.
+    const PORT_FILE_TIMEOUT_MS = 10_000
     const readPort = async (file) => {
-      for (let i = 0; i < 50; i++) {
+      const deadline = Date.now() + PORT_FILE_TIMEOUT_MS
+      while (Date.now() < deadline) {
         try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); if (d && d.port) return d.port } catch {}
         await new Promise((r) => setTimeout(r, 200))
       }

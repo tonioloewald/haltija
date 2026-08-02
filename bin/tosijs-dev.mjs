@@ -451,6 +451,11 @@ if (privateMode) {
 }
 
 /** Poll the private instance's port-file until it reports its ephemeral port. */
+/**
+ * Wait for a private instance to report its ephemeral port. 30s because this may be waiting on a
+ * full Electron boot; the desktop app's own `readPort` (apps/desktop/main.js) uses 10s because it
+ * waits only on a server child it just spawned. Different waits, different budgets — not drift.
+ */
 async function discoverPrivatePort(portFile, timeout = 30000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {

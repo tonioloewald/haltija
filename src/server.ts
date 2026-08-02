@@ -238,7 +238,45 @@ function setFocusedWindow(windowId: string): TrackedWindow | null {
   if (!win) return null
   focusedWindowId = windowId
   updateHjStatus()
+  raiseTabInDesktopApp(windowId)
   return win
+}
+
+/**
+ * Best-effort: physically bring a tab to the front in the desktop app.
+ *
+ * Issue #4 established that focus must be SERVER-SIDE — dispatching to the target tab timed out
+ * precisely when the target was hidden, which is when you most want to focus it. That rule is intact
+ * here, via one observation: **the messenger doesn't have to be the target.** Any live widget can
+ * ask the app to raise any tab, because the request travels preload → IPC → main process, and the
+ * main process owns every webview. So we send it to a tab we know is awake and let it raise the
+ * sleeping one.
+ *
+ * Strictly fire-and-forget: no pending response, no timeout, no effect on the routing that already
+ * succeeded. If the app isn't there, or no tab is awake, focus still works — you just don't get the
+ * cosmetic raise. It must never be able to fail the operation it decorates.
+ */
+function raiseTabInDesktopApp(windowId: string): void {
+  if (!isDesktopApp) return
+  try {
+    // Prefer a VISIBLE tab other than the target: the target may be asleep (that's the whole point),
+    // and a hidden messenger's throttled event loop might never deliver the message.
+    const candidates = Array.from(windows.values()).filter(
+      (w) => w.active !== false && (w.windowType || 'tab') === 'tab',
+    )
+    const messenger = candidates.find((w) => w.id !== windowId) || candidates[0]
+    if (!messenger) return
+    messenger.ws.send(JSON.stringify({
+      id: uid(),
+      channel: 'tabs',
+      action: 'focus',
+      payload: { windowId },
+      timestamp: Date.now(),
+      source: 'server',
+    }))
+  } catch {
+    // Cosmetic only — never let it disturb the focus change that already happened.
+  }
 }
 
 // Set by the Electron desktop app when it spawns this server. When true the

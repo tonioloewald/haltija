@@ -8222,6 +8222,10 @@ export class DevChannel extends HTMLElement {
         )
       }
     } else if (action === 'focus') {
+      // Reached only as a fire-and-forget RAISE request from the server (see raiseTabInDesktopApp).
+      // Routing focus is server-side since #4; this is the cosmetic half — bring the tab to the
+      // front in the desktop app. We may be raising a DIFFERENT tab than our own, which is exactly
+      // why the server picks an awake messenger: a sleeping tab can't run this handler.
       if (haltija?.focusTab) {
         haltija.focusTab(payload.windowId)
         this.respond(msg.id, true)
