@@ -117,6 +117,20 @@ export const GET_COMPOUND = new Set([
 ])
 
 // How to map positional args to body fields for each endpoint
+/**
+ * `--preset x` or a bare `x`, with a fallback.
+ *
+ * Taking `args[0]` blindly turned `--preset interactive` into `{preset:'--preset'}` — which the
+ * server accepted, failed to look up, and reported success for. A wrong answer delivered as a
+ * success is worse than an error, so anything that isn't a flag is treated as the value and a
+ * dangling `--preset` with nothing after it falls back rather than sending `undefined`.
+ */
+export function presetArg(args, fallback) {
+  const i = args.indexOf('--preset')
+  const value = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith('-'))
+  return value && !value.startsWith('-') ? value : fallback
+}
+
 export const ARG_MAPS = {
   click: (args) => parseClickArgs(args),
   type: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), text: args.slice(1).join(' ') }),
@@ -203,16 +217,14 @@ export const ARG_MAPS = {
     return body
   },
   'video-stop': () => ({}),
-  'events-watch': (args) => {
-    // Accept `--preset x` as well as a bare `x`. Taking args[0] blindly turned
-    // `events-watch --preset interactive` into {preset:'--preset'}, which silently subscribed to
-    // EVERY category while the server echoed back an empty list — and SKILL.md printed that form.
-    const i = args.indexOf('--preset')
-    const preset = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith('-'))
-    return { preset: preset || 'interactive' }
-  },
-  'mutations-watch': (args) => ({ preset: args[0] || 'smart' }),
-  'network-watch': (args) => ({ preset: args[0] || 'standard' }),
+  'events-watch': (args) => ({ preset: presetArg(args, 'interactive') }),
+  // These two had the ORIGINAL args[0] bug still in them, one line below the comment describing the
+  // fix — `hj mutations-watch --preset smart` sent preset:'--preset', `FILTER_PRESETS[preset]` came
+  // back undefined, and the user got a success response with silently wrong filtering. Fixing one
+  // instance of a footgun and leaving its neighbours is how a bug survives its own postmortem, so
+  // the parse is now one function all three share.
+  'mutations-watch': (args) => ({ preset: presetArg(args, 'smart') }),
+  'network-watch': (args) => ({ preset: presetArg(args, 'standard') }),
   // send <agent> <message> or send selection/recording
   // --no-submit flag prevents auto-submit (paste only)
   'test-run': (args) => {
@@ -753,7 +765,7 @@ const UNWRAP_DATA_SUBCOMMANDS = new Set([
 // take free-form text (type, eval, find, snapshot, send…) are intentionally
 // ABSENT: a leading-dash token there is content, not a flag, so we leave them
 // untouched.
-const GLOBAL_FLAGS = ['--json', '--window', '--port', '--name', '--token', '--no-launch', '--help']
+export const GLOBAL_FLAGS = ['--json', '--window', '--port', '--name', '--token', '--no-launch', '--help']
 export const KNOWN_FLAGS = {
   tree: ['--depth', '-d', '--selector', '-s', '--compact', '-c', '--interactive', '-i', '--visible', '-v', '--text', '--no-text', '--shadow', '--frames', '--no-frames'],
   click: ['--diff', '--delay'],
@@ -767,6 +779,16 @@ export const KNOWN_FLAGS = {
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   'test-validate': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   'test-suite': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
+  // Added after an invariant test derived them from the parsers themselves. Missing entries are
+  // not cosmetic: BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on an entry
+  // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
+  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale'],
+  'events-watch': ['--preset'],
+  'mutations-watch': ['--preset'],
+  'network-watch': ['--preset'],
+  'send-message': ['--no-submit'],
+  'send-selection': ['--no-submit'],
+  'send-recording': ['--no-submit'],
 }
 
 /** Split `--flag=value` into `--flag`, `value` (first `=` only). Long flags only. */

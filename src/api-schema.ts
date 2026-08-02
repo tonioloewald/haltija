@@ -1656,7 +1656,7 @@ or animation timing, and structure (nesting) is carried for free.`,
   examples: [
     { name: 'map', input: {}, description: 'Affordance map of the focused tab' },
   ],
-  hints: '--json | see: tree, query, inspect',
+  hints: '--image, --scale N, --data-url, --global, --max-nodes N | see: tree, query, inspect',
 })
 
 export const windows = endpoint({

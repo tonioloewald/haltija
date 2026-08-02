@@ -16,6 +16,8 @@ import {
   parseTestArgs,
   normalizeEqualsFlags,
   warnUnknownFlags,
+  KNOWN_FLAGS,
+  GLOBAL_FLAGS,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -898,5 +900,81 @@ describe('warnUnknownFlags', () => {
 
   test('allows global flags anywhere', () => {
     expect(capture(() => warnUnknownFlags('screenshot', ['--json', '--window', '3']))).toEqual([])
+  })
+})
+
+describe('every flag the parser reads is a flag the validator knows (class invariant)', () => {
+  // `ARG_MAPS` (what a flag DOES) and `KNOWN_FLAGS` (which flags EXIST) are two hand-maintained
+  // registries that have to agree, and nothing checked. `map` was added to the first and not the
+  // second, and because BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on a
+  // `KNOWN_FLAGS` entry, `hj map --scale=3` parsed to `{}` and warned about nothing: the command
+  // reported success and did something other than what it was asked. Silently discarding input is
+  // the instrument lying, which is the one thing it must never do.
+  //
+  // Rather than fix the one entry, derive the check: read the flag literals the parser actually
+  // compares against, and require the validator to know each of them.
+  const flagLiterals = (fn: unknown): string[] => {
+    const src = String(fn)
+    // BOTH quote styles. The source uses single quotes, but Bun's transpiler re-emits them as
+    // double — so a single-quote-only regex matched nothing under `bun test` while working fine
+    // under node, i.e. the check would have passed by looking at an empty set forever. That is the
+    // vacuous-assertion trap, and it is only visible here because of the guard test above it.
+    return [...new Set([...src.matchAll(/['"](--[a-z][\w-]*)['"]/gi)].map((m) => m[1]))]
+  }
+
+  test('the flags that were silently dropped now parse', () => {
+    // The concrete bugs behind the invariant, asserted directly — an invariant proven only by
+    // itself is one refactor away from being satisfied vacuously.
+    expect(ARG_MAPS.map(['--scale', '3'])).toEqual({ scale: 3 })
+    expect(normalizeEqualsFlags(['--scale=3'])).toEqual(['--scale', '3'])
+    expect(ARG_MAPS.map(normalizeEqualsFlags(['--scale=3']))).toEqual({ scale: 3 })
+    expect(ARG_MAPS.map(normalizeEqualsFlags(['--max-nodes=200']))).toEqual({ maxNodes: 200 })
+  })
+
+  test('--preset takes its VALUE, not the flag name, for all three watchers', () => {
+    // `{preset:'--preset'}` was accepted by the server, failed to resolve, and reported success.
+    expect(ARG_MAPS['mutations-watch'](['--preset', 'smart'])).toEqual({ preset: 'smart' })
+    expect(ARG_MAPS['network-watch'](['--preset', 'standard'])).toEqual({ preset: 'standard' })
+    expect(ARG_MAPS['events-watch'](['--preset', 'detailed'])).toEqual({ preset: 'detailed' })
+    // Bare value and empty both still work, so the fix didn't trade one silent wrong for another.
+    expect(ARG_MAPS['mutations-watch'](['smart'])).toEqual({ preset: 'smart' })
+    expect(ARG_MAPS['mutations-watch']([])).toEqual({ preset: 'smart' })
+    // A dangling `--preset` falls back rather than sending undefined.
+    expect(ARG_MAPS['events-watch'](['--preset'])).toEqual({ preset: 'interactive' })
+  })
+
+  test('an unknown flag now warns instead of vanishing', () => {
+    let out = ''
+    const orig = process.stderr.write.bind(process.stderr)
+    ;(process.stderr as any).write = (chunk: string) => { out += chunk; return true }
+    try {
+      warnUnknownFlags('map', ['--imge'])
+    } finally {
+      ;(process.stderr as any).write = orig
+    }
+    expect(out).toContain('--imge')
+    expect(out).toContain('--image') // and suggests the real one
+  })
+
+  test('finds flag literals to check — the extractor is not vacuous', () => {
+    expect(flagLiterals(ARG_MAPS.screenshot).length).toBeGreaterThan(5)
+  })
+
+  test('no ARG_MAPS parser reads a flag that KNOWN_FLAGS has never heard of', () => {
+    const gaps: string[] = []
+    for (const [cmd, fn] of Object.entries(ARG_MAPS)) {
+      const literals = flagLiterals(fn)
+      if (!literals.length) continue
+      const known = new Set([...(KNOWN_FLAGS[cmd] || []), ...GLOBAL_FLAGS])
+      const missing = literals.filter((f) => !known.has(f))
+      if (missing.length) {
+        gaps.push(
+          `${cmd}: parses ${missing.join(', ')} but KNOWN_FLAGS.${cmd} ` +
+            `${KNOWN_FLAGS[cmd] ? 'omits them' : 'does not exist — so --flag=value and the ' +
+              'unknown-flag warning are both disabled for this command'}`,
+        )
+      }
+    }
+    expect(gaps).toEqual([])
   })
 })

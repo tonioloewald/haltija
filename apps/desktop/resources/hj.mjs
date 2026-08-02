@@ -865,7 +865,7 @@ var COMMAND_HINTS = {
   call: '@ref or "selector" <method>, --args [...]  | see: eval, inspect',
   screenshot: "[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
   windows: "--json | see: tabs-open, tabs-close, tabs-focus, status",
-  map: "--json | see: tree, query, inspect",
+  map: "--image, --scale N, --data-url, --global, --max-nodes N | see: tree, query, inspect",
   "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
   "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
   "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
@@ -946,6 +946,11 @@ var GET_COMPOUND = new Set([
   "video-status",
   "network-stats"
 ]);
+function presetArg(args, fallback) {
+  const i = args.indexOf("--preset");
+  const value = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith("-"));
+  return value && !value.startsWith("-") ? value : fallback;
+}
 var ARG_MAPS = {
   click: (args) => parseClickArgs(args),
   type: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), text: args.slice(1).join(" ") }),
@@ -1068,13 +1073,9 @@ var ARG_MAPS = {
     return body;
   },
   "video-stop": () => ({}),
-  "events-watch": (args) => {
-    const i = args.indexOf("--preset");
-    const preset = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith("-"));
-    return { preset: preset || "interactive" };
-  },
-  "mutations-watch": (args) => ({ preset: args[0] || "smart" }),
-  "network-watch": (args) => ({ preset: args[0] || "standard" }),
+  "events-watch": (args) => ({ preset: presetArg(args, "interactive") }),
+  "mutations-watch": (args) => ({ preset: presetArg(args, "smart") }),
+  "network-watch": (args) => ({ preset: presetArg(args, "standard") }),
   "test-run": (args) => {
     if (!args.length) {
       console.error("Usage: hj test-run <file.json> [--vars JSON] [--seed N] [--timeoutMs N] [--allow-failures N]");
@@ -1606,7 +1607,14 @@ var KNOWN_FLAGS = {
   refresh: ["--soft"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
-  "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"]
+  "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
+  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale"],
+  "events-watch": ["--preset"],
+  "mutations-watch": ["--preset"],
+  "network-watch": ["--preset"],
+  "send-message": ["--no-submit"],
+  "send-selection": ["--no-submit"],
+  "send-recording": ["--no-submit"]
 };
 function normalizeEqualsFlags(args) {
   const out = [];

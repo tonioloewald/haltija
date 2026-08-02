@@ -15,7 +15,7 @@ export const COMMAND_HINTS = {
   "call": "@ref or \"selector\" <method>, --args [...]  | see: eval, inspect",
   "screenshot": "[selector], --format webp, --scale 0.5, --maxWidth 800 | see: highlight, snapshot",
   "windows": "--json | see: tabs-open, tabs-close, tabs-focus, status",
-  "map": "--json | see: tree, query, inspect",
+  "map": "--image, --scale N, --data-url, --global, --max-nodes N | see: tree, query, inspect",
   "tabs-open": "[url] | see: tabs-focus, tabs-close, windows",
   "tabs-close": "<window-id> | see: windows, tabs-focus, tabs-open",
   "tabs-focus": "<window-id> | see: windows, tabs-close, tabs-open",
