@@ -55,6 +55,13 @@ if you declared origins and no connected tab matches, `hj` says so loudly rather
 driving someone else's page (and fails outright under `--strict`). `HALTIJA_ORIGINS=…` overrides for
 one-off shells and CI.
 
+**Both diagnostics report what routing will actually do.** `hj where` and `hj doctor` each print an
+`origins:` line — what you declared, where the declaration was found, and which connected window it
+resolves to (or that none matches yet, so commands still follow focus). A `.haltija.json` that
+parses but declares **no usable origins** silently turns per-tab routing off — the exact problem it
+was added to fix — so `hj doctor` now **fails** on it (exit 1) and names the file. Trust that line:
+"configured" and "working" are different states and it distinguishes them.
+
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`** (alias **`hj ls`**)
@@ -170,7 +177,8 @@ any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's 
 Use `--no-fallback` if you need the hard error instead — or `--schematic` to *prefer* the schematic
 even when real capture is available (cheaper, deterministic, and it carries the contrast audit).
 
-`hj map --image` additionally returns the map as a **rasterized schematic PNG** — one labeled box
+`hj map --image` additionally **saves a rasterized schematic PNG and returns its path** (in
+`data.path`; pass `--data-url` for an inline base64 string instead) — one labeled box
 per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an
 index you can glance at and then act on. Two things to know:
 

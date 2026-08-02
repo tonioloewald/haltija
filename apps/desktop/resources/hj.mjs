@@ -2031,6 +2031,7 @@ function isVisible(w) {
     return false;
   return true;
 }
+var ORIGINS_FILE = ".haltija.json";
 function normalizeOrigin(value) {
   const v = String(value || "").trim();
   if (!v)
@@ -2055,7 +2056,7 @@ function findProjectOrigins(cwd, env = process.env) {
   let dir = cwd;
   const { root } = parsePath(cwd);
   for (let depth = 0;depth < 64; depth++) {
-    const file = join2(dir, ".haltija.json");
+    const file = join2(dir, ORIGINS_FILE);
     if (existsSync2(file)) {
       try {
         const parsed = JSON.parse(readFileSync2(file, "utf-8"));
@@ -2174,6 +2175,32 @@ if (args[0] === "--version" || args[0] === "-v") {
   console.log(HJ_VERSION);
   process.exit(0);
 }
+function describeOrigins(windows) {
+  const declared = findProjectOrigins(process.cwd(), process.env);
+  if (!declared) {
+    return {
+      line: `${dim3("none declared")} ${dim3(`— commands follow browser focus; add a ${ORIGINS_FILE} to pin them to your tabs`)}`,
+      problem: null
+    };
+  }
+  if (!declared.origins.length) {
+    const msg = `${declared.source} exists but declares no usable origins, so per-tab routing is OFF and ` + `commands silently fall back to whatever tab has focus — the exact problem it was added to ` + `fix. Expected e.g. { "origins": ["http://localhost:3000"] }.`;
+    return { line: yellow2(msg), problem: msg };
+  }
+  const list = declared.origins.join(", ");
+  const routing = routeByDeclaredOrigin(declared.origins, windows || [], null);
+  if (routing.kind === "matched") {
+    return { line: `${list} ${dim3(`(${declared.source}) → window ${routing.windowId}`)}`, problem: null };
+  }
+  if (routing.kind === "no-match") {
+    const saw = routing.sawOrigins.length ? routing.sawOrigins.join(", ") : "none";
+    return {
+      line: `${list} ${dim3(`(${declared.source})`)} ${yellow2("— no connected tab matches")} ${dim3(`(tabs are on: ${saw}); commands will follow focus until one does`)}`,
+      problem: null
+    };
+  }
+  return { line: `${list} ${dim3(`(${declared.source})`)}`, problem: null };
+}
 async function runWhere(port, portSource, jsonOutput) {
   let serverInfo = null;
   let serverError = null;
@@ -2223,6 +2250,10 @@ async function runWhere(port, portSource, jsonOutput) {
       authRefused: serverAuthRefused,
       error: serverError,
       client: HJ_VERSION,
+      origins: (() => {
+        const d = findProjectOrigins(process.cwd(), process.env);
+        return d ? { declared: d.origins, source: d.source } : null;
+      })(),
       versionSkew: serverInfo ? differsBeyondPatch(serverInfo.serverVersion || "", HJ_VERSION) : null,
       server: serverInfo ? {
         version: serverInfo.serverVersion,
@@ -2249,6 +2280,7 @@ async function runWhere(port, portSource, jsonOutput) {
   ].filter(Boolean).join(", ");
   console.log(`${bold2("server:")} ${desc}`);
   console.log(`${bold2("client:")} hj ${HJ_VERSION}`);
+  console.log(`${bold2("origins:")} ${describeOrigins(serverInfo.windows).line}`);
   if (focused) {
     console.log(`${bold2("focused:")} ${focused.title || dim3("(no title)")} ${dim3(`— ${focused.url}`)}`);
   } else if (tabs === 0) {
@@ -2336,6 +2368,9 @@ async function runDoctor(port, portSource, jsonOutput) {
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`);
     }
+    const origins = describeOrigins(tabs);
+    if (origins.problem)
+      problems.push(origins.problem);
   }
   const { ambiguous, others } = isAmbiguousTarget(portSource, port, listLiveInstances());
   if (ambiguous) {
@@ -2352,6 +2387,10 @@ async function runDoctor(port, portSource, jsonOutput) {
       tabs: status?.windows?.length ?? 0,
       problems,
       notes,
+      origins: (() => {
+        const d = findProjectOrigins(process.cwd(), process.env);
+        return d ? { declared: d.origins, source: d.source } : null;
+      })(),
       unchecked
     }, null, 2));
     return ok;
@@ -2361,6 +2400,8 @@ async function runDoctor(port, portSource, jsonOutput) {
     const tabCount = status.windows?.length ?? 0;
     console.log(`${bold2("server:")} haltija ${status.serverVersion || "?"}${status.desktopApp ? dim3(" (desktop app)") : ""}, ${tabCount} tab${tabCount === 1 ? "" : "s"}`);
   }
+  if (status)
+    console.log(`${bold2("origins:")} ${describeOrigins(status.windows || []).line}`);
   for (const n of notes)
     console.log(`${yellow2("!")} ${n}`);
   for (const u of unchecked)

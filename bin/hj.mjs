@@ -12,7 +12,7 @@
 
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 import { extractWindowTarget } from './arg-utils.mjs'
-import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
+import { findProjectOrigins, routeByDeclaredOrigin, ORIGINS_FILE } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
 import { isDrivable, isVisible, visibilityKnown } from './window-state.mjs'
 import { HJ_VERSION } from './version.mjs'
@@ -41,6 +41,51 @@ const REGISTRY_DIR = process.env.HALTIJA_REGISTRY_DIR || join(homedir(), '.halti
 if (args[0] === '--version' || args[0] === '-v') {
   console.log(HJ_VERSION)
   process.exit(0)
+}
+
+
+/**
+ * What declared-origin routing will do for this shell, in one line.
+ *
+ * Declared origins are the answer to "another project's tab keeps answering my commands", and until
+ * now neither diagnostic mentioned them. Worse, the warning for a *broken* declaration lived in a
+ * block both `where` and `doctor` exit before reaching — so the feature was silent in exactly the
+ * two commands SKILL.md names as the first response to "wrong page", and a `.haltija.json` that
+ * declared nothing usable was reported nowhere a user would look.
+ *
+ * Returns `{ line, problem }`: `problem` is set only when the configuration is actively broken,
+ * so `doctor` can fail on it while `where` merely reports.
+ */
+function describeOrigins(windows) {
+  const declared = findProjectOrigins(process.cwd(), process.env)
+  if (!declared) {
+    return {
+      line: `${dim('none declared')} ${dim(`— commands follow browser focus; add a ${ORIGINS_FILE} to pin them to your tabs`)}`,
+      problem: null,
+    }
+  }
+  if (!declared.origins.length) {
+    const msg =
+      `${declared.source} exists but declares no usable origins, so per-tab routing is OFF and ` +
+      `commands silently fall back to whatever tab has focus — the exact problem it was added to ` +
+      `fix. Expected e.g. { "origins": ["http://localhost:3000"] }.`
+    return { line: yellow(msg), problem: msg }
+  }
+  const list = declared.origins.join(', ')
+  const routing = routeByDeclaredOrigin(declared.origins, windows || [], null)
+  if (routing.kind === 'matched') {
+    return { line: `${list} ${dim(`(${declared.source}) → window ${routing.windowId}`)}`, problem: null }
+  }
+  if (routing.kind === 'no-match') {
+    // Not fatal: the tab may simply not be open yet. But say it, because the symptom otherwise is
+    // "routing quietly did nothing" and the user has no way to tell configured from working.
+    const saw = routing.sawOrigins.length ? routing.sawOrigins.join(', ') : 'none'
+    return {
+      line: `${list} ${dim(`(${declared.source})`)} ${yellow('— no connected tab matches')} ${dim(`(tabs are on: ${saw}); commands will follow focus until one does`)}`,
+      problem: null,
+    }
+  }
+  return { line: `${list} ${dim(`(${declared.source})`)}`, problem: null }
 }
 
 /**
@@ -115,6 +160,10 @@ async function runWhere(port, portSource, jsonOutput) {
       authRefused: serverAuthRefused,
       error: serverError,
       client: HJ_VERSION,
+      origins: (() => {
+        const d = findProjectOrigins(process.cwd(), process.env)
+        return d ? { declared: d.origins, source: d.source } : null
+      })(),
       // Same policy as the human output: patch drift is not "skew", it's normal.
       versionSkew: serverInfo ? differsBeyondPatch(serverInfo.serverVersion || '', HJ_VERSION) : null,
       server: serverInfo ? {
@@ -149,6 +198,7 @@ async function runWhere(port, portSource, jsonOutput) {
   ].filter(Boolean).join(', ')
   console.log(`${bold('server:')} ${desc}`)
   console.log(`${bold('client:')} hj ${HJ_VERSION}`)
+  console.log(`${bold('origins:')} ${describeOrigins(serverInfo.windows).line}`)
   if (focused) {
     console.log(`${bold('focused:')} ${focused.title || dim('(no title)')} ${dim(`— ${focused.url}`)}`)
   } else if (tabs === 0) {
@@ -300,6 +350,10 @@ async function runDoctor(port, portSource, jsonOutput) {
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`)
     }
+    // Declared origins decide WHICH tab answers. A broken declaration silently disables the
+    // routing it configures, and doctor is where a CI lane finds out.
+    const origins = describeOrigins(tabs)
+    if (origins.problem) problems.push(origins.problem)
   }
 
   // Ambiguous targeting: we fell back to the shared default while other projects' servers are live.
@@ -328,6 +382,10 @@ async function runDoctor(port, portSource, jsonOutput) {
       ready: status ? (typeof status.ready === 'boolean' ? status.ready : (status.windows?.length ?? 0) > 0) : false,
       tabs: status?.windows?.length ?? 0,
       problems, notes,
+      origins: (() => {
+        const d = findProjectOrigins(process.cwd(), process.env)
+        return d ? { declared: d.origins, source: d.source } : null
+      })(),
       // Machine-readable third state. A consumer that only knows `ok` still behaves as before;
       // one that wants certainty can require `unchecked` to be empty.
       unchecked,
@@ -340,6 +398,7 @@ async function runDoctor(port, portSource, jsonOutput) {
     const tabCount = status.windows?.length ?? 0
     console.log(`${bold('server:')} haltija ${status.serverVersion || '?'}${status.desktopApp ? dim(' (desktop app)') : ''}, ${tabCount} tab${tabCount === 1 ? '' : 's'}`)
   }
+  if (status) console.log(`${bold('origins:')} ${describeOrigins(status.windows || []).line}`)
   for (const n of notes) console.log(`${yellow('!')} ${n}`)
   // `?` — its own glyph, because the whole point is that this is neither a pass nor a failure.
   for (const u of unchecked) console.log(`${dim('?')} ${u}`)

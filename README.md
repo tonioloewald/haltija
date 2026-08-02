@@ -55,6 +55,15 @@ hj events                        # Aggregated semantic events
 
 # Point things out (draws a visual box on the user's screen)
 hj highlight 5 "Problem here"
+
+# See the page as affordances — what's here and what it's wired to
+hj map                           # structural map with handles
+hj map --image                   # same thing as a labelled schematic PNG (returns a path)
+
+# Work out what you're actually talking to
+hj where                         # which server this shell targets, and why
+hj servers                       # every live haltija, with the one you'd drive marked
+hj doctor                        # preflight: is this thing drivable? (exits non-zero if not)
 ```
 
 Full API: `hj docs` — or `hj api` for complete reference
@@ -131,7 +140,12 @@ other's pages. Put a `.haltija.json` at your project root:
 Now `hj`, run anywhere inside that project, pins commands to a tab on one of those origins regardless
 of focus. Entirely opt-in — no file means unchanged behaviour — and it never guesses: if you declare
 origins and no connected tab matches, `hj` says so loudly instead of quietly driving someone else's
-page (and fails outright under `--strict`). `HALTIJA_ORIGINS=<csv>` overrides for one-off shells and CI.
+page (and fails outright under `--strict` — `hj --strict <cmd>`, or `HALTIJA_STRICT=1`, turns
+advisory warnings like this into non-zero exits so a CI lane stops on the real cause instead of a
+later timeout). `HALTIJA_ORIGINS=<csv>` overrides for one-off shells and CI.
+
+`hj where` and `hj doctor` both print an `origins:` line showing what you declared and which window
+it resolves to — so "configured" and "actually working" are distinguishable at a glance.
 
 ### Semantic Tree with Flags
 

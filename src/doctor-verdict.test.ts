@@ -19,6 +19,8 @@
 import { describe, it, expect, afterAll } from 'bun:test'
 import { spawn } from 'bun'
 import { join } from 'path'
+import { mkdtempSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { isolateTestMachineState, uniqueTestPort } from './test-support'
 
 const REGISTRY_DIR = isolateTestMachineState()
@@ -202,5 +204,71 @@ describe('`hj where` distinguishes absent / refused / readable (auth probe)', ()
     const json = await where(uniqueTestPort()) // never bound
     expect(json.reachable).toBe(false)
     expect(json.authRefused).toBe(false)
+  }, 30_000)
+})
+
+describe('declared origins are visible in the diagnostics that exist to explain routing', () => {
+  /** Run a local command from `cwd`, so `.haltija.json` discovery is exercised for real. */
+  async function inDir(cwd: string, cmd: string[], port: number) {
+    const proc = spawn({
+      cmd: ['bun', HJ, ...cmd, '--port', String(port)],
+      cwd,
+      env: {
+        ...(process.env as Record<string, string>),
+        HALTIJA_REGISTRY_DIR: REGISTRY_DIR,
+        HALTIJA_NO_LAUNCH: '1',
+        HALTIJA_ORIGINS: '', // never let the ambient env mask the file under test
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+    return { out, code }
+  }
+
+  const live = () => fakeServer({
+    serverVersion: '1.12.0',
+    windows: [tab({ active: true, hidden: false, url: 'http://localhost:3000/' })],
+  })
+
+  it('a .haltija.json declaring NOTHING usable fails doctor instead of being silently ignored', async () => {
+    // The warning for this existed, but lived in a block `where` and `doctor` return before
+    // reaching — so the one configuration that silently disables per-tab routing was reported
+    // nowhere a user would look, least of all in the CI preflight.
+    const dir = mkdtempSync(join(tmpdir(), 'haltija-origins-'))
+    writeFileSync(join(dir, '.haltija.json'), JSON.stringify({ origins: [] }))
+    const { out, code } = await inDir(dir, ['doctor'], live())
+    expect(code).toBe(1)
+    expect(out).toMatch(/no usable origins/)
+    expect(out).toMatch(/routing is OFF/)
+  }, 30_000)
+
+  it('a VALID declaration passes doctor and names the tab it will drive', async () => {
+    // The discriminating case: without it the assertion above would hold if doctor simply failed
+    // whenever any .haltija.json existed.
+    const dir = mkdtempSync(join(tmpdir(), 'haltija-origins-'))
+    writeFileSync(join(dir, '.haltija.json'), JSON.stringify({ origins: ['http://localhost:3000'] }))
+    const { out, code } = await inDir(dir, ['doctor'], live())
+    expect(code).toBe(0)
+    expect(out).toMatch(/http:\/\/localhost:3000/)
+  }, 30_000)
+
+  it('`hj where` reports origins in both human and --json output', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'haltija-origins-'))
+    writeFileSync(join(dir, '.haltija.json'), JSON.stringify({ origins: ['http://localhost:3000'] }))
+    const human = await inDir(dir, ['where'], live())
+    expect(human.out).toMatch(/origins:/)
+
+    const json = await inDir(dir, ['where', '--json'], live())
+    const parsed = JSON.parse(json.out.slice(json.out.indexOf('{'), json.out.lastIndexOf('}') + 1))
+    expect(parsed.origins.declared).toEqual(['http://localhost:3000'])
+  }, 30_000)
+
+  it('no declaration at all says so, and points at the fix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'haltija-origins-'))
+    const { out, code } = await inDir(dir, ['where'], live())
+    expect(code).toBe(0)
+    expect(out).toMatch(/none declared/)
+    expect(out).toMatch(/\.haltija\.json/) // names the remedy at the moment of the question
   }, 30_000)
 })

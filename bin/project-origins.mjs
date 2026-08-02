@@ -16,6 +16,7 @@ function isVisible(w) {
 
 // src/project-origins.ts
 import { dirname, join, parse as parsePath } from "path";
+var ORIGINS_FILE = ".haltija.json";
 function normalizeOrigin(value) {
   const v = String(value || "").trim();
   if (!v)
@@ -40,7 +41,7 @@ function findProjectOrigins(cwd, env = process.env) {
   let dir = cwd;
   const { root } = parsePath(cwd);
   for (let depth = 0;depth < 64; depth++) {
-    const file = join(dir, ".haltija.json");
+    const file = join(dir, ORIGINS_FILE);
     if (existsSync(file)) {
       try {
         const parsed = JSON.parse(readFileSync(file, "utf-8"));
@@ -87,5 +88,6 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
 export {
   routeByDeclaredOrigin,
   normalizeOrigin,
-  findProjectOrigins
+  findProjectOrigins,
+  ORIGINS_FILE
 };

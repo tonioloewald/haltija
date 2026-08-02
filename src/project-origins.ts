@@ -31,10 +31,18 @@ import { existsSync, readFileSync } from 'fs'
 import { isTopLevelTab, isVisible } from './window-state'
 import { dirname, join, parse as parsePath } from 'path'
 
+/**
+ * The declaration filename, in one place.
+ *
+ * It was hardcoded in the reader and again in the remedy text that tells users to create it — so a
+ * rename would have left the warning confidently instructing people to write a file nothing reads.
+ */
+export const ORIGINS_FILE = '.haltija.json'
+
 export interface ProjectOrigins {
   /** Origins the project declared, normalized (scheme://host:port, no trailing slash). */
   origins: string[]
-  /** Where the declaration was found — for `hj where` / diagnostics. */
+  /** Where the declaration was found — surfaced by `hj where` and `hj doctor`. */
   source: string
 }
 
@@ -75,7 +83,7 @@ export function findProjectOrigins(
   const { root } = parsePath(cwd)
   // Walk up to the filesystem root; stop there rather than looping forever on a malformed path.
   for (let depth = 0; depth < 64; depth++) {
-    const file = join(dir, '.haltija.json')
+    const file = join(dir, ORIGINS_FILE)
     if (existsSync(file)) {
       try {
         const parsed = JSON.parse(readFileSync(file, 'utf-8'))

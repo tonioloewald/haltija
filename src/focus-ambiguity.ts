@@ -23,6 +23,8 @@
  * wrong tab may have been picked. Preference/ranking waits for a mapping that can justify itself.
  */
 
+import { ORIGINS_FILE } from './project-origins'
+
 /** The bits of a tracked window this decision needs. */
 export interface FocusWindowInfo {
   id: string
@@ -107,7 +109,7 @@ export function ambiguousFocusWarning(opts: {
     // Name the permanent fix here, at the exact moment someone hits the problem. This warning
     // previously offered only --window, so the feature built to end this (declared origins) was
     // invisible to the one person guaranteed to want it.
-    `Or fix it for good: put a .haltija.json at your project root declaring which origins are ` +
+    `Or fix it for good: put a ${ORIGINS_FILE} at your project root declaring which origins are ` +
     `yours — { "origins": ["${[...distinctOrigins][0]}"] } — and hj will pin commands to your tab ` +
     `automatically, regardless of focus.`
   )

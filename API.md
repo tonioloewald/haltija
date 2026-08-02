@@ -1233,7 +1233,11 @@ Deprecated: Use POST /select {"action":"clear"} instead.
 
 Returns all connected browser windows/tabs with IDs, URLs, and titles.
 
-Response: { windows: [{ id, url, title, focused }], count, ready, hint }
+Response: { windows: [{ id, url, title, focused, active, hidden, windowType }], count, ready, hint }
+
+`active` and `hidden` are exact inverses, and BOTH are sent on purpose: /status historically
+emitted only `hidden` and /windows only `active`, so code moving between the two silently
+inverted its own meaning. Read either; never infer one endpoint's polarity from the other.
 
 Use window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.
 
