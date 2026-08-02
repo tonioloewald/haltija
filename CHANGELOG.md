@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.3
+
+Patch. Test infrastructure — no behaviour change.
+
+### New: distribution-parity lane
+
+haltija ships the same CLI twice: `bin/hj.mjs` in the npm package, and `dist/hj.js` as a single
+bundled file installed to `~/.local/bin/hj`. They report the same version, so nothing signalled when
+they diverged — and in 1.11.0 they did, which is how an adopter verified a readiness probe against a
+real repro and still shipped a no-op ([#14](https://github.com/tonioloewald/haltija/issues/14)).
+
+A lane now runs **both artifacts** and diffs what a consumer can observe: version, command list,
+stdout bytes, exit codes, and error hints. Mutation-tested rather than assumed — reintroducing each
+original bug (bundle without hints; advisory text on stdout) makes it fail.
+
 ## 1.11.2
 
 Patch. Four field reports from tosijs-3d and tosijs-ui, all confirmed.
