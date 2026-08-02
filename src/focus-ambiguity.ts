@@ -102,7 +102,13 @@ export function ambiguousFocusWarning(opts: {
     `This command was NOT pinned to a window and this server has tabs from ` +
     `${distinctOrigins.size} different origins, so *focus* — not your working directory — chose ` +
     `which tab answered (${chosenWhere}). A tab you didn't mean (another project's page on this ` +
-    `shared server, or one a human just clicked into) can silently receive the command. If you ` +
-    `meant a different page, pin it:\n${pins}${more}`
+    `shared server, or one a human just clicked into) can silently receive the command.\n` +
+    `Pin one command:\n${pins}${more}\n` +
+    // Name the permanent fix here, at the exact moment someone hits the problem. This warning
+    // previously offered only --window, so the feature built to end this (declared origins) was
+    // invisible to the one person guaranteed to want it.
+    `Or fix it for good: put a .haltija.json at your project root declaring which origins are ` +
+    `yours — { "origins": ["${[...distinctOrigins][0]}"] } — and hj will pin commands to your tab ` +
+    `automatically, regardless of focus.`
   )
 }

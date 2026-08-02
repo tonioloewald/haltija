@@ -118,6 +118,21 @@ The widget (auto-injected by the desktop app) connects to a local server via Web
 
 ## Key Features
 
+### Two projects, one machine: declare your origins
+
+If several projects share a haltija server, which **tab** answers an untargeted command falls back to
+whatever is focused — so two agents, each correctly working in its own directory, can drive each
+other's pages. Put a `.haltija.json` at your project root:
+
+```json
+{ "origins": ["https://localhost:8030", "http://localhost:3000"] }
+```
+
+Now `hj`, run anywhere inside that project, pins commands to a tab on one of those origins regardless
+of focus. Entirely opt-in — no file means unchanged behaviour — and it never guesses: if you declare
+origins and no connected tab matches, `hj` says so loudly instead of quietly driving someone else's
+page (and fails outright under `--strict`). `HALTIJA_ORIGINS=<csv>` overrides for one-off shells and CI.
+
 ### Semantic Tree with Flags
 
 The `/tree` endpoint doesn't dump raw HTML. It produces a semantic structure with actionable flags:

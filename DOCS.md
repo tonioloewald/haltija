@@ -19,6 +19,9 @@ hj key Enter           # Press keys
 hj screenshot          # Capture page
 hj screenshot --canvas "#scene"   # Read a <canvas> exactly (3D/WebGL; no grant needed)
 hj servers             # List every live server; hj shutdown stops one
+
+# Opt-in per-tab routing: .haltija.json at your project root
+#   { "origins": ["https://localhost:8030"] }   → hj pins commands to YOUR tab, not the focused one
 hj --help              # All commands
 ```
 

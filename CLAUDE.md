@@ -419,6 +419,14 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
 | `HALTIJA_NO_TAB_WARN` | Set to `1` to silence the hidden-tab / focus-ambiguity result warnings | — |
+| `HALTIJA_ORIGINS` | Comma-separated origins for per-tab routing; overrides `.haltija.json` | — |
+| `HALTIJA_STRICT` | Set to `1` (or `hj --strict`) to turn advisory warnings into non-zero exits | — |
+| `HALTIJA_PRIVATE` | *Set by haltija.* Marks an isolated instance (ephemeral port, no registry) | — |
+| `HALTIJA_PORT_FILE` | *Set by haltija.* Where a private server reports its bound address | — |
+| `HALTIJA_SPAWNER_PID` | *Set by haltija.* Pid a private child polls so it dies with its run | — |
+| `HALTIJA_SERVER_MODE` | Desktop app server strategy: `auto` (default), `builtin`, `external` | `auto` |
+| `HALTIJA_DESKTOP_PUBLIC` | *Set by haltija.* Marks the public desktop server (registers as `desktop`) | — |
+| `HALTIJA_PUBLIC_URL` | *Set by haltija.* The app instance's own public server, for the renderer | — |
 | `HALTIJA_MACHINE_LOG` | Path for the machine-scope action receipt (tests point this at a temp dir) | `~/.haltija/machine-actions.log` |
 | `HALTIJA_REGISTRY_DIR` | Instance registry location (tests must point this at a temp dir) | `~/.haltija/servers` |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |

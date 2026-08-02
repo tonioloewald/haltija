@@ -44,6 +44,12 @@ Two first-party ways to run (plus embedding, below):
   port a shell targets and WHY; override with `--port` or `--name`. When several servers
   run at once (e.g. a project server AND the desktop app), `hj servers` lists them all —
   the desktop app is reachable as `hj --name desktop`.
+- **Per-tab routing (opt-in):** on a shared server, which TAB answers falls back to focus, so two
+  projects can drive each other's pages. Put a `.haltija.json` at your project root declaring
+  which origins are yours — `{ "origins": ["https://localhost:8030"] }` — and `hj` pins commands
+  to a matching tab regardless of focus. No file means unchanged behaviour; a declaration that
+  matches no connected tab warns loudly rather than silently driving someone else's page.
+  `HALTIJA_ORIGINS=<csv>` overrides for one-off shells and CI.
 - **Scripts/CI:** gate on `hj doctor` (exits non-zero when the target is not drivable or is
   ambiguous) or on the `ready` field of `/status`/`/windows` — NOT on "the server answered".
   A server can be up with zero connected tabs, so a lane that adopts it fails later on a

@@ -143,6 +143,7 @@ describe('docs coverage: headline capabilities are described, not just listed', 
     ['agent surface', ['tosiAgent'], 'the native wiring tier of hj map'],
     ['strict mode', ['--strict', 'HALTIJA_STRICT'], 'warnings become non-zero exits'],
     ['readiness', ['ready'], '"server up" is not "server drivable"'],
+    ['declared origins', ['.haltija.json', 'HALTIJA_ORIGINS'], 'opt-in per-tab routing by declaration'],
   ]
 
   for (const [name, needles, why] of CONCEPTS) {

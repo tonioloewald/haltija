@@ -302,6 +302,9 @@ function generateDocsMd(): string {
     'hj screenshot          # Capture page',
     'hj screenshot --canvas "#scene"   # Read a <canvas> exactly (3D/WebGL; no grant needed)',
     'hj servers             # List every live server; hj shutdown stops one',
+    '',
+    '# Opt-in per-tab routing: .haltija.json at your project root',
+    '#   { "origins": ["https://localhost:8030"] }   → hj pins commands to YOUR tab, not the focused one',
     'hj --help              # All commands',
     '```',
     '',
@@ -603,6 +606,12 @@ function generateLlmsTxt(): string {
   lines.push('  port a shell targets and WHY; override with `--port` or `--name`. When several servers')
   lines.push('  run at once (e.g. a project server AND the desktop app), `hj servers` lists them all —')
   lines.push('  the desktop app is reachable as `hj --name desktop`.')
+  lines.push('- **Per-tab routing (opt-in):** on a shared server, which TAB answers falls back to focus, so two')
+  lines.push('  projects can drive each other\'s pages. Put a `.haltija.json` at your project root declaring')
+  lines.push('  which origins are yours — `{ "origins": ["https://localhost:8030"] }` — and `hj` pins commands')
+  lines.push('  to a matching tab regardless of focus. No file means unchanged behaviour; a declaration that')
+  lines.push('  matches no connected tab warns loudly rather than silently driving someone else\'s page.')
+  lines.push('  `HALTIJA_ORIGINS=<csv>` overrides for one-off shells and CI.')
   lines.push('- **Scripts/CI:** gate on `hj doctor` (exits non-zero when the target is not drivable or is')
   lines.push('  ambiguous) or on the `ready` field of `/status`/`/windows` — NOT on "the server answered".')
   lines.push('  A server can be up with zero connected tabs, so a lane that adopts it fails later on a')
