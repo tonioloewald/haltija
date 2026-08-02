@@ -405,6 +405,60 @@ test.describe('haltija-dev CLI', () => {
     await page.evaluate(() => { delete (globalThis as any).tosiAgent })
   })
 
+  test('hj wait for a missing element actually WAITS and fails — never a 0ms success', async ({ page }) => {
+    // The unit tests for this asserted the parser's output shape, and both the parser and the tests
+    // used a field the endpoint does not read — so `hj wait ".modal"` returned success in ~50ms and
+    // the suite stayed green. A parser-shape assertion cannot catch a parser/endpoint MISMATCH; only
+    // measuring the elapsed time can. This is that measurement.
+    await injectDevChannel(page)
+
+    const t0 = Date.now()
+    const res = await (await fetch(`${SERVER_URL}/wait`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: '.definitely-not-present', timeout: 1200 }),
+    })).json()
+    const elapsed = Date.now() - t0
+
+    expect(res.success).toBe(false)
+    expect(elapsed).toBeGreaterThan(1000) // it really waited
+    expect(res.error).toMatch(/not found/)
+  })
+
+  test('/wait with nothing to wait for is a 400, not a success', async ({ page }) => {
+    // The failure mode that let the mismatch hide: an unrecognised field validates fine, so the
+    // handler fell through to "no arguments" and reported success. Refuse instead.
+    await injectDevChannel(page)
+    const resp = await fetch(`${SERVER_URL}/wait`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })
+    expect(resp.status).toBe(400)
+    const body = await resp.json()
+    expect(body.success).toBe(false)
+    expect(body.error).toMatch(/forElement/) // names the field it wanted
+  })
+
+  test('hj wait for an element that DOES appear succeeds promptly', async ({ page }) => {
+    // The discriminating case — without it the two assertions above would hold if /wait simply
+    // always failed.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      setTimeout(() => {
+        const d = document.createElement('div')
+        d.className = 'arrives-late'
+        d.textContent = 'here'
+        document.body.appendChild(d)
+      }, 300)
+    })
+    const res = await (await fetch(`${SERVER_URL}/wait`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: '.arrives-late', timeout: 5000 }),
+    })).json()
+    expect(res.success).toBe(true)
+    expect(res.found).toBe(true)
+  })
+
   test('--canvas finds a shadow-DOM canvas hidden behind a light-DOM element of the same name', async ({ page }) => {
     // `resolveCanvasDeep` recorded a non-canvas light-DOM match with an explicit comment saying it
     // was "recorded rather than returned immediately, so the shadow-piercing attempts below still

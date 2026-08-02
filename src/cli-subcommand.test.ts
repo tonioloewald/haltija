@@ -153,12 +153,40 @@ describe('parseWaitArgs', () => {
     expect(parseWaitArgs(['3000'])).toEqual({ ms: 3000 })
   })
 
-  test('parses selector target', () => {
-    expect(parseWaitArgs(['.modal'])).toEqual({ selector: '.modal' })
+  test('sends forElement — the field /wait actually reads', () => {
+    // These two tests used to assert `{ selector }`, which the endpoint ignores. `hj wait ".modal"`
+    // therefore hit /wait's no-argument path and returned `{ success: true, waited: 0 }` in ~50ms:
+    // a wait that never waited, reported as success, so every assertion after it raced the page.
+    // The tests were added in the same cycle as the bug and pinned the wrong field, which is
+    // exactly why the suite stayed green. Assert the wire field, not the parser's convenience name.
+    expect(parseWaitArgs(['.modal'])).toEqual({ forElement: '.modal' })
   })
 
-  test('parses selector with timeout', () => {
-    expect(parseWaitArgs(['.modal', '10000'])).toEqual({ selector: '.modal', timeout: 10000 })
+  test('--timeout is parsed as a FLAG, not read positionally', () => {
+    // `args[1]` meant `Number('--timeout')` → NaN went out on the wire.
+    expect(parseWaitArgs(['.modal', '--timeout', '10000'])).toEqual({ forElement: '.modal', timeout: 10000 })
+    expect(parseWaitArgs(normalizeEqualsFlags(['.modal', '--timeout=10000'])))
+      .toEqual({ forElement: '.modal', timeout: 10000 })
+  })
+
+  test('--selector names the target instead of being taken AS the target', () => {
+    // `hj wait --selector "#foo"` used to send forElement: "--selector".
+    expect(parseWaitArgs(['--selector', '#foo'])).toEqual({ forElement: '#foo' })
+  })
+
+  test('the documented positional timeout is honoured, not silently dropped', () => {
+    // `hj wait .loading 10000` is the form docs/agent-prompt.md:110 shows. My first cut of the
+    // flag parser dropped it — accepting an argument and ignoring it, which is the exact class of
+    // bug this fix exists to remove. An explicit --timeout still wins.
+    expect(parseWaitArgs(['.loading', '10000'])).toEqual({ forElement: '.loading', timeout: 10000 })
+    expect(parseWaitArgs(['.loading', '10000', '--timeout', '250']))
+      .toEqual({ forElement: '.loading', timeout: 250 })
+  })
+
+  test('--hidden and a bare delay still work', () => {
+    expect(parseWaitArgs(['.modal', '--hidden'])).toEqual({ forElement: '.modal', hidden: true })
+    expect(parseWaitArgs(['500'])).toEqual({ ms: 500 })
+    expect(parseWaitArgs([])).toEqual({ ms: 1000 })
   })
 })
 

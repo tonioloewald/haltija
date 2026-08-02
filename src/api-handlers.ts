@@ -1260,10 +1260,31 @@ registerHandler(api.wait, async (body, ctx) => {
   const ms = body.ms ?? 0
   const hidden = body.hidden ?? false
   const startTime = Date.now()
-  
+
+  // `selector` is an accepted alias for `forElement`. The CLI sent `selector`, the test-runner
+  // `wait` step accepts `selector`, and SKILL.md documents them as interchangeable — this endpoint
+  // was the lone holdout, and because a stray key validates fine, `hj wait ".modal"` fell through to
+  // the "no arguments" path and returned `{ success: true, waited: 0 }` in 52ms. A wait that
+  // reports success without waiting is the purest form of the instrument lying: every assertion
+  // after it races the page, and the failure surfaces somewhere else entirely.
+  const forElement = body.forElement ?? (body as any).selector
+
+  // Nothing to wait FOR. Previously this returned success, which is what let a field-name mismatch
+  // masquerade as a passing command for as long as nobody measured the elapsed time. Refuse.
+  if (!forElement && !(ms > 0)) {
+    return Response.json({
+      success: false,
+      error:
+        `/wait needs something to wait for: pass \`ms\` for a fixed delay, or \`forElement\` ` +
+        `(alias: \`selector\`) for an element. Received neither, so there was nothing to do — ` +
+        `reporting that instead of returning success after 0ms.`,
+      waited: 0,
+    }, { status: 400, headers: ctx.headers })
+  }
+
   // If waiting for element
-  if (body.forElement) {
-    const selector = body.forElement
+  if (forElement) {
+    const selector = forElement
     const checkCode = hidden
       ? `(function(){var el=${qs(selector)};return !el || el.offsetParent === null})()`
       : qsVisible(selector)

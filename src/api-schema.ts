@@ -799,11 +799,15 @@ export const wait = endpoint({
 
 All modes support timeout (default 5000ms). Returns immediately if condition already met.
 
+Passing NEITHER \`ms\` nor \`forElement\`/\`selector\` is an error (HTTP 400), not a no-op success —
+a wait that reports success without waiting makes every assertion after it race the page.
+
 Response: { success: true, waited: ms, found?: boolean }`,
   category: 'interaction',
   input: s.object({
     ms: s.number.describe('Milliseconds to wait').optional,
     forElement: s.string.describe('CSS selector to wait for').optional,
+    selector: s.string.describe('Alias for forElement — accepted so the CLI, the test-runner wait step and this endpoint all take the same field').optional,
     hidden: s.boolean.describe('Wait for element to disappear (default false)')
       .optional,
     timeout: s.number.describe('Max wait time in ms (default 5000)').optional,

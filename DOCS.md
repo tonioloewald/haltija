@@ -68,7 +68,7 @@ and every node carries `colors` + a `contrastFail` verdict so it is machine-chec
 - `hj highlight [ref, selector, label, ...]` - Visually highlight an element
 - `hj unhighlight` - Remove highlight
 - `hj scroll [ref, selector, x, ...]` - Scroll to element or position
-- `hj wait [ms, forElement, hidden, ...]` - Wait for time, element, or condition
+- `hj wait [ms, forElement, selector, ...]` - Wait for time, element, or condition
 - `hj call [ref, selector, method, ...]` - Call a method or get a property on an element
 
 ### Navigate

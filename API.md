@@ -829,6 +829,9 @@ Flexible wait for async UI scenarios. Multiple modes:
 
 All modes support timeout (default 5000ms). Returns immediately if condition already met.
 
+Passing NEITHER `ms` nor `forElement`/`selector` is an error (HTTP 400), not a no-op success —
+a wait that reports success without waiting makes every assertion after it race the page.
+
 Response: { success: true, waited: ms, found?: boolean }
 
 **Parameters:**
@@ -837,6 +840,7 @@ Response: { success: true, waited: ms, found?: boolean }
 |------|------|-------------|
 | `ms` | number,null | Milliseconds to wait |
 | `forElement` | string,null | CSS selector to wait for |
+| `selector` | string,null | Alias for forElement — accepted so the CLI, the test-runner wait step and this endpoint all take the same field |
 | `hidden` | boolean,null | Wait for element to disappear (default false) |
 | `timeout` | number,null | Max wait time in ms (default 5000) |
 | `pollInterval` | number,null | Polling interval in ms (default 100) |

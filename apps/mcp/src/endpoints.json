@@ -810,7 +810,7 @@
     "path": "/wait",
     "method": "POST",
     "summary": "Wait for time, element, or condition",
-    "description": "Flexible wait for async UI scenarios. Multiple modes:\n\n- ms: Wait for a fixed time (simple delay)\n- forElement: Poll until element appears (or disappears with hidden:true)\n- Both: Wait for element, then add extra ms delay\n\nAll modes support timeout (default 5000ms). Returns immediately if condition already met.\n\nResponse: { success: true, waited: ms, found?: boolean }",
+    "description": "Flexible wait for async UI scenarios. Multiple modes:\n\n- ms: Wait for a fixed time (simple delay)\n- forElement: Poll until element appears (or disappears with hidden:true)\n- Both: Wait for element, then add extra ms delay\n\nAll modes support timeout (default 5000ms). Returns immediately if condition already met.\n\nPassing NEITHER `ms` nor `forElement`/`selector` is an error (HTTP 400), not a no-op success —\na wait that reports success without waiting makes every assertion after it race the page.\n\nResponse: { success: true, waited: ms, found?: boolean }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -827,6 +827,13 @@
             "null"
           ],
           "description": "CSS selector to wait for"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Alias for forElement — accepted so the CLI, the test-runner wait step and this endpoint all take the same field"
         },
         "hidden": {
           "type": [

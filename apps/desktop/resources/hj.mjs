@@ -1218,10 +1218,41 @@ function parseScrollArgs(args) {
 function parseWaitArgs(args) {
   if (!args.length)
     return { ms: 1000 };
-  const first = args[0];
+  const flags = {};
+  const positional = [];
+  for (let i = 0;i < args.length; i++) {
+    const a = args[i];
+    if (a === "--timeout" && args[i + 1] !== undefined) {
+      flags.timeout = num(args[++i]);
+      continue;
+    }
+    if (a === "--poll-interval" && args[i + 1] !== undefined) {
+      flags.pollInterval = num(args[++i]);
+      continue;
+    }
+    if (a === "--hidden") {
+      flags.hidden = true;
+      continue;
+    }
+    if (a === "--selector" && args[i + 1] !== undefined) {
+      positional.push(args[++i]);
+      continue;
+    }
+    if (a.startsWith("-"))
+      continue;
+    positional.push(a);
+  }
+  const first = positional[0];
+  if (first === undefined)
+    return { ms: 1000, ...flags };
   if (!isNaN(first))
-    return { ms: num(first) };
-  return { ...parseTargetArgs([first]), timeout: args[1] ? num(args[1]) : undefined };
+    return { ms: num(first), ...flags };
+  const positionalTimeout = positional[1] !== undefined && !isNaN(positional[1]) ? num(positional[1]) : undefined;
+  const target = parseTargetArgs([first]);
+  const body = target.selector !== undefined ? { forElement: target.selector } : { ...target };
+  if (positionalTimeout !== undefined)
+    body.timeout = positionalTimeout;
+  return { ...body, ...flags };
 }
 function parseClickArgs(args) {
   const body = {};
@@ -1613,7 +1644,8 @@ var KNOWN_FLAGS = {
   "network-watch": ["--preset"],
   "send-message": ["--no-submit"],
   "send-selection": ["--no-submit"],
-  "send-recording": ["--no-submit"]
+  "send-recording": ["--no-submit"],
+  wait: ["--timeout", "--poll-interval", "--hidden", "--selector"]
 };
 function normalizeEqualsFlags(args) {
   const out = [];

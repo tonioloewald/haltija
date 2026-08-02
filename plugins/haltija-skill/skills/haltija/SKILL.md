@@ -62,6 +62,11 @@ parses but declares **no usable origins** silently turns per-tab routing off —
 was added to fix — so `hj doctor` now **fails** on it (exit 1) and names the file. Trust that line:
 "configured" and "working" are different states and it distinguishes them.
 
+**Waiting.** `hj wait 500` delays; `hj wait ".modal" --timeout 5000` polls until the element is
+visible and **exits non-zero on timeout** — so a CI lane stops on the real cause. `--hidden` waits
+for it to disappear. Passing neither a delay nor a selector is an error, not a no-op: a wait that
+returns success without waiting makes every assertion after it race the page.
+
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`** (alias **`hj ls`**)

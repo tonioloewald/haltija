@@ -332,9 +332,34 @@ export function parseScrollArgs(args) {
 /** Parse wait args: selector or ms */
 export function parseWaitArgs(args) {
   if (!args.length) return { ms: 1000 }
-  const first = args[0]
-  if (!isNaN(first)) return { ms: num(first) }
-  return { ...parseTargetArgs([first]), timeout: args[1] ? num(args[1]) : undefined }
+  // Flags parsed as flags. `timeout` used to be read positionally as args[1], so
+  // `hj wait ".modal" --timeout 5000` sent timeout: NaN (Number('--timeout')), and
+  // `hj wait --selector "#foo"` took the flag NAME as the selector.
+  const flags = {}
+  const positional = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--timeout' && args[i + 1] !== undefined) { flags.timeout = num(args[++i]); continue }
+    if (a === '--poll-interval' && args[i + 1] !== undefined) { flags.pollInterval = num(args[++i]); continue }
+    if (a === '--hidden') { flags.hidden = true; continue }
+    if (a === '--selector' && args[i + 1] !== undefined) { positional.push(args[++i]); continue }
+    if (a.startsWith('-')) continue // unknown flag — warnUnknownFlags reports it
+    positional.push(a)
+  }
+  const first = positional[0]
+  if (first === undefined) return { ms: 1000, ...flags }
+  if (!isNaN(first)) return { ms: num(first), ...flags }
+  // A numeric SECOND positional is still a timeout: `hj wait .loading 10000` is the form
+  // docs/agent-prompt.md documents, and dropping it silently would be the same class of bug this
+  // whole fix is about — an argument accepted and ignored. An explicit --timeout wins.
+  const positionalTimeout =
+    positional[1] !== undefined && !isNaN(positional[1]) ? num(positional[1]) : undefined
+  // `selector` is what the endpoint accepts as an alias for forElement; send the canonical name so
+  // the request is self-describing on the wire.
+  const target = parseTargetArgs([first])
+  const body = target.selector !== undefined ? { forElement: target.selector } : { ...target }
+  if (positionalTimeout !== undefined) body.timeout = positionalTimeout
+  return { ...body, ...flags }
 }
 
 /** Parse click args: selector/ref + --diff flag + --delay */
@@ -788,6 +813,7 @@ export const KNOWN_FLAGS = {
   'send-message': ['--no-submit'],
   'send-selection': ['--no-submit'],
   'send-recording': ['--no-submit'],
+  wait: ['--timeout', '--poll-interval', '--hidden', '--selector'],
 }
 
 /** Split `--flag=value` into `--flag`, `value` (first `=` only). Long flags only. */
