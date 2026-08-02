@@ -35,7 +35,7 @@ import { hiddenTabWarning } from './tab-liveness'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
-import { isTopLevelTab, isVisibleTab, isDrivable } from './window-state'
+import { isVisibleTab, isDrivable, summarizeWindow } from './window-state'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -1317,16 +1317,18 @@ async function handleRest(req: Request): Promise<Response> {
     const allWindows = Array.from(windows.values())
 
     const windowList = allWindows.map(w => ({
-      id: w.id,
+      // The shared shape, then this endpoint's extras. Both endpoints hand-rolled it, and the
+      // expressions LOOKED different enough that a reviewer reasonably concluded they disagreed on
+      // polarity. They didn't — but `summarizeWindow`'s doc comment claimed to be "the shape both
+      // /status and /windows report" while being called by nothing outside its own test, so the
+      // docs described an architecture that did not exist. Fixed by making the comment true.
+      //
+      // `hidden` here also used to read `!isVisibleTab({ ...w, windowType: 'tab' })`: forcing the
+      // type neutered the helper's top-level check (making it a wordy `!isVisible`) and cloned
+      // every window — including its live `ws` handle — on every /status poll.
+      ...summarizeWindow(w),
       title: w.title?.slice(0, 50) || '(untitled)',
-      url: w.url,
       focused: w.id === focusedWindowId,
-      // The tab told us it went hidden (visibilitychange). rAF/timers are throttled there, so
-      // results from it can be plausible-but-wrong — see src/tab-liveness.ts (issue #3).
-      // BOTH polarities. /status emitted only `hidden` and /windows only `active`, so a consumer
-      // moving between them inverted its own meaning. See src/window-state.ts.
-      hidden: !isVisibleTab({ ...w, windowType: 'tab' }),
-      active: w.active !== false,
       recording: activeRecordingSessions.has(w.id),
     }))
     
@@ -3857,16 +3859,11 @@ Run 'hj --help' for all commands.`
     const allWindows = Array.from(windows.values())
 
     const windowList = allWindows.map(w => ({
-      id: w.id,
-      url: w.url,
-      title: w.title,
-      active: w.active,
-      hidden: w.active === false,
+      ...summarizeWindow(w),
       focused: w.id === focusedWindowId,
       connectedAt: w.connectedAt,
       lastSeen: w.lastSeen,
       label: w.label,
-      windowType: w.windowType || 'tab',
     }))
 
     // "Server is up" is NOT "server is drivable" (issue #11): an adopter's lane probes for a live
@@ -4131,8 +4128,11 @@ const serverConfig = {
               // should receive untargeted commands; a background-loaded tab
               // reports active:false and won't steal focus. (Only real tabs —
               // never iframes/popups — become the untargeted-command target.)
-              const isVisibleTab = isTopLevelTab({ id: windowId, windowType }) && active !== false
-              if (!focusedWindowId || focusedWindowId === windowId || isVisibleTab) {
+              // Named `drivable`, not `isVisibleTab` — it used to shadow the imported helper of
+              // that name and then hand-write the predicate underneath it, so the import looked
+              // used and wasn't.
+              const drivable = isVisibleTab({ id: windowId, windowType, active })
+              if (!focusedWindowId || focusedWindowId === windowId || drivable) {
                 focusedWindowId = windowId
               }
               

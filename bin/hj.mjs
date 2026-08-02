@@ -15,6 +15,7 @@ import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin, ORIGINS_FILE } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
 import { isDrivable, isVisible, visibilityKnown } from './window-state.mjs'
+import { LOCAL_COMMANDS } from './cli-commands.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -23,8 +24,8 @@ import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 
-/** Commands hj handles itself rather than routing to the server. */
-const HJ_LOCAL_COMMANDS = new Set(['where', 'servers', 'ls', 'doctor', 'shutdown', 'quit'])
+/** Commands hj handles itself rather than routing to the server. One source: src/cli-commands.ts. */
+const HJ_LOCAL_COMMANDS = new Set(LOCAL_COMMANDS)
 
 // One definition. These were redeclared inside a dozen functions, which is how `green` ended up in
 // some outputs and not others — small enough that nobody notices, exactly the kind of duplication
@@ -150,6 +151,7 @@ async function runWhere(port, portSource, jsonOutput) {
     console.log(JSON.stringify({
       port: Number(port),
       portSource,
+      portSourceKind,
       // "Reachable" means it answered — which a 401 is. It used to mean "and I could read it",
       // so a token-protected server reported `reachable: false` and any consumer printing
       // "start a server" gave advice that could never work against a server that was already up.
@@ -281,7 +283,7 @@ async function runServers(resolvedPort) {
  * Checks, in the order they bite: server reachable → drivable (a tab is connected) → targeting is
  * unambiguous (cwd matches, or the choice was explicit) → tabs visible → versions aligned.
  */
-async function runDoctor(port, portSource, jsonOutput) {
+async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
   const token = process.env.HALTIJA_TOKEN
 
   const problems = [] // fatal → exit 1
@@ -360,7 +362,7 @@ async function runDoctor(port, portSource, jsonOutput) {
   // ONE predicate, shared with the resolution-time warning above and unit-tested — the two hand-
   // written copies both counted the resolved server as "other", so `hj doctor` failed against the
   // server it had just validated.
-  const { ambiguous, others } = isAmbiguousTarget(portSource, port, listLiveInstances())
+  const { ambiguous, others } = isAmbiguousTarget(portSourceKind, port, listLiveInstances())
   if (ambiguous) {
     problems.push(
       `targeting the shared default port 8700, but ${others.length} other haltija server(s) are ` +
@@ -377,7 +379,7 @@ async function runDoctor(port, portSource, jsonOutput) {
 
   if (jsonOutput) {
     console.log(JSON.stringify({
-      ok, port, portSource,
+      ok, port, portSource, portSourceKind,
       serverVersion: status?.serverVersion ?? null,
       ready: status ? (typeof status.ready === 'boolean' ? status.ready : (status.windows?.length ?? 0) > 0) : false,
       tabs: status?.windows?.length ?? 0,
@@ -578,10 +580,13 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 // Resolved highest-precedence-first and short-circuited, so each source is
 // consulted only when nothing above it decided. Only the final, losing branch
 // warns.
-let port, portSource
+// `portSource` is the sentence a human reads; `portSourceKind` is what code decides on. They were
+// one string doing both jobs, keyed by a regex in one file and `!==` in another — see PortSourceKind.
+let port, portSource, portSourceKind
 if (portFlag) {
   port = portFlag
   portSource = '--port flag'
+  portSourceKind = 'flag'
 } else if (resolvedName) {
   const entry = lookupNamedInstance(resolvedName)
   if (!entry) {
@@ -591,27 +596,32 @@ if (portFlag) {
   }
   port = String(entry.port)
   portSource = `name "${resolvedName}" via ${nameSource}`
+  portSourceKind = 'name'
 } else if (process.env.HALTIJA_PORT) {
   port = process.env.HALTIJA_PORT
   portSource = 'HALTIJA_PORT env'
+  portSourceKind = 'env'
 } else if (process.env.DEV_CHANNEL_PORT) {
   port = process.env.DEV_CHANNEL_PORT
   portSource = 'DEV_CHANNEL_PORT env (legacy)'
+  portSourceKind = 'env'
 } else {
   const live = listLiveInstances()
   const cwdMatch = resolveByCwd(process.cwd(), live)
   if (cwdMatch) {
     port = String(cwdMatch.port)
     portSource = `cwd match: ${cwdMatch.name}`
+    portSourceKind = 'cwd'
   } else {
     port = '8700'
     portSource = '8700 (default)'
+    portSourceKind = 'default'
     // Falling back to the shared default while project servers are running is
     // the classic misroute — you think you're driving this project's browser
     // and you're driving someone else's. Say so rather than doing it quietly.
     // Reached only when nothing else selected a port, so it can't contradict an
     // explicit choice.
-    const { ambiguous, others } = isAmbiguousTarget('8700 (default)', port, live)
+    const { ambiguous, others } = isAmbiguousTarget(portSourceKind, port, live)
     if (ambiguous) {
       const names = others.map((e) => `${e.name} (${e.cwd})`).join(', ')
       if (STRICT) {
@@ -660,7 +670,7 @@ args.push(...argsWithoutWindow)
 // can't connect to this port), so we suppress the Electron launch and print
 // an actionable hint instead. Only the bare, unconfigured 8700 default keeps
 // the zero-config desktop auto-launch.
-const explicitTarget = portSource !== '8700 (default)'
+const explicitTarget = portSourceKind !== 'default'
 
 // --- Space-to-hyphen sub-command resolution ---
 // "hj test run foo.json" → "hj test-run foo.json"
@@ -692,56 +702,84 @@ let subArgs = args.slice(1)
 // Re-attach a leading --window so cli-subcommand's existing handling sees it (both positions work).
 if (windowTarget) subArgs = [...subArgs, '--window', windowTarget]
 
-// `hj where` — show which haltija server this shell is targeting and what
-// (if anything) is alive there. Pure client-side resolution plus a single
-// /status probe; no side effects, no auto-launch, safe to run anywhere.
-if (subcommand === 'where') {
-  await runWhere(port, portSource, subArgs.includes('--json'))
-  process.exit(0)
-}
-
-// `hj servers` / `hj ls` — list every live haltija server (registry + defaults + this shell's
-// target), so you can pick one when several coexist. Diagnostic; never auto-launches.
-if (subcommand === 'servers' || subcommand === 'ls') {
-  await runServers(port)
-  process.exit(0)
-}
-
-// `hj doctor` — preflight for a test lane. EXITS NON-ZERO when the target isn't drivable or is
-// ambiguous, so a lane can fail fast with the real reason (issues #8, #11). Never auto-launches.
-if (subcommand === 'doctor') {
-  const ok = await runDoctor(port, portSource, subArgs.includes('--json'))
-  process.exit(ok ? 0 : 1)
-}
-
-// `hj shutdown` / `hj quit` — cleanly stop the targeted server. For a private `--app` instance this
-// tears down the WHOLE thing (Electron + its child servers); for a plain server it stops that
-// server. Never auto-launches (it's a stop command), so it's handled here before the routing table.
-if (subcommand === 'shutdown' || subcommand === 'quit') {
-  const token = process.env.HALTIJA_TOKEN
-  try {
-    const resp = await fetch(`http://localhost:${port}/shutdown`, {
-      method: 'POST',
-      headers: token ? { 'X-Haltija-Token': token } : {},
-      signal: AbortSignal.timeout(3000),
-    })
-    const j = await resp.json().catch(() => ({}))
-    if (resp.ok) {
-      console.log(j.message || `Shutdown requested on port ${port}.`)
-      process.exit(0)
+// Commands hj answers itself, as a MAP rather than an if-chain.
+//
+// The names lived in five places: `LOCAL_COMMANDS` in src/cli-commands.ts (documented as
+// authoritative), hand copies in `HJ_LOCAL_COMMANDS` and `DIAGNOSTIC` here, and — the one that
+// actually decided anything — a hardcoded `if (subcommand === 'where' || …)` chain. Importing the
+// list without replacing the chain would have fixed nothing: adding a name to `LOCAL_COMMANDS`
+// made `hj <name> --help` print the routed footer ("machine-readable: hj <name> --json", a remedy
+// that cannot work) and then POST /<name> to the server. Now there is one map, and the invariant
+// below makes a missing handler a startup error instead of a wrong answer.
+const LOCAL_HANDLERS = {
+  // Which server is this shell targeting, and what's alive there. Pure resolution + one /status
+  // probe; no side effects, no auto-launch, safe anywhere.
+  where: async () => {
+    await runWhere(port, portSource, subArgs.includes('--json'))
+    return 0
+  },
+  // Every live haltija (registry + defaults + this shell's target), so you can pick one when
+  // several coexist. Diagnostic; never auto-launches.
+  servers: async () => {
+    await runServers(port)
+    return 0
+  },
+  // Preflight for a test lane. EXITS NON-ZERO when the target isn't drivable or is ambiguous, so a
+  // lane fails fast with the real reason (issues #8, #11). Never auto-launches.
+  doctor: async () => ((await runDoctor(port, portSource, portSourceKind, subArgs.includes('--json'))) ? 0 : 1),
+  // Cleanly stop the targeted server. For a private `--app` instance this tears down the WHOLE
+  // thing (Electron + its child servers). Never auto-launches — it's a stop command.
+  shutdown: async () => {
+    const token = process.env.HALTIJA_TOKEN
+    try {
+      const resp = await fetch(`http://localhost:${port}/shutdown`, {
+        method: 'POST',
+        headers: token ? { 'X-Haltija-Token': token } : {},
+        signal: AbortSignal.timeout(3000),
+      })
+      const j = await resp.json().catch(() => ({}))
+      if (resp.ok) {
+        console.log(j.message || `Shutdown requested on port ${port}.`)
+        return 0
+      }
+      // Surface the server's explanation (e.g. the desktop-app refusal), not a bare status code.
+      console.error(`hj ${subcommand}: ${j.error || `server on port ${port} returned HTTP ${resp.status}`}`)
+      return 1
+    } catch (err) {
+      // Nothing listening = already stopped; that's success for a stop command.
+      if (err.code === 'ConnectionRefused' || err.cause?.code === 'ECONNREFUSED') {
+        console.log(`No server listening on port ${port} (already stopped).`)
+        return 0
+      }
+      console.error(`hj ${subcommand}: ${err.message}`)
+      return 1
     }
-    // Surface the server's explanation (e.g. the desktop-app refusal), not a bare status code.
-    console.error(`hj ${subcommand}: ${j.error || `server on port ${port} returned HTTP ${resp.status}`}`)
-    process.exit(1)
-  } catch (err) {
-    // Nothing listening = already stopped; that's success for a stop command.
-    if (err.code === 'ConnectionRefused' || err.cause?.code === 'ECONNREFUSED') {
-      console.log(`No server listening on port ${port} (already stopped).`)
-      process.exit(0)
-    }
-    console.error(`hj ${subcommand}: ${err.message}`)
+  },
+}
+// Aliases, declared once so `LOCAL_COMMANDS` and the map stay the same set.
+LOCAL_HANDLERS.ls = LOCAL_HANDLERS.servers
+LOCAL_HANDLERS.quit = LOCAL_HANDLERS.shutdown
+
+// The invariant that closes the class. A name in LOCAL_COMMANDS with no handler here would fall
+// through to the routing table and POST to the server; a handler with no name would never be
+// reachable as a command. Both are silent, so make them loud — and at startup, not at use.
+{
+  const declared = new Set(LOCAL_COMMANDS)
+  const implemented = new Set(Object.keys(LOCAL_HANDLERS))
+  const missing = [...declared].filter((c) => !implemented.has(c))
+  const orphaned = [...implemented].filter((c) => !declared.has(c))
+  if (missing.length || orphaned.length) {
+    console.error(
+      `hj: internal error — LOCAL_COMMANDS and LOCAL_HANDLERS disagree` +
+        (missing.length ? `; no handler for: ${missing.join(', ')}` : '') +
+        (orphaned.length ? `; handler not in LOCAL_COMMANDS: ${orphaned.join(', ')}` : ''),
+    )
     process.exit(1)
   }
+}
+
+if (LOCAL_HANDLERS[subcommand]) {
+  process.exit(await LOCAL_HANDLERS[subcommand]())
 }
 
 // Declared-origin routing (issues #1/#2). cwd routing found the right SERVER; if this project has
@@ -750,7 +788,9 @@ if (subcommand === 'shutdown' || subcommand === 'quit') {
 //
 // Skipped when the caller already pinned a window (they own the choice), and for the diagnostic
 // commands, which must describe the world rather than act on one tab.
-const DIAGNOSTIC = new Set(['where', 'servers', 'ls', 'doctor', 'shutdown', 'quit', 'status', 'windows', 'version'])
+// The local commands (which never act on a tab) plus the read-only routed ones. Derived, so
+// adding a local command can't leave this set behind.
+const DIAGNOSTIC = new Set([...LOCAL_COMMANDS, 'status', 'windows', 'version'])
 if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
   const declared = findProjectOrigins(process.cwd(), process.env)
   if (declared && !declared.origins.length) {

@@ -83,23 +83,23 @@ describe('isAmbiguousTarget', () => {
   it('does NOT count the resolved server as "other" — the doctor false-fail', () => {
     // Reproduces the reported bug: one live server, on 8700, and `hj doctor` declared the target
     // ambiguous because of it. `until hj doctor` in the CI docs could never break.
-    expect(isAmbiguousTarget('8700 (default)', 8700, live(8700)).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('default', 8700, live(8700)).ambiguous).toBe(false)
   })
 
   it('IS ambiguous when a genuinely different server is live', () => {
-    const r = isAmbiguousTarget('8700 (default)', 8700, live(8700, 9001))
+    const r = isAmbiguousTarget('default', 8700, live(8700, 9001))
     expect(r.ambiguous).toBe(true)
     expect(r.others.map((o) => o.port)).toEqual([9001])
   })
 
   it('is never ambiguous when the target was chosen explicitly', () => {
     // --port/--name is a decision; warning about it would be noise on every command.
-    expect(isAmbiguousTarget('--port flag', 9001, live(8700, 9001)).ambiguous).toBe(false)
-    expect(isAmbiguousTarget('name "api" via --name flag', 9001, live(8700)).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('flag', 9001, live(8700, 9001)).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('name', 9001, live(8700)).ambiguous).toBe(false)
   })
 
   it('is not ambiguous when nothing else is running', () => {
-    expect(isAmbiguousTarget('8700 (default)', 8700, []).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('default', 8700, []).ambiguous).toBe(false)
   })
 })
 
@@ -128,5 +128,21 @@ describe('a server that refuses our token is alive, not absent', () => {
     const row = describeServer(cand, null, { authRefused: true })
     expect(row.version).toBe('?')
     expect(row.ready).toBeUndefined()
+  })
+})
+
+describe('the ambiguity decision does not ride on a human-readable label', () => {
+  const live = (...ports: number[]) =>
+    ports.map((p, i) => ({ name: `s${i}`, port: p, pid: process.pid, cwd: `/p${i}`, startedAt: 0 }))
+
+  it('keys on the KIND, so rewording the displayed sentence changes nothing', () => {
+    // The old code matched /^8700 \(default\)/ here and `!== '8700 (default)'` in bin/hj.mjs — one
+    // string serving as prose, as a JSON field, and as two differently-spelled keys. Rewording it
+    // to anything friendlier silently switched the misroute warning off forever and made
+    // `explicitTarget` true everywhere. Neither failure raises anything; the first looks like a
+    // flaky test in someone else's project.
+    expect(isAmbiguousTarget('default', 8700, live(8700, 9001)).ambiguous).toBe(true)
+    expect(isAmbiguousTarget('cwd', 8700, live(8700, 9001)).ambiguous).toBe(false)
+    expect(isAmbiguousTarget('env', 8700, live(8700, 9001)).ambiguous).toBe(false)
   })
 })

@@ -103,6 +103,21 @@ export function labelFor(row: ServerRow): string {
 }
 
 /**
+ * How the target port was chosen — the machine-readable half of `portSource`.
+ *
+ * `portSource` is a sentence for humans ("cwd match: dashboard", "8700 (default)") and it was ALSO
+ * being used as a key: `isAmbiguousTarget` matched `/^8700 \(default\)/` while `bin/hj.mjs` did
+ * `portSource !== '8700 (default)'` — two different match styles, in two files, keyed on one string
+ * that is simultaneously printed to users and emitted in `--json`. Rewording that label to anything
+ * friendlier silently flips both: the misroute warning stops firing forever, and `explicitTarget`
+ * becomes true everywhere. Neither failure raises an error; the first one looks like a flaky test
+ * in someone else's project.
+ *
+ * So the decision keys on this, and the sentence is free to change.
+ */
+export type PortSourceKind = 'flag' | 'name' | 'env' | 'cwd' | 'default'
+
+/**
  * Is this shell's target genuinely ambiguous?
  *
  * Only when we fell back to the shared default AND another *different* server is live. The subtle
@@ -113,12 +128,11 @@ export function labelFor(row: ServerRow): string {
  * so it never wins cwd routing and always looked like somebody else.
  */
 export function isAmbiguousTarget(
-  portSource: string,
+  portSourceKind: PortSourceKind,
   resolvedPort: string | number,
   liveInstances: RegistryEntry[],
 ): { ambiguous: boolean; others: RegistryEntry[] } {
   const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort))
   // Only the unqualified fallback is ambiguous — an explicit --port/--name is a choice, not a guess.
-  const fellBackToDefault = /^8700 \(default\)/.test(portSource)
-  return { ambiguous: fellBackToDefault && others.length > 0, others }
+  return { ambiguous: portSourceKind === 'default' && others.length > 0, others }
 }

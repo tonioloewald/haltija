@@ -1344,7 +1344,6 @@ function readTestFile(filePath, vars = {}, seed) {
     const content = readFileSync(filePath, "utf-8");
     const { text: processed, genInfo } = substituteVars(content, vars, seed);
     if (genInfo && Object.keys(genInfo.generated).length > 0) {
-      const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
       console.error(dim2(`[test-data] seed: ${genInfo.seed}`));
       for (const [key, value] of Object.entries(genInfo.generated)) {
         const display = value.length > 60 ? value.slice(0, 57) + "..." : value;
@@ -1657,7 +1656,6 @@ function warnUnknownFlags(subcommand, args) {
   if (!known)
     return;
   const allowed = new Set([...known, ...GLOBAL_FLAGS]);
-  const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
   for (const a of args) {
     if (!a.startsWith("-"))
       continue;
@@ -1796,8 +1794,6 @@ async function doRequest(url, method, body, context = {}) {
       } else if (!jsonOutput && subcommand === "test-suite" && json.results) {
         console.log(formatSuiteResult(json));
       } else if (!jsonOutput && subcommand === "screenshot" && json.data?.path) {
-        const bold = (s) => `\x1B[1m${s}\x1B[0m`;
-        const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
         console.log(bold(json.data.path));
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(", ");
         if (meta)
@@ -1807,8 +1803,6 @@ async function doRequest(url, method, body, context = {}) {
       } else if (!jsonOutput && subcommand === "network-stats") {
         console.log(formatNetworkStats(json));
       } else if (!jsonOutput && subcommand === "video-stop" && json.data?.path) {
-        const bold = (s) => `\x1B[1m${s}\x1B[0m`;
-        const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
         console.log(bold(json.data.path));
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(", ");
         if (meta)
@@ -1840,7 +1834,6 @@ async function doRequest(url, method, body, context = {}) {
     if (resp.ok && !jsonOutput && !UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
       const hint = COMMAND_HINTS[subcommand];
       if (hint) {
-        const dim2 = (s) => `\x1B[2m${s}\x1B[0m`;
         console.error(dim2(`hj ${subcommand} : ${hint}`));
       }
     }
@@ -2135,10 +2128,9 @@ function sortRows(rows) {
 function labelFor(row) {
   return row.desktopApp ? "desktop" : row.name || "(unnamed)";
 }
-function isAmbiguousTarget(portSource, resolvedPort, liveInstances) {
+function isAmbiguousTarget(portSourceKind, resolvedPort, liveInstances) {
   const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort));
-  const fellBackToDefault = /^8700 \(default\)/.test(portSource);
-  return { ambiguous: fellBackToDefault && others.length > 0, others };
+  return { ambiguous: portSourceKind === "default" && others.length > 0, others };
 }
 
 // bin/window-state.mjs
@@ -2164,7 +2156,7 @@ import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync a
 import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 var args = process.argv.slice(2);
-var HJ_LOCAL_COMMANDS = new Set(["where", "servers", "ls", "doctor", "shutdown", "quit"]);
+var HJ_LOCAL_COMMANDS = new Set(LOCAL_COMMANDS);
 var bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
 var dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
 var green2 = (s) => `\x1B[32m${s}\x1B[0m`;
@@ -2246,6 +2238,7 @@ async function runWhere(port, portSource, jsonOutput) {
     console.log(JSON.stringify({
       port: Number(port),
       portSource,
+      portSourceKind,
       reachable: !!serverInfo || serverAuthRefused,
       authRefused: serverAuthRefused,
       error: serverError,
@@ -2330,7 +2323,7 @@ This shell targets :${resolvedPort}, but nothing is listening there.`));
   console.log(dim3(`
 Pick one:  `) + `hj --port <n> <cmd>` + dim3("  or  ") + `hj --name <name> <cmd>`);
 }
-async function runDoctor(port, portSource, jsonOutput) {
+async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
   const token = process.env.HALTIJA_TOKEN;
   const problems = [];
   const notes = [];
@@ -2372,7 +2365,7 @@ async function runDoctor(port, portSource, jsonOutput) {
     if (origins.problem)
       problems.push(origins.problem);
   }
-  const { ambiguous, others } = isAmbiguousTarget(portSource, port, listLiveInstances());
+  const { ambiguous, others } = isAmbiguousTarget(portSourceKind, port, listLiveInstances());
   if (ambiguous) {
     problems.push(`targeting the shared default port 8700, but ${others.length} other haltija server(s) are ` + `running and none matches this directory (${process.cwd()}) — the target is ambiguous. ` + `Pick one with --name/--port, or run from the project's directory.`);
   }
@@ -2382,6 +2375,7 @@ async function runDoctor(port, portSource, jsonOutput) {
       ok,
       port,
       portSource,
+      portSourceKind,
       serverVersion: status?.serverVersion ?? null,
       ready: status ? typeof status.ready === "boolean" ? status.ready : (status.windows?.length ?? 0) > 0 : false,
       tabs: status?.windows?.length ?? 0,
@@ -2526,9 +2520,11 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 }
 var port;
 var portSource;
+var portSourceKind;
 if (portFlag) {
   port = portFlag;
   portSource = "--port flag";
+  portSourceKind = "flag";
 } else if (resolvedName) {
   const entry = lookupNamedInstance(resolvedName);
   if (!entry) {
@@ -2538,22 +2534,27 @@ if (portFlag) {
   }
   port = String(entry.port);
   portSource = `name "${resolvedName}" via ${nameSource}`;
+  portSourceKind = "name";
 } else if (process.env.HALTIJA_PORT) {
   port = process.env.HALTIJA_PORT;
   portSource = "HALTIJA_PORT env";
+  portSourceKind = "env";
 } else if (process.env.DEV_CHANNEL_PORT) {
   port = process.env.DEV_CHANNEL_PORT;
   portSource = "DEV_CHANNEL_PORT env (legacy)";
+  portSourceKind = "env";
 } else {
   const live = listLiveInstances();
   const cwdMatch = resolveByCwd(process.cwd(), live);
   if (cwdMatch) {
     port = String(cwdMatch.port);
     portSource = `cwd match: ${cwdMatch.name}`;
+    portSourceKind = "cwd";
   } else {
     port = "8700";
     portSource = "8700 (default)";
-    const { ambiguous, others } = isAmbiguousTarget("8700 (default)", port, live);
+    portSourceKind = "default";
+    const { ambiguous, others } = isAmbiguousTarget(portSourceKind, port, live);
     if (ambiguous) {
       const names = others.map((e) => `${e.name} (${e.cwd})`).join(", ");
       if (STRICT) {
@@ -2581,7 +2582,7 @@ if (noLaunchIdx !== -1) {
 var { windowTarget, args: argsWithoutWindow } = extractWindowTarget(args);
 args.length = 0;
 args.push(...argsWithoutWindow);
-var explicitTarget = portSource !== "8700 (default)";
+var explicitTarget = portSourceKind !== "default";
 if (args.length >= 2 && isSubcommand(`${args[0]}-${args[1]}`)) {
   args.splice(0, 2, `${args[0]}-${args[1]}`);
 }
@@ -2602,43 +2603,57 @@ var subcommand = args[0];
 var subArgs = args.slice(1);
 if (windowTarget)
   subArgs = [...subArgs, "--window", windowTarget];
-if (subcommand === "where") {
-  await runWhere(port, portSource, subArgs.includes("--json"));
-  process.exit(0);
-}
-if (subcommand === "servers" || subcommand === "ls") {
-  await runServers(port);
-  process.exit(0);
-}
-if (subcommand === "doctor") {
-  const ok = await runDoctor(port, portSource, subArgs.includes("--json"));
-  process.exit(ok ? 0 : 1);
-}
-if (subcommand === "shutdown" || subcommand === "quit") {
-  const token = process.env.HALTIJA_TOKEN;
-  try {
-    const resp = await fetch(`http://localhost:${port}/shutdown`, {
-      method: "POST",
-      headers: token ? { "X-Haltija-Token": token } : {},
-      signal: AbortSignal.timeout(3000)
-    });
-    const j = await resp.json().catch(() => ({}));
-    if (resp.ok) {
-      console.log(j.message || `Shutdown requested on port ${port}.`);
-      process.exit(0);
+var LOCAL_HANDLERS = {
+  where: async () => {
+    await runWhere(port, portSource, subArgs.includes("--json"));
+    return 0;
+  },
+  servers: async () => {
+    await runServers(port);
+    return 0;
+  },
+  doctor: async () => await runDoctor(port, portSource, portSourceKind, subArgs.includes("--json")) ? 0 : 1,
+  shutdown: async () => {
+    const token = process.env.HALTIJA_TOKEN;
+    try {
+      const resp = await fetch(`http://localhost:${port}/shutdown`, {
+        method: "POST",
+        headers: token ? { "X-Haltija-Token": token } : {},
+        signal: AbortSignal.timeout(3000)
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        console.log(j.message || `Shutdown requested on port ${port}.`);
+        return 0;
+      }
+      console.error(`hj ${subcommand}: ${j.error || `server on port ${port} returned HTTP ${resp.status}`}`);
+      return 1;
+    } catch (err) {
+      if (err.code === "ConnectionRefused" || err.cause?.code === "ECONNREFUSED") {
+        console.log(`No server listening on port ${port} (already stopped).`);
+        return 0;
+      }
+      console.error(`hj ${subcommand}: ${err.message}`);
+      return 1;
     }
-    console.error(`hj ${subcommand}: ${j.error || `server on port ${port} returned HTTP ${resp.status}`}`);
-    process.exit(1);
-  } catch (err) {
-    if (err.code === "ConnectionRefused" || err.cause?.code === "ECONNREFUSED") {
-      console.log(`No server listening on port ${port} (already stopped).`);
-      process.exit(0);
-    }
-    console.error(`hj ${subcommand}: ${err.message}`);
+  }
+};
+LOCAL_HANDLERS.ls = LOCAL_HANDLERS.servers;
+LOCAL_HANDLERS.quit = LOCAL_HANDLERS.shutdown;
+{
+  const declared = new Set(LOCAL_COMMANDS);
+  const implemented = new Set(Object.keys(LOCAL_HANDLERS));
+  const missing = [...declared].filter((c) => !implemented.has(c));
+  const orphaned = [...implemented].filter((c) => !declared.has(c));
+  if (missing.length || orphaned.length) {
+    console.error(`hj: internal error — LOCAL_COMMANDS and LOCAL_HANDLERS disagree` + (missing.length ? `; no handler for: ${missing.join(", ")}` : "") + (orphaned.length ? `; handler not in LOCAL_COMMANDS: ${orphaned.join(", ")}` : ""));
     process.exit(1);
   }
 }
-var DIAGNOSTIC = new Set(["where", "servers", "ls", "doctor", "shutdown", "quit", "status", "windows", "version"]);
+if (LOCAL_HANDLERS[subcommand]) {
+  process.exit(await LOCAL_HANDLERS[subcommand]());
+}
+var DIAGNOSTIC = new Set([...LOCAL_COMMANDS, "status", "windows", "version"]);
 if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
   const declared = findProjectOrigins(process.cwd(), process.env);
   if (declared && !declared.origins.length) {

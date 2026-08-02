@@ -372,6 +372,38 @@ test.describe('haltija-dev CLI', () => {
     expect(bad.colors.contrast).toBeLessThan(4.5)
   })
 
+  test('/status and /windows report the SAME window shape, with active/hidden exact inverses', async ({ page }) => {
+    // Both endpoints hand-rolled this shape, and the expressions looked different enough that a
+    // careful reviewer concluded they disagreed on polarity. They didn't — but `summarizeWindow`
+    // was documented (in its own header AND in CLAUDE.md's source table) as "the shape both
+    // /status and /windows report" while being called by nothing outside its own test. The docs
+    // described an architecture that did not exist, which is how the wrong conclusion got reached.
+    // Both now route through the helper; this is what keeps that true.
+    await injectDevChannel(page)
+
+    const status = await (await fetch(`${SERVER_URL}/status`)).json()
+    const windows = await (await fetch(`${SERVER_URL}/windows`)).json()
+
+    expect(status.windows.length).toBeGreaterThan(0)
+    expect(windows.windows.length).toBe(status.windows.length)
+
+    const byId = (list: any[]) => Object.fromEntries(list.map((w) => [w.id, w]))
+    const sw = byId(status.windows)
+    const ww = byId(windows.windows)
+
+    for (const id of Object.keys(sw)) {
+      expect(ww[id]).toBeTruthy() // the same window, visible from both endpoints
+      // The fields a consumer might read from either endpoint must agree, and the two polarities
+      // must be exact inverses — the whole reason both are emitted.
+      for (const field of ['active', 'hidden', 'windowType', 'url']) {
+        expect(`${field}:${JSON.stringify(ww[id][field])}`).toBe(`${field}:${JSON.stringify(sw[id][field])}`)
+      }
+      expect(sw[id].active).toBe(!sw[id].hidden)
+      expect(ww[id].active).toBe(!ww[id].hidden)
+      expect(typeof sw[id].active).toBe('boolean') // never undefined — that is what broke doctor
+    }
+  })
+
   test('map --image writes a real PNG to disk and does NOT return the base64 blob', async ({ page }) => {
     // The v1.9.0 shape change (`data.image` → `data.path`) shipped with no test at any tier, while
     // the write sat inside a bare `catch {}`. So a failed mkdir — read-only /tmp, a sandbox, a full

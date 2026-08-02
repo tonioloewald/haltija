@@ -33,10 +33,9 @@ function sortRows(rows) {
 function labelFor(row) {
   return row.desktopApp ? "desktop" : row.name || "(unnamed)";
 }
-function isAmbiguousTarget(portSource, resolvedPort, liveInstances) {
+function isAmbiguousTarget(portSourceKind, resolvedPort, liveInstances) {
   const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort));
-  const fellBackToDefault = /^8700 \(default\)/.test(portSource);
-  return { ambiguous: fellBackToDefault && others.length > 0, others };
+  return { ambiguous: portSourceKind === "default" && others.length > 0, others };
 }
 export {
   sortRows,

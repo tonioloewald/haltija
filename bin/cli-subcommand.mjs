@@ -445,7 +445,6 @@ function readTestFile(filePath, vars = {}, seed) {
 
     // Report generated values if any
     if (genInfo && Object.keys(genInfo.generated).length > 0) {
-      const dim = (s) => `\x1b[2m${s}\x1b[0m`
       console.error(dim(`[test-data] seed: ${genInfo.seed}`))
       for (const [key, value] of Object.entries(genInfo.generated)) {
         const display = value.length > 60 ? value.slice(0, 57) + '...' : value
@@ -838,7 +837,6 @@ export function warnUnknownFlags(subcommand, args) {
   const known = KNOWN_FLAGS[subcommand]
   if (!known) return
   const allowed = new Set([...known, ...GLOBAL_FLAGS])
-  const dim = (s) => `\x1b[2m${s}\x1b[0m`
   for (const a of args) {
     if (!a.startsWith('-')) continue      // positional or a flag's value
     if (/^-\d/.test(a)) continue          // negative number, not a flag
@@ -1032,8 +1030,6 @@ async function doRequest(url, method, body, context = {}) {
       } else if (!jsonOutput && subcommand === 'test-suite' && json.results) {
         console.log(formatSuiteResult(json))
       } else if (!jsonOutput && subcommand === 'screenshot' && json.data?.path) {
-        const bold = (s) => `\x1b[1m${s}\x1b[0m`
-        const dim = (s) => `\x1b[2m${s}\x1b[0m`
         console.log(bold(json.data.path))
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
         if (meta) console.error(dim(meta))
@@ -1042,8 +1038,6 @@ async function doRequest(url, method, body, context = {}) {
       } else if (!jsonOutput && subcommand === 'network-stats') {
         console.log(formatNetworkStats(json))
       } else if (!jsonOutput && subcommand === 'video-stop' && json.data?.path) {
-        const bold = (s) => `\x1b[1m${s}\x1b[0m`
-        const dim = (s) => `\x1b[2m${s}\x1b[0m`
         console.log(bold(json.data.path))
         const meta = [json.data.duration ? `${json.data.duration.toFixed(1)}s` : null, json.data.size ? `${(json.data.size / 1024).toFixed(0)}KB` : null, json.data.format].filter(Boolean).join(', ')
         if (meta) console.error(dim(meta))
@@ -1091,7 +1085,6 @@ async function doRequest(url, method, body, context = {}) {
     if (resp.ok && !jsonOutput && !UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
       const hint = COMMAND_HINTS_LOCAL[subcommand]
       if (hint) {
-        const dim = (s) => `\x1b[2m${s}\x1b[0m`
         // stderr, NOT stdout. A hint appended to stdout turns parseable JSON into garbage —
         // an adopter's `JSON.parse(await $`hj windows`)` threw, their catch fell open, and the
         // readiness probe silently did nothing (issue #14). Advisory text belongs on stderr.
@@ -1269,5 +1262,9 @@ export function listSubcommands() {
 `
 }
 
+// ONE definition each. Seven inner `const dim = …` shadows used to sit inside individual
+// functions, so any future NO_COLOR / !isTTY handling would have had to be applied in eight places
+// and would have been applied in one — the same divergence the ANSI de-dup comment in hj.mjs
+// describes. Function declarations, so they hoist above every call site here.
 function bold(s) { return `\x1b[1m${s}\x1b[0m` }
 function dim(s) { return `\x1b[2m${s}\x1b[0m` }
