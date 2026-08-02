@@ -59,7 +59,7 @@ Origin: haltija#10.
 
 ## tosijs-ui — contrast-audit noise heads-up (informational)
 
-**Status:** filed — https://github.com/tonioloewald/tosijs-ui/issues/42
+**Status:** CLOSED (2026-08-02) — https://github.com/tonioloewald/tosijs-ui/issues/42
 
 Told tosijs-ui about two false-positive sources in haltija's contrast audit that I found and fixed
 in 1.11.1 (text-less containers flagged; text over a background-image judged against the colour
@@ -69,3 +69,41 @@ positive, and offered to tune anything still noisy.
 
 Not a defect in tosijs-ui — informational, and an invitation to report noise back. Origin: their
 audit surfacing a systemic backlog after haltija's console/contrast/map signals improved.
+
+
+## tosijs — the `tosiAgent` surface has no version or capability marker
+
+**Status:** filed — https://github.com/tonioloewald/tosijs/issues/23
+
+haltija's `hj map` uses the app's own wiring records when a page exposes `globalThis.tosiAgent`, which
+is strictly better than reconstructing affordances from the DOM. But it **detects** that tier by
+duck-typing one method (`typeof agent.describe === 'function'`, `src/component.ts:1772`) and then
+**consumes** a specific shape — `renderMapSchematic` reads `map.wiring` and per entry `tag`/`id`/
+`label`/`on`. An upstream rename leaves `describe()` present, the response still stamped
+`source: 'tosi-agent'`, and the schematic an empty ~320x24 PNG whose footer still reads
+`wiring · <title>`: degradation that is silent *and* confidently mislabelled.
+
+This is **haltija's coupling, not a tosijs defect** — no stable shape was ever promised or asked for.
+The ask is only that the surface become interrogable (`tosiAgent.version` and/or `.capabilities`), so
+a consumer can degrade deliberately instead of rendering a confident blank. A documented "this shape
+is unstable" would also settle it.
+
+Fixed on haltija's side in 1.12.0 rather than waiting: the tier now checks the shape it depends on
+and returns a `warning` naming what it expected, surfaces `agentSurfaceVersion` when the app provides
+one, and is marked EXPERIMENTAL in the agent-facing docs. Two regression tests, including the
+discriminating case. Pre-existing since v1.8.0; not a regression in this diff. Cross-ref haltija#16.
+
+## Screen-capture — `preferCurrentTab` only *defaults* the picker, so a grant can be for another tab
+
+**Status:** NOT filed — deliberately. Recorded here so the decision is visible.
+
+`getDisplayMedia({ preferCurrentTab: true })` (`src/component.ts`, cast through
+`MediaStreamConstraints & {...}` because lib.dom has no such member) pre-selects this tab in the
+picker; the user can still choose a different one, after which tab A's `/screenshot` returns tab B's
+pixels for the life of the grant. On Firefox/Safari the option does nothing at all.
+
+Not filed upstream because the spec behaviour is intentional — the picker is a user-consent surface
+and a page that could *constrain* what it captures would be a privacy regression. The actionable
+half is entirely ours: verify the grant with `track.getSettings().displaySurface` and, on Chromium,
+`setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt when the captured surface
+isn't this tab. Filed in TODO.md rather than upstream.

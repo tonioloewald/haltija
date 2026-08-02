@@ -372,6 +372,39 @@ test.describe('haltija-dev CLI', () => {
     expect(bad.colors.contrast).toBeLessThan(4.5)
   })
 
+  test('a tosiAgent surface with an unexpected shape warns instead of silently degrading', async ({ page }) => {
+    // The tier is detected by duck-typing ONE method. If upstream renames `wiring`, `describe()`
+    // still exists, the map still claims `source: 'tosi-agent'`, and the schematic renders an empty
+    // box whose footer still says "wiring · <title>" — silent AND confidently mislabelled.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      ;(globalThis as any).tosiAgent = { describe: () => ({ somethingElse: [] }) }
+    })
+    const res = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    expect(res.data.source).toBe('tosi-agent')
+    expect(res.data.warning).toMatch(/wiring/)
+    await page.evaluate(() => { delete (globalThis as any).tosiAgent })
+  })
+
+  test('a well-shaped tosiAgent surface does NOT warn', async ({ page }) => {
+    // The discriminating case — otherwise the assertion above would hold if we warned always.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      ;(globalThis as any).tosiAgent = {
+        version: '9.9.9',
+        describe: () => ({ wiring: [{ tag: 'button', id: 'go', label: 'Go' }] }),
+      }
+    })
+    const res = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    expect(res.data.warning).toBeUndefined()
+    expect(res.data.agentSurfaceVersion).toBe('9.9.9') // reported, so a bug report can name it
+    await page.evaluate(() => { delete (globalThis as any).tosiAgent })
+  })
+
   test('--canvas finds a shadow-DOM canvas hidden behind a light-DOM element of the same name', async ({ page }) => {
     // `resolveCanvasDeep` recorded a non-canvas light-DOM match with an explicit comment saying it
     // was "recorded rather than returned immediately, so the shadow-piercing attempts below still

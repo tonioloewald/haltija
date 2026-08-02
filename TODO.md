@@ -1,5 +1,38 @@
 # TODO
 
+## Deferred from the 1.12.0 review (tracked, not dropped)
+
+- [ ] **Verify the screen-share grant is actually THIS tab.** `preferCurrentTab` only *defaults* the
+  picker — the user can pick another tab, after which this tab's `/screenshot` silently returns a
+  different tab's pixels for the life of the grant (and on Firefox/Safari the option does nothing).
+  Fix locally: check `track.getSettings().displaySurface`, and on Chromium
+  `setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt on a mismatch.
+  Deliberately NOT filed upstream — the picker is a consent surface and constraining it would be a
+  privacy regression. See `UPSTREAM.md`.
+- [ ] **`hj map --image` still prints the full ~18k-char node JSON alongside the file path** (`map`
+  is in `UNWRAP_DATA_SUBCOMMANDS`), so it costs strictly more than plain `hj map` and the
+  token-saving trade the `image` description sells is unreachable from the CLI. Omit the node
+  payload when an image was written, and signpost the path the way `screenshot`/`video-stop` do.
+- [ ] **`MAX_PIXELS` is 8e6** (`src/component.ts`). Vision encoders downsample to roughly a 1568px
+  long edge, so an 8 Mpx canvas is ~32 MB RGBA in the tab, a multi-MB base64 string over the socket,
+  and ~70% of the pixels discarded on arrival. Consider ~2.5e6, or derive it from a MAX_EDGE
+  constraint. Also set an explicit WebSocket `maxPayloadLength` so an oversized frame is a
+  diagnosable error rather than a silent close that looks like a widget disconnect.
+- [ ] **`buildDomAffordances` doesn't prune `display:none` wrappers before recursing**, so it walks
+  the entire subtree of a hidden container. Prune on `getComputedStyle(el).display === 'none' ||
+  visibility === 'hidden'` — but NOT on the zero-rect half, since a wrapper can legitimately have a
+  zero box with visible absolutely-positioned children (a mistake already made and fixed once in
+  this cycle; see the walk in `src/component.ts`).
+- [ ] **`hj <cmd> --help` is content-free for ~40 of 66 commands.** `commandHelp()` greps a
+  hand-maintained blurb; render from the schema instead (`ALL_ENDPOINTS` carries `summary`,
+  `description` and input fields, and the build already emits `bin/hints.json`), give the local
+  commands a description plus flags, and strengthen the guard to assert output contains something
+  beyond the header.
+- [ ] **`src/distribution-parity.test.ts` spawns ~140 sequential `node` cold starts** in a blocking
+  gate on every push. Pool them (concurrency ~8) and then lower the 180s timeout to something that
+  would actually catch a hang.
+
+
 ## UI-debugging primitives — the actual product thesis
 
 **Positioning note (Tonio's, and it's the one to build against).** Haltija is **a tool for

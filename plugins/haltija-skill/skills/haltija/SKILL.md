@@ -146,8 +146,13 @@ theme, viewport or animation timing to shift under you.
 
 Always check `source`:
 
-- **`source: "tosi-agent"`** — the page exposes an agent surface (`globalThis.tosiAgent`, a tosijs
-  app calling `enableAgentInterface()`), so the map is the app's **own wiring records**. These carry
+- **`source: "tosi-agent"` — EXPERIMENTAL.** The page exposes an agent surface
+  (`globalThis.tosiAgent`, a tosijs app calling `enableAgentInterface()`), so the map is the app's
+  **own wiring records**. Treat this tier as best-effort: haltija detects it by duck-typing one
+  method and consumes a shape tosijs has not committed to (tosijs#23 asks for a version marker). If
+  the shape isn't what haltija expects you get a `warning` saying so — believe it, and fall back to
+  the DOM tier rather than trusting an empty map. `agentSurfaceVersion` reports the app's version
+  when it provides one. These carry
   what the DOM cannot: which state path each control is bound to and in which direction —
   **`⟷`** two-way (user-writable), **`⟵`** display-only, absent (static) — plus the handler path
   each event calls, and a list of callable `actions`. Prefer acting through those paths rather than

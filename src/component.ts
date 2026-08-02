@@ -1772,11 +1772,33 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
   if (agent && typeof agent.describe === 'function') {
     try {
       const description = agent.describe()
+      // We detect this tier by duck-typing ONE method (`describe`), then consume a specific shape:
+      // the schematic renderer reads `wiring[].tag/id/label/on`. If upstream renames or restructures
+      // that, `describe()` still exists, the map still says `source: 'tosi-agent'`, and the
+      // schematic renders an empty box whose footer still reads "wiring · <title>" — degradation
+      // that is silent AND confidently mislabelled, which is the worst combination we ship.
+      // So: check the shape we actually depend on, and say so when it isn't there.
+      // Tracked upstream — see UPSTREAM.md (tosijs: agent-surface version/capability marker).
+      const wiring = (description as any)?.wiring
+      const shapeWarning =
+        wiring === undefined
+          ? `${globalName}.describe() returned no 'wiring' — this haltija understands the agent ` +
+            `surface as { wiring: [{ tag, id, label, on }] }. The map below is passed through ` +
+            `unchanged and may be missing structure; the schematic will be empty. Check the ` +
+            `tosijs version, or use hj map with the DOM fallback (a page without tosiAgent).`
+          : !Array.isArray(wiring)
+            ? `${globalName}.describe().wiring is ${typeof wiring}, expected an array — passing it ` +
+              `through unchanged, but the schematic cannot render it.`
+            : undefined
       return {
         url: location.href,
         title: document.title,
         source: 'tosi-agent',
         global: globalName,
+        // Surfaced so an agent (and a bug report) can tell WHICH surface produced this map, rather
+        // than inferring it from behaviour. Undefined until tosijs ships one — which is the ask.
+        agentSurfaceVersion: (agent as any).version ?? (description as any)?.version,
+        ...(shapeWarning ? { warning: shapeWarning } : {}),
         // Pass the framework's records through UNCHANGED — reshaping them would be exactly the
         // lossy reconstruction this tier exists to avoid.
         ...description,

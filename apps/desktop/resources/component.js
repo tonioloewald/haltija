@@ -1261,11 +1261,15 @@
     if (agent && typeof agent.describe === "function") {
       try {
         const description = agent.describe();
+        const wiring = description?.wiring;
+        const shapeWarning = wiring === undefined ? `${globalName}.describe() returned no 'wiring' — this haltija understands the agent ` + `surface as { wiring: [{ tag, id, label, on }] }. The map below is passed through ` + `unchanged and may be missing structure; the schematic will be empty. Check the ` + `tosijs version, or use hj map with the DOM fallback (a page without tosiAgent).` : !Array.isArray(wiring) ? `${globalName}.describe().wiring is ${typeof wiring}, expected an array — passing it ` + `through unchanged, but the schematic cannot render it.` : undefined;
         return {
           url: location.href,
           title: document.title,
           source: "tosi-agent",
           global: globalName,
+          agentSurfaceVersion: agent.version ?? description?.version,
+          ...shapeWarning ? { warning: shapeWarning } : {},
           ...description,
           act: {
             note: `Act through the paths, not synthesized input: ${globalName}.write(path, value) for a ` + `⟷ two-way binding, ${globalName}.call(actionPath) for an action. ` + `Run them with: hj eval "${globalName}.write('some.path', 'value')"`,
