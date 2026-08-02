@@ -11,6 +11,7 @@
  */
 
 import { ALL_ENDPOINTS, validateInput, getEndpointDocs, type EndpointDef } from './api-schema'
+import { cliNameForEndpoint } from './cli-commands'
 import { handlers, type HandlerContext } from './api-handlers'
 
 // ============================================
@@ -187,13 +188,16 @@ export function createRouter(contextFactory: ContextFactory) {
       // The raw validator says things like "root: Missing url" — accurate, and useless as
       // instruction. Attach what to actually do: the CLI form, the example from the schema, and
       // where the full reference lives. An error's job is the next action, not the diagnosis.
-      const cli = endpoint.path.replace(/^\//, '').replace(/\//g, '-')
+      // Only ever name a command that exists — five endpoints derived names the CLI has never had.
+      const cli = cliNameForEndpoint(endpoint.path)
       const example = (endpoint as any).examples?.[0]
       return Response.json({
         success: false,
         error: validation.error,
         hint:
-          `${endpoint.method} ${endpoint.path} — see \`hj ${cli} --help\`, or \`hj api\` for the full reference.` +
+          `${endpoint.method} ${endpoint.path} — ` +
+          (cli ? `see \`hj ${cli} --help\`, or ` : '') +
+          `\`hj api\` for the full reference.` +
           (example ? ` Example body: ${JSON.stringify(example.input)}` : ''),
         schema: endpoint.input?.schema,
       }, { status: 400, headers: ctx.headers })

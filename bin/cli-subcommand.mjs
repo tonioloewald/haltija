@@ -28,6 +28,7 @@ import { formatNetwork, formatNetworkStats } from './format-network.mjs'
 import { substituteGeneratedVars } from './test-data.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
+import { ROUTED_COMMANDS, LOCAL_COMMANDS } from './cli-commands.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -1091,23 +1092,9 @@ async function doRequest(url, method, body, context = {}) {
 }
 
 /** Known valid subcommands */
-export const KNOWN_COMMANDS = new Set([
-  'tree', 'map', 'query', 'inspect', 'inspectAll', 'styles', 'find', 'form', 'wait',
-  'click', 'type', 'key', 'drag', 'scroll', 'call',
-  'navigate', 'refresh', 'location',
-  'events', 'events-watch', 'events-unwatch', 'console',
-  'mutations-watch', 'mutations-unwatch', 'mutations-status',
-  'eval', 'fetch',
-  'screenshot', 'snapshot', 'highlight', 'unhighlight',
-  'select-start', 'select-result', 'select-cancel', 'select-clear',
-  'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
-  'video-start', 'video-stop', 'video-status',
-  'network', 'network-watch', 'network-unwatch', 'network-stats',
-  'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
-  'test-run', 'test-validate', 'test-suite',
-  'send', 'send-message', 'send-selection', 'send-recording',
-  'status', 'version', 'docs', 'api', 'stats', 'where'
-])
+// Derived from src/cli-commands.ts — the single authoritative list. A local copy here is exactly
+// how `wait` ended up with an endpoint, an arg map, and no way to invoke it.
+export const KNOWN_COMMANDS = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS])
 
 /** Common typos/aliases mapped to correct commands */
 const COMMAND_ALIASES = {

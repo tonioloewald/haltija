@@ -17,6 +17,7 @@ import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { ALL_ENDPOINTS } from './api-schema'
+import { ROUTED_COMMANDS, LOCAL_COMMANDS, cliNameForEndpoint } from './cli-commands'
 
 const ROOT = join(import.meta.dir, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf-8')
@@ -58,19 +59,26 @@ describe('docs coverage: every endpoint is discoverable', () => {
 })
 
 describe('docs coverage: every hj command is documented', () => {
-  // The CLI's own list of what it accepts — the authority on the surface area.
-  const KNOWN = (() => {
-    const src = read('bin/cli-subcommand.mjs')
-    const m = /export const KNOWN_COMMANDS = new Set\(\[([\s\S]*?)\]\)/.exec(src)
-    if (!m) throw new Error('could not read KNOWN_COMMANDS from bin/cli-subcommand.mjs')
-    return Array.from(m[1].matchAll(/'([^']+)'/g)).map((x) => x[1])
-  })()
+  // Read the AUTHORITATIVE list rather than regex-parsing a file. (This was scraping a literal
+  // array out of bin/cli-subcommand.mjs; when that became a derived Set the regex matched nothing —
+  // caught only because the guard below asserts the parse found something. Importing removes the
+  // failure mode entirely.)
+  const KNOWN = [...ROUTED_COMMANDS]
+  const LOCAL = [...LOCAL_COMMANDS]
 
-  // Commands handled directly in hj.mjs rather than routed (they never reach KNOWN_COMMANDS).
-  const LOCAL_COMMANDS = ['where', 'servers', 'doctor', 'shutdown']
-
-  it('KNOWN_COMMANDS was parsed (guards the regex above from silently matching nothing)', () => {
+  it('the command list is non-trivial (guards against an empty import silently passing everything)', () => {
     expect(KNOWN.length).toBeGreaterThan(20)
+  })
+
+  it('every endpoint-derived CLI name either exists or resolves to null', () => {
+    // The root cause behind the broken hints: five endpoints derived `hj <name>` for commands the
+    // CLI has never had, and printed them as remedies. cliNameForEndpoint now returns null for
+    // those; this asserts nothing silently regains a fake name.
+    const lying = ALL_ENDPOINTS
+      .filter((ep) => (ep as any).visibility !== 'internal')
+      .map((ep) => ({ path: ep.path, cli: cliNameForEndpoint(ep.path) }))
+      .filter((x) => x.cli !== null && !KNOWN.includes(x.cli!) && !LOCAL.includes(x.cli as any))
+    expect(lying).toEqual([])
   })
 
   it('every command an agent would drive is named in SKILL.md', () => {
@@ -85,7 +93,7 @@ describe('docs coverage: every hj command is documented', () => {
       'refresh', 'drag', 'scroll', 'call', 'fetch', 'styles',
       'video-start', 'video-stop', 'recording-generate',
     ])
-    const missing = [...KNOWN, ...LOCAL_COMMANDS]
+    const missing = [...KNOWN, ...LOCAL]
       .filter((c) => !exempt.has(c))
       .filter((c) => !new RegExp(`\\bhj ${c}\\b`).test(SKILL) && !SKILL.includes(`\`${c}\``))
     expect(missing).toEqual([])

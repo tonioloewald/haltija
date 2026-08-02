@@ -16,7 +16,11 @@ contextBridge.exposeInMainWorld('haltija', {
   // Internal-server port (chrome widget connects here, hidden from public agent traffic).
   // Set by main AFTER port resolution, so a --private instance reports its EPHEMERAL port rather
   // than the shared 8701.
-  internalPort: parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701'),
+  // NB: `|| 8701` on a parsed 0 would resurrect the SHARED port for a private instance that
+  // deliberately has no internal server. 0 means "none" and must stay 0.
+  internalPort: process.env.HALTIJA_INTERNAL_PORT !== undefined
+    ? parseInt(process.env.HALTIJA_INTERNAL_PORT, 10)
+    : 8701,
   // This instance's public server. A private app must not default to the shared 8700.
   serverUrl: process.env.HALTIJA_PUBLIC_URL || 'http://localhost:8700',
   // Navigation

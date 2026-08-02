@@ -34,6 +34,7 @@ import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-
 import { hiddenTabWarning } from './tab-liveness'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
+import { cliNameForEndpoint } from './cli-commands'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -114,7 +115,11 @@ if (IS_PRIVATE && process.env.HALTIJA_SPAWNER_PID) {
     const watch = setInterval(() => {
       try {
         process.kill(spawnerPid, 0) // signal 0 = existence check, sends nothing
-      } catch {
+      } catch (err: any) {
+        // EPERM means the process EXISTS but belongs to another user — the opposite of gone. Only
+        // ESRCH ("no such process") justifies exiting; treating any error as death would kill a
+        // healthy run mid-flight, which is far worse than leaking a process.
+        if (err?.code === 'EPERM') return
         clearInterval(watch)
         console.log(`${LOG_PREFIX} spawner ${spawnerPid} is gone — shutting down this private server`)
         process.exit(0)
@@ -549,14 +554,14 @@ function validateBody(
   if (errors.length > 0) {
     // Name the endpoint and show a runnable shape. "root: Missing url" tells a caller what broke but
     // not how to fix it; the point of an error is the next action, not the diagnosis.
-    const cli = endpoint.replace(/^\//, '').replace(/\//g, '-')
+    const cli = cliNameForEndpoint(endpoint)
     return {
       valid: false,
       error: `${endpoint}: ${errors.join(', ')}`,
       hint:
         `Expected body: { ${expectedFields.join(', ')} }. ` +
-        `Try \`hj ${cli} --help\` for usage, \`hj api\` for the full reference, or GET ${endpoint} ` +
-        `to see this endpoint's schema.`,
+        (cli ? `Try \`hj ${cli} --help\` for usage, ` : '') +
+        `\`hj api\` for the full reference, or GET ${endpoint} to see this endpoint's schema.`,
     }
   }
   

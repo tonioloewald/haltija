@@ -778,6 +778,76 @@ function differsBeyondPatch(a, b) {
   return pa.major !== pb.major || pa.minor !== pb.minor;
 }
 
+// bin/cli-commands.mjs
+var ROUTED_COMMANDS = [
+  "tree",
+  "map",
+  "query",
+  "inspect",
+  "inspectAll",
+  "styles",
+  "find",
+  "form",
+  "wait",
+  "click",
+  "type",
+  "key",
+  "drag",
+  "scroll",
+  "call",
+  "navigate",
+  "refresh",
+  "location",
+  "events",
+  "events-watch",
+  "events-unwatch",
+  "console",
+  "mutations-watch",
+  "mutations-unwatch",
+  "mutations-status",
+  "eval",
+  "fetch",
+  "screenshot",
+  "snapshot",
+  "highlight",
+  "unhighlight",
+  "select-start",
+  "select-result",
+  "select-cancel",
+  "select-clear",
+  "windows",
+  "tabs-open",
+  "tabs-close",
+  "tabs-focus",
+  "video-start",
+  "video-stop",
+  "video-status",
+  "network",
+  "network-watch",
+  "network-unwatch",
+  "network-stats",
+  "recording",
+  "recording-start",
+  "recording-stop",
+  "recording-generate",
+  "recordings",
+  "test-run",
+  "test-validate",
+  "test-suite",
+  "send",
+  "send-message",
+  "send-selection",
+  "send-recording",
+  "status",
+  "version",
+  "docs",
+  "api",
+  "stats",
+  "where"
+];
+var LOCAL_COMMANDS = ["where", "servers", "ls", "doctor", "shutdown", "quit"];
+var ALL = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS]);
+
 // bin/hints.mjs
 var COMMAND_HINTS = {
   tree: "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
@@ -1779,72 +1849,7 @@ async function doRequest(url, method, body, context = {}) {
     process.exit(1);
   }
 }
-var KNOWN_COMMANDS = new Set([
-  "tree",
-  "map",
-  "query",
-  "inspect",
-  "inspectAll",
-  "styles",
-  "find",
-  "form",
-  "wait",
-  "click",
-  "type",
-  "key",
-  "drag",
-  "scroll",
-  "call",
-  "navigate",
-  "refresh",
-  "location",
-  "events",
-  "events-watch",
-  "events-unwatch",
-  "console",
-  "mutations-watch",
-  "mutations-unwatch",
-  "mutations-status",
-  "eval",
-  "fetch",
-  "screenshot",
-  "snapshot",
-  "highlight",
-  "unhighlight",
-  "select-start",
-  "select-result",
-  "select-cancel",
-  "select-clear",
-  "windows",
-  "tabs-open",
-  "tabs-close",
-  "tabs-focus",
-  "video-start",
-  "video-stop",
-  "video-status",
-  "network",
-  "network-watch",
-  "network-unwatch",
-  "network-stats",
-  "recording",
-  "recording-start",
-  "recording-stop",
-  "recording-generate",
-  "recordings",
-  "test-run",
-  "test-validate",
-  "test-suite",
-  "send",
-  "send-message",
-  "send-selection",
-  "send-recording",
-  "status",
-  "version",
-  "docs",
-  "api",
-  "stats",
-  "where"
-]);
+var KNOWN_COMMANDS = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS]);
 var COMMAND_ALIASES = {
   open: "navigate",
   goto: "navigate",
@@ -2528,6 +2533,12 @@ if (subcommand === "shutdown" || subcommand === "quit") {
 var DIAGNOSTIC = new Set(["where", "servers", "ls", "doctor", "shutdown", "quit", "status", "windows", "version"]);
 if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
   const declared = findProjectOrigins(process.cwd(), process.env);
+  if (declared && !declared.origins.length) {
+    console.error(`hj: warning — ${declared.source} declares no usable origins, so per-tab routing is OFF and commands follow focus.`);
+    console.error(`hj: expected e.g. { "origins": ["https://localhost:8030"] }`);
+    if (STRICT)
+      process.exit(1);
+  }
   if (declared && declared.origins.length) {
     try {
       const token = process.env.HALTIJA_TOKEN;

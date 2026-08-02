@@ -617,6 +617,13 @@ if (subcommand === 'shutdown' || subcommand === 'quit') {
 const DIAGNOSTIC = new Set(['where', 'servers', 'ls', 'doctor', 'shutdown', 'quit', 'status', 'windows', 'version'])
 if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
   const declared = findProjectOrigins(process.cwd(), process.env)
+  if (declared && !declared.origins.length) {
+    // A config that exists but declares nothing usable silently disabled the very routing it was
+    // written to enable — recreating the misroute the feature prevents. Say so.
+    console.error(`hj: warning — ${declared.source} declares no usable origins, so per-tab routing is OFF and commands follow focus.`)
+    console.error(`hj: expected e.g. { "origins": ["https://localhost:8030"] }`)
+    if (STRICT) process.exit(1)
+  }
   if (declared && declared.origins.length) {
     try {
       const token = process.env.HALTIJA_TOKEN

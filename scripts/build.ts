@@ -77,6 +77,15 @@ writeFileSync(
     readFileSync('apps/desktop/server-env.js', 'utf-8'),
 )
 
+// 0g. Compile the authoritative CLI command list for bin/. ONE list; bin/cli-subcommand.mjs and the
+// server-side hint writers both derive from it, so a hint can never name a command that doesn't exist.
+await $`bun build ./src/cli-commands.ts --outfile=bin/cli-commands.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/cli-commands.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/cli-commands.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/cli-commands.mjs', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

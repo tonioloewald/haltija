@@ -1347,7 +1347,18 @@ async function startEmbeddedServer() {
 
     HALTIJA_PORT = pubPort
     HALTIJA_SERVER = `http://localhost:${pubPort}`
-    if (intPort) { HALTIJA_INTERNAL_PORT = intPort; HALTIJA_INTERNAL_SERVER = `http://localhost:${intPort}` }
+    if (intPort) {
+      HALTIJA_INTERNAL_PORT = intPort
+      HALTIJA_INTERNAL_SERVER = `http://localhost:${intPort}`
+    } else {
+      // The internal server never reported. Leaving the port at 0 makes the preload's
+      // `parseInt(...) || 8701` fall back to the SHARED internal port — a private app's chrome
+      // widget would attach to another project's server. Better to have no chrome widget than to
+      // silently join the channel this mode exists to stay out of.
+      console.error('[Haltija Desktop] Private internal server did not report a port — chrome widget disabled (refusing to fall back to the shared 8701)')
+      HALTIJA_INTERNAL_PORT = 0
+      HALTIJA_INTERNAL_SERVER = ''
+    }
     try { fs.rmSync(pubFile, { force: true }); fs.rmSync(intFile, { force: true }) } catch {}
 
     // Hand the PUBLIC address to the consumer that asked for this private instance.

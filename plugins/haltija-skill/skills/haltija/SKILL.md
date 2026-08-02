@@ -57,7 +57,7 @@ one-off shells and CI.
 
 **When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
 *why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
-When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`**
+When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`** (alias **`hj ls`**)
 lists them all — port, name, version, tabs, which is the desktop app — with `▸` on the one you'd
 drive. The desktop app is reachable as `hj --name desktop`. **`hj shutdown`** (alias `hj quit`) stops
 the targeted server; against a `--private` instance it tears down the whole thing (Electron + its
