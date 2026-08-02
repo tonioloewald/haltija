@@ -372,6 +372,138 @@ test.describe('haltija-dev CLI', () => {
     expect(bad.colors.contrast).toBeLessThan(4.5)
   })
 
+  test('--canvas finds a shadow-DOM canvas hidden behind a light-DOM element of the same name', async ({ page }) => {
+    // `resolveCanvasDeep` recorded a non-canvas light-DOM match with an explicit comment saying it
+    // was "recorded rather than returned immediately, so the shadow-piercing attempts below still
+    // get their turn" — and then returned it immediately, one loop early. So a page with a
+    // light-DOM <div class="scene"> and the real <canvas class="scene"> inside a shadow root got a
+    // hard "that's a div" instead of the canvas. This is the tosijs-3d shape exactly.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const decoy = document.createElement('div')
+      decoy.className = 'scene' // light-DOM match that is NOT a canvas
+      document.body.appendChild(decoy)
+
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      const sr = host.attachShadow({ mode: 'open' })
+      const c = document.createElement('canvas')
+      c.className = 'scene'
+      c.width = 120
+      c.height = 80
+      const ctx = c.getContext('2d')!
+      ctx.fillStyle = '#0af'
+      ctx.fillRect(0, 0, 120, 80)
+      sr.appendChild(c)
+    })
+
+    const res = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ canvas: '.scene', file: false }),
+    })).json()
+
+    // It must find the canvas, not report the decoy div.
+    expect(JSON.stringify(res)).not.toMatch(/not a canvas|is a div/i)
+    expect(res.data?.image || res.image || '').toMatch(/^data:image\//)
+  })
+
+  test('--canvas at a genuine non-canvas still says so — the helpful diagnostic is not traded away', async ({ page }) => {
+    // The early return existed to produce "that's a div, not a canvas" rather than "not found".
+    // Deleting it must not cost that message when there really is no canvas anywhere.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const d = document.createElement('div')
+      d.className = 'lonely'
+      document.body.appendChild(d)
+    })
+    const res = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ canvas: '.lonely', file: false }),
+    })).json()
+    expect(JSON.stringify(res)).toMatch(/div/i) // still names what it found instead
+  })
+
+  test('a visually-hidden but operable control is reported, flagged — not silently dropped', async ({ page }) => {
+    // The ancestor-aware visibility fix added `rect.width > 0 || rect.height > 0`, which is right
+    // for "don't rasterize things nobody can see" and wrong for affordances: the standard
+    // accessible file-upload and custom-checkbox pattern is a zero-size <input> driven by a
+    // <label>. Dropping it means `hj map` shows a page with no way to upload a file — the map
+    // omits a control the user can actually operate, which is a lie of omission.
+    //
+    // Reported WITH a zeroSize marker, so an agent knows to click the label rather than the input.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('main')
+      wrap.innerHTML =
+        '<label id="pick" for="f">Choose a file</label>' +
+        '<input id="f" type="file" style="position:absolute;width:0;height:0;opacity:0">' +
+        '<button id="real">Visible button</button>'
+      document.body.appendChild(wrap)
+    })
+
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+
+    const flat: any[] = []
+    const walk = (n: any) => { flat.push(n); (n.children || []).forEach(walk) }
+    ;(map.data.nodes || []).forEach(walk)
+
+    // Map nodes carry `ref`/`tag`/`type` — not the DOM id — so match on what a node actually has.
+    const fileInput = flat.find((n) => n.tag === 'input' && n.type === 'file')
+    expect(fileInput).toBeTruthy()          // present at all — this is the regression
+    expect(fileInput.zeroSize).toBe(true)   // and honestly labelled as not occupying space
+
+    // The label is the thing you actually click, so it has to be in the map too.
+    expect(flat.find((n) => n.tag === 'label' && /Choose a file/.test(n.text || ''))).toBeTruthy()
+
+    // A normal control carries no marker — so this isn't "report everything", which would be the
+    // opposite failure.
+    const realButton = flat.find((n) => n.tag === 'button' && /Visible button/.test(n.text || ''))
+    expect(realButton).toBeTruthy()
+    expect(realButton.zeroSize).toBeUndefined()
+  })
+
+  test('a display:none control is still excluded — the guard this replaces still holds', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('main')
+      wrap.innerHTML = '<div style="display:none"><button>Cannot be clicked</button></div>'
+      document.body.appendChild(wrap)
+    })
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    // Assert on TEXT, not a DOM id: map nodes carry ref/tag/text and have never carried `id`, so
+    // the original `not.toContain('ghost')` was satisfied by a payload that contained the button.
+    // It passed under a mutation that deleted the guard entirely — a vacuous assertion certifying
+    // the bug, which is exactly the trap this cycle keeps re-learning.
+    expect(JSON.stringify(map.data.nodes)).not.toContain('Cannot be clicked')
+  })
+
+  test('a zero-height wrapper does NOT prune its visible children', async ({ page }) => {
+    // My first draft of the zero-size fix returned null for a zero-size structural element BEFORE
+    // recursing, so a wrapper with no box of its own took its entire subtree with it. A container
+    // whose children are absolutely positioned legitimately measures 0 high while everything inside
+    // it is plainly visible — the review warned about exactly this and I did it anyway. Descend
+    // first, decide about the element afterwards.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('section')
+      wrap.style.position = 'relative'
+      wrap.style.height = '0' // no box of its own
+      wrap.innerHTML =
+        '<button style="position:absolute;top:0;left:0;width:120px;height:32px">Still clickable</button>'
+      document.body.appendChild(wrap)
+    })
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    expect(JSON.stringify(map.data.nodes)).toContain('Still clickable')
+  })
+
   test('/status and /windows report the SAME window shape, with active/hidden exact inverses', async ({ page }) => {
     // Both endpoints hand-rolled this shape, and the expressions looked different enough that a
     // careful reviewer concluded they disagreed on polarity. They didn't — but `summarizeWindow`

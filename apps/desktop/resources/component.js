@@ -1366,8 +1366,6 @@
       if (crossed)
         return { canvas: crossed };
     }
-    if (nonCanvas)
-      return { canvas: null, matchedNonCanvas: nonCanvas };
     for (const el of Array.from(document.querySelectorAll("*"))) {
       const sr = el.shadowRoot;
       if (!sr)
@@ -1577,20 +1575,23 @@
       format: mime.replace("image/", "")
     };
   }
-  function isEffectivelyVisible(el) {
+  function visibilityOf(el) {
     const anyEl = el;
     if (typeof anyEl.checkVisibility === "function") {
       if (!anyEl.checkVisibility({ checkVisibilityCSS: true, checkOpacity: false }))
-        return false;
+        return "hidden";
     } else {
       const cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden")
-        return false;
+        return "hidden";
       if (el.offsetParent === null && cs.position !== "fixed")
-        return false;
+        return "hidden";
     }
     const r = el.getBoundingClientRect();
-    return r.width > 0 || r.height > 0;
+    return r.width > 0 && r.height > 0 ? "visible" : "zero-size";
+  }
+  function isEffectivelyVisible(el) {
+    return visibilityOf(el) === "visible";
   }
   function parseCssColor(v) {
     const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,/\s]+([\d.]+))?/i.exec(v || "");
@@ -1670,7 +1671,7 @@
     return `${base} Check in this order: (1) \`hj map\` or \`hj tree\` to see what is actually there; ` + `(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore ` + `invisible elements; (3) prefer text over structure — \`:text(save)\`, \`:text-is(Save)\` or ` + `\`[data-testid=…]\` survive restyling where \`.some-class > div:nth-child(2)\` does not; ` + `(4) if the page is still loading, \`hj wait <selector>\` before acting.`;
   }
   function buildDomAffordances(maxNodes = 400) {
-    const INTERACTIVE = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
+    const INTERACTIVE = "a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
     const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
     let count = 0;
     let truncated = false;
@@ -1717,7 +1718,8 @@
       }
       const isInteractive = el.matches(INTERACTIVE);
       const isStructural = el.matches(STRUCTURAL);
-      if ((isInteractive || isStructural) && !isEffectivelyVisible(el))
+      const vis = isInteractive || isStructural ? visibilityOf(el) : "visible";
+      if (vis === "hidden")
         return null;
       const children = [];
       for (const child of Array.from(el.children)) {
@@ -1725,9 +1727,18 @@
         if (c)
           children.push(c);
       }
+      if (vis === "zero-size" && !isInteractive) {
+        if (children.length === 1)
+          return children[0];
+        if (children.length > 1)
+          return { tag: el.tagName.toLowerCase(), children };
+        return null;
+      }
       if (isInteractive || isStructural) {
         count++;
         const node = describeEl(el, children.length > 0);
+        if (vis === "zero-size")
+          node.zeroSize = true;
         if (children.length)
           node.children = children;
         return node;

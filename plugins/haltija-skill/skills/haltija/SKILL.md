@@ -177,6 +177,11 @@ any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's 
 Use `--no-fallback` if you need the hard error instead — or `--schematic` to *prefer* the schematic
 even when real capture is available (cheaper, deterministic, and it carries the contrast audit).
 
+Nodes can carry **`zeroSize: true`** — a control that works but occupies no box (the accessible
+file-input / custom-checkbox pattern: a 0x0 `<input>` operated through its `<label>`). Click the
+label, not the input; the input's coordinates mean nothing. Anything genuinely hidden is left out
+altogether, so `zeroSize` always means *operable but invisible* — never *not there*.
+
 `hj map --image` additionally **saves a rasterized schematic PNG and returns its path** (in
 `data.path`; pass `--data-url` for an inline base64 string instead) — one labeled box
 per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an

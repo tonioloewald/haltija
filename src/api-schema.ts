@@ -1643,7 +1643,13 @@ provenance, because that information does not exist in the DOM. Always check \`s
 trusting the map as wiring rather than as a guess.
 
 Cheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport
-or animation timing, and structure (nesting) is carried for free.`,
+or animation timing, and structure (nesting) is carried for free.
+
+A node may carry **\`zeroSize: true\`** — a real, operable control that occupies no box. The standard
+accessible pattern for file inputs and custom checkboxes is a 0x0 \`<input>\` driven by a \`<label>\`,
+so its coordinates are meaningless and clicking it directly may do nothing: click the associated
+\`<label>\` instead. Genuinely hidden elements (\`display:none\`, hidden ancestor) are excluded
+entirely, so \`zeroSize\` always means *operable but invisible*, never *not there*.`,
   category: 'dom',
   input: s.object({
     global: s.string.describe("Global to probe for the agent surface (default 'tosiAgent')").optional,

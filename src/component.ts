@@ -1929,7 +1929,13 @@ function resolveCanvasDeep(selector?: string): {
     const crossed = descend(document, 0)
     if (crossed) return { canvas: crossed }
   }
-  if (nonCanvas) return { canvas: null, matchedNonCanvas: nonCanvas }
+  // NOTE: there used to be a `if (nonCanvas) return …` here, which contradicted the comment above
+  // that says the match is "recorded rather than returned immediately, so the shadow-piercing
+  // attempts below still get their turn". It returned one loop early, so a page with a light-DOM
+  // `<div class="scene">` decoy and the real `<canvas class="scene">` inside a shadow root got a
+  // hard "that's a div, not a canvas" — and the `nonCanvas` branch of the final return was dead
+  // code. The final return already handles the genuinely-not-found case; this is where the last
+  // attempt belongs.
 
   // Finally, try the selector INSIDE each shadow root (e.g. `--canvas canvas` on a shadow page).
   for (const el of Array.from(document.querySelectorAll('*'))) {
@@ -2248,17 +2254,40 @@ async function rasterizeSchematic(
  * zero-size rect cover the rest (offsetParent is null for a `display:none` ancestor, and also for
  * `position:fixed`, which the rect check then rescues).
  */
-function isEffectivelyVisible(el: Element): boolean {
+/**
+ * Three states, because "hidden" and "takes up no space" are different facts with different
+ * consequences.
+ *
+ * - `hidden` — CSS or an ancestor removed it. Nobody can see or operate it; leave it out.
+ * - `zero-size` — it renders, but occupies no box. The standard accessible file-upload and
+ *   custom-checkbox pattern is exactly this: a 0×0 `<input>` operated through a `<label>`. It is
+ *   fully functional, so dropping it means `hj map` shows a page with no way to upload a file.
+ * - `visible` — has a real box.
+ *
+ * Collapsing the last two into one boolean is what made the affordance walk drop working controls.
+ * Callers that DRAW something (the schematic, canvas thumbnails) want visible-only; callers that
+ * list AFFORDANCES want zero-size too, flagged.
+ */
+type Visibility = 'hidden' | 'zero-size' | 'visible'
+
+function visibilityOf(el: Element): Visibility {
   const anyEl = el as any
   if (typeof anyEl.checkVisibility === 'function') {
-    if (!anyEl.checkVisibility({ checkVisibilityCSS: true, checkOpacity: false })) return false
+    if (!anyEl.checkVisibility({ checkVisibilityCSS: true, checkOpacity: false })) return 'hidden'
   } else {
     const cs = getComputedStyle(el)
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false
-    if ((el as HTMLElement).offsetParent === null && cs.position !== 'fixed') return false
+    if (cs.display === 'none' || cs.visibility === 'hidden') return 'hidden'
+    if ((el as HTMLElement).offsetParent === null && cs.position !== 'fixed') return 'hidden'
   }
   const r = el.getBoundingClientRect()
-  return r.width > 0 || r.height > 0
+  // `&&`, matching the docstring's "a zero-size rect". The old `||` kept a 0×10 element — which
+  // occupies no visible area — while the prose claimed otherwise.
+  return r.width > 0 && r.height > 0 ? 'visible' : 'zero-size'
+}
+
+/** Has a real box: what anything that rasterizes pixels should ask. */
+function isEffectivelyVisible(el: Element): boolean {
+  return visibilityOf(el) === 'visible'
 }
 
 /**
@@ -2390,7 +2419,9 @@ function elementNotFoundMessage(target: string): string {
 
 /** DOM-derived affordances: interactive + structural elements, nested, each with a haltija ref. */
 function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolean } {
-  const INTERACTIVE = 'a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
+  // `label` is here because it is frequently the ONLY clickable surface for a visually-hidden
+  // input; without it the whole control vanished from the map.
+  const INTERACTIVE = 'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
   const STRUCTURAL = 'main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]'
 
   let count = 0
@@ -2455,17 +2486,39 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
 
     // Skip anything the user can't see — an invisible control is not an affordance.
     // Ancestor-aware: a self-only check let `<div style="display:none"><button>` through.
-    if ((isInteractive || isStructural) && !isEffectivelyVisible(el)) return null
+    const vis = (isInteractive || isStructural) ? visibilityOf(el) : 'visible'
+    // `hidden` prunes the whole subtree, and that is correct: display:none and a hidden ancestor
+    // hide descendants too, so nothing below can be visible.
+    if (vis === 'hidden') return null
 
+    // `zero-size` must NOT prune. A wrapper can legitimately have a zero box while its children are
+    // absolutely positioned and perfectly visible — returning null here dropped the entire subtree,
+    // which I did in the first draft of this fix and which the map immediately showed (a <main>
+    // whose only child was display:none reported zero height, taking a sibling button with it).
+    // Descend first; decide about THIS element afterwards.
     const children: any[] = []
     for (const child of Array.from(el.children)) {
       const c = walk(child)
       if (c) children.push(c)
     }
 
+    // A zero-size INTERACTIVE element is still operable — the accessible file-input /
+    // custom-checkbox pattern is exactly a 0x0 <input> driven by a <label>. Dropping it made
+    // `hj map` describe a page with no way to upload a file, which is a lie of omission. Keep it,
+    // flagged, so an agent knows to click the label instead. A zero-size STRUCTURAL element has
+    // nothing of its own to offer — but its children, gathered above, are hoisted below.
+    if (vis === 'zero-size' && !isInteractive) {
+      if (children.length === 1) return children[0]
+      if (children.length > 1) return { tag: el.tagName.toLowerCase(), children }
+      return null
+    }
+
     if (isInteractive || isStructural) {
       count++
       const node = describeEl(el, children.length > 0)
+      // Say so rather than reporting it as an ordinary control — its coordinates are meaningless
+      // and clicking it directly may do nothing.
+      if (vis === 'zero-size') node.zeroSize = true
       if (children.length) node.children = children
       return node
     }
