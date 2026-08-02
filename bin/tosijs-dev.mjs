@@ -440,6 +440,10 @@ if (privateMode) {
   env.HALTIJA_PRIVATE = '1'
   env.HALTIJA_NO_RETIRE = '1'   // never touch another server
   env.HALTIJA_NO_INSTALL = '1'  // never rewrite the shared ~/.local/bin/hj
+  // Same rule as the private Electron (issue #7): a private child must not outlive its run. The
+  // server polls this pid and exits when we're gone — the only thing that survives a SIGKILL of
+  // this launcher, since no trap runs then.
+  env.HALTIJA_SPAWNER_PID = String(process.pid)
   delete env.HALTIJA_PORT       // force ephemeral — never bind the shared default
   delete env.DEV_CHANNEL_PORT
   // The server writes its actual (ephemeral) address here on ready; we read it back to point our

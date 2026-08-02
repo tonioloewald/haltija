@@ -98,6 +98,31 @@ const LOG_PREFIX = '[haltija]'
 // / cwd-routing can't route to it), and does not touch other servers. It reports its address on
 // stdout (`HALTIJA_PRIVATE_READY {json}`) and to HALTIJA_PORT_FILE so the caller can drive it.
 const IS_PRIVATE = process.env.HALTIJA_PRIVATE === '1'
+
+/**
+ * A private server must not outlive the run that spawned it (issue #7's sibling).
+ *
+ * Launcher-side cleanup can't cover a SIGKILL — no trap runs — so the child watches instead. The
+ * spawner's pid arrives in the environment rather than via `process.ppid`, because a reparented
+ * child sees ppid 1 and would think its spawner is alive forever. Private only: a shared server's
+ * lifetime is the user's business, and killing one out from under them is the harm this project
+ * spent 1.4.0 eliminating.
+ */
+if (IS_PRIVATE && process.env.HALTIJA_SPAWNER_PID) {
+  const spawnerPid = parseInt(process.env.HALTIJA_SPAWNER_PID, 10)
+  if (Number.isFinite(spawnerPid)) {
+    const watch = setInterval(() => {
+      try {
+        process.kill(spawnerPid, 0) // signal 0 = existence check, sends nothing
+      } catch {
+        clearInterval(watch)
+        console.log(`${LOG_PREFIX} spawner ${spawnerPid} is gone — shutting down this private server`)
+        process.exit(0)
+      }
+    }, 1000)
+    if (typeof watch.unref === 'function') watch.unref()
+  }
+}
 const PORT_PREFERENCE = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT
 // Private never binds a fixed shared port — always ephemeral, so it can't collide with or adopt
 // the shared server.

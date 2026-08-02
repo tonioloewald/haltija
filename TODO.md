@@ -481,7 +481,9 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
   "once forever": the server can't tell its clients apart, so a permanent global suppress would hide
   the warning from a *second* agent that never saw it — the exact failure these warnings prevent.
   `HALTIJA_NO_TAB_WARN=1` disables them entirely.
-- **[coverage] Unit-test the desktop server-env / port logic** — extract
+- ✅ **[coverage] desktop server-env** — extracted to src/desktop-server-env.ts, 9 tests, main.js calls
+  it; verified with real Electron since it refactors the live launch path.
+- ~~**[coverage] Unit-test the desktop server-env / port logic** — extract
   `buildServerEnv({port,isPrivate,portFile})` from `apps/desktop/main.js` and test it. *Deferred:*
   the extraction refactors the live desktop launch path; more than a low-risk change.
 - **[coverage] Server-level warning-wiring test** (two origins → untargeted warns, `?window=`
@@ -503,7 +505,9 @@ Already shipped and dropped during migration: `hj` CLI wrapper, graceful port ha
   - **Remaining follow-up [desktop, deferred]:** in the desktop app, surface tabs the app knows
     about but that have no *widget* connected (a `connected: false` row in `hj tabs`). Only the app
     knows its client-less webviews; the shared-server case genuinely can't see a `window.open` tab.
-- **[nit] Share a `readPortFile(path,{timeoutMs})` util** — `readPort` (main.js) and
+- ✅ **[nit] port-file timeouts** — NOT drift: 10s waits on a spawned server child, 30s on an Electron
+  boot. Documented as deliberate and cross-referenced so nobody 'aligns' them.
+- ~~**[nit] Share a `readPortFile(path,{timeoutMs})` util** — `readPort` (main.js) and
   `discoverPrivatePort` (tosijs-dev.mjs) are near-identical and drifted on timeout. *Deferred:* nit;
   touches timing behavior in two files.
 
@@ -541,22 +545,29 @@ the clean room"), since tosijs-ui hit the identical shape with packaging.
 
 ### From the 1.6.0 pre-release review (deferred nits)
 
-- **[dead code] Remove the now-unreachable `haltija.focusTab` / `'tabs' 'focus'` branch in
+- ✅ **[dead code] `haltija.focusTab`** — REPURPOSED, not removed: it's now the desktop tab-raise,
+  triggered by the server via an AWAKE messenger tab (see raiseTabInDesktopApp). Original text:
+- ~~**[dead code] Remove the now-unreachable `haltija.focusTab` / `'tabs' 'focus'` branch in
   `src/component.ts`.** tabs-focus is fully server-side since #4, so the server never dispatches
   `focus` to the widget. Either delete the handler, or (if the desktop *physical* raise follow-up
   lands) repurpose it via a non-blocking dispatch. Tie to the deferred "raise the tab in the desktop
   app" item.
-- **[coverage] Extract `runServers`' enumeration into a tested `src/` module** — `bin/hj.mjs` gained
+- ✅ **[coverage] `runServers` enumeration** — extracted to src/server-list.ts, 12 tests, hj calls it.
+- ~~**[coverage] Extract `runServers`' enumeration into a tested `src/` module** — `bin/hj.mjs` gained
   ~106 lines of untested runtime logic (`runServers`, `hj shutdown`). Move the server-list
   derivation into `src/` with unit tests; `hj.mjs` stays a thin caller. (review: practices)
 - **[coverage] Unit-test the tabs-open fallback→`warning` promotion and the `/shutdown` guard
   predicates** (private→signal-parent, non-private-desktop→409). `src/api-handlers.ts`, `src/server.ts`.
-- **[nit] De-dup `hj servers`/`hj where`** — share one `/status` probe + hoist the `bold`/`dim`/
+- ✅ **[nit] hj de-dup** — 14 local ANSI redefinitions collapsed to one; shared /status probe via
+  src/server-list.ts.
+- ~~**[nit] De-dup `hj servers`/`hj where`** — share one `/status` probe + hoist the `bold`/`dim`/
   `green` ANSI helpers to a single definition in `bin/hj.mjs`.
 
 ### Pre-existing
 
-- **[teardown] `--private --headless` can orphan its server when the launcher is SIGKILLed.**
+- ✅ **[teardown] `--private --headless` orphan** — fixed with the same spawner-pid poll as #7; verified
+  by SIGKILLing the launcher. Original:
+- ~~**[teardown] `--private --headless` can orphan its server when the launcher is SIGKILLed.**
   Sibling of the fixed #7 (which was `--private --app`). Observed orphaned ephemeral `dist/server.js`
   (ppid=1) after killing a `--private --headless` launcher — the launcher's SIGINT/SIGTERM handlers
   close the Playwright browser but don't reliably reap the spawned server, and a SIGKILL bypasses
@@ -572,7 +583,10 @@ the clean room"), since tosijs-ui hit the identical shape with packaging.
   (spawner-pid poll, since Electron reparents to launchd) or on SIGTERM/SIGINT; and `hj shutdown` /
   `POST /shutdown` on a private-desktop server tears down the whole instance. Verified with real
   Electron (`hj shutdown`, launcher-SIGKILL, two concurrent runs).
-- **[desktop] `--private --app` default tab points at `localhost:8700`.** `apps/desktop/index.html`
+- ✅ **[desktop] `--private --app` shared-server leak** — was WORSE than cosmetic: the renderer read
+  process.env, which private mode never updated, so the chrome widget connected to the SHARED 8701
+  and the first tab to 8700. Fixed at the root; verified the shared servers gain nothing.
+- ~~**[desktop] `--private --app` default tab points at `localhost:8700`.** `apps/desktop/index.html`
   hardcodes the address bar default to `http://localhost:8700`, so a private app's first content
   tab loads the *shared* server's landing page. No isolation break — the app injects its own widget
   at the private ephemeral port and the shared channel is untouched (verified) — but it pollutes the
