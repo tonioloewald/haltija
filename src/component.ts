@@ -1957,8 +1957,7 @@ function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: str
   for (const el of findCanvasesDeep()) {
     const c = el as HTMLCanvasElement
     if (!c.width || !c.height) continue
-    const style = getComputedStyle(c)
-    if (style.display === 'none' || style.visibility === 'hidden') continue
+    if (!isEffectivelyVisible(c)) continue // same ancestor-blind hole as the affordance walk
     const scale = Math.min(1, maxEdge / Math.max(c.width, c.height))
     const w = Math.max(1, Math.round(c.width * scale))
     const h = Math.max(1, Math.round(c.height * scale))
@@ -2149,8 +2148,45 @@ function renderMapSchematic(
   return { svg, width, height }
 }
 
+/**
+ * Build a schematic response once, for all three entry points (explicit `schematic:true`, the
+ * no-pixel-capture fallback, and `map --image`). They were three near-copies that had already
+ * drifted — and all three defaulted `scale` to 2 while every real capture path uses 1, so the
+ * schematic was quietly 4x the pixels of a screenshot of the same page.
+ */
+async function buildSchematicResponse(
+  map: any,
+  payload: any,
+  banner?: string,
+): Promise<Record<string, unknown>> {
+  const canvases = collectCanvasThumbnails()
+  const { svg, width, height } = renderMapSchematic(map, canvases, banner)
+  const format = payload?.format || 'png'
+  const raster = await rasterizeSchematic(svg, width, height, payload?.scale || 1, {
+    maxWidth: payload?.maxWidth,
+    maxHeight: payload?.maxHeight,
+    mimeType: format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png',
+    quality: payload?.quality,
+  })
+  return {
+    image: raster.image,
+    width: raster.width,
+    height: raster.height,
+    format: raster.format,
+    source: 'schematic',
+    canvasesRendered: canvases.filter((c) => c.image).length,
+    map,
+  }
+}
+
 /** Rasterize the schematic SVG to a PNG data URL — the bitmap IS the payload (see above). */
-async function rasterizeSchematic(svg: string, width: number, height: number, scale = 2): Promise<string> {
+async function rasterizeSchematic(
+  svg: string,
+  width: number,
+  height: number,
+  scale = 1,
+  opts: { maxWidth?: number; maxHeight?: number; mimeType?: string; quality?: number } = {},
+): Promise<{ image: string; width: number; height: number; format: string }> {
   const img = new Image()
   // Base64 the UTF-8 BYTES. A percent-encoded data URL was being decoded as Latin-1 by the SVG
   // parser, so every non-ASCII glyph came out as mojibake — including the arrow glyphs that are the
@@ -2164,14 +2200,65 @@ async function rasterizeSchematic(svg: string, width: number, height: number, sc
     img.onerror = () => reject(new Error('could not rasterize the schematic SVG'))
     img.src = url
   })
+  // Honour the caller's bounds. These were parsed and then ignored: asking for
+  // {maxWidth:300, maxHeight:300, format:'jpeg'} returned a byte-identical 1126x22304 PNG that
+  // still reported format:'png' — an API-contract break, not merely waste.
+  let w = width * scale
+  let h = height * scale
+  const fit = (limit: number | undefined, value: number) => (limit && value > limit ? limit / value : 1)
+  const k = Math.min(fit(opts.maxWidth, w), fit(opts.maxHeight, h))
+  w *= k
+  h *= k
+
+  // And a hard pixel budget regardless. A long page produced 25 Mpx / ~100 MB of RGBA — on the
+  // DEFAULT path for an injected widget with no share grant, i.e. the paved deployment.
+  const MAX_PIXELS = 8_000_000
+  const over = (w * h) / MAX_PIXELS
+  if (over > 1) {
+    const shrink = Math.sqrt(1 / over)
+    w *= shrink
+    h *= shrink
+  }
+
   const canvas = document.createElement('canvas')
-  canvas.width = Math.ceil(width * scale)
-  canvas.height = Math.ceil(height * scale)
+  canvas.width = Math.max(1, Math.ceil(w))
+  canvas.height = Math.max(1, Math.ceil(h))
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/png')
+  const mime = opts.mimeType || 'image/png'
+  return {
+    image: canvas.toDataURL(mime, opts.quality),
+    width: canvas.width,
+    height: canvas.height,
+    format: mime.replace('image/', ''),
+  }
+}
+
+/**
+ * Is this element actually visible to the user, ANCESTORS INCLUDED?
+ *
+ * `getComputedStyle(el).display` is ancestor-blind — `display` does not inherit, so a button inside
+ * `<div style="display:none">` reports `display: block` and passed every check we had. That put
+ * hidden controls in the affordance map with refs and contrast verdicts computed from colours
+ * nobody can see, and rasterized hidden canvases into the schematic.
+ *
+ * `checkVisibility()` handles the whole ancestor chain where available; `offsetParent` and a
+ * zero-size rect cover the rest (offsetParent is null for a `display:none` ancestor, and also for
+ * `position:fixed`, which the rect check then rescues).
+ */
+function isEffectivelyVisible(el: Element): boolean {
+  const anyEl = el as any
+  if (typeof anyEl.checkVisibility === 'function') {
+    if (!anyEl.checkVisibility({ checkVisibilityCSS: true, checkOpacity: false })) return false
+  } else {
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false
+    if ((el as HTMLElement).offsetParent === null && cs.position !== 'fixed') return false
+  }
+  const r = el.getBoundingClientRect()
+  return r.width > 0 || r.height > 0
 }
 
 /**
@@ -2367,10 +2454,8 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     const isStructural = el.matches(STRUCTURAL)
 
     // Skip anything the user can't see — an invisible control is not an affordance.
-    if (isInteractive || isStructural) {
-      const style = getComputedStyle(el)
-      if (style.display === 'none' || style.visibility === 'hidden') return null
-    }
+    // Ancestor-aware: a self-only check let `<div style="display:none"><button>` through.
+    if ((isInteractive || isStructural) && !isEffectivelyVisible(el)) return null
 
     const children: any[] = []
     for (const child of Array.from(el.children)) {
@@ -8362,14 +8447,14 @@ export class DevChannel extends HTMLElement {
         if (payload?.image) {
           // Rasterized schematic (see renderMapSchematic). Report BOTH sizes: the image only pays
           // for itself on a dense map, and that should be measured per page, not assumed.
-          const { svg, width, height } = renderMapSchematic(map)
-          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
+          const built = await buildSchematicResponse(map, payload)
           const jsonChars = JSON.stringify(map).length
           this.respond(msg.id, true, {
             ...map,
-            image,
-            width,
-            height,
+            image: built.image,
+            width: built.width,
+            height: built.height,
+            format: built.format,
             cost: {
               jsonChars,
               approxJsonTokens: Math.round(jsonChars / 4),
@@ -8592,21 +8677,12 @@ export class DevChannel extends HTMLElement {
         // audit. Honour that before attempting any pixel path, and label it the same way the
         // fallback does so the two are indistinguishable to a consumer.
         if (payload?.schematic) {
-          const map = buildAffordanceMap({})
-          const canvases = collectCanvasThumbnails()
-          const { svg, width, height } = renderMapSchematic(map, canvases, 'SCHEMATIC — requested (not a screenshot)')
-          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
-          this.respond(msg.id, true, {
-            image,
-            viewport,
-            format: 'png',
-            width,
-            height,
-            source: 'schematic',
-            requested: true,
-            canvasesRendered: canvases.filter((c) => c.image).length,
-            map,
-          })
+          const built = await buildSchematicResponse(
+            buildAffordanceMap({}),
+            payload,
+            'SCHEMATIC — requested (not a screenshot)',
+          )
+          this.respond(msg.id, true, { ...built, viewport, requested: true })
           return
         }
 
@@ -8853,21 +8929,15 @@ export class DevChannel extends HTMLElement {
           return
         }
         try {
-          const map = buildAffordanceMap({})
-          const canvases = collectCanvasThumbnails()
-          const banner = 'SCHEMATIC — not a screenshot (no pixel capture available)'
-          const { svg, width, height } = renderMapSchematic(map, canvases, banner)
-          const image = await rasterizeSchematic(svg, width, height, payload?.scale || 2)
-          const shown = canvases.filter((c) => c.image).length
+          const built = await buildSchematicResponse(
+            buildAffordanceMap({}),
+            payload,
+            'SCHEMATIC — not a screenshot (no pixel capture available)',
+          )
+          const shown = built.canvasesRendered as number
           this.respond(msg.id, true, {
-            image,
+            ...built,
             viewport,
-            format: 'png',
-            width,
-            height,
-            source: 'schematic',
-            canvasesRendered: shown,
-            map,
             warning:
               `This is NOT a screenshot. No pixel capture was available (no Haltija desktop app, and ` +
               `no screen-share grant), so haltija returned a schematic of the page's affordances` +

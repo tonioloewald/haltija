@@ -4650,8 +4650,7 @@ export const COMPONENT_JS: string = `(() => {
       const c = el;
       if (!c.width || !c.height)
         continue;
-      const style = getComputedStyle(c);
-      if (style.display === "none" || style.visibility === "hidden")
+      if (!isEffectivelyVisible(c))
         continue;
       const scale = Math.min(1, maxEdge / Math.max(c.width, c.height));
       const w = Math.max(1, Math.round(c.width * scale));
@@ -4784,7 +4783,27 @@ export const COMPONENT_JS: string = `(() => {
     const svg = \`<?xml version="1.0" encoding="UTF-8"?>\` + \`<svg xmlns="http://www.w3.org/2000/svg" width="\${width}" height="\${height}" viewBox="0 0 \${width} \${height}">\` + \`<rect width="\${width}" height="\${height}" fill="#ffffff"/>\` + bannerSvg + parts.join("") + \`<text x="\${PAD}" y="\${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">\${title}</text>\` + \`</svg>\`;
     return { svg, width, height };
   }
-  async function rasterizeSchematic(svg, width, height, scale = 2) {
+  async function buildSchematicResponse(map, payload2, banner) {
+    const canvases = collectCanvasThumbnails();
+    const { svg, width, height } = renderMapSchematic(map, canvases, banner);
+    const format = payload2?.format || "png";
+    const raster = await rasterizeSchematic(svg, width, height, payload2?.scale || 1, {
+      maxWidth: payload2?.maxWidth,
+      maxHeight: payload2?.maxHeight,
+      mimeType: format === "webp" ? "image/webp" : format === "jpeg" ? "image/jpeg" : "image/png",
+      quality: payload2?.quality
+    });
+    return {
+      image: raster.image,
+      width: raster.width,
+      height: raster.height,
+      format: raster.format,
+      source: "schematic",
+      canvasesRendered: canvases.filter((c) => c.image).length,
+      map
+    };
+  }
+  async function rasterizeSchematic(svg, width, height, scale = 1, opts = {}) {
     const img = new Image;
     const bytes = new TextEncoder().encode(svg);
     let bin = "";
@@ -4796,14 +4815,48 @@ export const COMPONENT_JS: string = `(() => {
       img.onerror = () => reject(new Error("could not rasterize the schematic SVG"));
       img.src = url;
     });
+    let w = width * scale;
+    let h = height * scale;
+    const fit = (limit, value) => limit && value > limit ? limit / value : 1;
+    const k = Math.min(fit(opts.maxWidth, w), fit(opts.maxHeight, h));
+    w *= k;
+    h *= k;
+    const MAX_PIXELS = 8000000;
+    const over = w * h / MAX_PIXELS;
+    if (over > 1) {
+      const shrink = Math.sqrt(1 / over);
+      w *= shrink;
+      h *= shrink;
+    }
     const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(width * scale);
-    canvas.height = Math.ceil(height * scale);
+    canvas.width = Math.max(1, Math.ceil(w));
+    canvas.height = Math.max(1, Math.ceil(h));
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/png");
+    const mime = opts.mimeType || "image/png";
+    return {
+      image: canvas.toDataURL(mime, opts.quality),
+      width: canvas.width,
+      height: canvas.height,
+      format: mime.replace("image/", "")
+    };
+  }
+  function isEffectivelyVisible(el) {
+    const anyEl = el;
+    if (typeof anyEl.checkVisibility === "function") {
+      if (!anyEl.checkVisibility({ checkVisibilityCSS: true, checkOpacity: false }))
+        return false;
+    } else {
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden")
+        return false;
+      if (el.offsetParent === null && cs.position !== "fixed")
+        return false;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
   }
   function parseCssColor(v) {
     const m = /rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,/\\s]+([\\d.]+))?/i.exec(v || "");
@@ -4930,11 +4983,8 @@ export const COMPONENT_JS: string = `(() => {
       }
       const isInteractive = el.matches(INTERACTIVE);
       const isStructural = el.matches(STRUCTURAL);
-      if (isInteractive || isStructural) {
-        const style = getComputedStyle(el);
-        if (style.display === "none" || style.visibility === "hidden")
-          return null;
-      }
+      if ((isInteractive || isStructural) && !isEffectivelyVisible(el))
+        return null;
       const children = [];
       for (const child of Array.from(el.children)) {
         const c = walk(child);
@@ -9466,14 +9516,14 @@ export const COMPONENT_JS: string = `(() => {
             maxNodes: payload2?.maxNodes
           });
           if (payload2?.image) {
-            const { svg, width, height } = renderMapSchematic(map);
-            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
+            const built = await buildSchematicResponse(map, payload2);
             const jsonChars = JSON.stringify(map).length;
             this.respond(msg2.id, true, {
               ...map,
-              image,
-              width,
-              height,
+              image: built.image,
+              width: built.width,
+              height: built.height,
+              format: built.format,
               cost: {
                 jsonChars,
                 approxJsonTokens: Math.round(jsonChars / 4),
@@ -9621,21 +9671,8 @@ export const COMPONENT_JS: string = `(() => {
             }
           }
           if (payload2?.schematic) {
-            const map = buildAffordanceMap({});
-            const canvases = collectCanvasThumbnails();
-            const { svg, width, height } = renderMapSchematic(map, canvases, "SCHEMATIC — requested (not a screenshot)");
-            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
-            this.respond(msg2.id, true, {
-              image,
-              viewport,
-              format: "png",
-              width,
-              height,
-              source: "schematic",
-              requested: true,
-              canvasesRendered: canvases.filter((c) => c.image).length,
-              map
-            });
+            const built = await buildSchematicResponse(buildAffordanceMap({}), payload2, "SCHEMATIC — requested (not a screenshot)");
+            this.respond(msg2.id, true, { ...built, viewport, requested: true });
             return;
           }
           if (payload2?.canvas !== undefined) {
@@ -9786,21 +9823,11 @@ export const COMPONENT_JS: string = `(() => {
             return;
           }
           try {
-            const map = buildAffordanceMap({});
-            const canvases = collectCanvasThumbnails();
-            const banner = "SCHEMATIC — not a screenshot (no pixel capture available)";
-            const { svg, width, height } = renderMapSchematic(map, canvases, banner);
-            const image = await rasterizeSchematic(svg, width, height, payload2?.scale || 2);
-            const shown = canvases.filter((c) => c.image).length;
+            const built = await buildSchematicResponse(buildAffordanceMap({}), payload2, "SCHEMATIC — not a screenshot (no pixel capture available)");
+            const shown = built.canvasesRendered;
             this.respond(msg2.id, true, {
-              image,
+              ...built,
               viewport,
-              format: "png",
-              width,
-              height,
-              source: "schematic",
-              canvasesRendered: shown,
-              map,
               warning: \`This is NOT a screenshot. No pixel capture was available (no Haltija desktop app, and \` + \`no screen-share grant), so haltija returned a schematic of the page's affordances\` + (shown ? \`, with \${shown} canvas element(s) rendered as real pixels (canvases need no permission)\` : "") + \`. Layout, styling and non-canvas visuals are NOT represented. For real pixels: run the \` + \`desktop app, click the \\uD83D\\uDDA5 button in the widget to grant screen share, or use \` + \`\\\`--canvas <selector>\\\` to capture a specific canvas exactly.\`
             });
           } catch (err) {

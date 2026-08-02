@@ -271,6 +271,37 @@ test.describe('haltija-dev CLI', () => {
     expect(textlessFails).toEqual([])
   })
 
+  test('map and schematic exclude ANCESTOR-hidden elements, not just self-hidden ones', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const wrap = document.createElement('main')
+      // `display` does not inherit, so the button reports display:block and passed a self-only check.
+      wrap.innerHTML =
+        '<div style="display:none"><button id="ghost">Delete account</button>' +
+        '<canvas id="ghost-canvas" width="40" height="40"></canvas></div>' +
+        '<button id="real">Visible action</button>'
+      document.body.appendChild(wrap)
+      const c = document.getElementById('ghost-canvas') as HTMLCanvasElement
+      c.getContext('2d')!.fillRect(0, 0, 40, 40)
+    })
+
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    const flat = JSON.stringify(map.data.nodes)
+    expect(flat).toContain('Visible action')
+    // A control nobody can see is not an affordance — and it must not carry a ref, a contrast
+    // verdict computed from colours nobody sees, or a box in the schematic.
+    expect(flat).not.toContain('Delete account')
+
+    // The schematic embeds canvases; a hidden one was being rasterized into it.
+    const shot = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: false, schematic: true }),
+    })).json()
+    expect(shot.data.canvasesRendered).toBe(0)
+  })
+
   test('map surfaces contrast failures with the page\'s real colours and a WCAG verdict', async ({ page }) => {
     await injectDevChannel(page)
     await page.evaluate(() => {
