@@ -16,13 +16,18 @@ import { fileURLToPath } from 'url'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join as pathJoin } from 'path'
+import { uniqueTestPort } from './test-ports'
 
 const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-pw-registry-'))
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const PORT = 8702 // Different port to avoid conflicts
+// A per-process port, not a fixed one. `8702 // Different port to avoid conflicts` was only
+// different until the second thing wanted it — including this suite's OWN leaked server from an
+// interrupted run, which then failed every later run with an EADDRINUSE stack that reads as a
+// code bug. Shared with the Bun suites; see src/test-ports.ts.
+const PORT = uniqueTestPort()
 const SERVER_URL = `http://localhost:${PORT}`
 const WS_URL = `ws://localhost:${PORT}/ws/browser`
 
@@ -69,7 +74,18 @@ test.beforeAll(async () => {
 
 // Stop server after all tests
 test.afterAll(async () => {
-  serverProcess?.kill()
+  // SIGTERM, then confirm. A `bun run` wrapper that ignores or outlives the signal leaves a server
+  // holding the port, and the next run's failure points at server.ts instead of at the leak. Tests
+  // that litter a shared machine are the same "don't harm a healthy peer" problem as retirement —
+  // the suite is not exempt from the discipline it exists to protect.
+  if (serverProcess && serverProcess.exitCode === null) {
+    serverProcess.kill('SIGTERM')
+    const deadline = Date.now() + 3000
+    while (serverProcess.exitCode === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (serverProcess.exitCode === null) serverProcess.kill('SIGKILL')
+  }
 })
 
 // Helper to inject haltija-dev into page
@@ -354,6 +370,52 @@ test.describe('haltija-dev CLI', () => {
     expect(bad.contrastFail).toBeTruthy()
     expect(bad.colors.passes).toBe(false)
     expect(bad.colors.contrast).toBeLessThan(4.5)
+  })
+
+  test('map --image writes a real PNG to disk and does NOT return the base64 blob', async ({ page }) => {
+    // The v1.9.0 shape change (`data.image` → `data.path`) shipped with no test at any tier, while
+    // the write sat inside a bare `catch {}`. So a failed mkdir — read-only /tmp, a sandbox, a full
+    // disk — silently restored the ~736k-char base64 response the block exists to prevent, and the
+    // whole suite stayed green. Assert the shape AND the bytes.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      // APPEND. Assigning to body.innerHTML deletes the injected <haltija-dev> widget along with
+      // everything else, the socket drops, and the failure reads as a broken /map endpoint.
+      const main = document.createElement('main')
+      main.innerHTML = '<h1>Schematic</h1><button>Go</button>'
+      document.body.appendChild(main)
+    })
+
+    const res = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: true }),
+    })).json()
+
+    expect(res.warning).toBeUndefined() // a silent fallback is the bug; a loud one is acceptable
+    expect(res.data.image).toBeUndefined()
+    expect(typeof res.data.path).toBe('string')
+
+    const { readFileSync, existsSync } = await import('fs')
+    expect(existsSync(res.data.path)).toBe(true)
+    // Magic bytes, not just a non-empty file: "it wrote something" is not "it wrote a PNG".
+    const bytes = readFileSync(res.data.path)
+    expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+    expect(bytes.length).toBeGreaterThan(1000)
+  })
+
+  test('map --image with file:false returns the data URL, so the fallback shape is real too', async ({ page }) => {
+    // The other branch. Without this, `data.path` could become the only shape that ever works and
+    // the documented `file:false` escape hatch would rot unnoticed.
+    await injectDevChannel(page)
+    const res = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: true, file: false }),
+    })).json()
+
+    expect(res.data.path).toBeUndefined()
+    expect(res.data.image).toMatch(/^data:image\/png;base64,/)
   })
 
   test('screenshot with no capture path returns a LABELLED schematic, with canvases as real pixels', async ({ page }) => {

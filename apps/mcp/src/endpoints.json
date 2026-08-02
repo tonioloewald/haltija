@@ -1478,14 +1478,14 @@
             "number",
             "null"
           ],
-          "description": "Device-pixel scale for the schematic image (default 2)"
+          "description": "Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page."
         },
         "file": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "With image: save the PNG to /tmp/haltija-schematics and return its path (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
+          "description": "With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
         },
         "window": {
           "type": [

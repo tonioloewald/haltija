@@ -859,16 +859,35 @@ registerHandler(api.map, async (body, ctx) => {
     const match = img.match(/^data:image\/(\w+);base64,(.+)$/)
     if (match) {
       try {
-        const dir = '/tmp/haltija-schematics'
+        const { tmpdir } = await import('os')
+        const { join } = await import('path')
+        const dir = join(tmpdir(), 'haltija-schematics')
         const { mkdirSync, writeFileSync } = await import('fs')
         mkdirSync(dir, { recursive: true })
-        const filepath = `${dir}/map-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${match[1]}`
+        const filepath = join(
+          dir,
+          `map-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${match[1]}`,
+        )
         writeFileSync(filepath, Buffer.from(match[2], 'base64'))
         ;(response as any).data.path = filepath
         delete (response as any).data.image
-      } catch {
-        // If the write fails, keep the data URL rather than losing the capture entirely.
+      } catch (err) {
+        // Keeping the data URL is the right fallback — losing the capture would be worse. Doing it
+        // SILENTLY was not: the caller asked for a file and got ~736k chars of base64 back with no
+        // explanation, i.e. the exact regression this block exists to prevent, restored invisibly
+        // and with the whole suite green. Say what happened and why, so the reader spends their
+        // time on the read-only /tmp (or full disk, or sandbox) instead of on us.
+        ;(response as any).warning =
+          `could not write the schematic to disk (${(err as Error).message}) — returning it inline ` +
+          `as a data URL instead. That is very large (~700KB of base64 is typical) and no terminal ` +
+          `can render it; pass file:false to ask for this deliberately, or fix the temp directory.`
       }
+    } else {
+      // A non-data-URL `image` means the widget returned a shape we don't understand. Passing it
+      // through unremarked would look like a successful capture.
+      ;(response as any).warning =
+        `the widget returned an 'image' that is not a base64 data URL, so it could not be written ` +
+        `to disk and is being passed through unchanged.`
     }
   }
   return Response.json(response, { headers: ctx.headers })

@@ -37,12 +37,7 @@ export function isolateTestMachineState(): string {
   return dir
 }
 
-// High base, per-process-unique (pid keeps concurrent runs apart), well clear of the 87xx range
-// real haltija servers use. A shared counter hands out distinct ports across files in one run.
-const PORT_BASE = 20000 + (process.pid % 20000)
-let portOffset = 0
-
-/** A port unlikely to collide with a real server, another agent, a leaked run, or another test. */
-export function uniqueTestPort(): number {
-  return PORT_BASE + (portOffset++)
-}
+// Lives in `test-ports.ts` so the Playwright lane — which cannot import Bun-flavoured helpers —
+// can share it instead of hardcoding a port, which is what it did until now. Re-exported here so
+// existing Bun suites keep their single import.
+export { uniqueTestPort } from './test-ports'
