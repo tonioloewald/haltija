@@ -2058,6 +2058,38 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
   };
 }
 
+// bin/server-list.mjs
+function collectCandidates(instances, resolvedPort, defaults = [8700, 8701]) {
+  const byPort = new Map;
+  for (const e of instances) {
+    byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd ?? null });
+  }
+  for (const p of [...defaults, resolvedPort]) {
+    const key = String(p);
+    if (!byPort.has(key))
+      byPort.set(key, { port: key, name: null, cwd: null });
+  }
+  return [...byPort.values()];
+}
+function describeServer(candidate, status) {
+  if (!status)
+    return { ...candidate, up: false };
+  return {
+    ...candidate,
+    up: true,
+    version: status.serverVersion || "?",
+    desktopApp: !!status.desktopApp,
+    tabs: Array.isArray(status.windows) ? status.windows.length : status.browsers ?? 0,
+    ready: typeof status.ready === "boolean" ? status.ready : undefined
+  };
+}
+function sortRows(rows) {
+  return rows.filter((r) => r.up).sort((a, b) => Number(a.port) - Number(b.port));
+}
+function labelFor(row) {
+  return row.desktopApp ? "desktop" : row.name || "(unnamed)";
+}
+
 // bin/hj.mjs
 import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
@@ -2156,35 +2188,18 @@ ${bold2("warning:")} hj ${HJ_VERSION} is driving server ${serverInfo.serverVersi
 }
 async function runServers(resolvedPort) {
   const token = process.env.HALTIJA_TOKEN;
-  const byPort = new Map;
-  for (const e of listLiveInstances()) {
-    byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd });
-  }
-  for (const p of ["8700", "8701", String(resolvedPort)]) {
-    if (!byPort.has(p))
-      byPort.set(p, { port: p, name: null, cwd: null });
-  }
-  const rows = await Promise.all([...byPort.values()].map(async (c) => {
+  const rows = await Promise.all(collectCandidates(listLiveInstances(), resolvedPort).map(async (c) => {
     try {
       const resp = await fetch(`http://localhost:${c.port}/status`, {
         headers: token ? { "X-Haltija-Token": token } : {},
         signal: AbortSignal.timeout(2000)
       });
-      if (!resp.ok)
-        return { ...c, up: false };
-      const s = await resp.json();
-      return {
-        ...c,
-        up: true,
-        version: s.serverVersion || "?",
-        desktopApp: !!s.desktopApp,
-        tabs: Array.isArray(s.windows) ? s.windows.length : s.browsers ?? 0
-      };
+      return describeServer(c, resp.ok ? await resp.json() : null);
     } catch {
-      return { ...c, up: false };
+      return describeServer(c, null);
     }
   }));
-  const up = rows.filter((r) => r.up).sort((a, b) => Number(a.port) - Number(b.port));
+  const up = sortRows(rows);
   if (!up.length) {
     console.log("No haltija servers are running.");
     console.log(dim3("Start one:  bunx haltija --server   (or the desktop app:  bunx haltija)"));
@@ -2193,7 +2208,7 @@ async function runServers(resolvedPort) {
   console.log(bold2("Live haltija servers") + dim3("  (▸ = what this shell targets)"));
   for (const r of up) {
     const here = String(r.port) === String(resolvedPort) ? green2("▸") : " ";
-    const name = r.desktopApp ? "desktop" : r.name || "(unnamed)";
+    const name = labelFor(r);
     const tabs = `${r.tabs} tab${r.tabs === 1 ? "" : "s"}`;
     const kind = r.desktopApp ? "desktop app" : r.cwd || "";
     console.log(`  ${here} ${String(r.port).padEnd(6)} ${name.padEnd(14)} v${String(r.version).padEnd(8)} ${tabs.padEnd(9)} ${dim3(kind)}`);

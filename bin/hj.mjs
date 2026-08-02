@@ -13,6 +13,7 @@
 import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
 import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
+import { collectCandidates, describeServer, sortRows, labelFor } from './server-list.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -142,37 +143,22 @@ async function runWhere(port, portSource, jsonOutput) {
 async function runServers(resolvedPort) {
   const token = process.env.HALTIJA_TOKEN
 
-  const byPort = new Map()
-  for (const e of listLiveInstances()) {
-    byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd })
-  }
-  for (const p of ['8700', '8701', String(resolvedPort)]) {
-    if (!byPort.has(p)) byPort.set(p, { port: p, name: null, cwd: null })
-  }
-
+  // Enumeration + row derivation live in src/server-list.ts (tested); this only does the I/O.
   const rows = await Promise.all(
-    [...byPort.values()].map(async (c) => {
+    collectCandidates(listLiveInstances(), resolvedPort).map(async (c) => {
       try {
         const resp = await fetch(`http://localhost:${c.port}/status`, {
           headers: token ? { 'X-Haltija-Token': token } : {},
           signal: AbortSignal.timeout(2000),
         })
-        if (!resp.ok) return { ...c, up: false }
-        const s = await resp.json()
-        return {
-          ...c,
-          up: true,
-          version: s.serverVersion || '?',
-          desktopApp: !!s.desktopApp,
-          tabs: Array.isArray(s.windows) ? s.windows.length : s.browsers ?? 0,
-        }
+        return describeServer(c, resp.ok ? await resp.json() : null)
       } catch {
-        return { ...c, up: false }
+        return describeServer(c, null)
       }
     }),
   )
 
-  const up = rows.filter((r) => r.up).sort((a, b) => Number(a.port) - Number(b.port))
+  const up = sortRows(rows)
   if (!up.length) {
     console.log('No haltija servers are running.')
     console.log(dim('Start one:  bunx haltija --server   (or the desktop app:  bunx haltija)'))
@@ -182,7 +168,7 @@ async function runServers(resolvedPort) {
   console.log(bold('Live haltija servers') + dim('  (▸ = what this shell targets)'))
   for (const r of up) {
     const here = String(r.port) === String(resolvedPort) ? green('▸') : ' '
-    const name = r.desktopApp ? 'desktop' : r.name || '(unnamed)'
+    const name = labelFor(r)
     const tabs = `${r.tabs} tab${r.tabs === 1 ? '' : 's'}`
     const kind = r.desktopApp ? 'desktop app' : r.cwd || ''
     console.log(

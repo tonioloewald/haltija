@@ -59,6 +59,24 @@ writeFileSync(
     readFileSync('bin/project-origins.mjs', 'utf-8'),
 )
 
+// 0e. Compile src/server-list.ts for the CLI — enumeration/formatting logic belongs in a tested
+// module that bin/hj.mjs thinly calls, not hand-written in the shipped CLI.
+await $`bun build ./src/server-list.ts --outfile=bin/server-list.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/server-list.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/server-list.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/server-list.mjs', 'utf-8'),
+)
+
+// 0f. Compile src/desktop-server-env.ts for the Electron main process (CommonJS — main.js uses
+// require). Its contract is asserted in src/desktop-server-env.test.ts without launching Electron.
+await $`bun build ./src/desktop-server-env.ts --outfile=apps/desktop/server-env.js --target=node --format=cjs`
+writeFileSync(
+  'apps/desktop/server-env.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/desktop-server-env.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/server-env.js', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

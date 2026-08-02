@@ -24,6 +24,7 @@ const os = require('os')
 const { spawn } = require('child_process')
 const http = require('http')
 const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
+const { buildServerEnv } = require('./server-env.js')
 
 // Suppress EIO errors when stdout/stderr pipes break during shutdown
 process.stdout.on('error', () => {})
@@ -1201,37 +1202,14 @@ function checkServerRunning() {
  * `__NEED_WINDOW__` from the public server triggers window recreation.
  */
 function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir, portFile }) {
-  // Pass the port via the env the SERVER ACTUALLY READS. It was `PORT`, which src/server.ts
-  // never reads (it reads HALTIJA_PORT / DEV_CHANNEL_PORT) — so a spawned server ignored the
-  // port it was given and inherited the app's HALTIJA_PORT instead. The internal chrome server
-  // therefore tried to bind the PUBLIC port, collided, and died: verified by launching the app
-  // on high ports and finding nothing on the internal one.
-  const env = {
-    ...process.env,
-    PORT: port.toString(),            // kept for anything else that may read it
-    HALTIJA_PORT: port.toString(),    // what src/server.ts actually reads
-    DEV_CHANNEL_PORT: port.toString(),
-    HALTIJA_DESKTOP: '1',
-    // Only the PUBLIC server (the one agents drive) registers under the reserved 'desktop' name so
-    // `hj --name desktop` / `hj servers` can find it; the internal chrome server stays unregistered.
-    // See src/server.ts REGISTRY_NAME. (Ignored for a private run — those never register.)
-    HALTIJA_DESKTOP_PUBLIC: role === 'public' ? '1' : '0',
-  }
-  if (IS_PRIVATE) {
-    // Isolated instance: this child binds an EPHEMERAL port (HALTIJA_PRIVATE forces PORT=0) and
-    // reports it to `portFile` so we can discover it. Each child gets its OWN port-file — never
-    // the caller's, which we write ourselves once with the public address.
-    env.HALTIJA_PRIVATE = '1'
-    env.HALTIJA_NO_RETIRE = '1'
-    env.HALTIJA_NO_INSTALL = '1'
-    env.HALTIJA_PORT_FILE = portFile
-    delete env.HALTIJA_PORT       // ephemeral, not the app's port
-    delete env.DEV_CHANNEL_PORT
-  } else {
-    // A non-private child must not inherit a private parent's flags (belt and braces).
-    delete env.HALTIJA_PRIVATE
-    delete env.HALTIJA_PORT_FILE
-  }
+  // Built by src/desktop-server-env.ts, whose contract is unit-tested without launching Electron —
+  // getting this wrong is silent (a child that ignores its port, binds the parent's, and dies).
+  const env = buildServerEnv(process.env, {
+    port,
+    role: role === 'public' ? 'public' : 'internal',
+    isPrivate: IS_PRIVATE,
+    portFile,
+  })
   let proc
   if (serverPath && useCompiledBinary) {
     proc = spawn(serverPath, [], {
