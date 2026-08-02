@@ -23,7 +23,16 @@ current as you work.
 The sequence lives upstream under
 [Project-specific practices → haltija](../tosijs-coding-practices/practices/releasing.md#haltija-npm--electron-dmg).
 The short version: bump **both** `package.json` files → `bun run build` → `bun test src/` 100%
-green → commit → annotated tag → push commits **and** tag → `gh release create` → `npm publish`.
+green → commit → annotated tag → push commits **and** tag → `gh release create` → `npm publish` →
+**update haltija's row in the shared scoreboard** (README of `tosijs-coding-practices`).
+
+That last step is not optional and is the one this summary used to drop: a restated sequence
+silently overrides the canonical one, and haltija's row sat **fifteen tags stale** (1.5.2 while HEAD
+was 1.11.3) because both places an agent reads when releasing ended at `npm publish`. Treat the
+short version as a *delta*, not a replacement — when in doubt, run the canonical flow.
+
+Then confirm the CI runs the push triggered are green (`gh run list -L 3`). A push that goes red is
+not landed; nobody else is watching.
 
 Before a **minor or major** bump, run `/pre-release-review` (the nine-lens adversarial review
 gate). Patch releases don't require it.

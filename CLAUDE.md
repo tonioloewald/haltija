@@ -159,7 +159,11 @@ Browser Tab              Server (Bun)           AI Agent
 
 ### `hj` CLI Architecture
 
-The `bin/` directory mixes Node.js `.mjs` (runtime) and `.ts` (build-only) files:
+The `bin/` directory mixes **three** kinds of file — Node.js `.mjs` (runtime), `.ts` (build-only),
+and **generated `.mjs` compiled from `src/`** (`cli-commands`, `window-state`, `project-origins`,
+`server-list`, `hints`, plus `apps/desktop/server-env.js`). The generated ones carry an
+`AUTO-GENERATED … DO NOT EDIT` header: edit the `src/` original, not the twin, or the next build
+reverts you. Runtime files:
 - `hj.mjs` — CLI entry point, parses args and delegates to subcommands
 - `cli-subcommand.mjs` — Translates subcommand invocations (e.g., `hj click 42`) into REST API calls against the running server, using a `COMMAND_HINTS` registry generated from `api-schema.ts` at build time
 - `format-tree.mjs`, `format-events.mjs`, `format-test.mjs`, `format-network.mjs` — Render API responses for human-readable terminal output
@@ -290,7 +294,8 @@ The "hindsight buffer" - aggregated events that capture user intent:
 2. Add to `endpoints` registry at bottom of file
 3. Add handler in `src/api-handlers.ts` if using schema-driven routing
 4. For complex endpoints, may need fallback handling in `src/server.ts`
-5. To deprecate: prefix summary with `[Deprecated]` and start description with `Deprecated: Use X instead` — the router auto-detects and adds deprecation headers
+5. **If the endpoint should be drivable from the CLI, add its name to `ROUTED_COMMANDS` in `src/cli-commands.ts` and run `bun run build`.** Omitting it is silent: the endpoint works over REST, `hj <name>` reports "Unknown command", and the docs-coverage gate passes because a null CLI name is legal. This is how `hj wait` became uninvokable. If it takes flags, add them to `KNOWN_FLAGS` too — a missing entry disables BOTH `--flag=value` and the unknown-flag warning, so `hj <cmd> --flag=x` silently parses to `{}`.
+6. To deprecate: prefix summary with `[Deprecated]` and start description with `Deprecated: Use X instead` — the router auto-detects and adds deprecation headers
 
 ## Test JSON Format
 
@@ -390,12 +395,12 @@ The build script (`scripts/build.ts`) generates:
 6. `apps/desktop/resources/component.js` - Synced copy for desktop app
 7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 8. `bin/hints.json` - CLI command hints generated from schema endpoints
-9a. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed.** They can't ship stale, because `dist/` is gitignored and `files` includes `dist`, so any publish rebuilds everything — but a git checkout between releases can hold a stale twin, so rebuild after pulling.
 9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`). Carries an ownership marker (`HJ_MARKER`, see `src/hj-install.ts`) stamped by the build — **the build fails if it's missing**, because without it a server cannot tell its own `hj` from a file a developer happens to have named `hj`, and will either refuse to repair its own CLI or overwrite someone else's. Also copied to `apps/desktop/resources/hj.mjs`, which the desktop app installs via a ~400-byte shim rather than a compiled binary (see below).
-10. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
-11. `API.md` - Auto-generated API reference (do not edit directly)
-12. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
-13. `llms.txt` - Auto-generated agent-discovery file ([llmstxt.org](https://llmstxt.org)) served at `/llms.txt` and shipped in the npm package (do not edit directly)
+10. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed, and they are what npm ships** (`files` includes `bin` and `apps/desktop/*.js`). Never hand-edit them — the next build reverts it. `docs-drift.yml` gates them by asserting `bun run build` leaves the tree clean, which is why it names no file list: a list can only ever omit the next generated file.
+11. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
+12. `API.md` - Auto-generated API reference (do not edit directly)
+13. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
+14. `llms.txt` - Auto-generated agent-discovery file ([llmstxt.org](https://llmstxt.org)) served at `/llms.txt` and shipped in the npm package (do not edit directly)
 
 **Build ordering note:** the IIFE component (#2) is built *before* `embed-assets` so it can be embedded into the server bundle; `embed-assets` also embeds `llms.txt`. Don't reorder these steps.
 
