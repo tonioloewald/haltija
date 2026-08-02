@@ -6,7 +6,9 @@
 // Settings
 const DEFAULT_SETTINGS = {
   serverMode: 'builtin',
-  serverUrl: 'http://localhost:8700',
+  // This app instance's own server, injected by main after port resolution. Hardcoding 8700 made a
+  // --private app open its first tab against the SHARED server.
+  serverUrl: (typeof window !== 'undefined' && window.haltija?.serverUrl) || 'http://localhost:8700',
   confirmNewTabs: false,
 }
 

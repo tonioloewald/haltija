@@ -13,8 +13,12 @@ const webviewPreloadPath = __dirname + '/webview-preload.js'
 contextBridge.exposeInMainWorld('haltija', {
   // Path to webview preload script
   webviewPreloadPath: webviewPreloadPath,
-  // Internal-server port (chrome widget connects here, hidden from public agent traffic)
+  // Internal-server port (chrome widget connects here, hidden from public agent traffic).
+  // Set by main AFTER port resolution, so a --private instance reports its EPHEMERAL port rather
+  // than the shared 8701.
   internalPort: parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701'),
+  // This instance's public server. A private app must not default to the shared 8700.
+  serverUrl: process.env.HALTIJA_PUBLIC_URL || 'http://localhost:8700',
   // Navigation
   navigate: (url) => ipcRenderer.send('navigate', url),
   goBack: () => ipcRenderer.send('go-back'),

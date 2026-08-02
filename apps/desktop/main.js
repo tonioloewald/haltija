@@ -1585,6 +1585,14 @@ if (!gotTheLock) {
         // Continue anyway - user might start server manually
       }
 
+          // Publish the RESOLVED addresses into the environment before any window (and therefore any
+      // preload) exists. The renderer reads these to know which server it belongs to; private mode
+      // reassigns the module-level `let`s but that does NOT change process.env, so without this a
+      // private app's chrome widget connected to the SHARED 8701 and its first tab loaded the
+      // SHARED 8700 — an isolation leak in the feature whose entire purpose is isolation.
+      process.env.HALTIJA_INTERNAL_PORT = String(HALTIJA_INTERNAL_PORT)
+      process.env.HALTIJA_PUBLIC_URL = HALTIJA_SERVER
+
       setupMenu()
       setupHeaderStripping()
       setupWidgetInjection()

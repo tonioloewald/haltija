@@ -5890,7 +5890,12 @@ export class DevChannel extends HTMLElement {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 5 } }, // low frame rate: we only grab on demand
         audio: false,
-      })
+        // Default the picker to THIS tab. Without it the grant is bound to whatever surface the user
+        // happens to choose, so clicking 🖥 on tab A and picking tab B in the picker silently makes
+        // A's /screenshot return B's pixels — and each tab holds an independent grant that drifts
+        // out of step. Chromium/Edge honour this; elsewhere it's ignored harmlessly.
+        preferCurrentTab: true,
+      } as MediaStreamConstraints & { preferCurrentTab?: boolean })
       this.displayStream = stream
       // Bind to an offscreen <video> so we can drawImage() any current frame
       // on demand without re-prompting the user.

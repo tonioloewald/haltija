@@ -7635,7 +7635,8 @@ export const COMPONENT_JS: string = `(() => {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: { ideal: 5 } },
-          audio: false
+          audio: false,
+          preferCurrentTab: true
         });
         this.displayStream = stream;
         const video = document.createElement("video");
