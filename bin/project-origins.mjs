@@ -1,6 +1,16 @@
 /** ⚠️  AUTO-GENERATED FROM src/project-origins.ts — DO NOT EDIT. Run: bun run build */
 // src/project-origins.ts
 import { existsSync, readFileSync } from "fs";
+
+// src/window-state.ts
+function isTopLevelTab(w) {
+  return (w.windowType || "tab") === "tab";
+}
+function isVisible(w) {
+  return w.active !== false;
+}
+
+// src/project-origins.ts
 import { dirname, join, parse as parsePath } from "path";
 function normalizeOrigin(value) {
   const v = String(value || "").trim();
@@ -50,7 +60,7 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
   if (!declared.length)
     return { kind: "no-declaration" };
   const wanted = new Set(declared);
-  const topLevel = tabs.filter((t) => (t.windowType || "tab") === "tab");
+  const topLevel = tabs.filter(isTopLevelTab);
   const matches = topLevel.filter((t) => {
     const o = normalizeOrigin(t.url || "");
     return o !== null && wanted.has(o);
@@ -59,7 +69,7 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
     const sawOrigins = [...new Set(topLevel.map((t) => normalizeOrigin(t.url || "")).filter((o) => !!o))];
     return { kind: "no-match", declared, sawOrigins };
   }
-  const visible = matches.filter((t) => t.active !== false);
+  const visible = matches.filter(isVisible);
   const pool = visible.length ? visible : matches;
   const focused = pool.find((t) => t.id === focusedWindowId);
   const chosen = focused || pool[0];

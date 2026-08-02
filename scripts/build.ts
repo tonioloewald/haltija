@@ -86,6 +86,15 @@ writeFileSync(
     readFileSync('bin/cli-commands.mjs', 'utf-8'),
 )
 
+// 0h. Compile the window-state vocabulary for the CLI, so hj and the server answer "is this tab
+// drivable?" with the SAME rule rather than two hand-written expressions of opposite polarity.
+await $`bun build ./src/window-state.ts --outfile=bin/window-state.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/window-state.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/window-state.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/window-state.mjs', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

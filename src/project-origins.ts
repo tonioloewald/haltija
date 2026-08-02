@@ -28,6 +28,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs'
+import { isTopLevelTab, isVisible } from './window-state'
 import { dirname, join, parse as parsePath } from 'path'
 
 export interface ProjectOrigins {
@@ -122,7 +123,7 @@ export function routeByDeclaredOrigin(
   if (!declared.length) return { kind: 'no-declaration' }
 
   const wanted = new Set(declared)
-  const topLevel = tabs.filter((t) => (t.windowType || 'tab') === 'tab')
+  const topLevel = tabs.filter(isTopLevelTab)
   const matches = topLevel.filter((t) => {
     const o = normalizeOrigin(t.url || '')
     return o !== null && wanted.has(o)
@@ -133,7 +134,7 @@ export function routeByDeclaredOrigin(
     return { kind: 'no-match', declared, sawOrigins }
   }
 
-  const visible = matches.filter((t) => t.active !== false)
+  const visible = matches.filter(isVisible)
   const pool = visible.length ? visible : matches
   const focused = pool.find((t) => t.id === focusedWindowId)
   const chosen = focused || pool[0]

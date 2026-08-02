@@ -14,6 +14,7 @@ import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HI
 import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
+import { isDrivable, isVisible } from './window-state.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -220,7 +221,9 @@ async function runDoctor(port, portSource, jsonOutput) {
     // The signal that actually predicts success. Older servers (<1.6.1) don't send `ready`; fall
     // back to counting tabs rather than inventing a pass.
     const tabs = Array.isArray(status.windows) ? status.windows : []
-    const ready = typeof status.ready === 'boolean' ? status.ready : tabs.length > 0
+    // Prefer the server's own answer; fall back to the SHARED predicate for older servers rather
+    // than a hand-written `tabs.length > 0`, which counted iframes and popups as drivable.
+    const ready = typeof status.ready === 'boolean' ? status.ready : isDrivable(tabs)
     if (!ready) {
       problems.push(
         `the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` +
@@ -228,7 +231,9 @@ async function runDoctor(port, portSource, jsonOutput) {
           `("server is up" is not "server is drivable" — that's what this check exists for.)`,
       )
     }
-    const hidden = tabs.filter((w) => w.hidden)
+    // Reads `active` via the shared predicate: /status and /windows disagreed on polarity, and
+    // keying on one endpoint's field name is what made this diverge from the origin router.
+    const hidden = tabs.filter((w) => !isVisible(w))
     if (ready && hidden.length === tabs.length) {
       problems.push(
         `every connected tab reports HIDDEN — results from a backgrounded tab can be ` +

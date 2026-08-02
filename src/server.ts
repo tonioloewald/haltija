@@ -35,6 +35,7 @@ import { hiddenTabWarning } from './tab-liveness'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
+import { isTopLevelTab, isVisibleTab, isDrivable } from './window-state'
 import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMessage, getPushMessages, loadConfig, dispatchCommand, registerShell, unregisterShell, setShellName, getShellByName, getShellByWs, listShells, createCommandCache, getCachedResult, cacheResult, STATUS_ITEMS, type TerminalState, type ShellIdentity, type CommandCache } from './terminal'
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
@@ -291,9 +292,7 @@ function raiseTabInDesktopApp(windowId: string): void {
   try {
     // Prefer a VISIBLE tab other than the target: the target may be asleep (that's the whole point),
     // and a hidden messenger's throttled event loop might never deliver the message.
-    const candidates = Array.from(windows.values()).filter(
-      (w) => w.active !== false && (w.windowType || 'tab') === 'tab',
-    )
+    const candidates = Array.from(windows.values()).filter(isVisibleTab)
     const messenger = candidates.find((w) => w.id !== windowId) || candidates[0]
     if (!messenger) return
     messenger.ws.send(JSON.stringify({
@@ -1324,7 +1323,10 @@ async function handleRest(req: Request): Promise<Response> {
       focused: w.id === focusedWindowId,
       // The tab told us it went hidden (visibilitychange). rAF/timers are throttled there, so
       // results from it can be plausible-but-wrong — see src/tab-liveness.ts (issue #3).
-      hidden: w.active === false,
+      // BOTH polarities. /status emitted only `hidden` and /windows only `active`, so a consumer
+      // moving between them inverted its own meaning. See src/window-state.ts.
+      hidden: !isVisibleTab({ ...w, windowType: 'tab' }),
+      active: w.active !== false,
       recording: activeRecordingSessions.has(w.id),
     }))
     
@@ -1338,7 +1340,7 @@ async function handleRest(req: Request): Promise<Response> {
       // former; an adopter that treats it as the latter skips spawning its own browser and then
       // fails much later on a timeout. `ready` is the signal that actually predicts success: at
       // least one top-level TAB is connected. Mirrors /windows.
-      ready: allWindows.filter((w) => (w.windowType || 'tab') === 'tab').length > 0,
+      ready: isDrivable(allWindows),
       serverVersion: SERVER_VERSION,
       // Lets a newer server identify us without shelling out to lsof.
       pid: process.pid,
@@ -3859,6 +3861,7 @@ Run 'hj --help' for all commands.`
       url: w.url,
       title: w.title,
       active: w.active,
+      hidden: w.active === false,
       focused: w.id === focusedWindowId,
       connectedAt: w.connectedAt,
       lastSeen: w.lastSeen,
@@ -3872,8 +3875,7 @@ Run 'hj --help' for all commands.`
     // "count > 0" (and forget to, until a release gate). It counts top-level TABS only: an iframe or
     // popup can't be the target of an untargeted command. Hidden tabs DO count as ready — they are
     // reachable, just possibly stale, which is what the hidden-tab warning is for.
-    const drivableTabs = windowList.filter((w) => (w.windowType || 'tab') === 'tab')
-    const ready = drivableTabs.length > 0
+    const ready = isDrivable(windowList)
 
     const hint = windowList.length > 1
       ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
@@ -4129,7 +4131,7 @@ const serverConfig = {
               // should receive untargeted commands; a background-loaded tab
               // reports active:false and won't steal focus. (Only real tabs —
               // never iframes/popups — become the untargeted-command target.)
-              const isVisibleTab = (windowType || 'tab') === 'tab' && active !== false
+              const isVisibleTab = isTopLevelTab({ id: windowId, windowType }) && active !== false
               if (!focusedWindowId || focusedWindowId === windowId || isVisibleTab) {
                 focusedWindowId = windowId
               }

@@ -2013,6 +2013,12 @@ function extractWindowTarget(args) {
 // bin/project-origins.mjs
 import { existsSync as existsSync2, readFileSync as readFileSync2 } from "fs";
 import { dirname as dirname2, join as join2, parse as parsePath } from "path";
+function isTopLevelTab(w) {
+  return (w.windowType || "tab") === "tab";
+}
+function isVisible(w) {
+  return w.active !== false;
+}
 function normalizeOrigin(value) {
   const v = String(value || "").trim();
   if (!v)
@@ -2061,7 +2067,7 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
   if (!declared.length)
     return { kind: "no-declaration" };
   const wanted = new Set(declared);
-  const topLevel = tabs.filter((t) => (t.windowType || "tab") === "tab");
+  const topLevel = tabs.filter(isTopLevelTab);
   const matches = topLevel.filter((t) => {
     const o = normalizeOrigin(t.url || "");
     return o !== null && wanted.has(o);
@@ -2070,7 +2076,7 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
     const sawOrigins = [...new Set(topLevel.map((t) => normalizeOrigin(t.url || "")).filter((o) => !!o))];
     return { kind: "no-match", declared, sawOrigins };
   }
-  const visible = matches.filter((t) => t.active !== false);
+  const visible = matches.filter(isVisible);
   const pool = visible.length ? visible : matches;
   const focused = pool.find((t) => t.id === focusedWindowId);
   const chosen = focused || pool[0];
@@ -2117,6 +2123,17 @@ function isAmbiguousTarget(portSource, resolvedPort, liveInstances) {
   const others = liveInstances.filter((e) => String(e.port) !== String(resolvedPort));
   const fellBackToDefault = /^8700 \(default\)/.test(portSource);
   return { ambiguous: fellBackToDefault && others.length > 0, others };
+}
+
+// bin/window-state.mjs
+function isTopLevelTab2(w) {
+  return (w.windowType || "tab") === "tab";
+}
+function isVisible2(w) {
+  return w.active !== false;
+}
+function isDrivable(windows) {
+  return windows.some(isTopLevelTab2);
 }
 
 // bin/hj.mjs
@@ -2270,11 +2287,11 @@ async function runDoctor(port, portSource, jsonOutput) {
   }
   if (status) {
     const tabs = Array.isArray(status.windows) ? status.windows : [];
-    const ready = typeof status.ready === "boolean" ? status.ready : tabs.length > 0;
+    const ready = typeof status.ready === "boolean" ? status.ready : isDrivable(tabs);
     if (!ready) {
       problems.push(`the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` + `Open a tab in the desktop app, or inject the widget into a page. ` + `("server is up" is not "server is drivable" — that's what this check exists for.)`);
     }
-    const hidden = tabs.filter((w) => w.hidden);
+    const hidden = tabs.filter((w) => !isVisible2(w));
     if (ready && hidden.length === tabs.length) {
       problems.push(`every connected tab reports HIDDEN — results from a backgrounded tab can be ` + `plausible-but-wrong (rAF/timers throttled). Bring one to the front.`);
     } else if (hidden.length) {
