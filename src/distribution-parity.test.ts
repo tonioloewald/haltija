@@ -87,20 +87,32 @@ describe('distribution parity: the bundle exists and is current', () => {
 })
 
 describe('distribution parity: identical command surface', () => {
-  it('exposes the same commands — a version number promises the commands of that version', async () => {
-    // An adopter scripting `hj doctor` on our own CI advice must not get generic help and exit 0.
-    const list = (out: string) =>
-      [...new Set((out.match(/^\s{2}hj [a-z-]+/gm) || []).map((s) => s.trim()))].sort()
-    const { npm, bundle } = await both(['--help'])
-    expect(list(bundle.stdout)).toEqual(list(npm.stdout))
-  })
+  it('exposes the same commands — compared DIRECTLY, not by parsing help prose', async () => {
+    // Parsing the help blurb was the mistake: the regex assumed `  hj <cmd>` while the real format
+    // is `    <cmd> [args]`, so it matched nothing and the test compared two empty lists. Ask each
+    // artifact about every command in the authoritative list instead — no parsing, no assumptions.
+    const { ROUTED_COMMANDS, LOCAL_COMMANDS } = await import('./cli-commands')
+    const all = [...ROUTED_COMMANDS, ...LOCAL_COMMANDS]
+    expect(all.length).toBeGreaterThan(20)
+
+    const divergent: string[] = []
+    for (const cmd of all) {
+      const { npm, bundle } = await both([cmd, '--help'])
+      if (npm.stdout !== bundle.stdout) divergent.push(cmd)
+    }
+    expect(divergent).toEqual([])
+  }, 180_000)
 
   it('resolves the commands that shipped after the bundle mechanism existed', async () => {
     // doctor (1.6.1) and map (1.8.0) were both reported missing from the bundle.
     for (const cmd of ['doctor', 'map', 'servers']) {
       const { npm, bundle } = await both([cmd, '--help'])
-      expect(bundle.stdout.toLowerCase()).toContain(cmd)
-      expect(npm.stdout.toLowerCase()).toContain(cmd)
+      // Assert the NEGATIVE: "No commands matching 'doctor'." also contains "doctor", which is how
+      // this test stayed green while the behaviour it describes was broken for 40 commands.
+      expect(bundle.stdout).not.toContain('No commands matching')
+      expect(npm.stdout).not.toContain('No commands matching')
+      expect(bundle.stdout).toContain(`hj ${cmd}`)
+      expect(npm.stdout).toContain(`hj ${cmd}`)
     }
   })
 })

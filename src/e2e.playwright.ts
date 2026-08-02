@@ -271,6 +271,26 @@ test.describe('haltija-dev CLI', () => {
     expect(textlessFails).toEqual([])
   })
 
+  test('multiple tabs COEXIST — the current rule, replacing two obsolete auto-deactivate tests', async ({ browser }) => {
+    // Two permanently-skipped tests asserted that opening a tab deactivates the previous one. That
+    // was never implemented and has since been settled the other way: declared-origin routing and
+    // the desktop tab-raise both REQUIRE tabs to coexist and be individually addressable. Skipped
+    // tests asserting a design we rejected are worse than none — they read as unfinished work.
+    const p1 = await browser.newPage()
+    const p2 = await browser.newPage()
+    try {
+      await injectDevChannel(p1)
+      await injectDevChannel(p2)
+      const { windows, count } = await (await fetch(`${SERVER_URL}/windows`)).json()
+      expect(count).toBeGreaterThanOrEqual(2)
+      // Both remain live: neither was deactivated by the other's arrival.
+      expect(windows.filter((w: any) => !w.hidden).length).toBeGreaterThanOrEqual(2)
+    } finally {
+      await p1.close()
+      await p2.close()
+    }
+  })
+
   test('map and schematic exclude ANCESTOR-hidden elements, not just self-hidden ones', async ({ page }) => {
     await injectDevChannel(page)
     await page.evaluate(() => {
@@ -732,85 +752,6 @@ test.describe('haltija-dev component', () => {
   })
 })
 
-test.describe('haltija-dev tab switching', () => {
-  // Note: These tests were for an auto-kill feature that's not currently implemented.
-  // Multiple widgets can coexist - the server tracks them all in the windows map.
-  // Skipping until we decide on the desired behavior.
-  test.skip('new tab deactivates old tab', async ({ browser }) => {
-    // Open first page/tab
-    const page1 = await browser.newPage()
-    await injectDevChannel(page1)
-    await page1.waitForTimeout(500)
-    
-    // Verify first page is connected
-    const state1Before = await page1.evaluate(() => {
-      const el = document.querySelector('haltija-dev') as any
-      return el?.state
-    })
-    expect(state1Before).toBe('connected')
-    
-    // Check widget is visible on page1
-    const widget1VisibleBefore = await page1.evaluate(() => {
-      const el = document.querySelector('haltija-dev')
-      return el?.shadowRoot?.querySelector('.widget') !== null
-    })
-    expect(widget1VisibleBefore).toBe(true)
-    
-    // Open second page/tab
-    const page2 = await browser.newPage()
-    await injectDevChannel(page2)
-    await page2.waitForTimeout(500)
-    
-    // Verify second page is connected
-    const state2 = await page2.evaluate(() => {
-      const el = document.querySelector('haltija-dev') as any
-      return el?.state
-    })
-    expect(state2).toBe('connected')
-    
-    // Verify first page's component was killed (removed from DOM)
-    const page1HasComponent = await page1.evaluate(() => {
-      return document.querySelector('haltija-dev') !== null
-    })
-    expect(page1HasComponent).toBe(false)
-    
-    // Verify second page's component is still there
-    const page2HasComponent = await page2.evaluate(() => {
-      return document.querySelector('haltija-dev') !== null
-    })
-    expect(page2HasComponent).toBe(true)
-    
-    await page1.close()
-    await page2.close()
-  })
-  
-  test.skip('third tab deactivates second tab', async ({ browser }) => {
-    const page1 = await browser.newPage()
-    await injectDevChannel(page1)
-    await page1.waitForTimeout(500)
-    
-    const page2 = await browser.newPage()
-    await injectDevChannel(page2)
-    await page2.waitForTimeout(500)
-    
-    // Page1 should be dead, page2 alive
-    expect(await page1.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(false)
-    expect(await page2.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(true)
-    
-    const page3 = await browser.newPage()
-    await injectDevChannel(page3)
-    await page3.waitForTimeout(500)
-    
-    // Page2 should now be dead, page3 alive
-    expect(await page2.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(false)
-    expect(await page3.evaluate(() => document.querySelector('haltija-dev') !== null)).toBe(true)
-    
-    await page1.close()
-    await page2.close()
-    await page3.close()
-  })
-})
-
 test.describe('haltija-dev server integration', () => {
   test.beforeEach(async ({ page }) => {
     await injectDevChannel(page)
@@ -964,24 +905,14 @@ test.describe('haltija-dev server integration', () => {
   })
 
   test('mutation watching via REST', async ({ page }) => {
-    // Verify connection is established first
-    const connected = await page.evaluate(() => {
-      const el = document.querySelector('haltija-dev') as any
-      return el?.state === 'connected'
-    })
-    
-    if (!connected) {
-      // Wait a bit more and check again
-      await page.waitForTimeout(500)
-      const retryConnected = await page.evaluate(() => {
-        const el = document.querySelector('haltija-dev') as any
-        return el?.state === 'connected'
-      })
-      if (!retryConnected) {
-        test.skip()
-        return
-      }
-    }
+    // WAIT for the widget, don't skip when it isn't there yet. This was a
+    // check-retry-once-then-test.skip() dance, which meant a genuine failure to connect — the
+    // precondition every other test in this file depends on — reported as a green skip.
+    await page.waitForFunction(
+      () => (document.querySelector('haltija-dev') as any)?.state === 'connected',
+      undefined,
+      { timeout: 5000 },
+    )
     
     // Start watching mutations
     const watchRes = await fetch(`${SERVER_URL}/mutations/watch`, {
@@ -1042,10 +973,9 @@ test.describe('haltija-dev server integration', () => {
       body: JSON.stringify({ debounce: 50, preset: 'tailwind' })
     })
     const watchData = await watchRes.json()
-    if (!watchData.success) {
-      test.skip()
-      return
-    }
+    // Was `test.skip()`, which turned a broken endpoint into a green skip — if this
+    // regressed for every caller the feature would break with a passing suite.
+    expect(watchData.success, 'watchData must succeed; a skip here would hide a real regression').toBe(true)
     
     // Add element with tailwind classes
     await page.evaluate(() => {
@@ -1087,10 +1017,9 @@ test.describe('haltija-dev server integration', () => {
       body: JSON.stringify({ debounce: 50, preset: 'xinjs' })
     })
     const watchData = await watchRes.json()
-    if (!watchData.success) {
-      test.skip()
-      return
-    }
+    // Was `test.skip()`, which turned a broken endpoint into a green skip — if this
+    // regressed for every caller the feature would break with a passing suite.
+    expect(watchData.success, 'watchData must succeed; a skip here would hide a real regression').toBe(true)
     
     // Add element with xinjs binding classes
     await page.evaluate(() => {
@@ -1410,23 +1339,12 @@ test.describe('haltija-dev DOM tree inspector', () => {
   })
   
   test('mutation watching with shadow DOM piercing', async ({ page }) => {
-    // Verify connection is established first
-    const connected = await page.evaluate(() => {
-      const el = document.querySelector('haltija-dev') as any
-      return el?.state === 'connected'
-    })
-    
-    if (!connected) {
-      await page.waitForTimeout(500)
-      const retryConnected = await page.evaluate(() => {
-        const el = document.querySelector('haltija-dev') as any
-        return el?.state === 'connected'
-      })
-      if (!retryConnected) {
-        test.skip()
-        return
-      }
-    }
+    // Wait, don't skip — see the sibling test above.
+    await page.waitForFunction(
+      () => (document.querySelector('haltija-dev') as any)?.state === 'connected',
+      undefined,
+      { timeout: 5000 },
+    )
     
     // Note: server automatically clears mutation messages when starting a new watch
     

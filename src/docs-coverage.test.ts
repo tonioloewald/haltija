@@ -99,6 +99,33 @@ describe('docs coverage: every hj command is documented', () => {
     expect(missing).toEqual([])
   })
 
+  it('every command is discoverable in the CLI\'s own help', async () => {
+    // `hj map` shipped absent from `hj --help` entirely, so the printed recovery ("Run `hj help`")
+    // dead-ended. The gate checked SKILL.md and the generated docs but never the CLI itself.
+    // Run the REAL CLI: `hj --help` is listSubcommands() plus a Lifecycle block, and testing only
+    // the fragment would miss half the surface (and wrongly flag the half it can't see).
+    const { execSync } = await import('child_process')
+    const help = execSync(`node ${join(ROOT, 'bin/hj.mjs')} --help`, { encoding: 'utf-8' })
+      .replace(/\x1b\[[0-9;]*m/g, '')
+    // Aliases and plumbing an agent reaches via a parent command.
+    const viaParent = new Set([
+      'events-watch', 'events-unwatch', 'events-stats',
+      'mutations-watch', 'mutations-unwatch', 'mutations-status',
+      'network-watch', 'network-unwatch', 'network-stats',
+      'video-start', 'video-stop', 'video-status',
+      'recording-start', 'recording-stop', 'recording-generate',
+      'select-start', 'select-cancel', 'select-clear', 'select-result',
+      'send-message', 'send-selection', 'send-recording',
+      'tabs-open', 'tabs-close', 'tabs-focus',
+      'test-run', 'test-validate', 'test-suite',
+      'inspectAll', 'ls', 'quit', 'version', 'api', 'docs', 'stats', 'recordings',
+    ])
+    const missing = [...KNOWN, ...LOCAL]
+      .filter((c) => !viaParent.has(c))
+      .filter((c) => !new RegExp(`(^|\\s)${c}(\\s|$|\\[|<)`, 'm').test(help))
+    expect(missing).toEqual([])
+  })
+
   it('the lifecycle commands are in the served quick-start (DOCS.md)', () => {
     // These are the ones a script author needs and cannot guess.
     for (const c of ['hj doctor', 'hj map', 'hj servers']) {

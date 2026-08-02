@@ -1188,9 +1188,13 @@ function levenshtein(a, b) {
 export function listSubcommands() {
   return `
   ${bold('See the page')}
+    map [--image]                     Affordance map: what's here and what it's wired to
     tree [selector] [-d N] [-i] [-v]  DOM tree (-i=interactive, -v=visible)
     screenshot [@ref|selector]        Screenshot (saves to /tmp)
     inspect <@ref|selector>           Detailed element info
+    query <selector> [--all]          Match elements (info, not the whole tree)
+    styles <@ref|selector>            Computed styles + matched CSS rules
+    form [selector]                   Read a form's values as structured data
     console                           Console output
 
   ${bold('Interact')}
@@ -1199,6 +1203,10 @@ export function listSubcommands() {
     key <key> [--ctrl --shift]        Press key
     drag <@ref|selector> <dx> <dy>    Drag element
     scroll [selector|dy]              Scroll page or element
+    wait <selector> [--timeout N]     Wait for an element to appear
+    call <@ref|selector> <method>     Call a method on an element
+    highlight <@ref> [label]          Point something out
+    unhighlight                       Clear highlights
 
   ${bold('Watch')}
     events ${dim('watch|unwatch|stats')}       Semantic events (default: show recent)
@@ -1208,6 +1216,8 @@ export function listSubcommands() {
 
   ${bold('Control')}
     navigate <url>                    Go to URL
+    location                          Current URL + title
+    windows                           Connected tabs  (tabs-open/close/focus)
     refresh [--soft]                  Reload page
     tabs ${dim('open|close|focus')}            Tab management (default: list)
     eval <code>                       Run JS in browser
