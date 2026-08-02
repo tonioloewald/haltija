@@ -140,6 +140,11 @@ Browser Tab              Server (Bun)           AI Agent
 | `src/api-router.ts` | Schema-driven request routing |
 | `src/api-handlers.ts` | Handler implementations for routed endpoints |
 | `src/types.ts` | All TypeScript types (DevMessage, TestStep, SemanticEvent, etc.) |
+| `src/cli-commands.ts` | **The** list of what `hj` accepts. Compiled to `bin/` so the CLI and the server-side hint writers can't disagree — three hand-maintained copies is how `hj wait` became uninvokable and 40 commands reported "no such command" |
+| `src/window-state.ts` | One vocabulary for "is this tab drivable" (`isVisibleTab`, `isDrivable`, `summarizeWindow`). `/status` and `/windows` once reported opposite polarities of the same fact |
+| `src/project-origins.ts` | Declared-origin per-tab routing (`.haltija.json`) — routing by declaration, never by inference |
+| `src/server-list.ts` | `hj servers` enumeration + `isAmbiguousTarget` (which must exclude the resolved server, or `hj doctor` fails against the server it just validated) |
+| `src/desktop-server-env.ts` | The env each spawned server child gets. Testable without launching Electron; getting it wrong is silent |
 | `src/text-selector.ts` | Custom `:text()` pseudo-selector parser (shared by component + tests) |
 | `src/test-generator.ts` | Converts semantic events to test JSON |
 | `src/test-formatters.ts` | Output formatting for test results (JSON, GitHub, human-readable) |
@@ -321,7 +326,9 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 - **`tabs-close`**: Closes a tab by `window` ID.
 - **`tabs-focus`**: Points untargeted commands at a tab by `window` ID — a **server-side** focus
   change, not a browser action. It never dispatches to the tab, so (unlike pre-1.5.2) it can't time
-  out when the target is hidden. It does not physically raise the tab; to pin one command use
+  out when the target is hidden. In the **desktop app** it also physically raises the tab
+  (best-effort, via an awake messenger tab — see `raiseTabInDesktopApp`); outside it, focus is
+  routing-only because a background browser tab can't be raised remotely. To pin one command use
   `--window <id>`.
 - **`navigate`**: After navigation, waits for the specific window to reconnect (tracked by `windowId` + `browserId`). Works correctly with multiple tabs open.
 - **`wait`** with `forWindow: true`: Polls until a new window/tab connects. Use after `tabs-open` to wait for the new tab's widget to initialize. Returns `newWindowId` in step context.
@@ -383,6 +390,7 @@ The build script (`scripts/build.ts`) generates:
 6. `apps/desktop/resources/component.js` - Synced copy for desktop app
 7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 8. `bin/hints.json` - CLI command hints generated from schema endpoints
+9a. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed.** They can't ship stale, because `dist/` is gitignored and `files` includes `dist`, so any publish rebuilds everything — but a git checkout between releases can hold a stale twin, so rebuild after pulling.
 9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`). Carries an ownership marker (`HJ_MARKER`, see `src/hj-install.ts`) stamped by the build — **the build fails if it's missing**, because without it a server cannot tell its own `hj` from a file a developer happens to have named `hj`, and will either refuse to repair its own CLI or overwrite someone else's. Also copied to `apps/desktop/resources/hj.mjs`, which the desktop app installs via a ~400-byte shim rather than a compiled binary (see below).
 10. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
 11. `API.md` - Auto-generated API reference (do not edit directly)
@@ -465,13 +473,22 @@ live browser:
     desktop app's default content tab still *loads* `http://localhost:8700` (`index.html`'s
     hardcoded address-bar default), so a private app opens a tab **showing** the shared server's
     page — a harmless GET (the app injects its own widget at the ephemeral port; the shared
-    channel isn't driven), but it pollutes the private window list. Tracked in `TODO.md`.
+    channel isn't driven), but it pollutes the private window list. **FIXED in 1.11.x** — and the
+    original framing understated it: the renderer read `process.env`, which private mode never
+    updated, so a private app's chrome widget connected to the **shared 8701** and its first tab to
+    the shared 8700. That is a client connection to another project's server, not "a harmless GET".
+    The narrow claim that 8700/8701's *server lifecycle and registry* stay untouched does survive.
+    main.js now publishes the resolved addresses into `process.env` before any window exists, and
+    refuses to fall back to 8701 when the internal server doesn't report.
   - **Teardown is part of the isolation (issue #7).** A private Electron must not outlive its run.
     Three cooperating rules: (1) a private run **never requests the single-instance lock** — so an
     orphan can't block the next run and concurrent private runs don't collide (`gotTheLock =
     IS_PRIVATE ? true : app.requestSingleInstanceLock()`); (2) it **self-terminates** — the launcher
-    passes its pid as `HALTIJA_SPAWNER_PID` and the app polls it (Electron reparents to launchd, so
-    `process.ppid` is useless), calling `app.quit()` when the spawner dies or on SIGTERM/SIGINT;
+    passes its pid as `HALTIJA_SPAWNER_PID` and the child polls it (a reparented child sees
+    `process.ppid === 1`, so it is useless), calling `app.quit()` when the spawner dies or on
+    SIGTERM/SIGINT. **The private *server* uses the same mechanism** — a `--private --headless` run
+    used to orphan its server on a launcher SIGKILL. Note the poll ignores `EPERM`, which proves the
+    process exists;
     `'will-quit'` then kills the child servers and Electron reaps its own helpers (an *external*
     kill famously doesn't); (3) **`hj shutdown`** / `POST /shutdown` on a private-desktop server
     signals its parent Electron to quit, tearing down the whole instance. Verified with real

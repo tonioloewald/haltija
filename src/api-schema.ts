@@ -1735,9 +1735,13 @@ export const tabsFocus = endpoint({
   method: 'POST',
   summary: 'Focus a tab (route untargeted commands to it)',
   description: `Make the given tab the target of untargeted commands. This is a server-side
-routing change, NOT a browser action: it does not physically raise the tab (a backgrounded browser
-tab cannot be raised remotely), and because it never dispatches to the tab it can't time out — even
-if the tab is hidden. After this, commands without a \`window\`/\`--window\` go to this tab until you
+routing change, not a browser action: because it never dispatches to the target tab it cannot time
+out, even when that tab is hidden.
+
+**In the Haltija desktop app it also physically raises the tab**, best-effort: the request goes to a
+tab that is awake, which asks the app's main process to bring the target forward — so a sleeping tab
+gets raised without having to run anything itself. Outside the desktop app a background browser tab
+cannot be raised remotely, so focus is routing-only there. After this, commands without a \`window\`/\`--window\` go to this tab until you
 focus another or physically switch tabs in the browser. To pin a single command instead, use
 \`--window <id>\`. If the tab is hidden the response includes a warning (a backgrounded tab's results
 can be stale). Returns \`{ success, focused, active, title }\`.`,
