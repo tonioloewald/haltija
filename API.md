@@ -1683,7 +1683,8 @@ created with `{ preserveDrawingBuffer: true }`, so a naive toDataURL can silentl
 image. Haltija samples the result and returns a `warning` explaining that (rather than handing you
 an empty picture). A canvas tainted by cross-origin content returns a clear error, not a crash.
 
-When file=true (default from CLI), saves to /tmp/haltija-screenshots/ and returns file path.
+When file=true (default from CLI), saves to <tmpdir>/haltija-screenshots/ and returns the file path.
+Artifacts older than 24h (and beyond the most recent 200) are pruned automatically.
 When file=false, returns base64 data URL in response JSON.
 
 Response: { success, path?, image?, width, height, source, canvas?, warning? }
@@ -1770,7 +1771,7 @@ Great for debugging test failures - call this when something goes wrong.
 
 Start recording the browser tab as WebM video. Requires the Haltija Desktop app.
 
-The recording saves to /tmp/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.
+The recording saves to <tmpdir>/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.
 
 Response: { success, recordingId }
 

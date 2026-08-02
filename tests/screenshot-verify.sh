@@ -61,7 +61,11 @@ take_shot() {
 echo ""
 echo "1. Screenshot saves to disk"
 SCREENSHOT_PATH=$(take_shot)
-if [[ "$SCREENSHOT_PATH" == /tmp/haltija-screenshots/hj-*.png ]]; then
+# `${TMPDIR:-/tmp}` — artifacts live under os.tmpdir(), which is /tmp on Linux and
+# /var/folders/... on macOS. Hardcoding /tmp made this assertion pass only on Linux.
+EXPECTED_DIR="${TMPDIR:-/tmp}"
+EXPECTED_DIR="${EXPECTED_DIR%/}"
+if [[ "$SCREENSHOT_PATH" == "$EXPECTED_DIR"/haltija-screenshots/hj-*.png ]]; then
   pass "path matches expected pattern"
 else
   fail "unexpected path: '$SCREENSHOT_PATH'"

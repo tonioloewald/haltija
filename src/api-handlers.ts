@@ -10,6 +10,7 @@
  */
 
 import type { EndpointDef } from './api-schema'
+import { saveDataUrl } from './artifacts'
 
 // ============================================
 // Handler Context Type
@@ -817,22 +818,20 @@ registerHandler(api.screenshot, async (body, ctx) => {
     enrichedResponse.warning = enrichedResponse.data.warning as string
   }
   
-  // Save to disk by default (file defaults to true, pass file=false for base64)
+  // Save to disk by default (file defaults to true, pass file=false for base64).
+  // Shared with /map via saveDataUrl — the two copies of this had already diverged on the jpeg→jpg
+  // mapping and on what to do when the write fails. See src/artifacts.ts.
   if (body.file !== false && enrichedResponse.data?.image) {
-    const dataUrl = enrichedResponse.data.image as string
-    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
-    if (match) {
-      const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
-      const base64 = match[2]
-      const dir = '/tmp/haltija-screenshots'
-      const { mkdirSync, writeFileSync } = await import('fs')
-      mkdirSync(dir, { recursive: true })
-      const shortId = Math.random().toString(36).slice(2, 6)
-      const filename = `hj-${Date.now()}-${shortId}.${ext}`
-      const filepath = `${dir}/${filename}`
-      writeFileSync(filepath, Buffer.from(base64, 'base64'))
-      enrichedResponse.data.path = filepath
+    const saved = await saveDataUrl(enrichedResponse.data.image as string, { kind: 'screenshots' })
+    if ('path' in saved) {
+      enrichedResponse.data.path = saved.path
       delete enrichedResponse.data.image
+    } else {
+      // Keep the capture, but SAY the fallback happened. Previously this path 500'd here and was
+      // swallowed in /map; neither told the caller what actually went wrong.
+      enrichedResponse.warning =
+        `could not write the screenshot to disk (${saved.error}) — returning it inline as a data ` +
+        `URL instead. Pass file:false to ask for that deliberately, or fix the temp directory.`
     }
   }
   
@@ -856,38 +855,26 @@ registerHandler(api.map, async (body, ctx) => {
   // the bytes reach a model AS an image, which means a file. Mirrors /screenshot.
   const img = (response as any)?.data?.image as string | undefined
   if (body.file !== false && img) {
-    const match = img.match(/^data:image\/(\w+);base64,(.+)$/)
-    if (match) {
-      try {
-        const { tmpdir } = await import('os')
-        const { join } = await import('path')
-        const dir = join(tmpdir(), 'haltija-schematics')
-        const { mkdirSync, writeFileSync } = await import('fs')
-        mkdirSync(dir, { recursive: true })
-        const filepath = join(
-          dir,
-          `map-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${match[1]}`,
-        )
-        writeFileSync(filepath, Buffer.from(match[2], 'base64'))
-        ;(response as any).data.path = filepath
-        delete (response as any).data.image
-      } catch (err) {
-        // Keeping the data URL is the right fallback — losing the capture would be worse. Doing it
-        // SILENTLY was not: the caller asked for a file and got ~736k chars of base64 back with no
-        // explanation, i.e. the exact regression this block exists to prevent, restored invisibly
-        // and with the whole suite green. Say what happened and why, so the reader spends their
-        // time on the read-only /tmp (or full disk, or sandbox) instead of on us.
-        ;(response as any).warning =
-          `could not write the schematic to disk (${(err as Error).message}) — returning it inline ` +
-          `as a data URL instead. That is very large (~700KB of base64 is typical) and no terminal ` +
-          `can render it; pass file:false to ask for this deliberately, or fix the temp directory.`
-      }
-    } else {
+    const saved = await saveDataUrl(img, { kind: 'schematics', prefix: 'map' })
+    if ('path' in saved) {
+      ;(response as any).data.path = saved.path
+      delete (response as any).data.image
+    } else if (saved.error === 'not a base64 image data URL') {
       // A non-data-URL `image` means the widget returned a shape we don't understand. Passing it
       // through unremarked would look like a successful capture.
       ;(response as any).warning =
         `the widget returned an 'image' that is not a base64 data URL, so it could not be written ` +
         `to disk and is being passed through unchanged.`
+    } else {
+      // Keeping the data URL is the right fallback — losing the capture would be worse. Doing it
+      // SILENTLY was not: the caller asked for a file and got ~736k chars of base64 back with no
+      // explanation, i.e. the exact regression this block exists to prevent, restored invisibly and
+      // with the whole suite green. Say what happened and why, so the reader spends their time on
+      // the read-only temp dir (or full disk, or sandbox) instead of on us.
+      ;(response as any).warning =
+        `could not write the schematic to disk (${saved.error}) — returning it inline ` +
+        `as a data URL instead. That is very large (~700KB of base64 is typical) and no terminal ` +
+        `can render it; pass file:false to ask for this deliberately, or fix the temp directory.`
     }
   }
   return Response.json(response, { headers: ctx.headers })

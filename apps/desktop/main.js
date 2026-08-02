@@ -1059,7 +1059,11 @@ function setupScreenCapture() {
 
   ipcMain.handle('video-file-create', async () => {
     try {
-      const dir = '/tmp/haltija-videos'
+      // Same base as every other artifact: os.tmpdir(), not a hardcoded /tmp (different on
+      // macOS, possibly read-only in a sandbox). This path streams chunks rather than
+      // decoding a data URL, so it doesn't share saveDataUrl — but it shares the directory
+      // convention and the retention problem. See src/artifacts.ts.
+      const dir = path.join(os.tmpdir(), 'haltija-videos')
       fs.mkdirSync(dir, { recursive: true })
       const shortId = Math.random().toString(36).slice(2, 6)
       const recordingId = `vid-${Date.now().toString(36)}-${shortId}`
