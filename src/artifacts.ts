@@ -32,7 +32,14 @@ export type ArtifactKind = 'screenshots' | 'schematics' | 'videos'
  * `catch` used to hide.
  */
 export function artifactDir(kind: ArtifactKind): string {
-  return join(tmpdir(), `haltija-${kind}`)
+  // `HALTIJA_ARTIFACT_DIR` exists so the test suite has a seam. Without one, `bun test src/` ran
+  // `pruneArtifacts` with PRODUCTION defaults against the developer's real
+  // `<tmpdir>/haltija-screenshots` — i.e. running the unit tests deleted their captures older than
+  // 24h. `isolateTestMachineState()` could not contain it because the path was computed inline, and
+  // the CI footprint gate only watched `~/.local/bin/hj` and `~/.haltija/servers`. The reviewer who
+  // found this declined to run the suite at all, which is the correct response to a test that
+  // destroys data and precisely the wrong position to put a reviewer in.
+  return join(process.env.HALTIJA_ARTIFACT_DIR || tmpdir(), `haltija-${kind}`)
 }
 
 /** Parsed pieces of a `data:` URL, or null if it isn't one. */

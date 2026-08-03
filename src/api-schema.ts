@@ -838,7 +838,7 @@ Response: { success: true, waited: ms, found?: boolean }`,
       description: 'Wait for dropdown, then 100ms for animation',
     },
   ],
-  hints: '"selector", --text "content", --timeout 5000 | see: click, navigate',
+  hints: '"selector", --timeout 5000, --hidden | see: click, navigate',
 })
 
 export const formData = endpoint({

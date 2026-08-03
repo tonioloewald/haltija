@@ -34,6 +34,9 @@ export function isolateTestMachineState(): string {
   process.env.HALTIJA_MACHINE_LOG = join(dir, 'machine-actions.log')
   process.env.HALTIJA_NO_RETIRE = '1' // never stop another server (also gates freePort)
   process.env.HALTIJA_NO_INSTALL = '1' // never write ~/.local/bin/hj
+  // Artifacts too: writing one triggers a prune, and with the real tmpdir that DELETED the
+  // developer's screenshots older than 24h. A test suite may not destroy data outside itself.
+  process.env.HALTIJA_ARTIFACT_DIR = dir
   return dir
 }
 

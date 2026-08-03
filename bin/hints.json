@@ -8,7 +8,7 @@
   "drag": "@ref or \"selector\" <deltaX> <deltaY>, --duration 500 | see: click, scroll",
   "highlight": "@ref or \"selector\", --label \"text\", --color #f00, --duration 3000 | see: unhighlight, screenshot",
   "scroll": "@ref or \"selector\" or <deltaY>, --duration 500 | see: click, wait",
-  "wait": "\"selector\", --text \"content\", --timeout 5000 | see: click, navigate",
+  "wait": "\"selector\", --timeout 5000, --hidden | see: click, navigate",
   "events": "events-watch first | see: recording, console, mutations-watch",
   "eval": "\"code\" (returns result) | see: console, snapshot",
   "call": "@ref or \"selector\" <method>, --args [...]  | see: eval, inspect",

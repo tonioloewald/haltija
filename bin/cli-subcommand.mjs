@@ -131,25 +131,88 @@ export function presetArg(args, fallback) {
   return value && !value.startsWith('-') ? value : fallback
 }
 
+/**
+ * Split `args` into the flags a command declares and everything else.
+ *
+ * Eight commands advertised flags in `hj <cmd> --help` that no parser ever read — `--all`,
+ * `--clear`, `--humanlike`, `--repeat`, `--duration`, `--label`, `--color`, `--args`. The endpoints
+ * accept every one of them; only the CLI dropped them. `hj type 10 "hello" --clear` was the worst:
+ * text is `args.slice(1).join(' ')`, so the flag became part of the typed string and the user got
+ * the literal characters "hello --clear".
+ *
+ * `spec` maps a flag to how to read it: 'bool' (presence), 'num', 'str', or 'json'. Returns the
+ * parsed flags plus the untouched positional arguments.
+ */
+export function takeFlags(args, spec) {
+  const flags = {}
+  const positional = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    const kind = spec[a]
+    if (!kind) { positional.push(a); continue }
+    if (kind === 'bool') {
+      // `--humanlike false` is the documented form, so accept an explicit boolean after it.
+      const next = args[i + 1]
+      if (next === 'true' || next === 'false') { flags[spec[a + ':name'] || a.slice(2)] = next === 'true'; i++ }
+      else flags[spec[a + ':name'] || a.slice(2)] = true
+      continue
+    }
+    const value = args[++i]
+    if (value === undefined) continue
+    const name = spec[a + ':name'] || a.slice(2)
+    flags[name] = kind === 'num' ? num(value) : kind === 'json' ? tryParseJSON(value) : value
+  }
+  return { flags, positional }
+}
+
 export const ARG_MAPS = {
   click: (args) => parseClickArgs(args),
-  type: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), text: args.slice(1).join(' ') }),
-  key: (args) => ({ key: args[0], ...parseModifiers(args.slice(1)) }),
-  drag: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), deltaX: num(args[1]), deltaY: num(args[2]) }),
-  scroll: (args) => parseScrollArgs(args),
+  type: (args) => {
+    // Flags first, so an advertised `--clear` stops being typed as literal text.
+    const { flags, positional } = takeFlags(args, { '--clear': 'bool', '--humanlike': 'bool' })
+    return { ...parseTargetArgs(positional.slice(0, 1)), text: positional.slice(1).join(' '), ...flags }
+  },
+  key: (args) => {
+    const { flags, positional } = takeFlags(args, { '--repeat': 'num' })
+    return { key: positional[0], ...parseModifiers(positional.slice(1)), ...flags }
+  },
+  drag: (args) => {
+    const { flags, positional } = takeFlags(args, { '--duration': 'num' })
+    return { ...parseTargetArgs(positional.slice(0, 1)), deltaX: num(positional[1]), deltaY: num(positional[2]), ...flags }
+  },
+  scroll: (args) => {
+    const { flags, positional } = takeFlags(args, { '--duration': 'num' })
+    return { ...parseScrollArgs(positional), ...flags }
+  },
   navigate: (args) => ({ url: args[0] }),
   eval: (args) => ({ code: args.join(' ') }),
-  query: (args) => ({ selector: args[0] }),
+  query: (args) => {
+    const { flags, positional } = takeFlags(args, { '--all': 'bool' })
+    return { selector: positional[0], ...flags }
+  },
   inspect: (args) => parseInspectArgs(args),
   'inspectAll': (args) => parseInspectArgs(args),
   styles: (args) => ({ ...parseTargetArgs(args), matchedRules: true }),
   tree: (args) => parseTreeArgs(args),
-  highlight: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), label: args[1] }),
+  highlight: (args) => {
+    const { flags, positional } = takeFlags(args, { '--label': 'str', '--color': 'str', '--duration': 'num' })
+    // The positional second arg is still the label — the documented `hj highlight 5 "Problem here"`.
+    return { ...parseTargetArgs(positional.slice(0, 1)), ...(positional[1] ? { label: positional[1] } : {}), ...flags }
+  },
   unhighlight: () => ({}),
   find: (args) => ({ text: args.join(' ') }),
   form: (args) => parseFormArgs(args),
   wait: (args) => parseWaitArgs(args),
-  call: (args) => ({ ...parseTargetArgs(args.slice(0, 1)), method: args[1], args: args.slice(2).map(tryParseJSON) }),
+  call: (args) => {
+    const { flags, positional } = takeFlags(args, { '--args': 'json' })
+    const rest = positional.slice(2).map(tryParseJSON)
+    return {
+      ...parseTargetArgs(positional.slice(0, 1)),
+      method: positional[1],
+      // `--args '[1,2]'` wins over trailing positionals; both forms are documented.
+      args: flags.args !== undefined ? (Array.isArray(flags.args) ? flags.args : [flags.args]) : rest,
+    }
+  },
   fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(' ') || undefined }),
   screenshot: (args) => {
     const body = { file: true }
@@ -423,14 +486,20 @@ export function parseInspectArgs(args) {
 
 /** Parse key modifiers */
 export function parseModifiers(args) {
+  // `ctrlKey`, not `ctrl` — these are the field names `/key` actually reads (`api-handlers.ts`
+  // forwards `body.ctrlKey`). Emitting the short names meant `hj key s --ctrl` sent `{ctrl: true}`,
+  // the extra key validated fine, the handler forwarded `ctrlKey: undefined`, and the keystroke
+  // arrived WITHOUT the modifier — reported as success. Identical in shape to the `hj wait`
+  // blocker: a CLI/endpoint field-name disagreement that no schema check can see, because an
+  // unrecognised key is legal. Verified against a real keydown event in the e2e lane.
   const mods = {}
   for (const a of args) {
-    if (a === '--ctrl' || a === '-c') mods.ctrl = true
-    if (a === '--shift' || a === '-s') mods.shift = true
-    if (a === '--alt' || a === '-a') mods.alt = true
-    if (a === '--meta' || a === '-m') mods.meta = true
+    if (a === '--ctrl' || a === '-c') mods.ctrlKey = true
+    if (a === '--shift' || a === '-s') mods.shiftKey = true
+    if (a === '--alt' || a === '-a') mods.altKey = true
+    if (a === '--meta' || a === '-m') mods.metaKey = true
   }
-  return Object.keys(mods).length ? mods : {}
+  return mods
 }
 
 /**
@@ -796,7 +865,7 @@ export const KNOWN_FLAGS = {
   form: ['--include-disabled', '--include-hidden'],
   inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
   inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
-  key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m'],
+  key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m', '--repeat'],
   screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas', '--no-fallback', '--schematic'],
   'video-start': ['--maxDuration', '--max-duration'],
   refresh: ['--soft'],
@@ -814,6 +883,14 @@ export const KNOWN_FLAGS = {
   'send-selection': ['--no-submit'],
   'send-recording': ['--no-submit'],
   wait: ['--timeout', '--poll-interval', '--hidden', '--selector'],
+  // These eight were advertised in `hj <cmd> --help` and read by nothing. The endpoints accepted
+  // every one of them; only the CLI dropped them silently.
+  query: ['--all'],
+  type: ['--clear', '--humanlike'],
+  drag: ['--duration'],
+  highlight: ['--label', '--color', '--duration'],
+  scroll: ['--duration'],
+  call: ['--args'],
 }
 
 /** Split `--flag=value` into `--flag`, `value` (first `=` only). Long flags only. */

@@ -18,6 +18,7 @@ import {
   warnUnknownFlags,
   KNOWN_FLAGS,
   GLOBAL_FLAGS,
+  COMMAND_HINTS,
 } from '../bin/cli-subcommand.mjs'
 
 describe('isSubcommand', () => {
@@ -192,18 +193,18 @@ describe('parseWaitArgs', () => {
 
 describe('parseModifiers', () => {
   test('parses --ctrl', () => {
-    expect(parseModifiers(['--ctrl'])).toEqual({ ctrl: true })
+    expect(parseModifiers(['--ctrl'])).toEqual({ ctrlKey: true })
   })
 
   test('parses short flags', () => {
-    expect(parseModifiers(['-c'])).toEqual({ ctrl: true })
-    expect(parseModifiers(['-s'])).toEqual({ shift: true })
-    expect(parseModifiers(['-a'])).toEqual({ alt: true })
-    expect(parseModifiers(['-m'])).toEqual({ meta: true })
+    expect(parseModifiers(['-c'])).toEqual({ ctrlKey: true })
+    expect(parseModifiers(['-s'])).toEqual({ shiftKey: true })
+    expect(parseModifiers(['-a'])).toEqual({ altKey: true })
+    expect(parseModifiers(['-m'])).toEqual({ metaKey: true })
   })
 
   test('parses multiple modifiers', () => {
-    expect(parseModifiers(['--ctrl', '--shift'])).toEqual({ ctrl: true, shift: true })
+    expect(parseModifiers(['--ctrl', '--shift'])).toEqual({ ctrlKey: true, shiftKey: true })
   })
 
   test('returns empty for no modifiers', () => {
@@ -280,9 +281,13 @@ describe('ARG_MAPS', () => {
       expect(ARG_MAPS.key(['Enter'])).toEqual({ key: 'Enter' })
     })
 
-    test('maps key with modifiers', () => {
-      expect(ARG_MAPS.key(['a', '--ctrl'])).toEqual({ key: 'a', ctrl: true })
-      expect(ARG_MAPS.key(['s', '--ctrl', '--shift'])).toEqual({ key: 's', ctrl: true, shift: true })
+    test('maps key with modifiers, using the field names /key reads', () => {
+      // These asserted `ctrl`/`shift`, which the endpoint ignores — so `hj key s --ctrl` sent a
+      // keystroke with NO modifier and reported success. A third test in this file pinning a
+      // CLI/endpoint field-name mismatch; the e2e lane now checks a real keydown event, which is
+      // the only tier that can catch this class.
+      expect(ARG_MAPS.key(['a', '--ctrl'])).toEqual({ key: 'a', ctrlKey: true })
+      expect(ARG_MAPS.key(['s', '--ctrl', '--shift'])).toEqual({ key: 's', ctrlKey: true, shiftKey: true })
     })
   })
 
@@ -931,28 +936,90 @@ describe('warnUnknownFlags', () => {
   })
 })
 
-describe('every flag the parser reads is a flag the validator knows (class invariant)', () => {
-  // `ARG_MAPS` (what a flag DOES) and `KNOWN_FLAGS` (which flags EXIST) are two hand-maintained
-  // registries that have to agree, and nothing checked. `map` was added to the first and not the
-  // second, and because BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on a
-  // `KNOWN_FLAGS` entry, `hj map --scale=3` parsed to `{}` and warned about nothing: the command
-  // reported success and did something other than what it was asked. Silently discarding input is
-  // the instrument lying, which is the one thing it must never do.
+describe('flags: every command that takes flags is registered (class invariant)', () => {
+  // Three attempts at this check, and the failures are the interesting part.
   //
-  // Rather than fix the one entry, derive the check: read the flag literals the parser actually
-  // compares against, and require the validator to know each of them.
-  const flagLiterals = (fn: unknown): string[] => {
-    const src = String(fn)
-    // BOTH quote styles. The source uses single quotes, but Bun's transpiler re-emits them as
-    // double — so a single-quote-only regex matched nothing under `bun test` while working fine
-    // under node, i.e. the check would have passed by looking at an empty set forever. That is the
-    // vacuous-assertion trap, and it is only visible here because of the guard test above it.
-    return [...new Set([...src.matchAll(/['"](--[a-z][\w-]*)['"]/gi)].map((m) => m[1]))]
-  }
+  // v1 scraped `'--flag'` literals out of each parser's source. It inspected 7 of 42 parsers and
+  // skipped all three commands it was written for: extracting `presetArg()` moved the literal out
+  // of the parser body, and `if (!literals.length) continue` hid the gap.
+  //
+  // v2 probed behaviour — does passing the flag change the parsed body? That produced FALSE
+  // POSITIVES: `presetArg` accepts `--preset x` AND a bare `x`, so both forms yield the same body
+  // and the probe concluded the parser "ignores" a flag it plainly reads. A check that cries wolf
+  // is worse than none.
+  //
+  // v3 asserts the thing that actually matters and cannot be wrong about it: **a command whose
+  // parser takes flags must have a `KNOWN_FLAGS` entry.** Both `normalizeEqualsFlags` (so
+  // `--flag=value` splits) and `warnUnknownFlags` (so a typo is reported) are gated on that entry
+  // existing — with no entry, `hj map --scale=3` parses to `{}` and warns about nothing. The
+  // exemption list below is the documented carve-out for commands whose arguments are free-form
+  // text, where a leading dash is content rather than a flag.
+
+  /** Commands whose arguments are free-form text — a leading dash there is content, not a flag. */
+  const FREE_FORM = new Set([
+    'type', 'eval', 'find', 'snapshot', 'send', 'send-message', 'send-selection', 'send-recording',
+    'highlight', 'navigate', 'select', 'tabs-open', 'tabs-close', 'tabs-focus', 'agent-start',
+    'agent-send', 'agent-stop', 'terminal-run', 'task-add', 'task-move', 'task-remove',
+  ])
+
+  /** Does this parser's source — or a helper it calls — mention any `--flag`? */
+  const SOURCE = readFileSync(join(import.meta.dir, '../bin/cli-subcommand.mjs'), 'utf-8')
+
+  test('the invariant has something to check — not a vacuous empty set', () => {
+    expect(Object.keys(ARG_MAPS).length).toBeGreaterThan(35)
+    expect(Object.keys(KNOWN_FLAGS).length).toBeGreaterThan(10)
+    // And the derived helper detection must actually find the helper that motivated all this.
+    const helpers = [...SOURCE.matchAll(/export function (\w+)\(([\s\S]*?)\n\}/g)]
+      .filter(([, , body]) => /['"]--[a-z]/i.test(body))
+      .map(([, name]) => name)
+    expect(helpers).toContain('presetArg')
+    expect(helpers).not.toContain('parseTargetArgs') // resolves targets, handles no flags
+  })
+
+  test('every flag named in a command hint is registered in KNOWN_FLAGS', () => {
+    // Purely declarative, so it cannot false-positive — and it is the direction that would have
+    // caught B1: `bin/hints.json` advertised `--text` for `hj wait`, which no parser ever read.
+    // An advertised flag that does nothing is the same silent lie as an unadvertised one that does.
+    const gaps: string[] = []
+    for (const [cmd, hint] of Object.entries(COMMAND_HINTS || {})) {
+      const text = typeof hint === 'string' ? hint : (hint as any)?.hints
+      if (typeof text !== 'string') continue
+      const named = [...new Set(text.match(/--[a-z][\w-]*/gi) || [])]
+      if (!named.length) continue
+      const known = new Set([...((KNOWN_FLAGS as any)[cmd] || []), ...GLOBAL_FLAGS])
+      const missing = named.filter((f) => !known.has(f))
+      if (missing.length) gaps.push(`${cmd}: hint advertises ${missing.join(', ')}, KNOWN_FLAGS.${cmd} has neither`)
+    }
+    expect(gaps).toEqual([])
+  })
+
+  test('every command whose parser handles flags has a KNOWN_FLAGS entry', () => {
+    // Catches the helper-extraction case v1 missed: a parser counts as flag-handling if its own
+    // source names a `--flag` OR it calls a helper that does. The helper set is DERIVED, not
+    // hand-listed — my hand-list included `parseTargetArgs`, which only resolves `@42`/selector and
+    // handles no flags, and that produced three false alarms (drag, styles, call) in the same
+    // breath as I was arguing that a check which cries wolf is worse than none.
+    const FLAG_HELPERS = [...SOURCE.matchAll(/export function (\w+)\(([\s\S]*?)\n\}/g)]
+      .filter(([, , body]) => /['"]--[a-z]/i.test(body))
+      .map(([, name]) => name)
+    const gaps: string[] = []
+    for (const [cmd, fn] of Object.entries(ARG_MAPS)) {
+      if (FREE_FORM.has(cmd)) continue
+      const src = String(fn)
+      const mentionsFlag = /['"]--[a-z]/i.test(src)
+      const usesFlagHelper = FLAG_HELPERS.some((h) => src.includes(h))
+      if (!mentionsFlag && !usesFlagHelper) continue
+      if (!(KNOWN_FLAGS as any)[cmd]) {
+        gaps.push(
+          `${cmd}: parser handles flags but KNOWN_FLAGS.${cmd} does not exist — so --flag=value ` +
+            `normalization AND the unknown-flag warning are both disabled for it`,
+        )
+      }
+    }
+    expect(gaps).toEqual([])
+  })
 
   test('the flags that were silently dropped now parse', () => {
-    // The concrete bugs behind the invariant, asserted directly — an invariant proven only by
-    // itself is one refactor away from being satisfied vacuously.
     expect(ARG_MAPS.map(['--scale', '3'])).toEqual({ scale: 3 })
     expect(normalizeEqualsFlags(['--scale=3'])).toEqual(['--scale', '3'])
     expect(ARG_MAPS.map(normalizeEqualsFlags(['--scale=3']))).toEqual({ scale: 3 })
@@ -960,15 +1027,30 @@ describe('every flag the parser reads is a flag the validator knows (class invar
   })
 
   test('--preset takes its VALUE, not the flag name, for all three watchers', () => {
-    // `{preset:'--preset'}` was accepted by the server, failed to resolve, and reported success.
     expect(ARG_MAPS['mutations-watch'](['--preset', 'smart'])).toEqual({ preset: 'smart' })
     expect(ARG_MAPS['network-watch'](['--preset', 'standard'])).toEqual({ preset: 'standard' })
     expect(ARG_MAPS['events-watch'](['--preset', 'detailed'])).toEqual({ preset: 'detailed' })
-    // Bare value and empty both still work, so the fix didn't trade one silent wrong for another.
     expect(ARG_MAPS['mutations-watch'](['smart'])).toEqual({ preset: 'smart' })
     expect(ARG_MAPS['mutations-watch']([])).toEqual({ preset: 'smart' })
-    // A dangling `--preset` falls back rather than sending undefined.
     expect(ARG_MAPS['events-watch'](['--preset'])).toEqual({ preset: 'interactive' })
+  })
+
+  test('the =form and the space form agree wherever KNOWN_FLAGS registers the flag', () => {
+    // The user-visible harm of a missing entry, asserted directly.
+    for (const [cmd, flags] of Object.entries(KNOWN_FLAGS)) {
+      const fn = (ARG_MAPS as any)[cmd]
+      // test-* parsers call process.exit() on unusable input, which would kill the test runner.
+      if (typeof fn !== 'function' || FREE_FORM.has(cmd) || cmd.startsWith('test-')) continue
+      for (const flag of flags as string[]) {
+        if (!flag.startsWith('--')) continue
+        let spaced: unknown, equalled: unknown
+        try {
+          spaced = fn([flag, '7'])
+          equalled = fn(normalizeEqualsFlags([`${flag}=7`]))
+        } catch { continue }
+        expect(`${cmd} ${flag}: ${JSON.stringify(equalled)}`).toBe(`${cmd} ${flag}: ${JSON.stringify(spaced)}`)
+      }
+    }
   })
 
   test('an unknown flag now warns instead of vanishing', () => {
@@ -981,28 +1063,63 @@ describe('every flag the parser reads is a flag the validator knows (class invar
       ;(process.stderr as any).write = orig
     }
     expect(out).toContain('--imge')
-    expect(out).toContain('--image') // and suggests the real one
+    expect(out).toContain('--image')
+  })
+})
+
+describe('the eight flags that were advertised and never read', () => {
+  // `hj <cmd> --help` promised each of these and every endpoint accepted them; only the CLI
+  // dropped them. Registration alone is not proof — assert the parsed body.
+
+  test('type: --clear stops being typed as literal text', () => {
+    // The worst of the eight. `text` is `args.slice(1).join(' ')`, so `hj type 10 "hello" --clear`
+    // typed the characters "hello --clear" into the field.
+    expect(ARG_MAPS.type(['10', 'hello', '--clear'])).toEqual({ ref: '10', text: 'hello', clear: true })
+    expect(ARG_MAPS.type(['10', 'hello world'])).toEqual({ ref: '10', text: 'hello world' })
   })
 
-  test('finds flag literals to check — the extractor is not vacuous', () => {
-    expect(flagLiterals(ARG_MAPS.screenshot).length).toBeGreaterThan(5)
+  test('type: --humanlike takes the documented explicit boolean', () => {
+    expect(ARG_MAPS.type(['10', 'hi', '--humanlike', 'false'])).toEqual({ ref: '10', text: 'hi', humanlike: false })
+    expect(ARG_MAPS.type(['10', 'hi', '--humanlike'])).toEqual({ ref: '10', text: 'hi', humanlike: true })
   })
 
-  test('no ARG_MAPS parser reads a flag that KNOWN_FLAGS has never heard of', () => {
-    const gaps: string[] = []
-    for (const [cmd, fn] of Object.entries(ARG_MAPS)) {
-      const literals = flagLiterals(fn)
-      if (!literals.length) continue
-      const known = new Set([...(KNOWN_FLAGS[cmd] || []), ...GLOBAL_FLAGS])
-      const missing = literals.filter((f) => !known.has(f))
-      if (missing.length) {
-        gaps.push(
-          `${cmd}: parses ${missing.join(', ')} but KNOWN_FLAGS.${cmd} ` +
-            `${KNOWN_FLAGS[cmd] ? 'omits them' : 'does not exist — so --flag=value and the ' +
-              'unknown-flag warning are both disabled for this command'}`,
-        )
-      }
-    }
-    expect(gaps).toEqual([])
+  test('query: --all', () => {
+    expect(ARG_MAPS.query(['.item', '--all'])).toEqual({ selector: '.item', all: true })
+    expect(ARG_MAPS.query(['.item'])).toEqual({ selector: '.item' })
+  })
+
+  test('key: --repeat, without disturbing the modifiers', () => {
+    expect(ARG_MAPS.key(['Tab', '--repeat', '3'])).toEqual({ key: 'Tab', repeat: 3 })
+    expect(ARG_MAPS.key(['s', '--ctrl'])).toEqual({ key: 's', ctrlKey: true })
+    expect(ARG_MAPS.key(['s', '--ctrl', '--repeat', '2'])).toEqual({ key: 's', ctrlKey: true, repeat: 2 })
+  })
+
+  test('drag and scroll: --duration', () => {
+    expect(ARG_MAPS.drag(['5', '10', '20', '--duration', '500']))
+      .toEqual({ ref: '5', deltaX: 10, deltaY: 20, duration: 500 })
+    expect(ARG_MAPS.scroll(['200', '--duration', '500'])).toEqual({ deltaY: 200, duration: 500 })
+  })
+
+  test('highlight: --label/--color/--duration, and the positional label still works', () => {
+    expect(ARG_MAPS.highlight(['5', 'Problem here'])).toEqual({ ref: '5', label: 'Problem here' })
+    expect(ARG_MAPS.highlight(['5', '--label', 'Bug', '--color', '#f00', '--duration', '3000']))
+      .toEqual({ ref: '5', label: 'Bug', color: '#f00', duration: 3000 })
+  })
+
+  test('call: --args JSON, with trailing positionals still supported', () => {
+    expect(ARG_MAPS.call(['5', 'focus'])).toEqual({ ref: '5', method: 'focus', args: [] })
+    expect(ARG_MAPS.call(['5', 'scrollTo', '0', '100']))
+      .toEqual({ ref: '5', method: 'scrollTo', args: [0, 100] })
+    expect(ARG_MAPS.call(['5', 'setAttribute', '--args', '["id","x"]']))
+      .toEqual({ ref: '5', method: 'setAttribute', args: ['id', 'x'] })
+  })
+
+  test('hj wait no longer advertises --text, which /wait never accepted', () => {
+    // The hint promised a parameter absent from the endpoint schema — the same shape as B1, where
+    // the CLI and the endpoint disagreed about a field name and nothing noticed.
+    const hint = (COMMAND_HINTS as any).wait
+    const text = typeof hint === 'string' ? hint : hint?.hints
+    expect(text).not.toContain('--text')
+    expect(text).toContain('--timeout')
   })
 })

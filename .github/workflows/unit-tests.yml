@@ -64,4 +64,18 @@ jobs:
             echo "A spawn site is missing HALTIJA_REGISTRY_DIR."
             exit 1
           fi
+          # Artifacts are the third machine-scope write, and the one that DELETES. `saveDataUrl`
+          # prunes on every write (>24h, keep 200), so before HALTIJA_ARTIFACT_DIR existed a
+          # `bun test src/` removed the developer's real screenshots. This gate watched the two
+          # writes and not the deletion — the more dangerous of the three.
+          for d in screenshots schematics videos; do
+            REAL="${TMPDIR:-/tmp}"
+            REAL="${REAL%/}/haltija-$d"
+            if [ -d "$REAL" ]; then
+              echo "FAIL: the test suite created the REAL artifact directory $REAL."
+              ls -la "$REAL"
+              echo "A test wrote an artifact without HALTIJA_ARTIFACT_DIR — it can also DELETE from there."
+              exit 1
+            fi
+          done
           echo "OK: no machine-scope side effects from the suite."

@@ -459,6 +459,35 @@ test.describe('haltija-dev CLI', () => {
     expect(res.found).toBe(true)
   })
 
+  test('hj key modifiers reach the page — the CLI field name must match the endpoint', async ({ page }) => {
+    // `parseModifiers` emits `{ ctrl: true }`; the endpoint reads `ctrlKey`. Same shape as the
+    // `hj wait` blocker: the CLI and the endpoint disagree about a field name, the extra key
+    // validates fine, and the command reports success having silently dropped the modifier.
+    // Asserted against a REAL keydown event, because that is the only thing that can tell.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      ;(window as any).__keys = []
+      document.addEventListener('keydown', (e) => {
+        ;(window as any).__keys.push({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey })
+      })
+    })
+
+    // Drive the REAL CLI, not a hand-written body. Three separate unit tests in this repo have now
+    // pinned a CLI/endpoint field-name mismatch by asserting the parser's own output shape — the
+    // only tier that can catch that class is one that runs the actual command and looks at what
+    // reached the page.
+    const { execFileSync } = await import('child_process')
+    execFileSync('bun', [
+      pathJoin(__dirname, '..', 'dist', 'hj.js'),
+      'key', 's', '--ctrl', '--port', String(PORT), '--no-launch',
+    ], { encoding: 'utf-8', timeout: 20000 })
+
+    const seen = await page.evaluate(() => (window as any).__keys)
+    const hit = seen.find((k: any) => k.key === 's')
+    expect(hit).toBeTruthy()
+    expect(hit.ctrl).toBe(true) // the modifier survived the whole CLI → REST → widget path
+  })
+
   test('--canvas finds a shadow-DOM canvas hidden behind a light-DOM element of the same name', async ({ page }) => {
     // `resolveCanvasDeep` recorded a non-canvas light-DOM match with an explicit comment saying it
     // was "recorded rather than returned immediately, so the shadow-piercing attempts below still

@@ -4,7 +4,13 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { parseDataUrl, saveDataUrl, pruneArtifacts, artifactDir } from './artifacts'
 
-const scratch: string[] = []
+// Point EVERY artifact write in this file at a throwaway root before anything runs. Without it,
+// `saveDataUrl` writes to the real <tmpdir>/haltija-screenshots and its prune deletes the
+// developer's captures older than 24h — running the unit suite destroyed user data.
+const ARTIFACT_ROOT = mkdtempSync(join(tmpdir(), 'haltija-artifact-root-'))
+process.env.HALTIJA_ARTIFACT_DIR = ARTIFACT_ROOT
+
+const scratch: string[] = [ARTIFACT_ROOT]
 const tmp = () => {
   const d = mkdtempSync(join(tmpdir(), 'haltija-artifacts-test-'))
   scratch.push(d)
@@ -57,11 +63,20 @@ describe('saveDataUrl reports failure instead of throwing or hiding it', () => {
     expect('error' in res).toBe(true)
   })
 
-  it('uses tmpdir(), not a hardcoded /tmp', () => {
+  it('honours HALTIJA_ARTIFACT_DIR, so tests cannot touch the real one', () => {
+    expect(artifactDir('schematics')).toBe(join(ARTIFACT_ROOT, 'haltija-schematics'))
+  })
+
+  it('falls back to tmpdir(), not a hardcoded /tmp, when no override is set', () => {
     // Identical on Linux, different on macOS (/var/folders/…), and possibly read-only in a sandbox
     // — which is the failure the old silent catch hid.
-    expect(artifactDir('schematics').startsWith(tmpdir())).toBe(true)
-    expect(artifactDir('schematics')).toContain('haltija-schematics')
+    const saved = process.env.HALTIJA_ARTIFACT_DIR
+    delete process.env.HALTIJA_ARTIFACT_DIR
+    try {
+      expect(artifactDir('schematics')).toBe(join(tmpdir(), 'haltija-schematics'))
+    } finally {
+      process.env.HALTIJA_ARTIFACT_DIR = saved
+    }
   })
 })
 
@@ -97,5 +112,18 @@ describe('artifacts are pruned, so a long-lived app cannot fill the disk', () =>
 
   it('a missing directory is not an error — tidying must never fail the capture', async () => {
     expect(await pruneArtifacts(join(tmpdir(), 'haltija-does-not-exist-' + Math.random()))).toBe(0)
+  })
+})
+
+describe('the suite cannot reach the real artifact directory', () => {
+  it('isolateTestMachineState() redirects artifacts, not just the registry', async () => {
+    // The seam only helps if the shared isolation helper sets it — otherwise every future test
+    // module that writes an artifact re-acquires the ability to delete the developer's files.
+    const { isolateTestMachineState } = await import('./test-support')
+    const dir = isolateTestMachineState()
+    expect(process.env.HALTIJA_ARTIFACT_DIR).toBe(dir)
+    expect(artifactDir('screenshots').startsWith(dir)).toBe(true)
+    // And it must NOT be the real one.
+    expect(artifactDir('screenshots')).not.toBe(join(tmpdir(), 'haltija-screenshots'))
   })
 })
