@@ -192,19 +192,29 @@ file-input / custom-checkbox pattern: a 0x0 `<input>` operated through its `<lab
 label, not the input; the input's coordinates mean nothing. Anything genuinely hidden is left out
 altogether, so `zeroSize` always means *operable but invisible* — never *not there*.
 
-`hj map --image` additionally **saves a rasterized schematic PNG and returns its path** (in
-`data.path`; pass `--data-url` for an inline base64 string instead) — one labeled box
-per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is an
-index you can glance at and then act on. Two things to know:
+`hj map --image` instead **saves a rasterized schematic PNG and prints only its path** — one labeled
+box per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is
+an index you can glance at and then act on. Sizing and encoding take the same flags as a screenshot:
+`--max-width`, `--max-height`, `--format png|webp|jpeg`, `--quality`, `--scale`. Pass `--data-url`
+for an inline base64 string, or `--json` if you want the map JSON *and* the image together.
 
+Three things to know:
+
+- **`--image` replaces the JSON on stdout; it doesn't add to it.** Before 1.12.0 it printed the
+  whole map *plus* the image metadata and path, so it was strictly more expensive than plain
+  `hj map` (measured: 5,910 chars vs 5,447) — the flag whose purpose is to be cheaper could never
+  pay off. It now prints one line, and the size/format/cost summary goes to **stderr**, so stdout
+  stays a bare path you can hand straight to a file read.
 - It must be a bitmap to be worth it. An image of text costs a vision encoder far fewer tokens than
   the same text tokenized — but that's true of the **rendered pixels**, not of SVG markup (which is
   just text tokens, and worse than the JSON).
-- **The win is density-dependent, so check before spending it.** An image costs ~1000-1600 vision
-  tokens no matter how little it contains, so for a small page the JSON map is cheaper. The response
-  includes `cost.approxJsonTokens` for that page — use the image when that number is clearly larger,
-  the JSON when it isn't. The schematic is also worth rendering for a human: it's deterministic, so
-  a diff between two runs is a regression you can see.
+- **The win is density-dependent, so check before spending it — and use the right number.** An image
+  costs ~1000-1600 vision tokens no matter how little it contains, so for a small page the JSON map
+  is cheaper. `cost.approxJsonTokens` measures the **compact** JSON; anything that pretty-prints it
+  (including `hj map`) emits roughly 1.8x more, so treat that field as a lower bound. `hj map
+  --image` prints the measured comparison for that page on stderr — prefer it over estimating. The
+  schematic is also worth rendering for a human: it's deterministic, so a diff between two runs is a
+  regression you can see.
 
 **Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
 canvas's own pixels instead of capturing the screen:

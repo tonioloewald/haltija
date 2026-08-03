@@ -260,6 +260,14 @@ export const ARG_MAPS = {
       if (args[i] === '--image' || args[i] === '--png') { body.image = true; continue }
       if (args[i] === '--data-url') { body.file = false; continue }
       if (args[i] === '--scale') { body.scale = num(args[++i]); continue }
+      // The schematic's sizing/encoding options. `/map` accepts these — after they spent several
+      // releases declared nowhere and silently dropped by the handler — so the CLI must be able to
+      // pass them, or the same parameter is once again reachable at one layer and not the next.
+      // Both spellings, matching `hj screenshot`, which already accepts --maxWidth and --max-width.
+      if (args[i] === '--maxWidth' || args[i] === '--max-width') { body.maxWidth = num(args[++i]); continue }
+      if (args[i] === '--maxHeight' || args[i] === '--max-height') { body.maxHeight = num(args[++i]); continue }
+      if (args[i] === '--format') { body.format = args[++i]; continue }
+      if (args[i] === '--quality') { body.quality = num(args[++i]); continue }
     }
     return body
   },
@@ -875,7 +883,7 @@ export const KNOWN_FLAGS = {
   // Added after an invariant test derived them from the parsers themselves. Missing entries are
   // not cosmetic: BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on an entry
   // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
-  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale'],
+  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],
@@ -1136,6 +1144,26 @@ async function doRequest(url, method, body, context = {}) {
         console.log(bold(json.data.path))
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
         if (meta) console.error(dim(meta))
+      } else if (!jsonOutput && subcommand === 'map' && json.data?.path) {
+        // `hj map --image` used to print the ENTIRE map JSON and then append the image metadata,
+        // the cost block and the path — so it was strictly MORE expensive than `hj map`, always.
+        // Measured on a small page: 5,910 chars vs 5,447. The flag whose whole purpose is to be
+        // cheaper could never once pay off, and README described it as returning a path, which it
+        // did only in the sense that a path was in there somewhere.
+        //
+        // Now it behaves like `hj screenshot`: the path on stdout, everything else on stderr.
+        // `--json` still gives the full envelope for anyone who wants map AND image together.
+        console.log(bold(json.data.path))
+        const d = json.data
+        const meta = [d.width && d.height ? `${d.width}×${d.height}` : null, d.format].filter(Boolean).join(', ')
+        // The honest comparison, measured rather than asserted. `cost.jsonChars` is the length of
+        // the COMPACT JSON, but what an agent actually pays for `hj map` is the pretty-printed
+        // output — about 1.8x larger on the pages measured. Advising "use whichever is smaller"
+        // from a number 1.8x too small pushed the answer toward JSON every time.
+        const { image, width, height, format, cost, path, ...mapOnly } = d
+        const plainChars = JSON.stringify(mapOnly, null, 2).length
+        const bits = [meta, `hj map on this page prints ~${Math.round(plainChars / 100) / 10}k chars (~${Math.round(plainChars / 4 / 100) / 10}k tokens); a schematic costs a vision encoder ~1-1.6k`]
+        console.error(dim(bits.filter(Boolean).join(' · ')))
       } else if (!jsonOutput && (subcommand === 'network' || subcommand === 'network-watch') && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json))
       } else if (!jsonOutput && subcommand === 'network-stats') {

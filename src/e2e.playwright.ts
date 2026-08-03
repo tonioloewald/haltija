@@ -389,6 +389,43 @@ test.describe('haltija-dev CLI', () => {
     expect(unbounded.data.format).toBe('png') // and the default is still PNG
   })
 
+  test('hj map --image prints ONLY a path, and is actually cheaper than hj map', async ({ page }) => {
+    // The claim README makes, measured rather than asserted. `--image` used to print the entire map
+    // JSON and then append the image metadata + cost block + path, so it cost MORE than plain
+    // `hj map` (5,910 chars vs 5,447 when measured) — a flag that exists to be cheaper and never
+    // once was. Only the real binary can show this: the endpoint returns the same payload either
+    // way, and the whole bug lived in how the CLI rendered it.
+    await injectDevChannel(page)
+    // A page with enough controls that the JSON map is substantial. On the bare fixture the map is
+    // ~550 chars and the comparison measures nothing — the image floor would dominate either way,
+    // which is exactly the density-dependence the skill tells agents to check for.
+    await page.evaluate(() => {
+      const form = document.createElement('form')
+      form.innerHTML = Array.from(
+        { length: 40 },
+        (_, i) => `<label for="f${i}">Field ${i}</label><input id="f${i}" name="field-${i}" placeholder="enter value ${i}"><button type="button" id="b${i}">Action ${i}</button>`,
+      ).join('')
+      document.body.appendChild(form)
+    })
+    const { execFileSync } = await import('child_process')
+    const run = (args: string[]) =>
+      execFileSync('bun', [pathJoin(__dirname, '..', 'dist', 'hj.js'), ...args, '--port',
+        String(server.port), '--no-launch'], { encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'] })
+
+    const plain = run(['map'])
+    const image = run(['map', '--image'])
+
+    // stdout is a bare path and nothing else — pipeable straight into a file read.
+    expect(image.trim().split('\n').length).toBe(1)
+    expect(image).toMatch(/haltija-schematics\/map-[^/]*\.png/)
+    // …and the whole point: it is genuinely smaller. Not "about the same" — an order of magnitude.
+    expect(image.length).toBeLessThan(plain.length / 5)
+    // The discriminating half: `hj map` still prints the full map, so this isn't measuring a
+    // CLI that stopped printing anything.
+    expect(plain.length).toBeGreaterThan(5000)
+    expect(plain).toContain('"tag"')
+  })
+
   test('hj wait for a missing element actually WAITS and fails — never a 0ms success', async ({ page }) => {
     // The unit tests for this asserted the parser's output shape, and both the parser and the tests
     // used a field the endpoint does not read — so `hj wait ".modal"` returned success in ~50ms and

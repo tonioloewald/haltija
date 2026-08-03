@@ -1105,6 +1105,22 @@ var ARG_MAPS = {
         body.scale = num(args[++i]);
         continue;
       }
+      if (args[i] === "--maxWidth" || args[i] === "--max-width") {
+        body.maxWidth = num(args[++i]);
+        continue;
+      }
+      if (args[i] === "--maxHeight" || args[i] === "--max-height") {
+        body.maxHeight = num(args[++i]);
+        continue;
+      }
+      if (args[i] === "--format") {
+        body.format = args[++i];
+        continue;
+      }
+      if (args[i] === "--quality") {
+        body.quality = num(args[++i]);
+        continue;
+      }
     }
     return body;
   },
@@ -1691,7 +1707,7 @@ var KNOWN_FLAGS = {
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
-  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale"],
+  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality"],
   "events-watch": ["--preset"],
   "mutations-watch": ["--preset"],
   "network-watch": ["--preset"],
@@ -1889,6 +1905,14 @@ async function doRequest(url, method, body, context = {}) {
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(", ");
         if (meta)
           console.error(dim2(meta));
+      } else if (!jsonOutput && subcommand === "map" && json.data?.path) {
+        console.log(bold(json.data.path));
+        const d = json.data;
+        const meta = [d.width && d.height ? `${d.width}×${d.height}` : null, d.format].filter(Boolean).join(", ");
+        const { image, width, height, format, cost, path, ...mapOnly } = d;
+        const plainChars = JSON.stringify(mapOnly, null, 2).length;
+        const bits = [meta, `hj map on this page prints ~${Math.round(plainChars / 100) / 10}k chars (~${Math.round(plainChars / 4 / 100) / 10}k tokens); a schematic costs a vision encoder ~1-1.6k`];
+        console.error(dim2(bits.filter(Boolean).join(" · ")));
       } else if (!jsonOutput && (subcommand === "network" || subcommand === "network-watch") && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json));
       } else if (!jsonOutput && subcommand === "network-stats") {

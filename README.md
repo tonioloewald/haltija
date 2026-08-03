@@ -58,7 +58,8 @@ hj highlight 5 "Problem here"
 
 # See the page as affordances — what's here and what it's wired to
 hj map                           # structural map with handles
-hj map --image                   # same thing as a labelled schematic PNG (returns a path)
+hj map --image                   # the same map as a labelled schematic PNG — prints ONLY the
+                                 # file path (cheap); pass --json if you also want the map JSON
 
 # Work out what you're actually talking to
 hj where                         # which server this shell targets, and why

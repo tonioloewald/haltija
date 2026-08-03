@@ -8524,9 +8524,12 @@ export class DevChannel extends HTMLElement {
               jsonChars,
               approxJsonTokens: Math.round(jsonChars / 4),
               note:
-                'A rendered image costs a vision encoder roughly 1000-1600 tokens regardless of ' +
-                'content, so it wins only once the JSON map is bigger than that. Compare against ' +
-                'approxJsonTokens for THIS page and use whichever is smaller.',
+                'jsonChars is the COMPACT JSON. Anything that pretty-prints this map — `hj map` ' +
+                'does — emits roughly 1.8x more, so treat approxJsonTokens as a lower bound on ' +
+                'what you would actually pay for the JSON. A rendered image costs a vision ' +
+                'encoder roughly 1000-1600 tokens regardless of content, and only pays for ' +
+                'itself once the JSON you would really receive exceeds that. `hj map --image` ' +
+                'prints the file path alone and reports the measured comparison on stderr.',
             },
           })
         } else {
