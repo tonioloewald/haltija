@@ -143,6 +143,27 @@ export function presetArg(args, fallback) {
  * `spec` maps a flag to how to read it: 'bool' (presence), 'num', 'str', or 'json'. Returns the
  * parsed flags plus the untouched positional arguments.
  */
+/**
+ * Image quality, normalised to the 0–1 that `canvas.toDataURL()` takes.
+ *
+ * ONE definition, because there were two and they had already diverged: `hj screenshot --quality
+ * 80` sent `0.8` and `hj map --image --quality 80` sent `80`. The HTML spec requires a UA to
+ * **ignore** an out-of-range quality, so the map form silently did nothing — an
+ * accepted-and-discarded parameter, which is the class this release exists to eliminate,
+ * reintroduced by copying a parser and not the one line that made it correct.
+ *
+ * Accepts both scales because both are documented somewhere: 0–1 is canvas-native, 0–100 is what
+ * `/screenshot`'s schema says. Anything above 1 is treated as a percentage.
+ */
+export function normalizeQuality(raw) {
+  const q = num(raw)
+  if (q == null || Number.isNaN(q)) return null
+  const scaled = q > 1 ? q / 100 : q
+  // Out of range even after scaling (e.g. --quality 500): clamp rather than pass through, since
+  // passing through means the browser ignores it and the caller is told nothing.
+  return Math.min(1, Math.max(0, scaled))
+}
+
 export function takeFlags(args, spec) {
   const flags = {}
   const positional = []
@@ -226,13 +247,7 @@ export const ARG_MAPS = {
       const a = args[i]
       if (a === '--data-url') { body.file = false; continue }
       if (a === '--format') { body.format = args[++i]; continue }
-      if (a === '--quality') {
-        // Accept both 0–1 (canvas-native) and 0–100 (documented) — normalize
-        // anything > 1 down to the 0–1 the widget's toDataURL expects.
-        const q = num(args[++i])
-        if (q != null && !Number.isNaN(q)) body.quality = q > 1 ? q / 100 : q
-        continue
-      }
+      if (a === '--quality') { const q = normalizeQuality(args[++i]); if (q != null) body.quality = q; continue }
       if (a === '--scale') { body.scale = num(args[++i]); continue }
       if (a === '--maxWidth' || a === '--max-width') { body.maxWidth = num(args[++i]); continue }
       if (a === '--maxHeight' || a === '--max-height') { body.maxHeight = num(args[++i]); continue }
@@ -272,7 +287,7 @@ export const ARG_MAPS = {
       if (args[i] === '--maxWidth' || args[i] === '--max-width') { body.maxWidth = num(args[++i]); continue }
       if (args[i] === '--maxHeight' || args[i] === '--max-height') { body.maxHeight = num(args[++i]); continue }
       if (args[i] === '--format') { body.format = args[++i]; continue }
-      if (args[i] === '--quality') { body.quality = num(args[++i]); continue }
+      if (args[i] === '--quality') { const q = normalizeQuality(args[++i]); if (q != null) body.quality = q; continue }
     }
     return body
   },

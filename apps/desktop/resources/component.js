@@ -145,6 +145,12 @@
       return 0;
     return Math.round(width * height / 750);
   }
+  function normalizeQuality(q) {
+    if (typeof q !== "number" || !Number.isFinite(q))
+      return;
+    const scaled = q > 1 ? q / 100 : q;
+    return Math.min(1, Math.max(0, scaled));
+  }
   var MAX_SCHEMATIC_PIXELS = 8000000;
   function fitSchematicSize(width, height, scale = 1, limits = {}) {
     let w = width * scale;
@@ -1559,7 +1565,7 @@
       maxWidth: payload2?.maxWidth,
       maxHeight: payload2?.maxHeight,
       mimeType: format === "webp" ? "image/webp" : format === "jpeg" ? "image/jpeg" : "image/png",
-      quality: payload2?.quality
+      quality: normalizeQuality(payload2?.quality)
     });
     return {
       image: raster.image,
@@ -6368,7 +6374,7 @@ ${elementSummary}${moreText}`;
             title: document.title
           };
           const format = payload2?.format || "png";
-          const quality = payload2?.quality ?? (format === "png" ? 1 : 0.85);
+          const quality = normalizeQuality(payload2?.quality) ?? (format === "png" ? 1 : 0.85);
           const scale = payload2?.scale || 1;
           const maxWidth = payload2?.maxWidth;
           const maxHeight = payload2?.maxHeight;

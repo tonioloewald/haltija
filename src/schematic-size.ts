@@ -39,6 +39,24 @@ export function approxVisionTokens(width: number, height: number): number {
   return Math.round((width * height) / 750)
 }
 
+/**
+ * Image quality normalised to the 0–1 `canvas.toDataURL()` expects, or undefined if unset.
+ *
+ * The CLI normalises this too, but a REST or MCP caller bypasses the CLI entirely — and
+ * `/screenshot`'s own schema documents the parameter as **0–100**. So `{quality: 80}` is a
+ * perfectly reasonable request that reached `toDataURL(mime, 80)`, which the HTML spec requires
+ * the browser to IGNORE. The caller got a 200, a default-quality image, and no indication their
+ * parameter did nothing.
+ *
+ * Normalising at the point of use covers every path into it at once, which is the lesson from the
+ * two CLI parsers that had already drifted on exactly this line.
+ */
+export function normalizeQuality(q: unknown): number | undefined {
+  if (typeof q !== 'number' || !Number.isFinite(q)) return undefined
+  const scaled = q > 1 ? q / 100 : q
+  return Math.min(1, Math.max(0, scaled))
+}
+
 export interface SizeLimits {
   maxWidth?: number
   maxHeight?: number

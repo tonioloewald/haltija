@@ -454,7 +454,7 @@ entirely, so `zeroSize` always means *operable but invisible*, never *not there*
 | `maxWidth` | number,null | Max width in pixels for the schematic image (aspect ratio preserved) |
 | `maxHeight` | number,null | Max height in pixels for the schematic image (aspect ratio preserved) |
 | `format` | string,null | Schematic image format: png (default), webp, or jpeg |
-| `quality` | number,null | Quality 0-1 for lossy formats (webp/jpeg) |
+| `quality` | number,null | Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png. |
 | `file` | boolean,null | With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Schematics older than 24h (and beyond the most recent 200) are pruned automatically. Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image. |
 | `window` | string,null | Target window ID |
 
@@ -1709,7 +1709,7 @@ Response: { success, path?, image?, width, height, source, canvas?, warning? }
 | `selector` | string,null | Element to capture (omit for full page) |
 | `canvas` | string,null | Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. PIERCES SHADOW DOM: accepts `host >>> canvas`, a plain selector (light DOM then shadow roots), a host element, or an EMPTY string to capture the largest canvas on the page. Best for 3D scenes and render-to-texture UI. |
 | `format` | string,null | Image format: png (default), webp, or jpeg |
-| `quality` | number,null | Quality 0-100 for lossy formats (webp/jpeg) |
+| `quality` | number,null | Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png. |
 | `scale` | number,null | Scale factor (default 1) |
 | `maxWidth` | number,null | Max width in pixels |
 | `maxHeight` | number,null | Max height in pixels |

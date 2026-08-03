@@ -1293,7 +1293,7 @@
             "number",
             "null"
           ],
-          "description": "Quality 0-100 for lossy formats (webp/jpeg)"
+          "description": "Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png."
         },
         "scale": {
           "type": [
@@ -1513,7 +1513,7 @@
             "number",
             "null"
           ],
-          "description": "Quality 0-1 for lossy formats (webp/jpeg)"
+          "description": "Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png."
         },
         "file": {
           "type": [

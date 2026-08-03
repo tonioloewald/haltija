@@ -170,10 +170,22 @@ jobs:
           # then reported "private server outlived its launcher (orphan)", blaming haltija for the
           # harness killing the wrong process. Falls back to the wrapper if the match fails, so a
           # pgrep change can't silently turn this into a no-op that always passes.
-          LAUNCHER_PID=$(pgrep -f 'tosijs-dev\.mjs --private --app' | head -1 || true)
+          # Match on the EXECUTABLE (comm == node) as well as the args. `pgrep -f
+          # 'tosijs-dev.mjs --private --app'` matched xvfb-run itself — the command a wrapper runs
+          # is part of the wrapper's own argv — so it returned the wrapper's pid and the previous
+          # attempt killed exactly what it was trying not to.
+          echo "--- process tree ---"
+          ps -eo pid=,ppid=,comm=,args= | grep -E 'xvfb|tosijs-dev|electron' | grep -v grep || true
+          LAUNCHER_PID=$(ps -eo pid=,comm=,args= | awk '$2 ~ /node$/ && /tosijs-dev\.mjs/ && /--private/ {print $1; exit}')
           echo "wrapper pid: $WRAPPER_PID, launcher pid: ${LAUNCHER_PID:-<not found>}"
           if [ -z "$LAUNCHER_PID" ]; then
             echo "::error::could not find the launcher process — the teardown assertion below would be meaningless"
+            exit 1
+          fi
+          # A silent no-op is the failure mode to avoid: if this ever resolves to the wrapper again,
+          # say so instead of "proving" teardown by killing the wrong process.
+          if [ "$LAUNCHER_PID" = "$WRAPPER_PID" ]; then
+            echo "::error::launcher pid resolved to the xvfb-run wrapper — the match is wrong again"
             exit 1
           fi
           kill "$LAUNCHER_PID" || true

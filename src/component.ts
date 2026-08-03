@@ -744,7 +744,7 @@ function getStableSelectorWithFallback(el: Element): DualSelector {
 import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
-import { fitSchematicSize, approxVisionTokens } from './schematic-size'
+import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schematic-size'
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
@@ -2195,7 +2195,7 @@ async function buildSchematicResponse(
     maxWidth: payload?.maxWidth,
     maxHeight: payload?.maxHeight,
     mimeType: format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png',
-    quality: payload?.quality,
+    quality: normalizeQuality(payload?.quality),
   })
   return {
     image: raster.image,
@@ -8644,7 +8644,10 @@ export class DevChannel extends HTMLElement {
 
         // Format options: png (default), webp (smaller), jpeg (smallest, lossy)
         const format = payload?.format || 'png'
-        const quality = payload?.quality ?? (format === 'png' ? 1 : 0.85)
+        // Normalised, because the schema documents 0-100 while toDataURL takes 0-1 — and a
+        // browser must IGNORE an out-of-range value, so `{quality: 80}` silently produced a
+        // default-quality image with a 200 and no warning.
+        const quality = normalizeQuality(payload?.quality) ?? (format === 'png' ? 1 : 0.85)
         const scale = payload?.scale || 1 // Scale factor (0.5 = half size)
         const maxWidth = payload?.maxWidth // Optional max width constraint
         const maxHeight = payload?.maxHeight // Optional max height constraint

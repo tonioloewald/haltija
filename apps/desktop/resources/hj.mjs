@@ -1063,6 +1063,13 @@ function presetArg(args, fallback) {
   const value = i !== -1 ? args[i + 1] : args.find((a) => !a.startsWith("-"));
   return value && !value.startsWith("-") ? value : fallback;
 }
+function normalizeQuality(raw) {
+  const q = num(raw);
+  if (q == null || Number.isNaN(q))
+    return null;
+  const scaled = q > 1 ? q / 100 : q;
+  return Math.min(1, Math.max(0, scaled));
+}
 function takeFlags(args, spec) {
   const flags = {};
   const positional = [];
@@ -1154,9 +1161,9 @@ var ARG_MAPS = {
         continue;
       }
       if (a === "--quality") {
-        const q = num(args[++i]);
-        if (q != null && !Number.isNaN(q))
-          body.quality = q > 1 ? q / 100 : q;
+        const q = normalizeQuality(args[++i]);
+        if (q != null)
+          body.quality = q;
         continue;
       }
       if (a === "--scale") {
@@ -1234,7 +1241,9 @@ var ARG_MAPS = {
         continue;
       }
       if (args[i] === "--quality") {
-        body.quality = num(args[++i]);
+        const q = normalizeQuality(args[++i]);
+        if (q != null)
+          body.quality = q;
         continue;
       }
     }

@@ -136,3 +136,35 @@ describe('vision-token estimate: the ceiling was published as a floor', () => {
     expect(approxVisionTokens(-1, 500)).toBe(0)
   })
 })
+
+describe('quality normalisation: two copies had already drifted', () => {
+  it('accepts the documented 0-100 scale', async () => {
+    const { normalizeQuality } = await import('./schematic-size')
+    // `hj screenshot --quality 80` sent 0.8; `hj map --image --quality 80` sent 80, which
+    // toDataURL must IGNORE per spec — so the flag silently did nothing on one of two paths.
+    expect(normalizeQuality(80)).toBeCloseTo(0.8, 5)
+    expect(normalizeQuality(100)).toBe(1)
+  })
+
+  it('accepts the canvas-native 0-1 scale', async () => {
+    const { normalizeQuality } = await import('./schematic-size')
+    expect(normalizeQuality(0.8)).toBeCloseTo(0.8, 5)
+    expect(normalizeQuality(1)).toBe(1)
+  })
+
+  it('clamps rather than passing through a value the browser would ignore', async () => {
+    const { normalizeQuality } = await import('./schematic-size')
+    // Passing 500 through means a silently default-quality image and a 200. Clamping at least
+    // does what the caller plainly meant.
+    expect(normalizeQuality(500)).toBe(1)
+    expect(normalizeQuality(-5)).toBe(0)
+  })
+
+  it('unset stays unset, so the per-format default still applies', async () => {
+    const { normalizeQuality } = await import('./schematic-size')
+    // The discriminating case: returning 0 here would make every PNG lossy-encoded at minimum
+    // quality, which is worse than the bug being fixed.
+    expect(normalizeQuality(undefined)).toBeUndefined()
+    expect(normalizeQuality('80')).toBeUndefined() // a string is a caller bug, not a percentage
+  })
+})
