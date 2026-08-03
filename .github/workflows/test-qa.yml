@@ -125,6 +125,13 @@ jobs:
       - name: '--private --app is isolated and self-terminating'
         run: |
           set -o pipefail
+          # ELECTRON_DISABLE_SANDBOX because a GitHub runner has no correctly-configured SUID
+          # sandbox helper: Electron dies with SIGTRAP before `app.whenReady()`, so the launcher
+          # never prints HALTIJA_PRIVATE_READY and the poll below times out. The other Electron
+          # step in this workflow passes `--no-sandbox` for the same reason, and the launcher sets
+          # this itself under `--ci` — but `--private --app` is not `--ci`, so it got neither.
+          # Without it this step could never reach a single assertion.
+          ELECTRON_DISABLE_SANDBOX=1 \
           xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
             node bin/tosijs-dev.mjs --private --app > /tmp/private-app.log 2>&1 &
           PRIV_PID=$!

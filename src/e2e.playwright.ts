@@ -389,6 +389,56 @@ test.describe('haltija-dev CLI', () => {
     expect(unbounded.data.format).toBe('png') // and the default is still PNG
   })
 
+  test('/type and /key work BY REF — the documented `hj tree` → `hj <cmd> <ref>` flow', async ({ page }) => {
+    // `ref` was declared in the schema, parsed by the CLI, and resolved by the widget — and absent
+    // from both handlers' forwarding lists. `hj type <ref> <text>` is the headline example in
+    // README, DOCS.md and SKILL.md, and it failed every time with `Element not found: .` — the
+    // target name blank because there was none. `/key` was worse: with no ref AND no selector the
+    // widget falls back to `document.activeElement`, so it returned **success: true** having typed
+    // into whatever happened to be focused.
+    //
+    // Every /type and /key e2e case used `selector`, which is exactly why this shipped.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        '<input id="by-ref-target"><input id="decoy">',
+      )
+      ;(document.getElementById('decoy') as HTMLInputElement).focus() // so activeElement is WRONG
+    })
+
+    // Refs are assigned by /tree — /query returns element info without one, which is worth knowing:
+    // the documented flow really is `hj tree` first.
+    const t = await (await fetch(`${SERVER_URL}/tree`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: '#by-ref-target' }),
+    })).json()
+    const ref = String(t.data.ref)
+    expect(ref).toBeTruthy()
+    expect(ref).not.toBe('undefined')
+
+    const typed = await (await fetch(`${SERVER_URL}/type`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ref, text: 'by-ref' }),
+    })).json()
+    expect(typed.success).toBe(true)
+
+    const keyed = await (await fetch(`${SERVER_URL}/key`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ref, key: 'X' }),
+    })).json()
+    expect(keyed.success).toBe(true)
+
+    // The assertion that matters: the text landed on the REF'd element, not on the focused decoy.
+    // Asserting only `success` would have passed against the bug for /key.
+    const [target, decoy] = await page.evaluate(() => [
+      (document.getElementById('by-ref-target') as HTMLInputElement).value,
+      (document.getElementById('decoy') as HTMLInputElement).value,
+    ])
+    expect(target).toContain('by-ref')
+    expect(decoy).toBe('')
+  })
+
   test('hj map --image prints ONLY a path, and is actually cheaper than hj map', async ({ page }) => {
     // The claim README makes, measured rather than asserted. `--image` used to print the entire map
     // JSON and then append the image metadata + cost block + path, so it cost MORE than plain

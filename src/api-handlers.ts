@@ -658,6 +658,11 @@ registerHandler(api.type, async (body, ctx) => {
   const timeout = baseTimeout + (body.text?.length || 0) * perCharTimeout
   
   const doType = () => ctx.requestFromBrowser('interaction', 'type', {
+    // `ref` is declared in the schema, parsed by the CLI, and resolved by the widget — and was
+    // missing from THIS list, so `hj type 10 "hello"` (the headline example in README, DOCS.md and
+    // SKILL.md, and the whole point of the `hj tree` → `hj <cmd> <ref>` workflow) failed every time
+    // with `Element not found: .` — the target name literally blank, because there was none.
+    ref: body.ref,
     selector: body.selector,
     text: body.text,
     focusMode: body.focusMode,
@@ -687,6 +692,11 @@ registerHandler(api.key, async (body, ctx) => {
   const timeout = 5000 + repeat * 100
   
   const response = await ctx.requestFromBrowser('interaction', 'key', {
+    // Same omission as /type, and worse here: with no ref AND no selector the widget falls back to
+    // `document.activeElement`, so `/key {ref:…}` returned **success: true** having sent the
+    // keystroke to whatever happened to be focused. A false success is the failure mode this
+    // release exists to eliminate, and it was sitting in the second-most-used interaction endpoint.
+    ref: body.ref,
     key: body.key,
     selector: body.selector,
     ctrlKey: body.ctrlKey,
@@ -803,6 +813,11 @@ registerHandler(api.screenshot, async (body, ctx) => {
     delay: body.delay,
     fallback: body.fallback,
     schematic: body.schematic,
+    // Third instance of the same omission, found only by generalising the guard across every
+    // handler: the widget reads `payload?.chyron !== false`, so `{chyron: false}` never arrived and
+    // the burned-in caption was drawn unconditionally. `src/screen-capture.playwright.ts` has been
+    // passing `chyron: false` and getting one.
+    chyron: body.chyron,
   }, 15000 + (body.delay || 0), windowId) // 15s timeout + any delay
   
   // Add window context to response so agent knows what they captured

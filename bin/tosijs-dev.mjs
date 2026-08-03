@@ -472,9 +472,17 @@ async function discoverPrivatePort(portFile, timeout = 30000) {
   return null
 }
 
-// CI mode sets ELECTRON_DISABLE_SANDBOX automatically (needed for containerized CI)
+// CI mode sets ELECTRON_DISABLE_SANDBOX automatically (needed for containerized CI).
+//
+// It must be set on `env` as well as `process.env`. `env` is snapshotted from `process.env` far
+// above (`const env = { ...process.env }`), and `env` — not `process.env` — is what gets handed to
+// the spawned Electron. Setting only `process.env` here, AFTER that snapshot, meant the flag never
+// reached the child: `--ci` has advertised "sandbox disabled" (CLAUDE.md) while disabling nothing.
+// Nobody noticed because the CI workflow passes `--no-sandbox` to electron directly on its other
+// Electron step, so the one place this would have mattered was already covered by accident.
 if (ciMode && !process.env.ELECTRON_DISABLE_SANDBOX) {
   process.env.ELECTRON_DISABLE_SANDBOX = '1'
+  env.ELECTRON_DISABLE_SANDBOX = '1'
 }
 
 /** Detect desktop app directory */
