@@ -1162,7 +1162,20 @@ async function doRequest(url, method, body, context = {}) {
         // from a number 1.8x too small pushed the answer toward JSON every time.
         const { image, width, height, format, cost, path, ...mapOnly } = d
         const plainChars = JSON.stringify(mapOnly, null, 2).length
-        const bits = [meta, `hj map on this page prints ~${Math.round(plainChars / 100) / 10}k chars (~${Math.round(plainChars / 4 / 100) / 10}k tokens); a schematic costs a vision encoder ~1-1.6k`]
+        const jsonTokens = Math.round(plainChars / 4)
+        // The image side is COMPUTED from the schematic actually produced, not a constant. This
+        // line used to end "a schematic costs a vision encoder ~1-1.6k" — the ceiling stated as a
+        // floor. For this 491x480 schematic the real figure is ~314; with --max-width 200 it is
+        // ~52. Telling an agent the cheap option costs 25x what it does inverts the very decision
+        // this line exists to inform.
+        const imgTokens = d.cost?.approxImageTokens ?? (d.width && d.height ? Math.round((d.width * d.height) / 750) : null)
+        const k = (n) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n))
+        const bits = [
+          meta,
+          imgTokens != null
+            ? `this map as JSON: ~${k(plainChars)} chars (~${k(jsonTokens)} tokens); as this image: ~${k(imgTokens)} tokens`
+            : `hj map on this page prints ~${k(plainChars)} chars (~${k(jsonTokens)} tokens)`,
+        ]
         console.error(dim(bits.filter(Boolean).join(' · ')))
       } else if (!jsonOutput && (subcommand === 'network' || subcommand === 'network-watch') && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json))

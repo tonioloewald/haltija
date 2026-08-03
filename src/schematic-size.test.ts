@@ -107,3 +107,32 @@ describe('the result is always a usable canvas size', () => {
     expect(Number.isInteger(height)).toBe(true)
   })
 })
+
+describe('vision-token estimate: the ceiling was published as a floor', () => {
+  it('a small image is CHEAP — there is no ~1000-token floor', async () => {
+    const { approxVisionTokens } = await import('./schematic-size')
+    // Six sites asserted "~1000-1600 vision tokens regardless of content". The release's own
+    // worked example is 491x480, and the flags this cycle added make it far smaller still.
+    expect(approxVisionTokens(491, 480)).toBeLessThan(400)
+    expect(approxVisionTokens(200, 196)).toBeLessThan(100)
+  })
+
+  it('matches Anthropic\'s (w*h)/750 approximation', async () => {
+    const { approxVisionTokens } = await import('./schematic-size')
+    expect(approxVisionTokens(491, 480)).toBe(Math.round((491 * 480) / 750))
+    expect(approxVisionTokens(1500, 1000)).toBe(2000)
+  })
+
+  it('scales with pixels — the property the old constant denied', async () => {
+    const { approxVisionTokens } = await import('./schematic-size')
+    // "Regardless of content" was really "regardless of SIZE", which is what made capping the
+    // schematic look pointless. Halving each edge quarters the cost.
+    expect(approxVisionTokens(400, 400)).toBeCloseTo(approxVisionTokens(800, 800) / 4, 0)
+  })
+
+  it('degenerate sizes report 0 rather than a misleading estimate', async () => {
+    const { approxVisionTokens } = await import('./schematic-size')
+    expect(approxVisionTokens(0, 500)).toBe(0)
+    expect(approxVisionTokens(-1, 500)).toBe(0)
+  })
+})

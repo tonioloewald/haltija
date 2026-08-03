@@ -1365,7 +1365,7 @@ entirely, so \`zeroSize\` always means *operable but invisible*, never *not ther
 |------|------|-------------|
 | \`global\` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
 | \`maxNodes\` | number,null | Cap on DOM-fallback nodes (default 400) |
-| \`image\` | boolean,null | Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both) |
+| \`image\` | boolean,null | Also render the map as a schematic PNG (rasterized). Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming. |
 | \`scale\` | number,null | Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page. |
 | \`maxWidth\` | number,null | Max width in pixels for the schematic image (aspect ratio preserved) |
 | \`maxHeight\` | number,null | Max height in pixels for the schematic image (aspect ratio preserved) |
@@ -3445,6 +3445,11 @@ export const COMPONENT_JS: string = `(() => {
   }
 
   // src/schematic-size.ts
+  function approxVisionTokens(width, height) {
+    if (!(width > 0) || !(height > 0))
+      return 0;
+    return Math.round(width * height / 750);
+  }
   var MAX_SCHEMATIC_PIXELS = 8000000;
   function fitSchematicSize(width, height, scale = 1, limits = {}) {
     let w = width * scale;
@@ -9602,7 +9607,8 @@ export const COMPONENT_JS: string = `(() => {
               cost: {
                 jsonChars,
                 approxJsonTokens: Math.round(jsonChars / 4),
-                note: "jsonChars is the COMPACT JSON. Anything that pretty-prints this map — \`hj map\` " + "does — emits roughly 1.8x more, so treat approxJsonTokens as a lower bound on " + "what you would actually pay for the JSON. A rendered image costs a vision " + "encoder roughly 1000-1600 tokens regardless of content, and only pays for " + "itself once the JSON you would really receive exceeds that. \`hj map --image\` " + "prints the file path alone and reports the measured comparison on stderr."
+                approxImageTokens: approxVisionTokens(built.width, built.height),
+                note: "jsonChars is the COMPACT JSON. Anything that pretty-prints this map — \`hj map\` " + "does — emits roughly 1.8x more, so treat approxJsonTokens as a lower bound on " + "what you would actually pay for the JSON. approxImageTokens is (w*h)/750, " + "Anthropic's approximation for Claude, computed from this schematic's actual " + "size — there is NO fixed floor, and ~1600 is the practical ceiling because " + "larger images are downscaled before tokenisation. Other encoders differ. " + "Compare the two numbers for THIS page."
               }
             });
           } else {

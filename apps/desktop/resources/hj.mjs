@@ -2023,7 +2023,13 @@ async function doRequest(url, method, body, context = {}) {
         const meta = [d.width && d.height ? `${d.width}×${d.height}` : null, d.format].filter(Boolean).join(", ");
         const { image, width, height, format, cost, path, ...mapOnly } = d;
         const plainChars = JSON.stringify(mapOnly, null, 2).length;
-        const bits = [meta, `hj map on this page prints ~${Math.round(plainChars / 100) / 10}k chars (~${Math.round(plainChars / 4 / 100) / 10}k tokens); a schematic costs a vision encoder ~1-1.6k`];
+        const jsonTokens = Math.round(plainChars / 4);
+        const imgTokens = d.cost?.approxImageTokens ?? (d.width && d.height ? Math.round(d.width * d.height / 750) : null);
+        const k = (n) => n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n);
+        const bits = [
+          meta,
+          imgTokens != null ? `this map as JSON: ~${k(plainChars)} chars (~${k(jsonTokens)} tokens); as this image: ~${k(imgTokens)} tokens` : `hj map on this page prints ~${k(plainChars)} chars (~${k(jsonTokens)} tokens)`
+        ];
         console.error(dim2(bits.filter(Boolean).join(" · ")));
       } else if (!jsonOutput && (subcommand === "network" || subcommand === "network-watch") && (json.entries || json.data?.entries || json.summary || json.data?.summary)) {
         console.log(formatNetwork(json));

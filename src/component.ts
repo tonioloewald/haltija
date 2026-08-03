@@ -744,7 +744,7 @@ function getStableSelectorWithFallback(el: Element): DualSelector {
 import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
-import { fitSchematicSize } from './schematic-size'
+import { fitSchematicSize, approxVisionTokens } from './schematic-size'
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
@@ -8539,13 +8539,20 @@ export class DevChannel extends HTMLElement {
             cost: {
               jsonChars,
               approxJsonTokens: Math.round(jsonChars / 4),
+              // COMPUTED from the actual raster, not asserted. This field used to read "roughly
+              // 1000-1600 tokens regardless of content" — which is the CEILING (images over
+              // ~1.15 Mpx are downscaled first) published as a FLOOR. This 491x480 schematic is
+              // ~314 tokens, and with --max-width 200 it is ~52; the old claim overstated by up to
+              // 25x, in the direction that talks you out of the cheaper option.
+              approxImageTokens: approxVisionTokens(built.width as number, built.height as number),
               note:
                 'jsonChars is the COMPACT JSON. Anything that pretty-prints this map — `hj map` ' +
                 'does — emits roughly 1.8x more, so treat approxJsonTokens as a lower bound on ' +
-                'what you would actually pay for the JSON. A rendered image costs a vision ' +
-                'encoder roughly 1000-1600 tokens regardless of content, and only pays for ' +
-                'itself once the JSON you would really receive exceeds that. `hj map --image` ' +
-                'prints the file path alone and reports the measured comparison on stderr.',
+                'what you would actually pay for the JSON. approxImageTokens is (w*h)/750, ' +
+                "Anthropic's approximation for Claude, computed from this schematic's actual " +
+                'size — there is NO fixed floor, and ~1600 is the practical ceiling because ' +
+                'larger images are downscaled before tokenisation. Other encoders differ. ' +
+                'Compare the two numbers for THIS page.',
             },
           })
         } else {

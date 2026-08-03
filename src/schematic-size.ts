@@ -13,6 +13,32 @@
  * numbers are here.
  */
 
+/**
+ * Roughly what an image of these pixel dimensions costs a Claude vision encoder.
+ *
+ * `tokens ≈ (w × h) / 750`, per Anthropic's documented approximation. Images whose long edge
+ * exceeds 1568px (or ~1.15 Mpx) are downscaled BEFORE tokenisation, so ~1600 is a practical
+ * **ceiling**, not a floor.
+ *
+ * That distinction is the whole reason this function exists. Six places in this repo asserted an
+ * image costs "~1000–1600 vision tokens **regardless of content**" — publishing the ceiling as a
+ * floor, and steering agents to the *more* expensive representation:
+ *
+ *   - a 491×480 schematic (the release's own worked example) is **314** tokens, not ~1400
+ *   - `hj map --image --max-width 200` produces **52** tokens while the advice still said ~1–1.6k
+ *
+ * A number that is wrong by 25× in the direction that discourages the cheaper option is not a
+ * rounding error; it inverts the decision it exists to inform. Compute it, don't assert it — the
+ * response already carries `width` and `height`.
+ *
+ * Deliberately approximate and deliberately labelled as such at every call site: this is Claude's
+ * formula, other encoders differ, and an estimate presented as exact is its own small lie.
+ */
+export function approxVisionTokens(width: number, height: number): number {
+  if (!(width > 0) || !(height > 0)) return 0
+  return Math.round((width * height) / 750)
+}
+
 export interface SizeLimits {
   maxWidth?: number
   maxHeight?: number

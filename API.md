@@ -449,7 +449,7 @@ entirely, so `zeroSize` always means *operable but invisible*, never *not there*
 |------|------|-------------|
 | `global` | string,null | Global to probe for the agent surface (default 'tosiAgent') |
 | `maxNodes` | number,null | Cap on DOM-fallback nodes (default 400) |
-| `image` | boolean,null | Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both) |
+| `image` | boolean,null | Also render the map as a schematic PNG (rasterized). Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming. |
 | `scale` | number,null | Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page. |
 | `maxWidth` | number,null | Max width in pixels for the schematic image (aspect ratio preserved) |
 | `maxHeight` | number,null | Max height in pixels for the schematic image (aspect ratio preserved) |

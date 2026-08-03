@@ -131,8 +131,21 @@ jobs:
           # step in this workflow passes `--no-sandbox` for the same reason, and the launcher sets
           # this itself under `--ci` — but `--private --app` is not `--ci`, so it got neither.
           # Without it this step could never reach a single assertion.
+          # Xvfb started SEPARATELY rather than via `xvfb-run`, so the launcher is a direct child
+          # and `$!` is genuinely its pid.
+          #
+          # This matters for the teardown assertion, not for the display. Private teardown works by
+          # the Electron child polling HALTIJA_SPAWNER_PID — *the launcher's own pid* — because a
+          # reparented child sees ppid 1 and cannot watch its parent that way. Under `xvfb-run`,
+          # `$!` is the WRAPPER's pid; killing it leaves the launcher alive, its pid still valid,
+          # and the private instance correctly keeps running. The first version of this step did
+          # exactly that and then reported "private server outlived its launcher (orphan)" —
+          # blaming haltija for the test harness killing the wrong process.
+          Xvfb :99 -screen 0 1280x720x24 > /tmp/xvfb.log 2>&1 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          sleep 2
           ELECTRON_DISABLE_SANDBOX=1 \
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
             node bin/tosijs-dev.mjs --private --app > /tmp/private-app.log 2>&1 &
           PRIV_PID=$!
           for i in $(seq 1 40); do
@@ -168,6 +181,7 @@ jobs:
           fi
           curl -sf http://localhost:8700/status > /dev/null || {
             echo "::error::shared server died during private teardown"; exit 1; }
+          kill $XVFB_PID 2>/dev/null || true
           echo "private app: isolated, reachable, torn down; shared 8700 intact"
 
       - name: Capture failure snapshot

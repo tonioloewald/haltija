@@ -146,7 +146,8 @@ components. Add `--include-disabled` / `--include-hidden` for those fields.
 
 **`hj map` — what can I interact with, and what is it wired to?** Usually a better first move than
 `hj tree` or a screenshot when you're deciding what to *do*: it's structural, compact (a small page
-is a few hundred bytes vs ~1–1.5k vision tokens for a screenshot), and deterministic — no fonts,
+is a few hundred bytes vs a screenshot's (w×h)/750 vision tokens — ~1.4k for a 1280×800 viewport,
+though far less if you cap the size), and deterministic — no fonts,
 theme, viewport or animation timing to shift under you.
 
 Always check `source`:
@@ -228,13 +229,19 @@ Three things to know:
 - It must be a bitmap to be worth it. An image of text costs a vision encoder far fewer tokens than
   the same text tokenized — but that's true of the **rendered pixels**, not of SVG markup (which is
   just text tokens, and worse than the JSON).
-- **The win is density-dependent, so check before spending it — and use the right number.** An image
-  costs ~1000-1600 vision tokens no matter how little it contains, so for a small page the JSON map
-  is cheaper. `cost.approxJsonTokens` measures the **compact** JSON; anything that pretty-prints it
-  (including `hj map`) emits roughly 1.8x more, so treat that field as a lower bound. `hj map
-  --image` prints the measured comparison for that page on stderr — prefer it over estimating. The
-  schematic is also worth rendering for a human: it's deterministic, so a diff between two runs is a
-  regression you can see.
+- **The win is density-dependent, so check before spending it — and use the right numbers.** Vision
+  cost scales with **pixels**: roughly `(width × height) / 750` for Claude. There is **no fixed
+  floor** — a 491×480 schematic is ~314 tokens, and `--max-width 200` makes it ~52. (~1600 is the
+  practical *ceiling*, because larger images are downscaled before tokenisation. Earlier versions of
+  this file said "~1000–1600 regardless of content", which stated the ceiling as a floor and
+  overstated the small cases by up to 25×, in the direction that talks you out of the cheaper
+  option.)
+  On the JSON side, `cost.approxJsonTokens` measures the **compact** JSON; anything that
+  pretty-prints it — including `hj map` — emits roughly 1.8× more, so treat it as a lower bound.
+  The response carries `cost.approxImageTokens` for the schematic actually produced, and `hj map
+  --image` prints both on stderr. Prefer the measured pair over any rule of thumb, including this
+  one. The schematic is also worth rendering for a human: it's deterministic, so a diff between two
+  runs is a regression you can see.
 
 **Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
 canvas's own pixels instead of capturing the screen:
