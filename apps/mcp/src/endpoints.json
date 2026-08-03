@@ -1487,6 +1487,34 @@
           ],
           "description": "Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page."
         },
+        "maxWidth": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max width in pixels for the schematic image (aspect ratio preserved)"
+        },
+        "maxHeight": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max height in pixels for the schematic image (aspect ratio preserved)"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Schematic image format: png (default), webp, or jpeg"
+        },
+        "quality": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Quality 0-1 for lossy formats (webp/jpeg)"
+        },
         "file": {
           "type": [
             "boolean",

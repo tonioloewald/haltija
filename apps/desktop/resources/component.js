@@ -139,6 +139,33 @@
     return key;
   }
 
+  // src/schematic-size.ts
+  var MAX_SCHEMATIC_PIXELS = 8000000;
+  function fitSchematicSize(width, height, scale = 1, limits = {}) {
+    let w = width * scale;
+    let h = height * scale;
+    const fit = (limit, value) => limit && limit > 0 && value > limit ? limit / value : 1;
+    const k = Math.min(fit(limits.maxWidth, w), fit(limits.maxHeight, h));
+    w *= k;
+    h *= k;
+    const maxPixels = limits.maxPixels ?? MAX_SCHEMATIC_PIXELS;
+    const over = w * h / maxPixels;
+    if (over > 1) {
+      const shrink = Math.sqrt(1 / over);
+      w *= shrink;
+      h *= shrink;
+    }
+    let W = Math.max(1, Math.ceil(w));
+    let H = Math.max(1, Math.ceil(h));
+    while (W * H > maxPixels && (W > 1 || H > 1)) {
+      if (W >= H)
+        W--;
+      else
+        H--;
+    }
+    return { width: W, height: H };
+  }
+
   // src/component.ts
   var VERSION2 = VERSION;
   var PRODUCT_NAME = "Haltija";
@@ -1551,22 +1578,13 @@
       img.onerror = () => reject(new Error("could not rasterize the schematic SVG"));
       img.src = url;
     });
-    let w = width * scale;
-    let h = height * scale;
-    const fit = (limit, value) => limit && value > limit ? limit / value : 1;
-    const k = Math.min(fit(opts.maxWidth, w), fit(opts.maxHeight, h));
-    w *= k;
-    h *= k;
-    const MAX_PIXELS = 8000000;
-    const over = w * h / MAX_PIXELS;
-    if (over > 1) {
-      const shrink = Math.sqrt(1 / over);
-      w *= shrink;
-      h *= shrink;
-    }
+    const fitted = fitSchematicSize(width, height, scale, {
+      maxWidth: opts.maxWidth,
+      maxHeight: opts.maxHeight
+    });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.ceil(w));
-    canvas.height = Math.max(1, Math.ceil(h));
+    canvas.width = fitted.width;
+    canvas.height = fitted.height;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);

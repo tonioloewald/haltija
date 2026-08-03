@@ -744,6 +744,7 @@ function getStableSelectorWithFallback(el: Element): DualSelector {
 import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from './text-selector'
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
+import { fitSchematicSize } from './schematic-size'
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
@@ -2228,29 +2229,18 @@ async function rasterizeSchematic(
     img.onerror = () => reject(new Error('could not rasterize the schematic SVG'))
     img.src = url
   })
-  // Honour the caller's bounds. These were parsed and then ignored: asking for
-  // {maxWidth:300, maxHeight:300, format:'jpeg'} returned a byte-identical 1126x22304 PNG that
-  // still reported format:'png' — an API-contract break, not merely waste.
-  let w = width * scale
-  let h = height * scale
-  const fit = (limit: number | undefined, value: number) => (limit && value > limit ? limit / value : 1)
-  const k = Math.min(fit(opts.maxWidth, w), fit(opts.maxHeight, h))
-  w *= k
-  h *= k
-
-  // And a hard pixel budget regardless. A long page produced 25 Mpx / ~100 MB of RGBA — on the
-  // DEFAULT path for an injected widget with no share grant, i.e. the paved deployment.
-  const MAX_PIXELS = 8_000_000
-  const over = (w * h) / MAX_PIXELS
-  if (over > 1) {
-    const shrink = Math.sqrt(1 / over)
-    w *= shrink
-    h *= shrink
-  }
+  // Honour the caller's bounds, then the global pixel budget. These were parsed and then ignored:
+  // asking for {maxWidth:300, maxHeight:300, format:'jpeg'} returned a byte-identical 1126x22304
+  // PNG that still reported format:'png' — an API-contract break, not merely waste. The arithmetic
+  // lives in src/schematic-size.ts so it can be checked without a canvas; see its unit tests.
+  const fitted = fitSchematicSize(width, height, scale, {
+    maxWidth: opts.maxWidth,
+    maxHeight: opts.maxHeight,
+  })
 
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.ceil(w))
-  canvas.height = Math.max(1, Math.ceil(h))
+  canvas.width = fitted.width
+  canvas.height = fitted.height
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)

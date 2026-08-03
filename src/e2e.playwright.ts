@@ -350,6 +350,45 @@ test.describe('haltija-dev CLI', () => {
     await page.evaluate(() => { delete (globalThis as any).tosiAgent })
   })
 
+  test('/map --image honours maxWidth/maxHeight/format — parameters that were accepted and discarded', async ({ page }) => {
+    // These were parsed by the handler, threaded into `rasterizeSchematic`, and then not used:
+    // `{maxWidth:300, maxHeight:300, format:'jpeg'}` returned a byte-identical 1126x22304 PNG that
+    // still reported `format:'png'`. src/schematic-size.test.ts pins the arithmetic; only a real
+    // canvas can show that the numbers reach the bitmap and that the encoder honours the format —
+    // the original bug was precisely that correct-looking values never reached the drawing.
+    await injectDevChannel(page)
+    // A page tall enough that the bounds have to do real work.
+    await page.evaluate(() => {
+      const filler = document.createElement('div')
+      filler.innerHTML = Array.from({ length: 200 }, (_, i) => `<p>row ${i}</p>`).join('')
+      document.body.appendChild(filler)
+    })
+
+    const bounded = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: true, file: false, maxWidth: 300, maxHeight: 300, format: 'jpeg' }),
+    })).json()
+
+    expect(bounded.success).toBe(true)
+    expect(bounded.data.width).toBeLessThanOrEqual(300)
+    expect(bounded.data.height).toBeLessThanOrEqual(300)
+    expect(bounded.data.format).toBe('jpeg')
+    // The reported format must match the BYTES, not just the field — reporting `jpeg` while
+    // encoding PNG is the same lie in a different place.
+    expect(bounded.data.image.startsWith('data:image/jpeg;base64,')).toBe(true)
+
+    // The discriminating half: without bounds the same page is bigger. Otherwise every assertion
+    // above would hold for a rasterizer that always emitted a 300x300 thumbnail.
+    const unbounded = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: true, file: false }),
+    })).json()
+    expect(unbounded.data.height).toBeGreaterThan(bounded.data.height)
+    expect(unbounded.data.format).toBe('png') // and the default is still PNG
+  })
+
   test('hj wait for a missing element actually WAITS and fails — never a 0ms success', async ({ page }) => {
     // The unit tests for this asserted the parser's output shape, and both the parser and the tests
     // used a field the endpoint does not read — so `hj wait ".modal"` returned success in ~50ms and

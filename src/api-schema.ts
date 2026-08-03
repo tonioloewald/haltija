@@ -1665,6 +1665,15 @@ entirely, so \`zeroSize\` always means *operable but invisible*, never *not ther
     maxNodes: s.number.describe('Cap on DOM-fallback nodes (default 400)').optional,
     image: s.boolean.describe('Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both)').optional,
     scale: s.number.describe('Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page.').optional,
+    // These four reach `rasterizeSchematic`, which has honoured them since 1.11.x — but they were
+    // never DECLARED here, so the router dropped them before the handler ran and `/map` returned a
+    // byte-identical full-size PNG for `{maxWidth:300, maxHeight:300, format:'jpeg'}`, with a 200.
+    // The rasterizer fix was real and, on this path, entirely dead. Same shape as a CLI flag that
+    // exists in the help text and in no parser: two registries, one updated.
+    maxWidth: s.number.describe('Max width in pixels for the schematic image (aspect ratio preserved)').optional,
+    maxHeight: s.number.describe('Max height in pixels for the schematic image (aspect ratio preserved)').optional,
+    format: s.string.describe('Schematic image format: png (default), webp, or jpeg').optional,
+    quality: s.number.describe('Quality 0-1 for lossy formats (webp/jpeg)').optional,
     file: s.boolean.describe('With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Schematics older than 24h (and beyond the most recent 200) are pruned automatically. Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image.').optional,
     window: s.string.describe('Target window ID').optional,
   }),

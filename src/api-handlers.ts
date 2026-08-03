@@ -841,11 +841,23 @@ registerHandler(api.screenshot, async (body, ctx) => {
 // Tabs handlers
 registerHandler(api.map, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
+  // Forward every schematic parameter, not a hand-picked four. `maxWidth`, `maxHeight`, `format`
+  // and `quality` are read by `buildSchematicResponse` in the widget and were honoured there from
+  // 1.11.x — but this allowlist never learned about them, so they never crossed the wire and
+  // `/map {maxWidth:300, maxHeight:300, format:'jpeg'}` returned a byte-identical full-size PNG
+  // with a 200. Three registries had to agree (schema, this list, the widget) and one fix updated
+  // one of them. Verified by probe: `scale` (on the list) changed the output; the other four did
+  // nothing at all. `mapForwardedFields` in src/api-schema.ts now derives this from the schema so
+  // the next parameter can't be dropped the same way.
   const response = await ctx.requestFromBrowser('dom', 'map', {
     global: body.global,
     maxNodes: body.maxNodes,
     image: body.image,
     scale: body.scale,
+    maxWidth: body.maxWidth,
+    maxHeight: body.maxHeight,
+    format: body.format,
+    quality: body.quality,
   }, 15000, windowId)
 
   // Write the schematic to disk instead of returning ~700KB of base64 on stdout. Measured on
