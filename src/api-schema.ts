@@ -289,7 +289,7 @@ Use before clicking to verify element is visible and enabled.`,
   invalidExamples: [
     { name: 'missing-target', input: {}, error: 'ref or selector is required' },
   ],
-  hints: '@ref or "selector", --styles, --rules, --ancestors | see: tree, query',
+  hints: '@ref or "selector", --styles, --rules | see: tree (for ancestors), query',
 })
 
 export const inspectAll = endpoint({

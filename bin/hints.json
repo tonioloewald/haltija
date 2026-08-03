@@ -1,7 +1,7 @@
 {
   "tree": "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   "query": "@ref or \"selector\", --all | see: tree, inspect",
-  "inspect": "@ref or \"selector\", --styles, --rules, --ancestors | see: tree, query",
+  "inspect": "@ref or \"selector\", --styles, --rules | see: tree (for ancestors), query",
   "click": "@ref or \"selector\", :text(Button), --diff | see: tree, wait, type",
   "type": "@ref, --clear, --humanlike false (fast) | see: click, key",
   "key": "<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click",

@@ -896,7 +896,7 @@ var ALL = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS]);
 var COMMAND_HINTS = {
   tree: "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   query: '@ref or "selector", --all | see: tree, inspect',
-  inspect: '@ref or "selector", --styles, --rules, --ancestors | see: tree, query',
+  inspect: '@ref or "selector", --styles, --rules | see: tree (for ancestors), query',
   click: '@ref or "selector", :text(Button), --diff | see: tree, wait, type',
   type: "@ref, --clear, --humanlike false (fast) | see: click, key",
   key: "<key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click",
@@ -1146,7 +1146,7 @@ var ARG_MAPS = {
       args: flags.args !== undefined ? Array.isArray(flags.args) ? flags.args : [flags.args] : rest
     };
   },
-  fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(" ") || undefined }),
+  fetch: (args) => ({ url: args[0] }),
   screenshot: (args) => {
     const body = { file: true };
     const positional = [];
@@ -1388,6 +1388,10 @@ function parseTreeArgs(args) {
       body.pierceFrames = false;
       continue;
     }
+    if (a === "--ancestors") {
+      body.ancestors = true;
+      continue;
+    }
     if (!a.startsWith("-")) {
       body.selector = a;
       continue;
@@ -1509,10 +1513,6 @@ function parseInspectArgs(args) {
     }
     if (a === "--matched-rules" || a === "--rules") {
       body.matchedRules = true;
-      continue;
-    }
-    if (a === "--ancestors") {
-      body.ancestors = true;
       continue;
     }
     if (!a.startsWith("-")) {
@@ -1820,11 +1820,11 @@ var UNWRAP_DATA_SUBCOMMANDS = new Set([
 ]);
 var GLOBAL_FLAGS = ["--json", "--window", "--port", "--name", "--token", "--no-launch", "--help"];
 var KNOWN_FLAGS = {
-  tree: ["--depth", "-d", "--selector", "-s", "--compact", "-c", "--interactive", "-i", "--visible", "-v", "--text", "--no-text", "--shadow", "--frames", "--no-frames"],
+  tree: ["--depth", "-d", "--selector", "-s", "--compact", "-c", "--interactive", "-i", "--visible", "-v", "--text", "--no-text", "--shadow", "--frames", "--no-frames", "--ancestors"],
   click: ["--diff", "--delay"],
   form: ["--include-disabled", "--include-hidden"],
-  inspect: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
-  inspectAll: ["--full-styles", "--styles", "--matched-rules", "--rules", "--ancestors"],
+  inspect: ["--full-styles", "--styles", "--matched-rules", "--rules"],
+  inspectAll: ["--full-styles", "--styles", "--matched-rules", "--rules"],
   key: ["--ctrl", "-c", "--shift", "-s", "--alt", "-a", "--meta", "-m", "--repeat"],
   screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron", "--canvas", "--no-fallback", "--schematic"],
   "video-start": ["--maxDuration", "--max-duration"],

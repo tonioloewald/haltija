@@ -239,7 +239,9 @@ export const ARG_MAPS = {
       args: flags.args !== undefined ? (Array.isArray(flags.args) ? flags.args : [flags.args]) : rest,
     }
   },
-  fetch: (args) => ({ url: args[0], prompt: args.slice(1).join(' ') || undefined }),
+  // `/fetch` takes a url and nothing else. The old parser also sent `prompt`, a field no
+  // endpoint has ever declared, so `hj fetch <url> some words` silently swallowed the words.
+  fetch: (args) => ({ url: args[0] }),
   screenshot: (args) => {
     const body = { file: true }
     const positional = []
@@ -398,6 +400,10 @@ export function parseTreeArgs(args) {
     if (a === '--shadow') { body.pierceShadow = true; continue }
     if (a === '--frames') { body.pierceFrames = true; continue }
     if (a === '--no-frames') { body.pierceFrames = false; continue }
+    // `/tree` DECLARES `ancestors` and the widget implements it — the CLI just had no way to
+    // ask. The mirror image of the `--ancestors` that `hj inspect` advertised and no endpoint
+    // accepted: one feature reachable only over REST, one flag reachable only into a void.
+    if (a === '--ancestors') { body.ancestors = true; continue }
     // First positional arg is selector if present
     if (!a.startsWith('-')) { body.selector = a; continue }
   }
@@ -497,7 +503,9 @@ export function parseInspectArgs(args) {
     const a = args[i]
     if (a === '--full-styles' || a === '--styles') { body.fullStyles = true; continue }
     if (a === '--matched-rules' || a === '--rules') { body.matchedRules = true; continue }
-    if (a === '--ancestors') { body.ancestors = true; continue }
+    // NOT `--ancestors`: /inspect has never declared it and the widget implements it only in
+    // the `tree` branch, so this set a field nothing read and the command reported success
+    // having ignored it. It lives on `hj tree --ancestors`, where it works.
     if (!a.startsWith('-')) { positional.push(a); continue }
   }
   // First positional is target (ref or selector)
@@ -888,11 +896,11 @@ const UNWRAP_DATA_SUBCOMMANDS = new Set([
 // untouched.
 export const GLOBAL_FLAGS = ['--json', '--window', '--port', '--name', '--token', '--no-launch', '--help']
 export const KNOWN_FLAGS = {
-  tree: ['--depth', '-d', '--selector', '-s', '--compact', '-c', '--interactive', '-i', '--visible', '-v', '--text', '--no-text', '--shadow', '--frames', '--no-frames'],
+  tree: ['--depth', '-d', '--selector', '-s', '--compact', '-c', '--interactive', '-i', '--visible', '-v', '--text', '--no-text', '--shadow', '--frames', '--no-frames', '--ancestors'],
   click: ['--diff', '--delay'],
   form: ['--include-disabled', '--include-hidden'],
-  inspect: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
-  inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules', '--ancestors'],
+  inspect: ['--full-styles', '--styles', '--matched-rules', '--rules'],
+  inspectAll: ['--full-styles', '--styles', '--matched-rules', '--rules'],
   key: ['--ctrl', '-c', '--shift', '-s', '--alt', '-a', '--meta', '-m', '--repeat'],
   screenshot: ['--data-url', '--format', '--quality', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--delay', '--no-chyron', '--canvas', '--no-fallback', '--schematic'],
   'video-start': ['--maxDuration', '--max-duration'],

@@ -489,15 +489,23 @@ describe('ARG_MAPS', () => {
       expect(ARG_MAPS.inspect(['#btn', '--styles'])).toEqual({ selector: '#btn', fullStyles: true })
     })
 
-    test('maps --ancestors flag', () => {
-      expect(ARG_MAPS.inspect(['#btn', '--ancestors'])).toEqual({ selector: '#btn', ancestors: true })
+    test('does NOT map --ancestors — /inspect has never accepted it', () => {
+      // This test used to assert the OPPOSITE, pinning a field that no endpoint declares and the
+      // widget implements only in its `tree` branch. So `hj inspect 5 --ancestors` set a key
+      // nothing read, returned 200, and gave you the same payload as the flagless call — with a
+      // green test certifying it. A test can pin a bug as firmly as it pins a fix.
+      expect(ARG_MAPS.inspect(['#btn', '--ancestors'])).toEqual({ selector: '#btn' })
+    })
+
+    test('`--ancestors` works on tree, where it is declared and implemented', () => {
+      expect(parseTreeArgs(['--ancestors'])).toEqual({ ancestors: true })
     })
 
     test('combines multiple flags', () => {
-      expect(ARG_MAPS.inspect(['#btn', '--matched-rules', '--ancestors'])).toEqual({
+      expect(ARG_MAPS.inspect(['#btn', '--matched-rules', '--full-styles'])).toEqual({
         selector: '#btn',
         matchedRules: true,
-        ancestors: true,
+        fullStyles: true,
       })
     })
 
