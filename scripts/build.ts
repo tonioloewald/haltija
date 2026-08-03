@@ -765,6 +765,23 @@ await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts -
   }
 }
 
+// 4d. Undefined-identifier check over the shipped bin/*.mjs CLI. `node --check` (step "Syntax-
+//     checked" below) parses them and CANNOT see this: issue #17 was `join(tmpdir(), …)` with no
+//     `tmpdir` import — valid syntax, dead on execution, and it shipped in NINETEEN tagged releases
+//     because it only fires on the `--private` branch taken when `--port-file` is absent.
+//     Scoped to TS2304/TS2552 ("Cannot find name"); see tsconfig.bin.json for why not more.
+{
+  const tsc = await $`bunx tsc -p tsconfig.bin.json`.nothrow().quiet()
+  const out = tsc.stdout.toString() + tsc.stderr.toString()
+  const undefinedNames = out.split('\n').filter(l => /error TS(2304|2552)/.test(l))
+  if (undefinedNames.length > 0) {
+    console.error(undefinedNames.join('\n'))
+    throw new Error(
+      `bin/ references ${undefinedNames.length} name(s) that don't exist. This is the issue-#17 class: it parses, it ships, it dies at runtime.`,
+    )
+  }
+}
+
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 

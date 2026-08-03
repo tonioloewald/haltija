@@ -1,0 +1,28 @@
+{
+  // Type-check the SHIPPED CLI JavaScript in bin/, which nothing else looked at.
+  //
+  // `bun run build` syntax-checks these files (`node --check`), and a syntax check cannot see an
+  // undefined identifier: issue #17 was `join(tmpdir(), …)` with no `tmpdir` import, it parsed
+  // perfectly, and it shipped dead in NINETEEN tagged releases (v1.4.1 through v1.11.3 — verified
+  // by walking the tags, not estimated). It only ever fired on the one branch that runs when
+  // `--private` is used WITHOUT `--port-file`, so every test that passed a port file missed it.
+  //
+  // These files are plain .mjs with no annotations, so full `checkJs` reports a lot of inference
+  // noise that would make this gate unusable. The build therefore fails on TS2304/TS2552 only —
+  // "Cannot find name" — which is exactly the class issue #17 belongs to and which is never a
+  // false positive. Verified: reintroducing the missing import reproduces
+  // `bin/tosijs-dev.mjs(453,12): error TS2304: Cannot find name 'tmpdir'`.
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true
+  },
+  "include": ["bin/*.mjs"]
+}

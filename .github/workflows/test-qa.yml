@@ -113,6 +113,56 @@ jobs:
             echo "::warning::xinjs SPA tests failed (external site, non-blocking)"
           fi
 
+      # `--private --app` is the ONE advertised invocation with no automated coverage anywhere.
+      # `src/launcher-smoke.test.ts` covers `--private --headless`, but it runs in the unit lane,
+      # which has no display and must not grow an Electron dependency. This job already has Electron
+      # and xvfb, so the check belongs here.
+      #
+      # It asserts the two properties that define private mode, both of which have broken before:
+      #   1. it comes up at all (issue #17 shipped a launcher that died at module load in 19 tags)
+      #   2. it does NOT touch the shared 8700 — the app running above on 8700 must still be there
+      #      afterwards, which is the isolation guarantee stated in CLAUDE.md
+      - name: '--private --app is isolated and self-terminating'
+        run: |
+          set -o pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+            node bin/tosijs-dev.mjs --private --app > /tmp/private-app.log 2>&1 &
+          PRIV_PID=$!
+          for i in $(seq 1 40); do
+            grep -qE '^HALTIJA_PRIVATE_READY|HALTIJA_PRIVATE_READY \{' /tmp/private-app.log && break
+            sleep 1
+          done
+          echo "--- private app log ---"; cat /tmp/private-app.log || true
+          PRIV_PORT=$(grep -oE 'HALTIJA_PRIVATE_READY \{[^}]*\}' /tmp/private-app.log | head -1 | sed 's/.*"port":\([0-9]*\).*/\1/')
+          if [ -z "$PRIV_PORT" ]; then
+            echo "::error::--private --app never reported a port"
+            exit 1
+          fi
+          echo "private port: $PRIV_PORT"
+          # It must be a real, ephemeral instance — never the shared default.
+          if [ "$PRIV_PORT" = "8700" ]; then
+            echo "::error::--private took the SHARED port 8700"
+            exit 1
+          fi
+          curl -sf "http://localhost:$PRIV_PORT/status" > /dev/null || {
+            echo "::error::private server not reachable on its reported port"; exit 1; }
+          # The shared instance from the earlier steps must be untouched — this is the whole point.
+          curl -sf http://localhost:8700/status > /dev/null || {
+            echo "::error::--private --app disturbed the SHARED server on 8700"; exit 1; }
+          # And it must not outlive its launcher (issue #7).
+          kill $PRIV_PID || true
+          for i in $(seq 1 15); do
+            curl -sf "http://localhost:$PRIV_PORT/status" > /dev/null 2>&1 || break
+            sleep 1
+          done
+          if curl -sf "http://localhost:$PRIV_PORT/status" > /dev/null 2>&1; then
+            echo "::error::private server outlived its launcher (orphan)"
+            exit 1
+          fi
+          curl -sf http://localhost:8700/status > /dev/null || {
+            echo "::error::shared server died during private teardown"; exit 1; }
+          echo "private app: isolated, reachable, torn down; shared 8700 intact"
+
       - name: Capture failure snapshot
         if: failure()
         run: |

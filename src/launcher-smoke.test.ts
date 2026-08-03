@@ -3,13 +3,20 @@
  *
  * `haltija --private` (without `--port-file`) — the form README, llms.txt, CLAUDE.md, the CHANGELOG
  * and the CI guide all advertise as the primary invocation — threw `ReferenceError: tmpdir is not
- * defined` at module-evaluation time and shipped dead in **five consecutive releases** (issue #17).
+ * defined` and shipped dead in **nineteen tagged releases** — v1.4.1 through v1.11.3 (issue #17).
+ *
+ * "Five consecutive releases" is what an earlier version of this comment said, and it was wrong by
+ * nearly 4x. The real span comes from walking the tags and checking each one for a `tmpdir(` call
+ * with no matching `os` import: every tag from v1.4.1 on is broken. Understating the blast radius
+ * of your own bug is its own small dishonesty — the number is the argument for the guard.
  *
  * Nothing caught it, and the reasons are worth keeping:
  *  - `src/private-isolation.test.ts` spawns `bin/server.ts` directly; its own comment says it stands
  *    in for the launcher. It tests what the launcher *would* do, never the launcher.
  *  - `unit-tests.yml` runs `node --check bin/*.mjs`, which is syntax-only — a missing import parses
- *    fine and fails at run time.
+ *    fine and fails at run time. `tsconfig.bin.json` now closes exactly that gap at build time:
+ *    the build fails on TS2304/TS2552 across bin/, which reproduces this bug as
+ *    `bin/tosijs-dev.mjs(453,12): error TS2304: Cannot find name 'tmpdir'`.
  *  - Every manual verification I ran passed `--port-file`, because that was in the first recipe I
  *    wrote and got copied forward. The advertised bare form was never once executed.
  *
