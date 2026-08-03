@@ -1,5 +1,99 @@
 # Changelog
 
+## 1.12.0
+
+**Trustworthy by default.** A minor, gated on the nine-lens pre-release review: every finding it
+raised is fixed, not deferred. The theme is narrow and deliberate — *the instrument must not lie*,
+and where it cannot know something it must say so rather than guess.
+
+Most of what follows is not new capability. It is haltija being wrong in ways that looked right.
+
+### Two changed defaults — read these
+
+**`hj map --image` now prints ONLY the file path.** It used to print the whole affordance map and
+then *append* the image metadata and path, so it cost strictly more than plain `hj map` — measured,
+5,910 characters against 5,447. A flag whose entire purpose is to be cheaper could not pay off under
+any circumstances. It is now 103 characters; size, format and a measured cost comparison go to
+**stderr**. Pass `--json` if you want the map JSON and the image together.
+
+**Artifacts live under `tmpdir()`, not `/tmp`, and are pruned.** These are the same directory on
+Linux and *not* on macOS (`/var/folders/…`), and `/tmp` may be unwritable in a sandbox. Screenshots
+and schematics: 24 h, most recent 200. Videos: 24 h, most recent **20** — a lower cap because
+recordings are orders of magnitude larger, and until now they were never pruned at all. If you keep
+captures, copy them out of that directory. Anything already in `/tmp/haltija-screenshots` or
+`/tmp/haltija-schematics` from an earlier version is **left alone** — an upgrade that deletes your
+files to tidy up its own directory move is exactly the behaviour this release exists to stop.
+
+### Commands that reported success without doing the thing
+
+- **`hj wait <selector>` returned success in ~50 ms without waiting.** The CLI sent `selector`; the
+  endpoint reads `forElement`. An unrecognised key validates fine, so the argument was dropped and
+  the command reported success. `/wait` now accepts both and returns 400 when given nothing to wait
+  for, rather than "succeeding" instantly.
+- **Ten CLI flags were advertised in `--help` and read by no parser**, on endpoints that accept all
+  of them. Worst: `hj type 10 "hello" --clear` typed the literal characters `hello --clear` into the
+  field. And `hj key s --ctrl` sent a keystroke with **no modifier** — the parser emitted `ctrl`
+  where `/key` reads `ctrlKey`, the same field-name mismatch as `hj wait`.
+- **`/map` ignored `maxWidth`, `maxHeight`, `format` and `quality`.** They were honoured by the
+  widget from 1.11.x, never declared in the schema, and dropped by the handler's forwarding list —
+  so `{maxWidth:300, format:'jpeg'}` returned a byte-identical full-size PNG with a 200. Now
+  declared, forwarded, and available from the CLI as `--max-width` / `--max-height` / `--format` /
+  `--quality`.
+- **The desktop app's "Server URL" setting reverted on every launch.** It saved, displayed, and
+  silently stopped applying. A URL you type now persists; a `--private` instance still overrides it,
+  because isolation is not a preference.
+
+### Diagnostics that claimed to know things they did not
+
+- **`hj doctor` reports three verdicts, not two.** `✓` checked and fine, `✗` checked and broken,
+  `?` **could not be checked** — which is not a pass. `--strict` (or `HALTIJA_STRICT=1`) makes `?`
+  exit non-zero too. Collapsing "I could not check" into "fine" is how a preflight reports green on
+  a server it never reached.
+- **`hj where` and `hj servers` tell an auth refusal from a dead server.** A 401/403 means something
+  is *there*.
+- **`/screenshot` says what the user actually shared.** The 🖥 button only *defaults* the picker to
+  the current tab; a window or whole-monitor grant returns pixels that are not this tab, for the
+  life of the grant, on every call. Results now carry `displaySurface`
+  (`browser`/`window`/`monitor`/**`null` when the browser doesn't report it**) and warn on the two
+  wrong ones. `null` means unchecked, not fine.
+- **A `--private` run no longer advertises `http://localhost:8700`.** The banner printed the shared
+  address and told you to `curl` it — instructions that drive another project's browser, from the
+  one mode whose purpose is not to touch it.
+- **`HTTPS-only: not registering an instance`** was printed by private HTTP runs that had just
+  announced their HTTP URL. `CAN_BE_REGISTERED` has two reasons; the message only ever cited one.
+- **`hj <cmd> --help` was empty for 35 of 69 commands** — including `hj doctor` and `hj where`, the
+  two this release most wants you to reach for. Summaries are now generated from the API schema, and
+  local commands have written descriptions.
+
+### Fixed
+
+- `resolveCanvasDeep` had an early return that contradicted its own comment and skipped the
+  shadow-root fallback.
+- A zero-size wrapper no longer prunes its visible children out of the affordance map; `zeroSize:
+  true` marks a control that is operable but occupies no box (the accessible file-input pattern).
+- The `tosiAgent` tier no longer degrades silently *and* mislabels itself; unexpected shapes warn,
+  and `agentSurfaceVersion` is reported so a bug report can name it.
+- WebSocket `maxPayloadLength` is explicit (64 MB). Bun's default drops an oversized frame and
+  closes the socket, which surfaced as "the browser widget disconnected" while the tab was fine.
+- `haltija --private` without `--port-file` crashed with `ReferenceError: tmpdir is not defined`
+  ([#17](https://github.com/tonioloewald/haltija/issues/17)) — shipped dead in **nineteen** tagged
+  releases, v1.4.1 through v1.11.3.
+
+### Guards, because most of the above should have been caught
+
+- `bun run build` now type-checks the shipped `bin/*.mjs` and fails on undefined identifiers. That
+  is the #17 class exactly: `node --check` parses it happily and it dies at run time.
+- The Playwright suites are type-checked too. They were excluded from the only type check in the
+  build, which made 116 tests the least-checked code in the repo.
+- A declarative invariant asserts every command whose parser handles flags is registered in
+  `KNOWN_FLAGS`. It found the ten dead flags above.
+- `/map`'s forwarding list is asserted against its schema, so a declared parameter cannot be
+  silently dropped again.
+- Running the unit suite **deleted the developer's screenshots** older than 24 h — production prune
+  defaults, no test seam. Fixed, and CI now fails if the suite touches the real artifact directory.
+- Two Playwright suites still held fixed ports with unconfirmed teardown, so an interrupted run
+  poisoned every later run with an EADDRINUSE stack that read as a code bug.
+
 ## 1.11.3
 
 Patch. Test infrastructure — no behaviour change.

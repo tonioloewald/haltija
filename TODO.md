@@ -25,11 +25,19 @@
   `maxPayloadLength`, so an oversized frame is a diagnosable error rather than a silent close that
   reads as a widget disconnect — is **done**: `src/server.ts`, 64 MB, chosen so hitting it means
   something is wrong rather than merely large.)*
-- [ ] **`buildDomAffordances` doesn't prune `display:none` wrappers before recursing**, so it walks
-  the entire subtree of a hidden container. Prune on `getComputedStyle(el).display === 'none' ||
-  visibility === 'hidden'` — but NOT on the zero-rect half, since a wrapper can legitimately have a
-  zero box with visible absolutely-positioned children (a mistake already made and fixed once in
-  this cycle; see the walk in `src/component.ts`).
+- [ ] **`buildDomAffordances` walks the subtree of a hidden wrapper.** *Measured, deliberately not
+  optimized.* The premise is correct — `visibilityOf` is consulted only for interactive/structural
+  elements, so a plain `<div style="display:none">` wrapper is descended into. But **this is perf,
+  not correctness**: interactive descendants inside it hit `visibilityOf` themselves, return
+  `hidden`, and are pruned, which four e2e cases already pin.
+  **The cost, measured through `/map` on a live server: a 12,000-node hidden subtree adds 7 ms
+  (19 ms vs 12 ms), identical to a visible subtree of the same size.** That is ~0.6 µs/node, so a
+  realistic hidden modal costs well under a millisecond. The obvious fix — `getComputedStyle` on
+  every element before recursing — would make the common case (few hidden nodes) *slower*, since
+  that call is exactly what the current gating avoids. Worth revisiting only with a page where it
+  actually shows up. If it is ever done: prune on `display:none` / `visibility:hidden` but NOT on
+  the zero-rect half — a wrapper can legitimately have a zero box with visible absolutely-positioned
+  children, a mistake already made and fixed once in this cycle.
 - [x] **`hj <cmd> --help` was content-free for 35 of 69 commands.** Done in 1.12.0. The build now
   emits `COMMAND_SUMMARIES` from every endpoint's schema `summary` (NOT filtered by
   `visibility: 'internal'` — that flag means "not public API", not "the CLI may decline to say what
