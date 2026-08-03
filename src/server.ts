@@ -4610,7 +4610,16 @@ const REGISTRY_NAME = !CAN_BE_REGISTERED
   ? ''
   : (INSTANCE_NAME || (isDesktopApp ? (isPublicDesktopServer ? 'desktop' : '') : autoNameFor(PORT)))
 if (!CAN_BE_REGISTERED && (INSTANCE_NAME || !isDesktopApp)) {
-  console.log(`${LOG_PREFIX} HTTPS-only: not registering an instance (hj speaks HTTP; cwd routing and --name need an HTTP port)`)
+  // Name the reason that actually applied. `CAN_BE_REGISTERED` has TWO of them, and this line only
+  // ever cited the HTTPS one — so a `--private --headless` run, which binds HTTP and is unregistered
+  // purely because it is private, announced "HTTPS-only" a few lines below printing its HTTP URL.
+  // A diagnostic that gives the wrong reason costs more than no diagnostic: it sends the reader
+  // looking for a TLS problem that isn't there.
+  console.log(
+    IS_PRIVATE
+      ? `${LOG_PREFIX} Private instance: not registering (isolation — drive it via the port reported above, not the registry)`
+      : `${LOG_PREFIX} HTTPS-only: not registering an instance (hj speaks HTTP; cwd routing and --name need an HTTP port)`,
+  )
 }
 if (REGISTRY_NAME) {
   try {

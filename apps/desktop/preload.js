@@ -5,6 +5,8 @@
 console.log('[Haltija] Renderer preload loading...')
 
 const { contextBridge, ipcRenderer } = require('electron')
+// Built from src/desktop-isolation.ts, whose rules are unit-tested without launching Electron.
+const { resolveInternalPort, resolvePublicUrl, isPrivateInstance } = require('./isolation.js')
 
 // Expose the webview preload path for the renderer to use
 // __dirname is available in preload scripts
@@ -15,14 +17,14 @@ contextBridge.exposeInMainWorld('haltija', {
   webviewPreloadPath: webviewPreloadPath,
   // Internal-server port (chrome widget connects here, hidden from public agent traffic).
   // Set by main AFTER port resolution, so a --private instance reports its EPHEMERAL port rather
-  // than the shared 8701.
-  // NB: `|| 8701` on a parsed 0 would resurrect the SHARED port for a private instance that
-  // deliberately has no internal server. 0 means "none" and must stay 0.
-  internalPort: process.env.HALTIJA_INTERNAL_PORT !== undefined
-    ? parseInt(process.env.HALTIJA_INTERNAL_PORT, 10)
-    : 8701,
-  // This instance's public server. A private app must not default to the shared 8700.
-  serverUrl: process.env.HALTIJA_PUBLIC_URL || 'http://localhost:8700',
+  // than the shared 8701. 0 means "none" and must stay 0. See src/desktop-isolation.ts.
+  internalPort: resolveInternalPort(process.env),
+  // This instance's public server, or NULL if main didn't set one. Not a default: `|| 8700` here
+  // made state.js's "did main tell me?" check always true, so it overwrote the user's saved
+  // Server URL setting on every launch. The renderer needs to tell those two cases apart.
+  serverUrl: resolvePublicUrl(process.env),
+  // Whether this instance is isolated. Isolation overrides user preference; nothing else does.
+  isPrivate: isPrivateInstance(process.env),
   // Navigation
   navigate: (url) => ipcRenderer.send('navigate', url),
   goBack: () => ipcRenderer.send('go-back'),

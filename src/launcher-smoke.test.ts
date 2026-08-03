@@ -66,12 +66,19 @@ describe('the published launcher starts (issue #17)', () => {
     // load produced no output at all, so asserting on the READY line catches it directly.
     const { out } = await launch(
       ['--private', '--headless', '--headless-url', 'about:blank'],
-      /HALTIJA_PRIVATE_READY/,
+      // Anchored at line start: the marker is a LINE-oriented protocol and this predicate decides
+      // when to stop reading. Unanchored, any prose mentioning the marker ends the read early — the
+      // private banner did exactly that, so the real address never arrived.
+      /^HALTIJA_PRIVATE_READY/m,
     )
     expect(out).toContain('HALTIJA_PRIVATE_READY')
 
     // And it must report a real ephemeral port, since with no port-file stdout is the ONLY channel.
-    const m = /HALTIJA_PRIVATE_READY (\{.*\})/.exec(out)
+    // Anchored at line start, because the marker is a LINE-oriented protocol: a consumer scans
+    // stdout for a line beginning with it. An unanchored match will happily pick up any prose that
+    // mentions the marker — which is exactly what happened when the private banner gained a
+    // `HALTIJA_PRIVATE_READY {…}` placeholder and this test tried to JSON.parse the ellipsis.
+    const m = /^HALTIJA_PRIVATE_READY (\{.*\})/m.exec(out)
     expect(m).not.toBeNull()
     const ready = JSON.parse(m![1])
     expect(typeof ready.port).toBe('number')

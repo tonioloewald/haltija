@@ -90,6 +90,24 @@ writeFileSync(
     readFileSync('apps/desktop/artifacts.js', 'utf-8'),
 )
 
+// 0f-ter. Compile src/desktop-isolation.ts TWICE — CommonJS for the preload script, ESM for the
+// renderer modules. Two module systems, one implementation. These guards keep a --private app off
+// the shared 8700/8701; they shipped with no test at any tier because exercising them needed a
+// running Electron, and one of them (`|| 'http://localhost:8700'`, which made the "did main tell
+// me?" check always true) silently reverted the user's Server URL setting on every launch.
+await $`bun build ./src/desktop-isolation.ts --outfile=apps/desktop/isolation.js --target=node --format=cjs`
+writeFileSync(
+  'apps/desktop/isolation.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/desktop-isolation.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/isolation.js', 'utf-8'),
+)
+await $`bun build ./src/desktop-isolation.ts --outfile=apps/desktop/renderer/isolation.js --target=browser --format=esm`
+writeFileSync(
+  'apps/desktop/renderer/isolation.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/desktop-isolation.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/renderer/isolation.js', 'utf-8'),
+)
+
 // 0g. Compile the authoritative CLI command list for bin/. ONE list; bin/cli-subcommand.mjs and the
 // server-side hint writers both derive from it, so a hint can never name a command that doesn't exist.
 await $`bun build ./src/cli-commands.ts --outfile=bin/cli-commands.mjs --target=node --format=esm`

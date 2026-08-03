@@ -500,12 +500,36 @@ function getVersion() {
 function printBanner(mode, port) {
   const version = getVersion()
   const url = `http://localhost:${port}`
+  const modeLabel = mode === 'ci' ? 'CI (Electron + xvfb)' :
+                    mode === 'app' ? 'Desktop App' :
+                    mode === 'headless' ? 'Headless (Playwright)' : 'Server'
   console.log('')
   console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+
+  // A --private run binds KERNEL-ASSIGNED ports and is not known to hold `port` at all — `port` is
+  // still the shared default here, because the ephemeral addresses aren't known until the child
+  // servers report them. Printing it anyway announced `http://localhost:8700` and told the user to
+  // `curl http://localhost:8700/tree`: instructions that drive ANOTHER project's browser, from the
+  // one mode whose entire purpose is not to touch it. The banner must not name an address this run
+  // doesn't own.
+  if (privateMode) {
+    console.log(`  ${bold('Haltija')} v${version} ${dim('—')} ${yellow('private instance')}`)
+    console.log(`  Mode: ${modeLabel} ${dim('(isolated)')}`)
+    console.log('')
+    console.log(dim('  Ephemeral ports, no registry entry, shared 8700/8701 untouched.'))
+    // Deliberately does NOT contain the string `HALTIJA_PRIVATE_READY`. That marker is a
+    // line-oriented machine protocol on stdout, and consumers scan for it — the smoke test waits
+    // for it to decide the launcher is up. A prose line that merely MENTIONS it satisfies that scan
+    // early, so the reader stops before the real address is ever printed. Naming a protocol token
+    // in human text makes the human text part of the protocol.
+    console.log(dim('  Its address is printed below, on the machine-readable ready line'))
+    console.log(dim('  (and to --port-file, if given). Drive it with: hj --port <that port>'))
+    console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+    console.log('')
+    return
+  }
+
   console.log(`  ${bold('Haltija')} v${version} ${dim('—')} ${green(url)}`)
-  const modeLabel = mode === 'ci' ? 'CI (Electron + xvfb)' : 
-                    mode === 'app' ? 'Desktop App' : 
-                    mode === 'headless' ? 'Headless (Playwright)' : 'Server'
   console.log(`  Mode: ${modeLabel}`)
   console.log('')
   console.log(dim('  Agent setup:'))

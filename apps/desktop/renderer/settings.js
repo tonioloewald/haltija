@@ -3,6 +3,7 @@
  */
 
 import { settings, saveSettings as persistSettings, el } from './state.js'
+import { SHARED_PUBLIC_URL } from './isolation.js'
 import { checkHaltija } from './status.js'
 
 let pendingNewTabResolve = null
@@ -36,7 +37,12 @@ export function hideSettings() {
 
 export function applySettings() {
   settings.serverMode = document.querySelector('input[name="server-mode"]:checked').value
-  settings.serverUrl = document.getElementById('server-url').value || 'http://localhost:8700'
+  const typed = document.getElementById('server-url').value.trim()
+  settings.serverUrl = typed || SHARED_PUBLIC_URL
+  // Saving the form is the ONLY thing that marks the URL as a deliberate user choice. Clearing the
+  // field un-marks it, so "reset to whatever this instance actually runs" stays reachable — without
+  // that, a URL typed once could never be handed back to the app's own resolution.
+  settings.serverUrlIsUserSet = typed.length > 0
   settings.confirmNewTabs = document.getElementById('confirm-new-tabs').checked
   persistSettings()
   hideSettings()

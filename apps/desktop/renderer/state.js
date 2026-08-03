@@ -3,13 +3,24 @@
  * All modules import from here instead of accessing globals.
  */
 
+import { resolveServerUrl, SHARED_PUBLIC_URL } from './isolation.js'
+
+/** What main injected for this instance, or null when it didn't (see src/desktop-isolation.ts). */
+const injectedServerUrl = () =>
+  (typeof window !== 'undefined' && window.haltija?.serverUrl) || null
+const isPrivate = () => !!(typeof window !== 'undefined' && window.haltija?.isPrivate)
+
 // Settings
 const DEFAULT_SETTINGS = {
   serverMode: 'builtin',
   // This app instance's own server, injected by main after port resolution. Hardcoding 8700 made a
   // --private app open its first tab against the SHARED server.
-  serverUrl: (typeof window !== 'undefined' && window.haltija?.serverUrl) || 'http://localhost:8700',
+  serverUrl: injectedServerUrl() || SHARED_PUBLIC_URL,
   confirmNewTabs: false,
+  // Set only when the user edits the field. Distinguishes "the user chose this address" from "this
+  // is a snapshot of whatever the last run happened to use" — without it, the code could not tell
+  // a deliberate preference from a stale default, so it discarded both.
+  serverUrlIsUserSet: false,
 }
 
 export let settings = { ...DEFAULT_SETTINGS }
@@ -19,12 +30,17 @@ export function loadSettings() {
     const saved = localStorage.getItem('haltija-settings')
     if (saved) {
       settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }
-      // …but NEVER let a persisted serverUrl override the address main injected for this instance.
-      // localStorage is per-origin and shared across runs, so a value saved by an earlier (or
-      // shared) session would point a --private app straight back at the shared server — defeating
-      // the injection added to prevent exactly that. The live instance always wins.
-      const injected = typeof window !== 'undefined' && window.haltija?.serverUrl
-      if (injected) settings.serverUrl = injected
+      // Priority: private isolation > a URL the user deliberately typed > this instance's own
+      // address > a stale persisted one. The previous version collapsed to "injected always wins",
+      // and since `injected` had a `|| 8700` fallback baked in, it was *always* set — so the user's
+      // saved Server URL was silently reverted on every launch. Rules live in
+      // src/desktop-isolation.ts and are unit-tested without launching Electron.
+      settings.serverUrl = resolveServerUrl({
+        injected: injectedServerUrl(),
+        isPrivate: isPrivate(),
+        persisted: settings.serverUrl,
+        persistedIsUserSet: settings.serverUrlIsUserSet,
+      })
     }
   } catch (e) {
     console.error('[Haltija Desktop] Failed to load settings:', e)
