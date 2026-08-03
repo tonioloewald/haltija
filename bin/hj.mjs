@@ -30,8 +30,13 @@ const HJ_LOCAL_COMMANDS = new Set(LOCAL_COMMANDS)
 // One definition. These were redeclared inside a dozen functions, which is how `green` ended up in
 // some outputs and not others — small enough that nobody notices, exactly the kind of duplication
 // that quietly diverges.
-const bold = (s) => `\x1b[1m${s}\x1b[0m`
-const dim = (s) => `\x1b[2m${s}\x1b[0m`
+// Same per-stream gate as bin/cli-subcommand.mjs: colour only when a human is watching THAT
+// stream. `hj where`/`hj doctor`/`hj servers` all print machine-readable-ish output here, and
+// escape codes in a captured variable are indistinguishable from part of the value.
+const colorOut = () => !process.env.NO_COLOR && process.stdout.isTTY
+const colorErr = () => !process.env.NO_COLOR && process.stderr.isTTY
+const bold = (s) => (colorOut() ? `\x1b[1m${s}\x1b[0m` : String(s))
+const dim = (s) => (colorErr() ? `\x1b[2m${s}\x1b[0m` : String(s))
 const green = (s) => `\x1b[32m${s}\x1b[0m`
 const red = (s) => `\x1b[31m${s}\x1b[0m`
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`

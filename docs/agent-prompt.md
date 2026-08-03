@@ -106,8 +106,9 @@ To fill this form:
   hj unhighlight          Remove highlight
 
 ### Wait
-  hj wait .modal          Wait for element to appear
-  hj wait .loading 10000  Wait up to 10s
+  hj wait .modal            Wait for element to APPEAR
+  hj wait .loading --hidden Wait for element to DISAPPEAR (spinners)
+  hj wait .results 10000    Wait up to 10s (positional timeout)
 
 ### Multiple tabs
   hj windows              List connected tabs
@@ -121,7 +122,10 @@ To fill this form:
 
 - Start with `hj tree` — look for [interactive] to find actionable elements
 - Always prefer refs over selectors — refs survive DOM changes
-- After async actions: `hj wait .spinner` then `hj tree`
+- After async actions: `hj wait .spinner --hidden` then `hj tree` — **`--hidden` matters.** Bare
+  `hj wait .spinner` waits for the spinner to *appear*, so if it has already gone (or never showed)
+  you get a full 5s stall and exit 1. This advice omitted the flag until 1.12.0, when `hj wait`
+  started actually waiting instead of returning success in 50ms.
 - Show the user what you found: `hj highlight 5 "This button"`
 - If a click fails: `hj console` for JS errors
 - Hidden elements can't be clicked — check [hidden] flag first

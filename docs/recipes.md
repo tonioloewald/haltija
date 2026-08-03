@@ -186,12 +186,20 @@ curl "localhost:8700/location?window=def"
 # Wait for element to appear
 curl -X POST localhost:8700/wait -d '{"selector":".results","timeout":10000}'
 
-# Wait for element to disappear (loading spinner)
-curl -X POST localhost:8700/wait -d '{"selector":".loading","appear":false}'
+# Wait for element to DISAPPEAR (loading spinner) — the field is `hidden`, not `appear`
+curl -X POST localhost:8700/wait -d '{"selector":".loading","hidden":true}'
 
-# Wait for text content
-curl -X POST localhost:8700/wait -d '{"selector":".status","text":"Complete"}'
+# Wait for text content — /wait does not match text, so poll for it
+curl -X POST localhost:8700/wait -d '{"selector":".status"}'
+curl -X POST localhost:8700/eval -d '{"code":"document.querySelector(\".status\")?.textContent"}'
 ```
+
+> **These two were wrong until 1.12.0, and worth knowing why.** `/wait` accepts `hidden`, not
+> `appear`, and has no `text` parameter at all. Before 1.12.0 an unrecognised key was dropped and
+> the call returned `{success: true, waited: 0}` — wrong but inert. Now that `selector` is honoured,
+> `{"selector":".loading","appear":false}` waits for the spinner to **appear**: the exact inverse of
+> its own comment, and a silent pass while the spinner is still on screen. A stray key that
+> validates is how a field-name mismatch masquerades as a working command.
 
 **Or just tell the agent**: "Click Search and wait for results to load"
 

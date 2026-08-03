@@ -148,6 +148,11 @@ export function takeFlags(args, spec) {
   const positional = []
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
+    // `--` ends flag parsing; everything after it is literal. The escape hatch for commands whose
+    // payload is free text — `hj type 10 -- --clear` types the characters "--clear" rather than
+    // setting the clear flag and typing nothing, which is what it did once these commands gained
+    // KNOWN_FLAGS entries. Without an escape there is no way to express the literal at all.
+    if (a === '--') { positional.push(...args.slice(i + 1)); break }
     const kind = spec[a]
     if (!kind) { positional.push(a); continue }
     if (kind === 'bool') {
@@ -902,11 +907,18 @@ export const KNOWN_FLAGS = {
 }
 
 /** Split `--flag=value` into `--flag`, `value` (first `=` only). Long flags only. */
-export function normalizeEqualsFlags(args) {
+export function normalizeEqualsFlags(args, known) {
   const out = []
-  for (const a of args) {
-    if (a.startsWith('--') && a.includes('=')) {
-      const eq = a.indexOf('=')
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    // Past `--`, nothing is a flag.
+    if (a === '--') { out.push(...args.slice(i)); break }
+    const eq = a.indexOf('=')
+    // Split ONLY flags this command actually knows. Splitting any `--x=y` mangled free text:
+    // `hj type 10 "--foo=bar"` became `{text: "--foo bar"}` — the `=` replaced by a space, in a
+    // string the user asked to be typed verbatim. A normaliser has no business rewriting a token
+    // it cannot identify.
+    if (a.startsWith('--') && eq !== -1 && (!known || known.includes(a.slice(0, eq)))) {
       out.push(a.slice(0, eq), a.slice(eq + 1))
     } else {
       out.push(a)
@@ -914,6 +926,19 @@ export function normalizeEqualsFlags(args) {
   }
   return out
 }
+
+/**
+ * Commands whose payload is free text, where a leading `-` is CONTENT, not a flag.
+ *
+ * They still accept their own real flags (`hj type 10 "hi" --clear` works), but an unrecognised
+ * dash-token must pass through silently — warning about it is worse than useless, because the
+ * warning says "ignored" while the token is in fact typed. `hj type 10 "--- divider"` warned about
+ * a flag `---` it had not ignored at all.
+ */
+export const FREE_TEXT_COMMANDS = new Set([
+  'type', 'highlight', 'call', 'eval', 'find', 'snapshot',
+  'send', 'send-message', 'send-selection', 'send-recording',
+])
 
 /** Levenshtein distance, for "did you mean" suggestions. */
 function editDistance(a, b) {
@@ -947,8 +972,12 @@ function closestFlag(input, candidates) {
 export function warnUnknownFlags(subcommand, args) {
   const known = KNOWN_FLAGS[subcommand]
   if (!known) return
+  // For a free-text command a dash-token is content. The warning claimed it was "ignored" while
+  // the CLI went on to type it — a diagnostic asserting the opposite of what happened.
+  if (FREE_TEXT_COMMANDS.has(subcommand)) return
   const allowed = new Set([...known, ...GLOBAL_FLAGS])
   for (const a of args) {
+    if (a === '--') break                 // end of flags; the rest is literal
     if (!a.startsWith('-')) continue      // positional or a flag's value
     if (/^-\d/.test(a)) continue          // negative number, not a flag
     if (allowed.has(a)) continue
@@ -975,7 +1004,7 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   // For flag-oriented commands, accept `--flag=value` and surface unknown flags
   // instead of silently dropping them. Free-text commands are left untouched.
   if (KNOWN_FLAGS[subcommand]) {
-    filteredArgs = normalizeEqualsFlags(filteredArgs)
+    filteredArgs = normalizeEqualsFlags(filteredArgs, [...KNOWN_FLAGS[subcommand], ...GLOBAL_FLAGS])
     warnUnknownFlags(subcommand, filteredArgs)
   }
 
@@ -1410,5 +1439,16 @@ export function listSubcommands() {
 // functions, so any future NO_COLOR / !isTTY handling would have had to be applied in eight places
 // and would have been applied in one — the same divergence the ANSI de-dup comment in hj.mjs
 // describes. Function declarations, so they hoist above every call site here.
-function bold(s) { return `\x1b[1m${s}\x1b[0m` }
-function dim(s) { return `\x1b[2m${s}\x1b[0m` }
+//
+// …and that future arrived. `hj map --image` documents its stdout as "a bare path you can hand
+// straight to a file read", and `console.log(bold(path))` made it 8 bytes of escape codes around
+// one — so `p=$(hj map --image); cat "$p"` failed with "No such file or directory". The CHANGELOG's
+// "103 characters" was a 94-char path plus the escapes. Same defect on `hj screenshot` and
+// `hj video-stop`; one definition each means one fix covers all three.
+//
+// Gated per STREAM, because they go to different ones: `bold` is stdout (payload), `dim` is stderr
+// (commentary). Colour when a human is watching that stream, plain text when anything else is.
+const colorOut = () => !process.env.NO_COLOR && process.stdout.isTTY
+const colorErr = () => !process.env.NO_COLOR && process.stderr.isTTY
+function bold(s) { return colorOut() ? `\x1b[1m${s}\x1b[0m` : String(s) }
+function dim(s) { return colorErr() ? `\x1b[2m${s}\x1b[0m` : String(s) }

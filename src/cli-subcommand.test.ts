@@ -1,6 +1,10 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import {
   isSubcommand,
+  normalizeEqualsFlags,
+  warnUnknownFlags,
+  KNOWN_FLAGS,
+  GLOBAL_FLAGS,
   parseTargetArgs,
   parseTreeArgs,
   parseScrollArgs,
@@ -1121,5 +1125,103 @@ describe('the eight flags that were advertised and never read', () => {
     const text = typeof hint === 'string' ? hint : hint?.hints
     expect(text).not.toContain('--text')
     expect(text).toContain('--timeout')
+  })
+})
+
+describe('free-text commands: a leading dash is CONTENT, not a flag', () => {
+  // Registering `type`/`highlight`/`call`/`send-*` in KNOWN_FLAGS — done to fix ten
+  // advertised-but-ignored flags — turned on `normalizeEqualsFlags` and `warnUnknownFlags` for
+  // commands whose payload is arbitrary text. Three regressions against v1.11.3 followed, and the
+  // invariant test that was supposed to police this had these exact commands in its FREE_FORM
+  // skip-list, so it `continue`d past every one of them.
+  const norm = (cmd: string, a: string[]) =>
+    normalizeEqualsFlags(a, [...(KNOWN_FLAGS[cmd] || []), ...GLOBAL_FLAGS])
+  const parse = (cmd: string, a: string[]) => ARG_MAPS[cmd](norm(cmd, a))
+
+  test('an unknown --x=y is typed verbatim, not split into "--x y"', () => {
+    // Was `{text: "--foo bar"}` — the `=` silently replaced by a space in a string the user asked
+    // to be typed literally. A normaliser must not rewrite a token it cannot identify.
+    expect(parse('type', ['10', '--foo=bar'])).toEqual({ ref: '10', text: '--foo=bar' })
+    expect(parse('highlight', ['5', '--x=y'])).toEqual({ ref: '5', label: '--x=y' })
+  })
+
+  test('a dash-led string is typed, not swallowed', () => {
+    expect(parse('type', ['10', '--- divider'])).toEqual({ ref: '10', text: '--- divider' })
+  })
+
+  test('`--` ends flag parsing, so the literal is expressible at all', () => {
+    // Without an escape there is NO way to type the characters "--clear": the flag wins and the
+    // command types an empty string while reporting success.
+    expect(parse('type', ['10', '--', '--clear'])).toEqual({ ref: '10', text: '--clear' })
+  })
+
+  test('real flags still work — the discriminating half', () => {
+    // If the fix were "never parse flags for these commands", the ten flags fixed earlier this
+    // cycle would break again. Both properties must hold at once.
+    expect(parse('type', ['10', 'hello', '--clear'])).toEqual({ ref: '10', text: 'hello', clear: true })
+    expect(parse('type', ['10', 'hi', '--humanlike=false'])).toEqual({ ref: '10', text: 'hi', humanlike: false })
+  })
+
+  test('flag-oriented commands still get =-form normalisation', () => {
+    // The other direction: this fix must not disable `--depth=3` for commands that are all flags.
+    expect(parse('tree', ['--depth=3'])).toEqual({ depth: 3 })
+  })
+
+  test('no unknown-flag warning is emitted for free-text commands', () => {
+    const warnings: string[] = []
+    const orig = process.stderr.write
+    // @ts-ignore
+    process.stderr.write = (s: string) => { warnings.push(String(s)); return true }
+    try {
+      warnUnknownFlags('type', ['10', '--- divider'])
+      warnUnknownFlags('highlight', ['5', '--x=y'])
+    } finally {
+      process.stderr.write = orig
+    }
+    // The warning said "ignored" while the CLI went on to type the token — a diagnostic asserting
+    // the opposite of what happened.
+    expect(warnings).toEqual([])
+  })
+
+  test('flag-oriented commands DO still warn — otherwise the fix silences everything', () => {
+    const warnings: string[] = []
+    const orig = process.stderr.write
+    // @ts-ignore
+    process.stderr.write = (s: string) => { warnings.push(String(s)); return true }
+    try {
+      warnUnknownFlags('tree', ['--nonsense'])
+    } finally {
+      process.stderr.write = orig
+    }
+    expect(warnings.join('')).toContain('--nonsense')
+  })
+})
+
+describe('piped stdout carries no ANSI — the documented "bare path"', () => {
+  // SKILL.md and the CHANGELOG promise `hj map --image` prints "a bare path you can hand straight
+  // to a file read". `console.log(bold(path))` made it 8 bytes of escape codes wrapped around one,
+  // so `p=$(hj map --image); cat "$p"` failed with "No such file or directory" — and the
+  // CHANGELOG's "103 characters" was a 94-char path plus the escapes. `hj screenshot` and
+  // `hj video-stop` had it too; one definition each meant one fix covered all three.
+  const hjPath = join(import.meta.dir, '..', 'dist', 'hj.js')
+
+  test('--help output has no escape sequences when piped', () => {
+    // A cheap, server-free proxy for "did the TTY gate get applied at all". spawnSync gives pipes,
+    // never a TTY, which is exactly the case that was broken.
+    const { spawnSync } = require('child_process')
+    const r = spawnSync('node', [hjPath, '--help'], { encoding: 'utf-8' })
+    expect(r.stdout.length).toBeGreaterThan(100)
+    // eslint-disable-next-line no-control-regex
+    expect(/\x1b\[/.test(r.stdout)).toBe(false)
+  })
+
+  test('NO_COLOR is honoured even on a TTY', () => {
+    const { spawnSync } = require('child_process')
+    const r = spawnSync('node', [hjPath, '--help'], {
+      encoding: 'utf-8',
+      env: { ...process.env, NO_COLOR: '1' },
+    })
+    // eslint-disable-next-line no-control-regex
+    expect(/\x1b\[/.test(r.stdout)).toBe(false)
   })
 })

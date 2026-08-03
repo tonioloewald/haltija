@@ -1068,6 +1068,10 @@ function takeFlags(args, spec) {
   const positional = [];
   for (let i = 0;i < args.length; i++) {
     const a = args[i];
+    if (a === "--") {
+      positional.push(...args.slice(i + 1));
+      break;
+    }
     const kind = spec[a];
     if (!kind) {
       positional.push(a);
@@ -1834,11 +1838,16 @@ var KNOWN_FLAGS = {
   scroll: ["--duration"],
   call: ["--args"]
 };
-function normalizeEqualsFlags(args) {
+function normalizeEqualsFlags(args, known) {
   const out = [];
-  for (const a of args) {
-    if (a.startsWith("--") && a.includes("=")) {
-      const eq = a.indexOf("=");
+  for (let i = 0;i < args.length; i++) {
+    const a = args[i];
+    if (a === "--") {
+      out.push(...args.slice(i));
+      break;
+    }
+    const eq = a.indexOf("=");
+    if (a.startsWith("--") && eq !== -1 && (!known || known.includes(a.slice(0, eq)))) {
       out.push(a.slice(0, eq), a.slice(eq + 1));
     } else {
       out.push(a);
@@ -1846,6 +1855,18 @@ function normalizeEqualsFlags(args) {
   }
   return out;
 }
+var FREE_TEXT_COMMANDS = new Set([
+  "type",
+  "highlight",
+  "call",
+  "eval",
+  "find",
+  "snapshot",
+  "send",
+  "send-message",
+  "send-selection",
+  "send-recording"
+]);
 function editDistance(a, b) {
   const m = a.length, n = b.length;
   const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
@@ -1874,8 +1895,12 @@ function warnUnknownFlags(subcommand, args) {
   const known = KNOWN_FLAGS[subcommand];
   if (!known)
     return;
+  if (FREE_TEXT_COMMANDS.has(subcommand))
+    return;
   const allowed = new Set([...known, ...GLOBAL_FLAGS]);
   for (const a of args) {
+    if (a === "--")
+      break;
     if (!a.startsWith("-"))
       continue;
     if (/^-\d/.test(a))
@@ -1901,7 +1926,7 @@ async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
     filteredArgs = [...filteredArgs.slice(0, windowIdx), ...filteredArgs.slice(windowIdx + 2)];
   }
   if (KNOWN_FLAGS[subcommand]) {
-    filteredArgs = normalizeEqualsFlags(filteredArgs);
+    filteredArgs = normalizeEqualsFlags(filteredArgs, [...KNOWN_FLAGS[subcommand], ...GLOBAL_FLAGS]);
     warnUnknownFlags(subcommand, filteredArgs);
   }
   if (!await isServerRunning(port)) {
@@ -2226,11 +2251,13 @@ function listSubcommands() {
   Fuzzy matching: ${dim2("hj evaluate = hj eval, hj screensho = hj screenshot")}
 `;
 }
+var colorOut = () => !process.env.NO_COLOR && process.stdout.isTTY;
+var colorErr = () => !process.env.NO_COLOR && process.stderr.isTTY;
 function bold(s) {
-  return `\x1B[1m${s}\x1B[0m`;
+  return colorOut() ? `\x1B[1m${s}\x1B[0m` : String(s);
 }
 function dim2(s) {
-  return `\x1B[2m${s}\x1B[0m`;
+  return colorErr() ? `\x1B[2m${s}\x1B[0m` : String(s);
 }
 
 // bin/arg-utils.mjs
@@ -2390,8 +2417,10 @@ import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 var args = process.argv.slice(2);
 var HJ_LOCAL_COMMANDS = new Set(LOCAL_COMMANDS);
-var bold2 = (s) => `\x1B[1m${s}\x1B[0m`;
-var dim3 = (s) => `\x1B[2m${s}\x1B[0m`;
+var colorOut2 = () => !process.env.NO_COLOR && process.stdout.isTTY;
+var colorErr2 = () => !process.env.NO_COLOR && process.stderr.isTTY;
+var bold2 = (s) => colorOut2() ? `\x1B[1m${s}\x1B[0m` : String(s);
+var dim3 = (s) => colorErr2() ? `\x1B[2m${s}\x1B[0m` : String(s);
 var green2 = (s) => `\x1B[32m${s}\x1B[0m`;
 var red2 = (s) => `\x1B[31m${s}\x1B[0m`;
 var yellow2 = (s) => `\x1B[33m${s}\x1B[0m`;
