@@ -1665,7 +1665,7 @@ entirely, so \`zeroSize\` always means *operable but invisible*, never *not ther
     maxNodes: s.number.describe('Cap on DOM-fallback nodes (default 400)').optional,
     image: s.boolean.describe('Also render the map as a schematic PNG (rasterized — an image of the map costs a vision encoder far fewer tokens than dense JSON, but has a fixed ~1-1.5k floor, so it only wins on big maps; response.cost reports both)').optional,
     scale: s.number.describe('Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page.').optional,
-    file: s.boolean.describe('With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image.').optional,
+    file: s.boolean.describe('With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Schematics older than 24h (and beyond the most recent 200) are pruned automatically. Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image.').optional,
     window: s.string.describe('Target window ID').optional,
   }),
   examples: [
@@ -2109,6 +2109,9 @@ export const videoStart = endpoint({
   description: `Start recording the browser tab as WebM video. Requires the Haltija Desktop app.
 
 The recording saves to <tmpdir>/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.
+Recordings older than 24h (and beyond the most recent 20) are pruned automatically — a lower cap
+than the other artifacts because video files are orders of magnitude larger. Copy anything you
+want to keep out of that directory.
 
 Response: { success, recordingId }`,
   category: 'debug',

@@ -77,6 +77,19 @@ writeFileSync(
     readFileSync('apps/desktop/server-env.js', 'utf-8'),
 )
 
+// 0f-bis. Compile src/artifacts.ts for the Electron main process (CommonJS). The video recorder
+// streams chunks rather than decoding a data URL, so it can't share `saveDataUrl` — but it must
+// share `artifactDir` and `pruneArtifacts`, and before this it shared neither: it hardcoded
+// `os.tmpdir()` (ignoring HALTIJA_ARTIFACT_DIR, so the test seam didn't cover it) and pruned
+// nothing at all — leaving the LARGEST artifacts as the only ones that accumulate forever, under a
+// comment claiming it followed the convention.
+await $`bun build ./src/artifacts.ts --outfile=apps/desktop/artifacts.js --target=node --format=cjs`
+writeFileSync(
+  'apps/desktop/artifacts.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/artifacts.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/artifacts.js', 'utf-8'),
+)
+
 // 0g. Compile the authoritative CLI command list for bin/. ONE list; bin/cli-subcommand.mjs and the
 // server-side hint writers both derive from it, so a hint can never name a command that doesn't exist.
 await $`bun build ./src/cli-commands.ts --outfile=bin/cli-commands.mjs --target=node --format=esm`

@@ -25,6 +25,8 @@ const { spawn } = require('child_process')
 const http = require('http')
 const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
 const { buildServerEnv } = require('./server-env.js')
+// ONE definition of where artifacts live and how long they live. Built from src/artifacts.ts.
+const { artifactDir, pruneKind } = require('./artifacts.js')
 
 // Suppress EIO errors when stdout/stderr pipes break during shutdown
 process.stdout.on('error', () => {})
@@ -1059,11 +1061,13 @@ function setupScreenCapture() {
 
   ipcMain.handle('video-file-create', async () => {
     try {
-      // Same base as every other artifact: os.tmpdir(), not a hardcoded /tmp (different on
-      // macOS, possibly read-only in a sandbox). This path streams chunks rather than
-      // decoding a data URL, so it doesn't share saveDataUrl — but it shares the directory
-      // convention and the retention problem. See src/artifacts.ts.
-      const dir = path.join(os.tmpdir(), 'haltija-videos')
+      // This path streams chunks rather than decoding a data URL, so it can't share
+      // `saveDataUrl` — but it DOES share the directory and the retention policy, via the real
+      // module rather than a restatement of it. The restatement had already drifted: it ignored
+      // HALTIJA_ARTIFACT_DIR (so the unit-test seam didn't cover videos) and pruned nothing, which
+      // made screen recordings — the biggest files haltija writes — the only artifacts that
+      // accumulated without bound.
+      const dir = artifactDir('videos')
       fs.mkdirSync(dir, { recursive: true })
       const shortId = Math.random().toString(36).slice(2, 6)
       const recordingId = `vid-${Date.now().toString(36)}-${shortId}`
@@ -1094,6 +1098,10 @@ function setupScreenCapture() {
     try {
       fs.closeSync(file.fd)
       activeVideoFiles.delete(recordingId)
+      // Prune AFTER closing, so the recording we just finished is the newest survivor and can never
+      // be the file we delete. Fire-and-forget for the same reason saveDataUrl's is: housekeeping
+      // must not delay — or fail — the capture the user actually asked for.
+      void pruneKind('videos')
       return { success: true, path: file.path, duration, size: file.size, format: 'webm' }
     } catch (err) {
       activeVideoFiles.delete(recordingId)

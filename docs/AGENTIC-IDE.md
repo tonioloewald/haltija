@@ -173,7 +173,7 @@ drains via `hj notifications` (or a new `/notifications` endpoint).
 
 | Source | Trigger | Agent receives |
 |--------|---------|----------------|
-| **Screenshot** (widget button) | User captures viewport | `{ type: "screenshot", path: "/tmp/haltija-xxx.png", label: "user screenshot" }` |
+| **Screenshot** (widget button) | User captures viewport | `{ type: "screenshot", path: "<tmpdir>/haltija-screenshots/hj-….png", label: "user screenshot" }` |
 | **Select Element** (widget button) | User clicks element in page | `{ type: "selection", selector: "button.submit", text: "Sign In", rect: {...}, html: "..." }` |
 | **File viewer** | User opens/edits a file | `{ type: "file_hint", path: "src/auth.ts", op: "edited" }` |
 | **Annotate** (widget or file viewer) | User types a short message | `{ type: "annotation", message: "this button should be blue" }` |

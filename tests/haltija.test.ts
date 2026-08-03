@@ -84,7 +84,12 @@ describe('haltija/test helper', () => {
   test('screenshot returns file path', async () => {
     if (skipUnlessServer()) return
     const shot = await hj.screenshot()
-    expect(shot.path).toMatch(/\/tmp\/haltija-screenshots\/hj-.*\.png$/)
+    // Deliberately NOT anchored at `/tmp` (nor at this process's `tmpdir()`): the path is chosen by
+    // the *server*, which is a separate process and may have a different TMPDIR — on macOS it is
+    // `/var/folders/…`, so the old `/tmp/…` anchor could never pass here. What IS a contract is the
+    // directory name, the `hj-` prefix, and the extension; the `existsSync` below then pins that the
+    // file is really there, on this machine, at that path.
+    expect(shot.path).toMatch(/^\/.*\/haltija-screenshots\/hj-[^/]*\.png$/)
     expect(shot.width).toBeGreaterThan(0)
     expect(shot.height).toBeGreaterThan(0)
     // Verify file exists

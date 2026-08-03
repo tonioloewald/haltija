@@ -176,7 +176,7 @@ test.describe('getDisplayMedia screenshot path', () => {
     const res = await fetch(`${SERVER_URL}/screenshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // file:false → keep image inline as base64 instead of writing to /tmp,
+      // file:false → keep image inline as base64 instead of writing to the artifact dir,
       // so the test can verify the bytes directly.
       body: JSON.stringify({ file: false, chyron: false }),
     })

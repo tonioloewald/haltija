@@ -1492,7 +1492,7 @@
             "boolean",
             "null"
           ],
-          "description": "With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
+          "description": "With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Schematics older than 24h (and beyond the most recent 200) are pruned automatically. Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
         },
         "window": {
           "type": [
@@ -1880,7 +1880,7 @@
     "path": "/video/start",
     "method": "POST",
     "summary": "Start video recording",
-    "description": "Start recording the browser tab as WebM video. Requires the Haltija Desktop app.\n\nThe recording saves to <tmpdir>/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.\n\nResponse: { success, recordingId }",
+    "description": "Start recording the browser tab as WebM video. Requires the Haltija Desktop app.\n\nThe recording saves to <tmpdir>/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.\nRecordings older than 24h (and beyond the most recent 20) are pruned automatically — a lower cap\nthan the other artifacts because video files are orders of magnitude larger. Copy anything you\nwant to keep out of that directory.\n\nResponse: { success, recordingId }",
     "inputSchema": {
       "type": "object",
       "properties": {

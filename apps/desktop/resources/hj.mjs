@@ -2028,7 +2028,7 @@ function listSubcommands() {
   ${bold("See the page")}
     map [--image]                     Affordance map: what's here and what it's wired to
     tree [selector] [-d N] [-i] [-v]  DOM tree (-i=interactive, -v=visible)
-    screenshot [@ref|selector]        Screenshot (saves to /tmp)
+    screenshot [@ref|selector]        Screenshot (writes a file, prints its path)
     inspect <@ref|selector>           Detailed element info
     query <selector> [--all]          Match elements (info, not the whole tree)
     styles <@ref|selector>            Computed styles + matched CSS rules

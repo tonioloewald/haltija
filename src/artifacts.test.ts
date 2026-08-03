@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'bun:test'
-import { mkdtempSync, writeFileSync, existsSync, readdirSync, utimesSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, existsSync, readdirSync, utimesSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { parseDataUrl, saveDataUrl, pruneArtifacts, artifactDir } from './artifacts'
@@ -112,6 +112,89 @@ describe('artifacts are pruned, so a long-lived app cannot fill the disk', () =>
 
   it('a missing directory is not an error — tidying must never fail the capture', async () => {
     expect(await pruneArtifacts(join(tmpdir(), 'haltija-does-not-exist-' + Math.random()))).toBe(0)
+  })
+})
+
+describe('retention is declared once, per kind, and covers every kind', () => {
+  it('every ArtifactKind has a policy — a new kind cannot silently get none', async () => {
+    const { RETENTION } = await import('./artifacts')
+    // The video path had NO policy: it hardcoded its own directory and never pruned, so screen
+    // recordings — the largest files haltija writes — accumulated without bound under a comment
+    // claiming it followed the convention. A table that must be exhaustive is how that stops
+    // recurring; `Record<ArtifactKind, …>` makes the compiler enforce it, and this asserts the
+    // values are real rather than zeroed.
+    for (const kind of ['screenshots', 'schematics', 'videos'] as const) {
+      expect(RETENTION[kind].maxAgeMs).toBeGreaterThan(0)
+      expect(RETENTION[kind].keep).toBeGreaterThan(0)
+    }
+  })
+
+  it('videos are capped far lower than screenshots — 200 recordings is tens of GB', async () => {
+    const { RETENTION } = await import('./artifacts')
+    expect(RETENTION.videos.keep).toBeLessThan(RETENTION.screenshots.keep)
+  })
+
+  it('pruneKind targets the directory for that kind and no other', async () => {
+    const { pruneKind } = await import('./artifacts')
+    // Discriminating: write into `videos` and `screenshots`, prune only `videos`, and check the
+    // screenshot survives. A pruneKind that ignored its argument would fail this.
+    const vids = artifactDir('videos')
+    const shots = artifactDir('screenshots')
+    const { mkdirSync } = await import('fs')
+    mkdirSync(vids, { recursive: true })
+    mkdirSync(shots, { recursive: true })
+    const oldVid = join(vids, 'old.webm')
+    const oldShot = join(shots, 'old.png')
+    writeFileSync(oldVid, 'x')
+    writeFileSync(oldShot, 'y')
+    const longAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
+    utimesSync(oldVid, longAgo, longAgo)
+    utimesSync(oldShot, longAgo, longAgo)
+
+    await pruneKind('videos')
+    expect(existsSync(oldVid)).toBe(false)
+    expect(existsSync(oldShot)).toBe(true)
+  })
+})
+
+describe('the retention policy the docs promise is the one the code applies', () => {
+  it('every "older than Nh / most recent M" claim in the schema is a real RETENTION entry', async () => {
+    const { RETENTION } = await import('./artifacts')
+    const schema = readFileSync(join(import.meta.dir, 'api-schema.ts'), 'utf-8')
+    const claims = [...schema.matchAll(/older than (\d+)h[\s\S]{0,40}?most recent (\d+)\)/g)].map(
+      m => `${m[1]}h/${m[2]}`,
+    )
+    // Guard against the check itself going vacuous — three documented artifact kinds, three claims.
+    // Without this, deleting the prose would make the "every claim is real" assertion trivially
+    // true, which is the failure mode that produced five vacuous tests this cycle.
+    expect(claims.length).toBe(3)
+
+    const real = new Set(
+      Object.values(RETENTION).map(p => `${p.maxAgeMs / (60 * 60 * 1000)}h/${p.keep}`),
+    )
+    // Both directions: no documented policy that the code doesn't implement...
+    for (const c of claims) expect([c, [...real]]).toEqual([c, expect.arrayContaining([c])])
+    // ...and no implemented policy the docs never mention. Changing RETENTION.videos.keep without
+    // touching the prose fails here, which is the drift this exists to catch.
+    for (const r of real) expect([r, claims]).toEqual([r, expect.arrayContaining([r])])
+  })
+})
+
+describe('the Electron main process can actually load the compiled twin', () => {
+  it('apps/desktop/artifacts.js requires under CommonJS and exports what main.js destructures', () => {
+    // main.js `require`s this at TOP LEVEL, so a twin that fails to load doesn't degrade video
+    // recording — it prevents the desktop app from starting at all. Testing the `src/` original
+    // (which is what desktop-server-env.test.ts does) cannot catch that: the failure mode is the
+    // CJS *bundle*, not the logic. Loading it here costs nothing and covers the whole class.
+    const { createRequire } = require('module')
+    const req = createRequire(import.meta.url)
+    const twin = req('../apps/desktop/artifacts.js')
+    // The exact two names main.js destructures. A rename in src/ that missed main.js fails here.
+    expect(typeof twin.artifactDir).toBe('function')
+    expect(typeof twin.pruneKind).toBe('function')
+    // And it must honour the same seam — a twin that hardcoded tmpdir() would pass the two checks
+    // above while leaving videos outside the test isolation, which is the bug being fixed.
+    expect(twin.artifactDir('videos')).toBe(join(ARTIFACT_ROOT, 'haltija-videos'))
   })
 })
 

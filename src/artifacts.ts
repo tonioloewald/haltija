@@ -52,6 +52,25 @@ export function parseDataUrl(dataUrl: string): { ext: string; base64: string } |
 }
 
 /**
+ * How long each kind of artifact sticks around.
+ *
+ * Per-kind because the sizes differ by orders of magnitude: 200 screenshots is tens of MB, 200
+ * screen recordings is potentially tens of GB. Declared HERE, in one table, rather than as a
+ * different literal at each call site — which is how the video path ended up with no policy at all.
+ */
+export const RETENTION: Record<ArtifactKind, { maxAgeMs: number; keep: number }> = {
+  screenshots: { maxAgeMs: 24 * 60 * 60 * 1000, keep: 200 },
+  schematics: { maxAgeMs: 24 * 60 * 60 * 1000, keep: 200 },
+  // Videos are the big ones. Same 24h, far smaller cap.
+  videos: { maxAgeMs: 24 * 60 * 60 * 1000, keep: 20 },
+}
+
+/** Prune one artifact kind under its declared policy. The form every caller should use. */
+export function pruneKind(kind: ArtifactKind): Promise<number> {
+  return pruneArtifacts(artifactDir(kind), RETENTION[kind])
+}
+
+/**
  * Delete artifacts older than `maxAgeMs`, then any excess beyond `keep` (newest first).
  *
  * Best-effort and non-fatal by design: failing to tidy up must never fail the capture the user
@@ -118,7 +137,7 @@ export async function saveDataUrl(
     const path = join(dir, `${opts.prefix || 'hj'}-${Date.now()}-${shortId}.${parsed.ext}`)
     await writeFile(path, Buffer.from(parsed.base64, 'base64'))
     // Fire-and-forget: the caller is waiting on their capture, not on our housekeeping.
-    void pruneArtifacts(dir)
+    void pruneKind(opts.kind)
     return { path, ext: parsed.ext }
   } catch (err) {
     return { error: (err as Error).message }
