@@ -10,82 +10,27 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'child_process'
-import { dirname, join } from 'path'
+import { dirname, join as pathJoin } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join as pathJoin } from 'path'
-import { uniqueTestPort } from './test-ports'
-
-const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-pw-registry-'))
-
+import { startTestServer, type TestServer } from './playwright-server'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// A per-process port, not a fixed one. `8702 // Different port to avoid conflicts` was only
-// different until the second thing wanted it — including this suite's OWN leaked server from an
-// interrupted run, which then failed every later run with an EADDRINUSE stack that reads as a
-// code bug. Shared with the Bun suites; see src/test-ports.ts.
-const PORT = uniqueTestPort()
-const SERVER_URL = `http://localhost:${PORT}`
-const WS_URL = `ws://localhost:${PORT}/ws/browser`
+// Port choice, readiness and confirmed teardown all live in src/playwright-server.ts, shared by all
+// three Playwright suites — this one had the good version and the other two didn't, which is how
+// they ended up holding fixed ports with bare `.kill()` teardowns.
+let server: TestServer
+let SERVER_URL: string
+let WS_URL: string
 
-let serverProcess: ChildProcess | null = null
-
-// Start server before all tests
 test.beforeAll(async () => {
-  // Make sure component is built first
-  serverProcess = spawn('bun', ['run', 'bin/server.ts'], {
-    cwd: join(__dirname, '..'),
-    env: {
-      ...process.env, DEV_CHANNEL_PORT: String(PORT), DEV_CHANNEL_NO_HTTPS: '1',
-      // Same guards as the Bun tests: a spawned server registers itself, SIGTERMs
-      // "legacy" servers it finds, and installs hj into ~/.local/bin. None of that
-      // belongs in a test run — it would corrupt the developer's own registry and
-      // CLI, and hijack `hj` in this repo for the duration of the suite.
-      HALTIJA_REGISTRY_DIR: TEST_REGISTRY_DIR,
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
-    },
-    stdio: 'inherit', // Show server output for debugging
-  })
-  
-  // Wait for server to be ready
-  let ready = false
-  for (let i = 0; i < 50 && !ready; i++) {
-    try {
-      const res = await fetch(`${SERVER_URL}/status`)
-      if (res.ok) {
-        // Also verify component.js is served
-        const componentRes = await fetch(`${SERVER_URL}/component.js`)
-        if (componentRes.ok) ready = true
-      }
-    } catch {
-      // Server not ready yet
-    }
-    if (!ready) await new Promise(r => setTimeout(r, 200))
-  }
-  
-  if (!ready) {
-    throw new Error('Server failed to start or component.js not available')
-  }
+  server = await startTestServer()
+  SERVER_URL = server.serverUrl
+  WS_URL = server.wsUrl
 })
 
-// Stop server after all tests
 test.afterAll(async () => {
-  // SIGTERM, then confirm. A `bun run` wrapper that ignores or outlives the signal leaves a server
-  // holding the port, and the next run's failure points at server.ts instead of at the leak. Tests
-  // that litter a shared machine are the same "don't harm a healthy peer" problem as retirement —
-  // the suite is not exempt from the discipline it exists to protect.
-  if (serverProcess && serverProcess.exitCode === null) {
-    serverProcess.kill('SIGTERM')
-    const deadline = Date.now() + 3000
-    while (serverProcess.exitCode === null && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100))
-    }
-    if (serverProcess.exitCode === null) serverProcess.kill('SIGKILL')
-  }
+  await server?.stop()
 })
 
 // Helper to inject haltija-dev into page
@@ -479,7 +424,7 @@ test.describe('haltija-dev CLI', () => {
     const { execFileSync } = await import('child_process')
     execFileSync('bun', [
       pathJoin(__dirname, '..', 'dist', 'hj.js'),
-      'key', 's', '--ctrl', '--port', String(PORT), '--no-launch',
+      'key', 's', '--ctrl', '--port', String(server.port), '--no-launch',
     ], { encoding: 'utf-8', timeout: 20000 })
 
     const seen = await page.evaluate(() => (window as any).__keys)
@@ -944,7 +889,8 @@ test.describe('haltija-dev CLI', () => {
       const controlsText = await page.evaluate(() => {
         const widget = document.querySelector('haltija-dev')
         if (!widget || !widget.shadowRoot) return null
-        const controls = widget.shadowRoot.querySelector('.controls')
+        // `querySelector` returns `Element`, and `innerText` is on `HTMLElement`.
+        const controls = widget.shadowRoot.querySelector<HTMLElement>('.controls')
         return controls ? controls.innerText : null
       })
       
@@ -1011,7 +957,11 @@ test.describe('haltija-dev component', () => {
     const isVisible = await page.evaluate(() => {
       const el = document.querySelector('haltija-dev')
       const widget = el?.shadowRoot?.querySelector('.widget')
-      return widget !== null && !widget.classList.contains('hidden')
+      // `!== null` did NOT exclude `undefined`, which is what the optional chaining above yields
+      // when the element or its shadow root is missing — so "no widget at all" reached
+      // `undefined.classList` and threw a TypeError instead of reporting `false`. The assertion
+      // failed either way, but the reason it gave was wrong, which is the whole complaint.
+      return !!widget && !widget.classList.contains('hidden')
     })
     expect(isVisible).toBe(true)
   })

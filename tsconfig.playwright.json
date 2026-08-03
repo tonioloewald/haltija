@@ -1,0 +1,17 @@
+{
+  // The Playwright suites are excluded from tsconfig.build.json because that config sets
+  // `types: ["bun-types"]`, and Bun's globals collide with Node's + Playwright's. The consequence
+  // was that NOTHING type-checked them: `String(PORT)` survived a refactor that deleted `PORT`, and
+  // the only thing that found it was a 55-second browser run — which would have reported nothing at
+  // all had that one test not happened to execute.
+  //
+  // So: same files, Node types, `bun run typecheck:playwright` (and `bun run build`).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/*.playwright.ts", "src/playwright-server.ts", "src/test-ports.ts"]
+}

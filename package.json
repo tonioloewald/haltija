@@ -62,6 +62,8 @@
     "test:https": "bun test src/https.test.ts",
     "test:both": "bun test src/both-mode.test.ts",
     "test:e2e": "bunx playwright test",
+    "typecheck": "bunx tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "typecheck:playwright": "bunx tsc -p tsconfig.playwright.json",
     "test:all": "bun test src/ && bun test tests/ && bunx playwright test"
   },
   "keywords": [

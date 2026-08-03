@@ -4,63 +4,23 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'child_process'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join as pathJoin } from 'path'
+import { startTestServer, type TestServer } from './playwright-server'
 
-const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-pw-registry-'))
-
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-
-const PORT = 8703 // Different port to isolate
-const SERVER_URL = `http://localhost:${PORT}`
-const WS_URL = `ws://localhost:${PORT}/ws/browser`
-
-let serverProcess: ChildProcess | null = null
+// Was `const PORT = 8703 // Different port to isolate`, with a bare `.kill()` teardown — so an
+// interrupted run left a server holding 8703 and every later run died with EADDRINUSE. Port choice,
+// readiness and teardown all live in src/playwright-server.ts now.
+let server: TestServer
+let SERVER_URL: string
+let WS_URL: string
 
 test.beforeAll(async () => {
-  serverProcess = spawn('bun', ['run', 'bin/server.ts'], {
-    cwd: join(__dirname, '..'),
-    env: {
-      ...process.env, DEV_CHANNEL_PORT: String(PORT),
-      // Same guards as the Bun tests: a spawned server registers itself, SIGTERMs
-      // "legacy" servers it finds, and installs hj into ~/.local/bin. None of that
-      // belongs in a test run — it would corrupt the developer's own registry and
-      // CLI, and hijack `hj` in this repo for the duration of the suite.
-      HALTIJA_REGISTRY_DIR: TEST_REGISTRY_DIR,
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
-    },
-    stdio: 'pipe', // Capture output
-  })
-  
-  // Log server output for debugging
-  serverProcess.stdout?.on('data', (data) => {
-    console.log('[server]', data.toString().trim())
-  })
-  serverProcess.stderr?.on('data', (data) => {
-    console.error('[server err]', data.toString().trim())
-  })
-  
-  // Wait for server
-  let ready = false
-  for (let i = 0; i < 50 && !ready; i++) {
-    try {
-      const res = await fetch(`${SERVER_URL}/status`)
-      if (res.ok) ready = true
-    } catch {}
-    if (!ready) await new Promise(r => setTimeout(r, 200))
-  }
-  
-  if (!ready) throw new Error('Server failed to start')
+  server = await startTestServer({ logPrefix: '[server]' })
+  SERVER_URL = server.serverUrl
+  WS_URL = server.wsUrl
 })
 
 test.afterAll(async () => {
-  serverProcess?.kill()
+  await server?.stop()
 })
 
 async function injectAndWaitForConnection(page: Page) {

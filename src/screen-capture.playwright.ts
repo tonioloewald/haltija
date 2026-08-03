@@ -11,53 +11,22 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'child_process'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join as pathJoin } from 'path'
+import { startTestServer, type TestServer } from './playwright-server'
 
-const TEST_REGISTRY_DIR = mkdtempSync(pathJoin(tmpdir(), 'haltija-pw-registry-'))
-
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const PORT = 8709 // Avoid collision with other Playwright tests
-const SERVER_URL = `http://localhost:${PORT}`
-const WS_URL = `ws://localhost:${PORT}/ws/browser`
-
-let serverProcess: ChildProcess | null = null
+// Was `const PORT = 8709 // Avoid collision with other Playwright tests` — a comment that states
+// the goal and a literal that can't achieve it. See src/playwright-server.ts.
+let server: TestServer
+let SERVER_URL: string
+let WS_URL: string
 
 test.beforeAll(async () => {
-  serverProcess = spawn('bun', ['run', 'bin/server.ts'], {
-    cwd: join(__dirname, '..'),
-    env: {
-      ...process.env, DEV_CHANNEL_PORT: String(PORT), DEV_CHANNEL_NO_HTTPS: '1',
-      // Same guards as the Bun tests: a spawned server registers itself, SIGTERMs
-      // "legacy" servers it finds, and installs hj into ~/.local/bin. None of that
-      // belongs in a test run — it would corrupt the developer's own registry and
-      // CLI, and hijack `hj` in this repo for the duration of the suite.
-      HALTIJA_REGISTRY_DIR: TEST_REGISTRY_DIR,
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
-    },
-    stdio: 'inherit',
-  })
-  for (let i = 0; i < 50; i++) {
-    try {
-      const res = await fetch(`${SERVER_URL}/status`)
-      if (res.ok) {
-        const compRes = await fetch(`${SERVER_URL}/component.js`)
-        if (compRes.ok) return
-      }
-    } catch {}
-    await new Promise(r => setTimeout(r, 200))
-  }
-  throw new Error('Server failed to start')
+  server = await startTestServer()
+  SERVER_URL = server.serverUrl
+  WS_URL = server.wsUrl
 })
 
-test.afterAll(() => {
-  serverProcess?.kill()
+test.afterAll(async () => {
+  await server?.stop()
 })
 
 async function injectWidget(page: Page) {

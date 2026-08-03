@@ -730,6 +730,23 @@ await $`bun build ./src/server.ts ./src/client.ts ./src/index.ts ./src/test.ts -
   }
 }
 
+// 4c. Type-check the Playwright suites, which 4b deliberately excludes (`types: ["bun-types"]`
+//     collides with Node's + Playwright's globals). Excluded-and-forgotten meant NOTHING checked
+//     them: a refactor deleted a module-level `PORT` and left `String(PORT)` behind, and the only
+//     thing that noticed was a 55-second browser run — which would have said nothing at all had
+//     that one test not happened to execute. An undefined identifier should not need a browser.
+{
+  const tsc = await $`bunx tsc -p tsconfig.playwright.json`.nothrow().quiet()
+  const out = tsc.stdout.toString() + tsc.stderr.toString()
+  const errCount = (out.match(/error TS\d+/g) || []).length
+  if (errCount > 0) {
+    console.error(out.trim())
+    throw new Error(
+      `Playwright type check failed: ${errCount} error(s). Run \`bunx tsc -p tsconfig.playwright.json\` to see details.`,
+    )
+  }
+}
+
 // 5. Sync component to desktop app resources (single source of truth)
 await $`cp dist/component.js apps/desktop/resources/component.js`.quiet().nothrow()
 
