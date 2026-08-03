@@ -70,8 +70,15 @@ async function injectWidget(page: Page) {
  * so the widget's `videoWidth`/`videoHeight` are non-zero by the time
  * `/screenshot` runs.
  */
-async function mockGetDisplayMedia(page: Page, color = 'rgb(255, 64, 32)') {
-  await page.evaluate((color) => {
+async function mockGetDisplayMedia(
+  page: Page,
+  color = 'rgb(255, 64, 32)',
+  // What the granted track claims the user picked. `captureStream()` tracks report no
+  // `displaySurface` of their own, so the test has to supply it — which is also the honest
+  // simulation of a browser that doesn't report one (pass null).
+  displaySurface: string | null = 'browser',
+) {
+  await page.evaluate(({ color, displaySurface }) => {
     const canvas = document.createElement('canvas')
     canvas.width = 320
     canvas.height = 240
@@ -86,11 +93,26 @@ async function mockGetDisplayMedia(page: Page, color = 'rgb(255, 64, 32)') {
     }, 100)
     // @ts-ignore — captureStream is on HTMLCanvasElement in browsers
     const stream = canvas.captureStream(5) as MediaStream
+    if (displaySurface !== null) {
+      const track = stream.getVideoTracks()[0]
+      const original = track.getSettings.bind(track)
+      track.getSettings = () => ({ ...original(), displaySurface })
+    }
     Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
       configurable: true,
       value: async () => stream,
     })
-  }, color)
+  }, { color, displaySurface })
+}
+
+/** Click 🖥 to start the share. */
+async function startShare(page: Page) {
+  await page.evaluate(() => {
+    const widget = document.querySelector('haltija-dev') as HTMLElement
+    const btn = widget.shadowRoot?.querySelector('.btn[data-action="screen"]') as HTMLElement
+    btn.click()
+  })
+  await page.waitForTimeout(500)
 }
 
 test.describe('getDisplayMedia screenshot path', () => {
@@ -211,5 +233,76 @@ test.describe('getDisplayMedia screenshot path', () => {
     })).json()
     expect(strict.success).toBe(false)
     expect(strict.error).toMatch(/desktop app|🖥|share/i)
+  })
+
+  test('a MONITOR share is labelled — these pixels are not this tab', async ({ page }) => {
+    // `preferCurrentTab` only DEFAULTS the picker. A user who picks a whole monitor gets pixels
+    // that are not this tab, may include unrelated applications, and will not follow the page —
+    // for the life of the grant, on every call, with no indication anything is off. A picture is
+    // the most believable thing haltija returns, so an unlabelled wrong one is its most expensive
+    // possible lie.
+    await injectWidget(page)
+    await mockGetDisplayMedia(page, 'rgb(0, 128, 255)', 'monitor')
+    await startShare(page)
+
+    const json = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: false }),
+    })).json()
+
+    expect(json.success).toBe(true)
+    expect(json.data.source).toBe('getDisplayMedia')
+    expect(json.data.displaySurface).toBe('monitor')
+    expect(json.data.warning).toMatch(/WHOLE MONITOR/)
+    // It still returns the capture — the point is to label it, not to withhold it.
+    expect(json.data.image.startsWith('data:image/')).toBe(true)
+  })
+
+  test('a WINDOW share is labelled differently, because it is a different mistake', async ({ page }) => {
+    await injectWidget(page)
+    await mockGetDisplayMedia(page, 'rgb(0, 200, 100)', 'window')
+    await startShare(page)
+
+    const json = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: false }),
+    })).json()
+    expect(json.data.displaySurface).toBe('window')
+    expect(json.data.warning).toMatch(/WINDOW/)
+  })
+
+  test('a TAB share does NOT warn — the discriminating case', async ({ page }) => {
+    // Without this, "it warns on monitor" would also hold for a build that warns on everything,
+    // and a warning that fires on the normal path is one agents learn to ignore.
+    await injectWidget(page)
+    await mockGetDisplayMedia(page, 'rgb(255, 64, 32)', 'browser')
+    await startShare(page)
+
+    const json = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: false }),
+    })).json()
+    expect(json.data.displaySurface).toBe('browser')
+    expect(json.data.warning).toBeUndefined()
+  })
+
+  test('a browser that reports no displaySurface says null, not "browser"', async ({ page }) => {
+    // Third state. Firefox and Safari may not report it, and "we could not check" must not be
+    // rendered as "we checked and it is this tab" — that is the doctor-false-green shape, in the
+    // one response where a confident wrong answer is hardest to doubt.
+    await injectWidget(page)
+    await mockGetDisplayMedia(page, 'rgb(200, 200, 0)', null)
+    await startShare(page)
+
+    const json = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: false }),
+    })).json()
+    expect(json.data.displaySurface).toBeNull()
+    expect(json.data.warning).toBeUndefined() // unknown is not an error; it is unknown
   })
 })

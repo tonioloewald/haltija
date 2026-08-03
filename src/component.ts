@@ -3291,6 +3291,8 @@ export class DevChannel extends HTMLElement {
   private browserId = uid() // Unique ID for this browser instance (changes each page load)
   private killed = false // Prevents reconnection after kill()
   private displayStream: MediaStream | null = null // getDisplayMedia stream when user has granted screen share
+  /** 'browser' | 'window' | 'monitor' from the granted track, or null when unknown/unshared. */
+  private displaySurface: string | null = null
   private displayVideo: HTMLVideoElement | null = null // Hidden <video> element bound to displayStream for frame extraction
   private isActive = true // Whether this window is active (responding to commands)
   private visibilityHandler: (() => void) | null = null // document visibilitychange listener
@@ -6057,6 +6059,17 @@ export class DevChannel extends HTMLElement {
         preferCurrentTab: true,
       } as MediaStreamConstraints & { preferCurrentTab?: boolean })
       this.displayStream = stream
+      // What did the user ACTUALLY share? `preferCurrentTab` only defaults the picker — they can
+      // pick a window or a whole monitor, after which `/screenshot` returns pixels that are not
+      // this tab and may include unrelated applications, for the life of the grant. Recording it at
+      // grant time (rather than guessing later) lets `/screenshot` say so instead of handing back a
+      // confident picture of the wrong thing.
+      //
+      // `displaySurface` is undefined on browsers that don't report it, and that stays a THIRD
+      // state — "not checked" — rather than being folded into "fine".
+      this.displaySurface =
+        (stream.getVideoTracks()[0]?.getSettings() as { displaySurface?: string } | undefined)
+          ?.displaySurface ?? null
       // Bind to an offscreen <video> so we can drawImage() any current frame
       // on demand without re-prompting the user.
       const video = document.createElement('video')
@@ -6084,6 +6097,9 @@ export class DevChannel extends HTMLElement {
       }
       this.displayStream = null
     }
+    // Clear with the stream. A surface remembered from a previous grant would describe a share that
+    // no longer exists, and the next grant might be a different surface entirely.
+    this.displaySurface = null
     if (this.displayVideo) {
       try { this.displayVideo.pause() } catch {}
       this.displayVideo.srcObject = null
@@ -8959,6 +8975,18 @@ export class DevChannel extends HTMLElement {
             ctx.drawImage(video, 0, 0, w, h)
             const dataUrl = canvas.toDataURL('image/png')
             const converted = await convertFormat(dataUrl)
+            // Say what was actually shared when it isn't this tab. `preferCurrentTab` only DEFAULTS
+            // the picker; a user who chose a window or a whole monitor gets pixels that are not
+            // this tab and may include unrelated applications — and every subsequent /screenshot
+            // for the life of the grant returns the same wrong surface, confidently. A picture is
+            // the most believable thing this tool returns, so an unlabelled wrong one is the most
+            // expensive kind of lie it can tell.
+            const surfaceWarning =
+              this.displaySurface === 'monitor'
+                ? 'The screen-share grant is a WHOLE MONITOR, not this tab — these pixels are whatever is on screen, including other applications, and will not track this tab. Click 🖥 twice to re-pick and choose this tab.'
+                : this.displaySurface === 'window'
+                  ? 'The screen-share grant is a WINDOW, not this tab — these pixels are that window, not necessarily this page. Click 🖥 twice to re-pick and choose this tab.'
+                  : undefined
             this.respond(msg.id, true, {
               image: converted.image,
               viewport,
@@ -8966,6 +8994,10 @@ export class DevChannel extends HTMLElement {
               width: converted.width,
               height: converted.height,
               source: 'getDisplayMedia',
+              // Reported even when there's no warning, so the caller can tell "shared a tab" from
+              // "this browser doesn't say" (null) rather than reading silence as confirmation.
+              displaySurface: this.displaySurface,
+              ...(surfaceWarning ? { warning: surfaceWarning } : {}),
             })
             return
           } catch (err: any) {

@@ -2291,6 +2291,7 @@
     browserId = uid();
     killed = false;
     displayStream = null;
+    displaySurface = null;
     displayVideo = null;
     isActive = true;
     visibilityHandler = null;
@@ -4460,6 +4461,7 @@ ${elementSummary}${moreText}`;
           preferCurrentTab: true
         });
         this.displayStream = stream;
+        this.displaySurface = stream.getVideoTracks()[0]?.getSettings()?.displaySurface ?? null;
         const video = document.createElement("video");
         video.srcObject = stream;
         video.muted = true;
@@ -4484,6 +4486,7 @@ ${elementSummary}${moreText}`;
         }
         this.displayStream = null;
       }
+      this.displaySurface = null;
       if (this.displayVideo) {
         try {
           this.displayVideo.pause();
@@ -6571,13 +6574,16 @@ ${elementSummary}${moreText}`;
               ctx.drawImage(video, 0, 0, w, h);
               const dataUrl = canvas.toDataURL("image/png");
               const converted = await convertFormat(dataUrl);
+              const surfaceWarning = this.displaySurface === "monitor" ? "The screen-share grant is a WHOLE MONITOR, not this tab — these pixels are whatever is on screen, including other applications, and will not track this tab. Click \uD83D\uDDA5 twice to re-pick and choose this tab." : this.displaySurface === "window" ? "The screen-share grant is a WINDOW, not this tab — these pixels are that window, not necessarily this page. Click \uD83D\uDDA5 twice to re-pick and choose this tab." : undefined;
               this.respond(msg2.id, true, {
                 image: converted.image,
                 viewport,
                 format,
                 width: converted.width,
                 height: converted.height,
-                source: "getDisplayMedia"
+                source: "getDisplayMedia",
+                displaySurface: this.displaySurface,
+                ...surfaceWarning ? { warning: surfaceWarning } : {}
               });
               return;
             } catch (err) {

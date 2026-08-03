@@ -187,6 +187,26 @@ any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's 
 Use `--no-fallback` if you need the hard error instead — or `--schematic` to *prefer* the schematic
 even when real capture is available (cheaper, deterministic, and it carries the contrast audit).
 
+**Check `displaySurface` on a browser screen-share capture.** When `source: "getDisplayMedia"` (the
+🖥-button path), the result reports what the user actually shared:
+
+| `displaySurface` | meaning |
+|---|---|
+| `"browser"` | a tab — the expected case, no warning |
+| `"window"` | a WINDOW, not this tab — carries a `warning`; the pixels are that window |
+| `"monitor"` | a WHOLE MONITOR — carries a `warning`; may include other applications, won't follow the page |
+| `null` | this browser doesn't report it. **Not a pass** — it means unchecked |
+
+The 🖥 button only *defaults* the picker to the current tab; the user can pick anything, and the
+grant then lasts for the session. So a `monitor` grant means every subsequent `hj screenshot`
+returns the wrong surface, confidently, until it's re-picked (click 🖥 twice). If you see one of
+these warnings, don't reason about layout from that image.
+
+Still open, deliberately: haltija cannot yet confirm a `browser` grant is **this** tab rather than
+another one. Doing so needs `setCaptureHandleConfig()`, which mutates document-level state on the
+page the widget is injected into — an injected tool shouldn't quietly change its host's
+configuration. So `browser` means "a tab", not "your tab".
+
 Nodes can carry **`zeroSize: true`** — a control that works but occupies no box (the accessible
 file-input / custom-checkbox pattern: a 0x0 `<input>` operated through its `<label>`). Click the
 label, not the input; the input's coordinates mean nothing. Anything genuinely hidden is left out

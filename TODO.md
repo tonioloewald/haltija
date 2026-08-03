@@ -2,11 +2,16 @@
 
 ## Deferred from the 1.12.0 review (tracked, not dropped)
 
-- [ ] **Verify the screen-share grant is actually THIS tab.** `preferCurrentTab` only *defaults* the
-  picker — the user can pick another tab, after which this tab's `/screenshot` silently returns a
-  different tab's pixels for the life of the grant (and on Firefox/Safari the option does nothing).
-  Fix locally: check `track.getSettings().displaySurface`, and on Chromium
-  `setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt on a mismatch.
+- [ ] **Confirm a `browser` screen-share grant is actually THIS tab.** *Half done in 1.12.0.*
+  `/screenshot` now reports `displaySurface` (`browser` / `window` / `monitor` / `null` for
+  "this browser doesn't say") and warns on a window or monitor share, where the pixels are provably
+  not this tab and may include other applications. **What remains is the same-tab case:**
+  `preferCurrentTab` only defaults the picker, so a user who switches to another *tab* still gets a
+  `browser` surface and no warning. Confirming it needs `setCaptureHandleConfig()` +
+  `getCaptureHandle()`, and `setCaptureHandleConfig()` mutates **document-level state on the host
+  page** — an injected widget quietly changing its host's capture configuration (and clobbering it
+  if the page already uses it) is the same "don't harm a healthy peer" violation as killing another
+  project's server. Needs a way to do it without side effects on the host, or an explicit opt-in.
   Deliberately NOT filed upstream — the picker is a consent surface and constraining it would be a
   privacy regression. See `UPSTREAM.md`.
 - [ ] **`MAX_PIXELS` is 8e6** (`src/schematic-size.ts`). Vision encoders downsample to roughly a
