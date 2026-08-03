@@ -846,6 +846,50 @@ var ROUTED_COMMANDS = [
   "where"
 ];
 var LOCAL_COMMANDS = ["where", "servers", "ls", "doctor", "shutdown", "quit"];
+var LOCAL_COMMAND_HELP = {
+  where: {
+    summary: "Which server this shell targets, and why",
+    detail: `Prints the resolved port, WHICH rule chose it (--port > --name/HALTIJA_NAME > HALTIJA_PORT >
+` + `  cwd match > the 8700 default), and what is actually alive there — version, tab count,
+` + `  declared origins. Start here when a command drove the wrong browser: a misroute is silent
+` + `  and looks like a flaky test rather than an error.
+
+` + "  Flags: --json"
+  },
+  servers: {
+    summary: "Every live haltija, with the one you would drive marked",
+    detail: `Enumerates registry entries, the well-known defaults 8700/8701 (probed, to catch anything
+` + `  unregistered), and this shell's resolved target — port, name, version, tab count, and
+` + "  whether it is the desktop app. The one `hj` would talk to is marked with ▸.\n" + "  Target another with `hj --port <n>` or `hj --name <name>`.\n\n" + "  Alias: hj ls    Flags: --json"
+  },
+  ls: { summary: "Alias for `hj servers`", detail: "See `hj servers --help`." },
+  doctor: {
+    summary: "Preflight: is this thing drivable? (exits non-zero if not)",
+    detail: `Checks the server is reachable, a browser is connected, a tab is drivable, and the client
+` + `  and server versions agree. Reports THREE verdicts, not two:
+
+` + `    ✓  checked, and fine
+` + `    ✗  checked, and broken   → exits 1
+` + `    ?  could NOT be checked  → not a pass; use --strict to make it exit 1 too
+
+` + `  The third state exists because "I verified this" and "I could not verify this" are
+` + `  different facts, and collapsing them into ✓ is how a preflight reports green on a server
+` + `  it never reached.
+
+` + "  Flags: --json, --strict (also HALTIJA_STRICT=1)"
+  },
+  shutdown: {
+    summary: "Ask the target server to stop, cleanly",
+    detail: `POSTs /shutdown, so the server releases its port and removes its registry entry itself.
+` + `  This is a request, not a signal — haltija never maps a port to a pid and kills it, because
+` + "  `lsof -i :PORT` matches CONNECTED CLIENTS as well as listeners and would happily return a\n" + `  browser that has been open since login.
+
+` + `  On a private desktop instance this tears down the whole app (server + Electron).
+
+` + "  Alias: hj quit"
+  },
+  quit: { summary: "Alias for `hj shutdown`", detail: "See `hj shutdown --help`." }
+};
 var ALL = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS]);
 
 // bin/hints.mjs
@@ -874,6 +918,74 @@ var COMMAND_HINTS = {
   "video-stop": "| see: video-start, video-status",
   "video-status": "| see: video-start, video-stop",
   status: "--json | see: windows, stats, console"
+};
+var COMMAND_SUMMARIES = {
+  tree: "Get DOM tree structure",
+  query: "Query DOM elements by selector",
+  inspect: "Deep inspection of an element",
+  inspectAll: "Inspect multiple elements",
+  find: "Find elements by text content",
+  form: "Extract all form values as structured JSON",
+  click: "Click an element",
+  type: "Type text into an element",
+  key: "Send keyboard input",
+  drag: "Drag from an element",
+  highlight: "Visually highlight an element",
+  unhighlight: "Remove highlight",
+  scroll: "Scroll to element or position",
+  wait: "Wait for time, element, or condition",
+  navigate: "Navigate to a URL",
+  refresh: "Refresh the page",
+  location: "Get current URL and title",
+  "mutations-watch": "Start watching DOM mutations",
+  "mutations-unwatch": "Stop watching mutations",
+  "mutations-status": "Get mutation watch status",
+  network: "Get captured network requests",
+  "network-watch": "Start capturing network traffic",
+  "network-unwatch": "Stop capturing network traffic",
+  "network-stats": "Network traffic summary",
+  "events-watch": "Start watching semantic events",
+  "events-unwatch": "Stop watching events",
+  events: "Get captured semantic events",
+  "events-stats": "Get event aggregation statistics",
+  console: "Get console output",
+  eval: "Execute JavaScript",
+  fetch: "Fetch a URL from within the tab context",
+  call: "Call a method or get a property on an element",
+  screenshot: "Capture a screenshot",
+  select: "Interactive element selection",
+  "select-start": '[Deprecated] Use /select with action:"start"',
+  "select-cancel": '[Deprecated] Use /select with action:"cancel"',
+  "select-status": '[Deprecated] Use /select with action:"status"',
+  "select-result": '[Deprecated] Use /select with action:"result"',
+  "select-clear": '[Deprecated] Use /select with action:"clear"',
+  windows: "List connected windows",
+  map: "Affordance map — what can be interacted with, and what it is wired to",
+  "tabs-open": "Open a new tab",
+  "tabs-close": "Close a tab",
+  "tabs-focus": "Focus a tab (route untargeted commands to it)",
+  recording: "Record user actions and generate tests",
+  "recording-start": '[Deprecated] Use /recording with action:"start"',
+  "recording-stop": '[Deprecated] Use /recording with action:"stop"',
+  "recording-generate": '[Deprecated] Use /recording with action:"generate"',
+  recordings: '[Deprecated] Use /recording with action:"list"',
+  "test-run": "Run a JSON test",
+  "test-suite": "Run multiple tests",
+  "test-validate": "Validate test without running",
+  snapshot: "Capture page snapshot",
+  "video-start": "Start video recording",
+  "video-stop": "Stop video recording",
+  "video-status": "Check video recording status",
+  "dialog-configure": "Configure native dialog auto-response policy",
+  "dialog-history": "Get recent dialog history",
+  status: "Server status",
+  stats: "Efficiency and usage statistics",
+  version: "[Deprecated] Use /status instead",
+  docs: "[Deprecated] Use /api instead",
+  api: "Full API reference",
+  "send-message": "Send message to agent",
+  "send-selection": "Send browser selection to agent",
+  "send-recording": "Send recording to agent"
 };
 // bin/cli-subcommand.mjs
 var __dirname2 = dirname(fileURLToPath(import.meta.url));
@@ -2829,22 +2941,34 @@ Examples: hj tree, hj navigate <url>, hj click @42`);
 }
 function commandHelp(cmd) {
   const hint = COMMAND_HINTS[cmd];
+  const local = LOCAL_COMMAND_HELP[cmd];
   const known = isSubcommand(cmd) || HJ_LOCAL_COMMANDS.has(cmd);
   if (!known && !hint)
     return false;
   console.log(`${bold2("hj " + cmd)}${hint ? "  " + dim3(hint) : ""}`);
   console.log("");
+  const summary = COMMAND_SUMMARIES[cmd];
+  if (summary) {
+    console.log(`  ${summary}`);
+    console.log("");
+  }
   const lines = listSubcommands().split(`
 `);
   const shown = lines.filter((l) => {
     const plain = l.replace(/\x1b\[[0-9;]*m/g, "");
-    return new RegExp(`\\b${cmd}\\b`).test(plain);
+    return new RegExp(`^\\s{2,}${cmd}\\b`).test(plain);
   });
   for (const l of shown)
     console.log(l);
   if (shown.length)
     console.log("");
   if (HJ_LOCAL_COMMANDS.has(cmd)) {
+    if (local) {
+      console.log(`  ${local.summary}`);
+      console.log("");
+      console.log(`  ${local.detail}`);
+      console.log("");
+    }
     console.log(dim3("  Runs client-side (no page interaction)."));
   } else {
     console.log(dim3(`  Full reference: hj api   |   machine-readable: hj ${cmd} --json`));

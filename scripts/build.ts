@@ -153,10 +153,29 @@ writeFileSync('bin/hints.json', JSON.stringify(cliHints, null, 2))
 // npm package and NOT for dist/hj.js installed as a lone file in ~/.local/bin — so the standalone
 // CLI silently had no hints while reporting the same version. Two artifacts, one version number,
 // different behaviour (issue #14). A module gets inlined by `bun build`, so both carry it.
+// Every endpoint has a `summary`; only ~24 have `hints`. `hj <cmd> --help` used to print a bold
+// header, whatever line of the global blurb mentioned the command, and a fixed footer — so for the
+// 35 commands with no blurb line it printed the header and nothing else. `hj test-run --help`,
+// `hj recordings --help`, `hj send-message --help` described themselves not at all, and the guard
+// that was supposed to prevent this only asserted the header existed.
+//
+// Derived from the schema rather than hand-written, so a new endpoint is documented in `--help` the
+// moment it has a summary — which the schema requires anyway.
+// Deliberately NOT filtered by `visibility: 'internal'`, unlike the MCP tool list above. That flag
+// means "not part of the public browser-automation API" — it does not mean the CLI should refuse to
+// say what its own command does. `send-message`, `send-selection` and `send-recording` are marked
+// internal AND listed in ROUTED_COMMANDS, so a user can type them and, before this, got a bare
+// header when they asked what they do. If a command is invokable, `--help` describes it.
+const cliSummaries: Record<string, string> = {}
+for (const ep of ALL_ENDPOINTS) {
+  const subcommand = ep.path.slice(1).replace(/\//g, '-')
+  if (ep.summary) cliSummaries[subcommand] = ep.summary
+}
 writeFileSync(
   'bin/hints.mjs',
   `/** ⚠️  AUTO-GENERATED FROM src/api-schema.ts — DO NOT EDIT. Run: bun run build */\n` +
-    `export const COMMAND_HINTS = ${JSON.stringify(cliHints, null, 2)}\n`,
+    `export const COMMAND_HINTS = ${JSON.stringify(cliHints, null, 2)}\n\n` +
+    `export const COMMAND_SUMMARIES = ${JSON.stringify(cliSummaries, null, 2)}\n`,
 )
 
 

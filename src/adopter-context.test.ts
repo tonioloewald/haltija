@@ -186,9 +186,38 @@ describe('adopter context: stdout stays machine-parseable (issue #14)', () => {
       if (/No commands matching/.test(stdout)) broken.push(cmd)
       // And it must actually be about that command, not the global blurb.
       else if (!stdout.includes(`hj ${cmd}`)) broken.push(`${cmd} (no per-command header)`)
+      // …and it must SAY something. The version of this assertion above passes for output that is
+      // a bold header plus the fixed footer and nothing else, which is exactly what every local
+      // command printed: `hj doctor --help` and `hj where --help` — the two commands this release
+      // tells people to reach for when they doubt an answer — described themselves not at all.
+      // "The command exists" and "the command is documented" are different claims.
+      else {
+        const body = stdout
+          .replace(/\x1b\[[0-9;]*m/g, '')
+          .split('\n')
+          .filter(l => !new RegExp(`^hj ${cmd}\\b`).test(l))
+          .filter(l => !/Full reference: hj api|Runs client-side/.test(l))
+          .join('')
+          .trim()
+        // 10, not 20: "Close a tab" and "Run a JSON test" are genuinely short and genuinely
+        // adequate. The bar is "says something about itself", not a word count — a threshold tuned
+        // high enough to flag real summaries would get relaxed the first time it cried wolf.
+        if (body.length < 10) broken.push(`${cmd} (header only, no description)`)
+      }
     }
     expect(broken).toEqual([])
   }, 120_000)
+
+  it('every local command has a description, so a new one cannot land undocumented', async () => {
+    // The per-command check above runs the real binary 70+ times and is slow; this is the cheap
+    // structural half, and it fails in the same commit that adds an undescribed command rather
+    // than whenever someone next reads the help.
+    const { LOCAL_COMMANDS, LOCAL_COMMAND_HELP } = await import('../bin/cli-commands.mjs')
+    const missing = (LOCAL_COMMANDS as readonly string[]).filter(
+      c => !(LOCAL_COMMAND_HELP as Record<string, unknown>)[c],
+    )
+    expect(missing).toEqual([])
+  })
 })
 
 describe('adopter context: TWO PROJECTS at once (issues #1, #2)', () => {

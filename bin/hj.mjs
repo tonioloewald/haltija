@@ -10,12 +10,12 @@
  *   hj status            # Server status
  */
 
-import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS } from './cli-subcommand.mjs'
+import { runSubcommand, isSubcommand, getSuggestion, listSubcommands, COMMAND_HINTS, COMMAND_SUMMARIES } from './cli-subcommand.mjs'
 import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin, ORIGINS_FILE } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
 import { isDrivable, isVisible, visibilityKnown } from './window-state.mjs'
-import { LOCAL_COMMANDS } from './cli-commands.mjs'
+import { LOCAL_COMMANDS, LOCAL_COMMAND_HELP } from './cli-commands.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -875,22 +875,47 @@ if (!isSubcommand(subcommand)) {
  */
 function commandHelp(cmd) {
   const hint = COMMAND_HINTS[cmd]
+  const local = LOCAL_COMMAND_HELP[cmd]
   const known = isSubcommand(cmd) || HJ_LOCAL_COMMANDS.has(cmd)
   if (!known && !hint) return false
 
   console.log(`${bold('hj ' + cmd)}${hint ? '  ' + dim(hint) : ''}`)
   console.log('')
 
+  // The endpoint's own one-line summary, generated from api-schema.ts. Only ~24 endpoints carry a
+  // `hints` string, but every one carries a `summary` — so before this, 35 commands printed a
+  // header and a footer with nothing in between.
+  const summary = COMMAND_SUMMARIES[cmd]
+  if (summary) {
+    console.log(`  ${summary}`)
+    console.log('')
+  }
+
   // Any blurb lines that mention it (usage examples live there), best-effort.
+  //
+  // Anchored to the START of a command line, not `\b<cmd>\b` anywhere. The loose form matched
+  // PROSE that happens to name the command, so `hj screenshot --help` printed the unrelated
+  // "Fuzzy matching: hj evaluate = hj eval, hj screensho = hj screenshot" line as though it were
+  // documentation for screenshot. Help that pads itself with near-misses is how help stops being
+  // read.
   const lines = listSubcommands().split('\n')
   const shown = lines.filter((l) => {
     const plain = l.replace(/\x1b\[[0-9;]*m/g, '')
-    return new RegExp(`\\b${cmd}\\b`).test(plain)
+    return new RegExp(`^\\s{2,}${cmd}\\b`).test(plain)
   })
   for (const l of shown) console.log(l)
   if (shown.length) console.log('')
 
   if (HJ_LOCAL_COMMANDS.has(cmd)) {
+    // Local commands have neither a schema-derived hint nor a listSubcommands() blurb, so without
+    // this they printed a header and the words "Runs client-side" — nothing about what they do.
+    // `doctor` and `where` are the two this release most wants people to reach for.
+    if (local) {
+      console.log(`  ${local.summary}`)
+      console.log('')
+      console.log(`  ${local.detail}`)
+      console.log('')
+    }
     console.log(dim('  Runs client-side (no page interaction).'))
   } else {
     console.log(dim(`  Full reference: hj api   |   machine-readable: hj ${cmd} --json`))

@@ -36,7 +36,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // Reading a sibling hints.json works for the npm package but not for dist/hj.js installed as a lone
 // file in ~/.local/bin, so the standalone CLI silently had no hints while claiming the same version
 // (issue #14). An import is inlined by the bundler, so both distributions behave identically.
-export { COMMAND_HINTS } from './hints.mjs'
+export { COMMAND_HINTS, COMMAND_SUMMARIES } from './hints.mjs'
 import { COMMAND_HINTS as COMMAND_HINTS_LOCAL } from './hints.mjs'
 
 let warnedAboutSkew = false

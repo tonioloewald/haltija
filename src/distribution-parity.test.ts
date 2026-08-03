@@ -49,10 +49,22 @@ async function run(cli: string, args: string[]) {
 }
 
 /** Both artifacts, same arguments — the only comparison that matters. */
-const both = async (args: string[]) => ({
-  npm: await run(NPM_CLI, args),
-  bundle: await run(BUNDLE_CLI, args),
-})
+/**
+ * Run the same args through BOTH artifacts, concurrently.
+ *
+ * They were awaited one after the other, which is pure latency: the two processes are independent,
+ * read nothing shared, and write nothing. `Promise.all` roughly halves the wall clock of the
+ * command-surface sweep at no cost in isolation.
+ *
+ * A prior review item asked for a worker pool across the ~140 spawns, on the premise that this is a
+ * slow blocking gate. Measured before changing anything: **4.0s for the whole file**. The premise
+ * didn't hold, and a pool would add real concurrency risk (shared registry dir, shared port) to
+ * save nothing. Recorded here so the item isn't re-raised from the same assumption.
+ */
+const both = async (args: string[]) => {
+  const [npm, bundle] = await Promise.all([run(NPM_CLI, args), run(BUNDLE_CLI, args)])
+  return { npm, bundle }
+}
 
 beforeAll(async () => {
   server = spawn({
@@ -101,7 +113,11 @@ describe('distribution parity: identical command surface', () => {
       if (npm.stdout !== bundle.stdout) divergent.push(cmd)
     }
     expect(divergent).toEqual([])
-  }, 180_000)
+    // 180s was the old ceiling, against a measured 3s of work. A timeout an order of magnitude
+    // above the real cost doesn't catch a hang, it just makes one expensive to notice: CI would
+    // sit for three minutes before saying anything. 30s is ~10x headroom for a loaded CI runner
+    // and still fails fast when a spawn wedges.
+  }, 30_000)
 
   it('resolves the commands that shipped after the bundle mechanism existed', async () => {
     // doctor (1.6.1) and map (1.8.0) were both reported missing from the bundle.

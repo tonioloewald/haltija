@@ -4060,6 +4060,19 @@ const serverConfig = {
   },
   
   websocket: {
+    /**
+     * Big enough for a real capture, and EXPLICIT so the limit is a number we chose.
+     *
+     * Bun's default is 16 MB. A schematic of a long page can approach that as base64 (the pixel
+     * budget allows 8 Mpx, and base64 adds a third), and a frame over the limit is dropped with the
+     * socket closed — which surfaces as "the browser widget disconnected". That is the tool
+     * manufacturing a false diagnosis: the tab is fine, the page is fine, and the user goes looking
+     * for a connection problem that does not exist.
+     *
+     * 64 MB is comfortably above anything the capture paths can produce, so hitting it means
+     * something is genuinely wrong rather than merely large.
+     */
+    maxPayloadLength: 64 * 1024 * 1024,
     open(ws: { data: { type: string }, send: (msg: string) => void }) {
       const type = ws.data?.type
       if (type === 'browser') {

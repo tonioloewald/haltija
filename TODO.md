@@ -9,28 +9,36 @@
   `setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt on a mismatch.
   Deliberately NOT filed upstream — the picker is a consent surface and constraining it would be a
   privacy regression. See `UPSTREAM.md`.
-- [ ] **`hj map --image` still prints the full ~18k-char node JSON alongside the file path** (`map`
-  is in `UNWRAP_DATA_SUBCOMMANDS`), so it costs strictly more than plain `hj map` and the
-  token-saving trade the `image` description sells is unreachable from the CLI. Omit the node
-  payload when an image was written, and signpost the path the way `screenshot`/`video-stop` do.
-- [ ] **`MAX_PIXELS` is 8e6** (`src/component.ts`). Vision encoders downsample to roughly a 1568px
-  long edge, so an 8 Mpx canvas is ~32 MB RGBA in the tab, a multi-MB base64 string over the socket,
-  and ~70% of the pixels discarded on arrival. Consider ~2.5e6, or derive it from a MAX_EDGE
-  constraint. Also set an explicit WebSocket `maxPayloadLength` so an oversized frame is a
-  diagnosable error rather than a silent close that looks like a widget disconnect.
+- [ ] **`MAX_PIXELS` is 8e6** (`src/schematic-size.ts`). Vision encoders downsample to roughly a
+  1568px long edge, so an 8 Mpx canvas is ~32 MB RGBA in the tab and ~70% of the pixels are
+  discarded on arrival. **Deliberately not changed, because the two consumers want opposite
+  things:** the encoder caps the long edge at 1568 regardless, so anything above that is waste —
+  but the same file is also meant to be looked at by a human and diffed between runs, and a tall
+  page capped at a 1568 long edge is 79px wide and useless to a person. Lowering it trades a real
+  human-facing property for bytes, and I have no measurement of which users actually care.
+  Needs data, not a guess. *(The second half of this item — an explicit WebSocket
+  `maxPayloadLength`, so an oversized frame is a diagnosable error rather than a silent close that
+  reads as a widget disconnect — is **done**: `src/server.ts`, 64 MB, chosen so hitting it means
+  something is wrong rather than merely large.)*
 - [ ] **`buildDomAffordances` doesn't prune `display:none` wrappers before recursing**, so it walks
   the entire subtree of a hidden container. Prune on `getComputedStyle(el).display === 'none' ||
   visibility === 'hidden'` — but NOT on the zero-rect half, since a wrapper can legitimately have a
   zero box with visible absolutely-positioned children (a mistake already made and fixed once in
   this cycle; see the walk in `src/component.ts`).
-- [ ] **`hj <cmd> --help` is content-free for ~40 of 66 commands.** `commandHelp()` greps a
-  hand-maintained blurb; render from the schema instead (`ALL_ENDPOINTS` carries `summary`,
-  `description` and input fields, and the build already emits `bin/hints.json`), give the local
-  commands a description plus flags, and strengthen the guard to assert output contains something
-  beyond the header.
-- [ ] **`src/distribution-parity.test.ts` spawns ~140 sequential `node` cold starts** in a blocking
-  gate on every push. Pool them (concurrency ~8) and then lower the 180s timeout to something that
-  would actually catch a hang.
+- [x] **`hj <cmd> --help` was content-free for 35 of 69 commands.** Done in 1.12.0. The build now
+  emits `COMMAND_SUMMARIES` from every endpoint's schema `summary` (NOT filtered by
+  `visibility: 'internal'` — that flag means "not public API", not "the CLI may decline to say what
+  its own command does", which is why the three `send-*` commands were blank). Local commands get
+  descriptions from `LOCAL_COMMAND_HELP` in `src/cli-commands.ts`, beside the command list, so an
+  undescribed one shows up in the same diff. The guard in `src/adopter-context.test.ts` now asserts
+  a body beyond the header — it previously passed on header-only output, which is exactly what all
+  35 printed. Mutation-verified: reverting the generator flags 34 commands.
+- [x] **`src/distribution-parity.test.ts` timeout.** Done in 1.12.0 — but the premise was wrong and
+  that's the useful part. "~140 sequential cold starts, a slow blocking gate" measured at **4.0s**
+  for the whole file. A worker pool would have added real concurrency risk (shared registry dir,
+  shared port) to save nothing. Instead the two artifacts now run concurrently *within* each
+  comparison (2.2s), and the 180s timeout — 45x the real cost, so it caught no hang and merely made
+  one expensive to notice — is 30s.
 
 
 ## UI-debugging primitives — the actual product thesis
