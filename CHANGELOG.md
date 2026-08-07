@@ -1,10 +1,14 @@
 # Changelog
 
-## 1.12.0-rc.1
+## 1.12.0-rc.2
 
 Release candidate. Everything below is 1.12.0; the `-rc` tag exists because the schematic
 renderer changed substantially late in the cycle and deserves real-world use before the minor is
 blessed. Install with `npm i haltija@rc`.
+
+rc.2 fixes an import-time warning in `haltija/test`: the module-scope `hj` singleton meant merely
+importing the module warned about the shared default server, including for callers passing an
+explicit URL. It now warns on first USE, so doing the right thing is silent.
 
 ### The schematic draws the page where it actually is
 

@@ -150,25 +150,43 @@ export class HaltijaTestClient {
   constructor(serverUrl?: string) {
     const resolved = serverUrl ? { url: serverUrl, source: 'explicit' as const } : resolveTestServerUrl()
     this.baseUrl = resolved.url
-    // Say so when falling back to the SHARED default. A test run that is about to drive whatever
-    // browser tab happens to be focused should announce it — the failure is otherwise silent and
-    // looks like a flaky test rather than "we drove the wrong browser". Mirrors the same warning
-    // `hj` prints. Set HALTIJA_PORT (or pass a URL) to target your own instance; `haltija
-    // --private --headless` prints one to drive.
-    if (resolved.source === 'default' && !process.env.HALTIJA_TEST_QUIET) {
-      process.stderr.write(
-        '[haltija/test] no HALTIJA_URL or HALTIJA_PORT set — using the shared default ' +
-          'http://localhost:8700. Commands will target whatever tab is focused there, which may ' +
-          'belong to another project. Set HALTIJA_PORT to target your own instance.\n',
-      )
-    }
+    this.usingSharedDefault = resolved.source === 'default'
     this.client = new DevChannelClient(this.baseUrl)
+  }
+
+  private readonly usingSharedDefault: boolean
+  private warned = false
+
+  /**
+   * Warn once, on first USE, that we are about to drive the shared default server.
+   *
+   * Deliberately not in the constructor: `export const hj = new HaltijaTestClient()` is a
+   * module-scope singleton, so warning there fires on merely IMPORTING this module — including for
+   * someone who imports `createClient` and passes an explicit URL, i.e. who did exactly the right
+   * thing. A warning that fires when you are not making the mistake is how warnings get ignored,
+   * and this one has to still be believed on the day it matters.
+   *
+   * On first request it is precisely accurate: we are about to send a command to a server we did
+   * not choose, whose focused tab may belong to another project.
+   */
+  private warnIfSharedDefault(): void {
+    if (this.warned || !this.usingSharedDefault || process.env.HALTIJA_TEST_QUIET) return
+    this.warned = true
+    process.stderr.write(
+      '[haltija/test] no HALTIJA_URL or HALTIJA_PORT set — driving the shared default ' +
+        'http://localhost:8700. Commands target whatever tab is focused there, which may belong ' +
+        'to another project. Set HALTIJA_PORT to target your own instance ' +
+        '(`haltija --private --headless` prints one).\n',
+    )
   }
 
   // --- Lifecycle ---
 
   /** Poll until the haltija server responds. Throws after timeout. */
   async waitForServer(timeoutMs = 15000): Promise<void> {
+    // Every documented flow starts here, and it is the last moment before this client starts
+    // sending commands to a server nobody named.
+    this.warnIfSharedDefault()
     const start = Date.now()
     const pollInterval = 500
     while (Date.now() - start < timeoutMs) {
@@ -188,6 +206,7 @@ export class HaltijaTestClient {
 
   /** Get connected windows */
   async windows(): Promise<{ windows: any[]; focused: string | null; count: number }> {
+    this.warnIfSharedDefault()
     const res = await fetch(`${this.baseUrl}/windows`)
     return res.json()
   }
