@@ -5295,6 +5295,8 @@ export const COMPONENT_JS: string = `(() => {
             return;
           if (keptEls.has(n))
             return;
+          if (visibilityOf(n) === "hidden")
+            return;
           for (const c of Array.from(n.childNodes))
             collect(c);
         };

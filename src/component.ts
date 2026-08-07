@@ -2898,6 +2898,11 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
         }
         if (n.nodeType !== 1) return
         if (keptEls.has(n as Element)) return // it speaks for itself
+        // "Not kept" has TWO meanings and they are not interchangeable: not an affordance (absorb
+        // its text), or DELIBERATELY EXCLUDED as hidden (absorb nothing). Conflating them leaked
+        // `display:none` content into a parent's caption, so the map described text nobody can see
+        // — the exact failure the hidden-element tests were written for, and they caught it.
+        if (visibilityOf(n as Element) === 'hidden') return
         for (const c of Array.from(n.childNodes)) collect(c)
       }
       for (const c of Array.from(el.childNodes)) collect(c)
