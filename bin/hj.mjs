@@ -698,7 +698,7 @@ const NOUN_DEFAULTS = {
   'video': 'video-status',
   'send': 'send',           // already a command
 }
-if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
+if (args.length === 1 && !isSubcommand(args[0]) && Object.hasOwn(NOUN_DEFAULTS, args[0])) {
   args[0] = NOUN_DEFAULTS[args[0]]
 }
 
@@ -783,8 +783,22 @@ LOCAL_HANDLERS.quit = LOCAL_HANDLERS.shutdown
   }
 }
 
-if (LOCAL_HANDLERS[subcommand]) {
-  process.exit(await LOCAL_HANDLERS[subcommand]())
+// `Object.hasOwn`, not truthiness — the third instance of this in one dispatch path. A bare object
+// inherits Object.prototype, so `LOCAL_HANDLERS['toString']` is a FUNCTION that returns
+// '[object Object]', which went straight into `process.exit()` and crashed with an
+// ERR_INVALID_ARG_TYPE from node's bootstrap. `hj toString` — or `constructor`, `valueOf`,
+// `hasOwnProperty` — should print "unknown command", not a stack trace from inside node itself.
+// Same class as the CLI's lookup tables: these are dictionaries keyed by user input, so they get
+// no prototype. `COMMAND_HINTS` is generated and imported, so it's nulled here at the point of use.
+for (const table of [NOUN_DEFAULTS, LOCAL_HANDLERS, COMMAND_HINTS]) {
+  try { Object.setPrototypeOf(table, null) } catch {}
+}
+
+if (Object.hasOwn(LOCAL_HANDLERS, subcommand)) {
+  const code = await LOCAL_HANDLERS[subcommand]()
+  // And exit with a NUMBER whatever a handler returns. A handler that forgets to return one would
+  // otherwise reintroduce this crash from a different direction.
+  process.exit(typeof code === 'number' ? code : 0)
 }
 
 // Declared-origin routing (issues #1/#2). cwd routing found the right SERVER; if this project has

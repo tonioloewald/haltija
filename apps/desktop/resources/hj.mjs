@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.12.0-rc.2
+// haltija-cli:do-not-edit v1.12.0-rc.3
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
@@ -756,7 +756,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.12.0-rc.2";
+var HJ_VERSION = "1.12.0-rc.3";
 
 // bin/semver.mjs
 function parseVersion(v) {
@@ -1445,8 +1445,11 @@ function parseWaitArgs(args) {
     positional.push(a);
   }
   const first = positional[0];
-  if (first === undefined)
+  if (first === undefined) {
+    if (Object.keys(flags).length)
+      return { ...flags };
     return { ms: 1000, ...flags };
+  }
   if (!isNaN(first))
     return { ms: num(first), ...flags };
   const positionalTimeout = positional[1] !== undefined && !isNaN(positional[1]) ? num(positional[1]) : undefined;
@@ -2159,7 +2162,7 @@ function isSubcommand(arg) {
   return KNOWN_COMMANDS.has(arg);
 }
 function getSuggestion(cmd) {
-  if (COMMAND_ALIASES[cmd]) {
+  if (Object.hasOwn(COMMAND_ALIASES, cmd)) {
     return COMMAND_ALIASES[cmd];
   }
   const lower = cmd.toLowerCase();
@@ -2182,10 +2185,14 @@ function getSuggestion(cmd) {
   if (bestMatch)
     return bestMatch;
   if (lower.length >= 3) {
+    let best = null;
     for (const known of KNOWN_COMMANDS) {
-      if (known.startsWith(lower.slice(0, 3)))
-        return known;
+      if (known.length >= 3 && lower.startsWith(known) && (!best || known.length > best.length)) {
+        best = known;
+      }
     }
+    if (best)
+      return best;
   }
   return null;
 }
@@ -2271,6 +2278,9 @@ function bold(s) {
 }
 function dim2(s) {
   return colorErr() ? `\x1B[2m${s}\x1B[0m` : String(s);
+}
+for (const table of [ARG_MAPS, KNOWN_FLAGS, COMPOUND_PATHS, COMMAND_ALIASES]) {
+  Object.setPrototypeOf(table, null);
 }
 
 // bin/arg-utils.mjs
@@ -2871,7 +2881,7 @@ var NOUN_DEFAULTS = {
   video: "video-status",
   send: "send"
 };
-if (args.length === 1 && !isSubcommand(args[0]) && NOUN_DEFAULTS[args[0]]) {
+if (args.length === 1 && !isSubcommand(args[0]) && Object.hasOwn(NOUN_DEFAULTS, args[0])) {
   args[0] = NOUN_DEFAULTS[args[0]];
 }
 var subcommand = args[0];
@@ -2925,8 +2935,14 @@ LOCAL_HANDLERS.quit = LOCAL_HANDLERS.shutdown;
     process.exit(1);
   }
 }
-if (LOCAL_HANDLERS[subcommand]) {
-  process.exit(await LOCAL_HANDLERS[subcommand]());
+for (const table of [NOUN_DEFAULTS, LOCAL_HANDLERS, COMMAND_HINTS]) {
+  try {
+    Object.setPrototypeOf(table, null);
+  } catch {}
+}
+if (Object.hasOwn(LOCAL_HANDLERS, subcommand)) {
+  const code = await LOCAL_HANDLERS[subcommand]();
+  process.exit(typeof code === "number" ? code : 0);
 }
 var DIAGNOSTIC = new Set([...LOCAL_COMMANDS, "status", "windows", "version"]);
 if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {

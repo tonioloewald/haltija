@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import {
   isSubcommand,
+  getSuggestion,
   normalizeEqualsFlags,
   warnUnknownFlags,
   KNOWN_FLAGS,
@@ -1231,5 +1232,37 @@ describe('piped stdout carries no ANSI — the documented "bare path"', () => {
     })
     // eslint-disable-next-line no-control-regex
     expect(/\x1b\[/.test(r.stdout)).toBe(false)
+  })
+})
+
+describe('a weak guess is not a licence to run a different command', () => {
+  // hj AUTO-EXECUTES a single fuzzy match, so the bar for "single match" is the bar for running
+  // something the user did not type. It used to be "shares its first 3 characters with a command",
+  // which made `hj constructor` silently run `hj console`. Sharing a 3-character stem is not
+  // evidence; being a whole command with more typed after it is.
+  test('nonsense that merely shares a stem is NOT a match', () => {
+    expect(getSuggestion('constructor')).toBeNull() // was 'console' — con…
+    expect(getSuggestion('conference')).toBeNull()
+    expect(getSuggestion('xyzzy')).toBeNull()
+  })
+
+  test('prototype member names resolve to nothing', () => {
+    // These also used to crash: `LOCAL_HANDLERS['toString']` is a function returning
+    // '[object Object]', which went into `process.exit()` and threw from node's own bootstrap.
+    for (const k of ['toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf']) {
+      expect([k, getSuggestion(k)]).toEqual([k, null])
+    }
+  })
+
+  test('the documented fuzzy matches still work — the discriminating half', () => {
+    // If the fix were "never guess", these would break and the help text would start lying.
+    expect(getSuggestion('screensho')).toBe('screenshot') // typo -> prefix match
+    expect(getSuggestion('evaluate')).toBe('eval') // command is a prefix of the input
+    expect(getSuggestion('shot')).toBe('screenshot') // explicit alias
+    expect(getSuggestion('treeish')).toBe('tree')
+  })
+
+  test('the longest command wins when several are prefixes', () => {
+    expect(getSuggestion('clickety')).toBe('click')
   })
 })

@@ -862,8 +862,8 @@ registerHandler(api.map, async (body, ctx) => {
   // `/map {maxWidth:300, maxHeight:300, format:'jpeg'}` returned a byte-identical full-size PNG
   // with a 200. Three registries had to agree (schema, this list, the widget) and one fix updated
   // one of them. Verified by probe: `scale` (on the list) changed the output; the other four did
-  // nothing at all. `mapForwardedFields` in src/api-schema.ts now derives this from the schema so
-  // the next parameter can't be dropped the same way.
+  // nothing at all. `src/handler-forwarding.test.ts` asserts every parameter an endpoint declares
+  // is mentioned here, across ALL handlers, so the next one can't be dropped the same way.
   const response = await ctx.requestFromBrowser('dom', 'map', {
     global: body.global,
     maxNodes: body.maxNodes,

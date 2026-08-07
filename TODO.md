@@ -1,5 +1,14 @@
 # TODO
 
+## Schematic: delegate rendering to tosijs-schematic (1.13)
+
+- [ ] **Stop maintaining our own renderer.** See `UPSTREAM.md` and
+  https://github.com/tonioloewald/tosijs-schematic/issues/1. Their package is a pure,
+  dependency-free 12KB function over plain records that draws exactly what we draw; our map already
+  converts to it near-1:1 (verified: 145 records, 133 with bounds, rendered first try). Contingent
+  on the four contract gaps in that issue — stable `ref`, a verdict slot for the contrast audit,
+  embedded media, caption wrapping. Not before 1.12.0 final.
+
 ## Schematic: a repeatable head-to-head corpus
 
 - [ ] **Make the screenshot-vs-schematic comparison a repeatable, extensible lane.** The 1.12.0

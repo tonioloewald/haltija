@@ -107,3 +107,31 @@ and a page that could *constrain* what it captures would be a privacy regression
 half is entirely ours: verify the grant with `track.getSettings().displaySurface` and, on Chromium,
 `setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt when the captured surface
 isn't this tab. Filed in TODO.md rather than upstream.
+
+## tosijs-schematic — converge the renderer (haltija should stop maintaining one)
+
+- **https://github.com/tonioloewald/tosijs-schematic/issues/1** — filed 2026-08-07.
+
+`tosijs-schematic` is a pure, dependency-free (12KB, 23 tests) renderer for exactly what
+haltija's schematic draws: "one shape per element at its true geometry". We built the same thing
+independently, in the same week, without either knowing.
+
+Verified concretely: haltija's affordance map converts to `SchematicRecord[]` with a near-1:1
+field mapping and renders first try — 145 records, 133 with bounds.
+
+**Their design is better in three ways** and we should adopt rather than duplicate: `structural`
+drawn as a recessive dashed outline (we made it binary — draw or omit), the index pinned to a
+dedicated top-right corner (our inline ref chips collide in small boxes), and the renderer being a
+pure function over plain data rather than entangled with the widget.
+
+**Four things we have that their contract doesn't carry**, offered upstream: a stable actionable
+`ref` (their `index` is an array position — a vision consumer can look it up but cannot
+`hj click` it), a slot for computed verdicts (our WCAG contrast finding, generalisable to
+`flags[]`), embedded media (a DOM-side producer can serialise an inline `<svg>` and read a
+`<canvas>` — a pure renderer cannot), and caption wrapping.
+
+**Proposed end state:** haltija becomes a *producer* — DOM extraction is its real competence
+(visibility, geometry, contrast, media, stable refs) — and delegates drawing. Improvements then
+flow both ways instead of diverging. **1.13, not 1.12**: it is an architectural change, and 1.12.0
+is in RC.
+

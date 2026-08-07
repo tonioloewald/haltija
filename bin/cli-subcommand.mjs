@@ -445,7 +445,18 @@ export function parseWaitArgs(args) {
     positional.push(a)
   }
   const first = positional[0]
-  if (first === undefined) return { ms: 1000, ...flags }
+  if (first === undefined) {
+    // No selector, but flags were given. Manufacturing `{ms: 1000}` here reintroduces the exact
+    // defect this whole area was fixed for: `hj wait --hidden` became a 1-second SLEEP reported as
+    // success, because `/wait` takes its `ms` branch and the endpoint's own 400 ("nothing to wait
+    // for") can never fire — the CLI supplied an `ms` the user never asked for.
+    //
+    // A bare `hj wait` with no arguments at all is a different, legitimate request (handled at the
+    // top of this function): "pause briefly". `hj wait --hidden` is an incomplete command, and
+    // saying so beats sleeping and claiming success.
+    if (Object.keys(flags).length) return { ...flags }
+    return { ms: 1000, ...flags }
+  }
   if (!isNaN(first)) return { ms: num(first), ...flags }
   // A numeric SECOND positional is still a timeout: `hj wait .loading 10000` is the form
   // docs/agent-prompt.md documents, and dropping it silently would be the same class of bug this
@@ -964,6 +975,7 @@ export const FREE_TEXT_COMMANDS = new Set([
   'send', 'send-message', 'send-selection', 'send-recording',
 ])
 
+
 /** Levenshtein distance, for "did you mean" suggestions. */
 function editDistance(a, b) {
   const m = a.length, n = b.length
@@ -1350,7 +1362,11 @@ export function isSubcommand(arg) {
 /** Get suggestion for unknown command */
 export function getSuggestion(cmd) {
   // Check aliases first
-  if (COMMAND_ALIASES[cmd]) {
+  // `Object.hasOwn`, not truthiness: a bare object inherits Object.prototype, so `COMMAND_ALIASES
+  // ['toString']` resolves to a FUNCTION and `hj toString` crashed with a TypeError in the arg
+  // parser. Same for any prototype member — constructor, valueOf, hasOwnProperty. A CLI should say
+  // "unknown command", not throw a stack trace at whatever a user typed.
+  if (Object.hasOwn(COMMAND_ALIASES, cmd)) {
     return COMMAND_ALIASES[cmd]
   }
   const lower = cmd.toLowerCase()
@@ -1372,11 +1388,23 @@ export function getSuggestion(cmd) {
     }
   }
   if (bestMatch) return bestMatch
-  // Prefix of 3+ chars
+  // A known command that is a PREFIX OF THE INPUT — `hj evaluate` -> `eval`, which the help
+  // advertises.
+  //
+  // This used to be "shares its first 3 characters with a command", and hj AUTO-EXECUTES a single
+  // suggestion — so `hj constructor` silently ran `hj console`, because both start with "con".
+  // Sharing a 3-character stem is not evidence; being a whole command with more typed after it is.
+  // `eval` is a prefix of `evaluate`; `console` is not a prefix of `constructor`.
+  //
+  // Longest match wins, so `hj treeish` prefers `tree` over any shorter command that also fits.
   if (lower.length >= 3) {
+    let best = null
     for (const known of KNOWN_COMMANDS) {
-      if (known.startsWith(lower.slice(0, 3))) return known
+      if (known.length >= 3 && lower.startsWith(known) && (!best || known.length > best.length)) {
+        best = known
+      }
     }
+    if (best) return best
   }
   return null
 }
@@ -1476,3 +1504,21 @@ const colorOut = () => !process.env.NO_COLOR && process.stdout.isTTY
 const colorErr = () => !process.env.NO_COLOR && process.stderr.isTTY
 function bold(s) { return colorOut() ? `\x1b[1m${s}\x1b[0m` : String(s) }
 function dim(s) { return colorErr() ? `\x1b[2m${s}\x1b[0m` : String(s) }
+
+/**
+ * Lookup tables keyed by USER INPUT get no prototype.
+ *
+ * A bare object literal inherits `Object.prototype`, so `ARG_MAPS['constructor']` is a function,
+ * `COMPOUND_PATHS['toString']` is a function, and `KNOWN_FLAGS['valueOf']` is a function. Every one
+ * of those reads truthy, so `hj constructor` sailed past the unknown-command check, built a body by
+ * calling `Object(args)`, and POSTed it to a server; `hj toString` crashed inside node's own
+ * bootstrap with ERR_INVALID_ARG_TYPE because the "handler" returned '[object Object]' into
+ * `process.exit()`.
+ *
+ * Guarding the seven call sites with `Object.hasOwn` would fix seven instances of one class, and
+ * the eighth lookup added later would be a bug again. Nulling the prototypes fixes the class: these
+ * are dictionaries, not objects, and a dictionary should contain exactly what was put in it.
+ */
+for (const table of [ARG_MAPS, KNOWN_FLAGS, COMPOUND_PATHS, COMMAND_ALIASES]) {
+  Object.setPrototypeOf(table, null)
+}
