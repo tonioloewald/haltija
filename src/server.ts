@@ -4575,6 +4575,17 @@ const primaryUrl = httpsUrl || httpUrl
 // registry, so this (or HALTIJA_PORT_FILE) is the ONLY way to find it. Machine-readable, one line.
 if (IS_PRIVATE) {
   const ready = {
+    // WHICH server this is. `--private --app` starts TWO, and both printed a byte-identical
+    // envelope: same shape, different port, nothing inside to tell them apart. The only
+    // disambiguation was the `[public server]` / `[internal server]` prefix the parent adds to
+    // child stdout — human decoration, not part of the machine-readable protocol this line exists
+    // to BE. So a consumer parsing the first match had a coin-flip chance of driving the internal
+    // chrome server, where the only window is the app's own UI and every page command targets the
+    // wrong thing.
+    //
+    // Found the hard way: I wrote this and still picked the wrong port. An agent with less context
+    // has no chance, which makes it a defect and not a footnote.
+    role: process.env.HALTIJA_DESKTOP_PUBLIC === '0' ? 'internal' : 'public',
     port: PORT,
     httpsPort: httpsServer ? HTTPS_PORT : null,
     url: httpUrl,

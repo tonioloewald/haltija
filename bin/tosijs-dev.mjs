@@ -530,8 +530,16 @@ function printBanner(mode, port) {
     // for it to decide the launcher is up. A prose line that merely MENTIONS it satisfies that scan
     // early, so the reader stops before the real address is ever printed. Naming a protocol token
     // in human text makes the human text part of the protocol.
-    console.log(dim('  Its address is printed below, on the machine-readable ready line'))
-    console.log(dim('  (and to --port-file, if given). Drive it with: hj --port <that port>'))
+    console.log(dim('  Its address is printed below, on the machine-readable ready line(s).'))
+    // `--app` starts TWO servers and prints two ready lines. Say which one to drive, in the banner
+    // AND in the payload (`"role":"public"`), because a consumer that grabs the first match has a
+    // coin-flip chance of driving the internal chrome server — where the only window is the app's
+    // own UI, so every page command silently targets the wrong thing.
+    if (explicitApp || ciMode) {
+      console.log(dim('  TWO servers start in app mode: drive the one with "role":"public".'))
+      console.log(dim('  The "internal" one hosts the app\'s own UI and is not what you want.'))
+    }
+    console.log(dim('  (Also written to --port-file, if given.) Drive it with: hj --port <port>'))
     console.log(dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
     console.log('')
     return

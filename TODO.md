@@ -1,5 +1,35 @@
 # TODO
 
+## Schematic: a repeatable head-to-head corpus
+
+- [ ] **Make the screenshot-vs-schematic comparison a repeatable, extensible lane.** The 1.12.0
+  layout work was driven by hand-driving the desktop app across four real pages, and it found more
+  in twenty minutes than a synthetic fixture did in an hour — because real pages break assumptions
+  a fixture is written to satisfy. Every finding below came from that pass and NONE from the
+  fixture: content invisible (`<p>`/`<li>` are neither interactive nor structural), the carousel's
+  images absent, canvas pixels drawn in the stacked pre-amble on top of the sidebar, web-component
+  captions in element children discarded, radios overprinting their handles by one pixel of default
+  margin.
+  **Not a CI gate — a review instrument.** Judging a schematic is judgement-heavy,
+  non-deterministic (live third-party pages, animation, fonts) and expensive; wiring it into the
+  test suite would buy flaky failures and slow pushes. It is the thing you RUN, and look at,
+  when changing schematic rendering.
+  What it should be: a named corpus of pages chosen for what each one stresses, a command that
+  captures `screenshot` + `map --image` for every entry into a dated directory, and a
+  side-by-side contact sheet a human (or an agent with vision) reads.
+  Starting corpus, with what each is for:
+  - `https://ui.tosijs.net/form/` — web-component form fields; captions in shadow/slot children,
+    placeholder vs value, required markers, three-column grid
+  - `https://ui.tosijs.net/carousel/` — images as the actual subject, dot/arrow controls, prose +
+    list content around a live component
+  - `https://3d.tosijs.net/b3d-terrain/` — canvas-is-the-content, shadow-root canvas, needs a few
+    seconds to settle before capture (bake a readiness wait into the harness, not a fixed sleep)
+  - `https://webawesome.com/docs/components/dropdown/` — a third-party design system, so nothing is
+    tuned to our assumptions
+  - a deliberately long page — to exercise viewport-default vs `fullPage`
+  Run it against the desktop app in `--private` mode so it can never touch a shared server,
+  and resolve the port from the ready line with `"role":"public"` — app mode starts two.
+
 ## Deferred from the 1.12.0 review (tracked, not dropped)
 
 - [ ] **Confirm a `browser` screen-share grant is actually THIS tab.** *Half done in 1.12.0.*

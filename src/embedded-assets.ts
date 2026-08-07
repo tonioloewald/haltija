@@ -4742,7 +4742,9 @@ export const COMPONENT_JS: string = `(() => {
         tmp.width = w;
         tmp.height = h;
         tmp.getContext("2d").drawImage(c, 0, 0, w, h);
-        out.push({ ref, label, image: tmp.toDataURL("image/png"), w, h });
+        const r0 = c.getBoundingClientRect();
+        const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) };
+        out.push({ ref, label, image: tmp.toDataURL("image/png"), w, h, rect });
       } catch (err) {
         out.push({ ref, label, w, h: 24, error: /security|tainted/i.test(err?.message || err?.name || "") ? "cross-origin: pixels unreadable" : "unreadable" });
       }
@@ -4781,7 +4783,7 @@ export const COMPONENT_JS: string = `(() => {
       const walk = (n) => ({
         handle: n.ref ? \`@\${n.ref}\` : "",
         label: \`\${n.tag}\${n.role ? \`[\${n.role}]\` : ""}\`,
-        detail: [n.label, n.text, n.value !== undefined ? \`= \${n.value}\` : "", n.href].filter(Boolean).join("  ").slice(0, 60),
+        detail: [n.label, n.text, n.value !== undefined ? \`= \${n.value}\` : "", n.href].filter(Boolean).join("  ").slice(0, 200),
         colors: n.colors,
         contrastFail: n.contrastFail,
         rect: n.rect,
@@ -4793,6 +4795,9 @@ export const COMPONENT_JS: string = `(() => {
         inputType: n.type,
         ownBg: n.ownBg,
         ownBorder: n.ownBorder,
+        editable: n.editable,
+        empty: n.empty,
+        svgImage: n.svgImage,
         children: (n.children || []).map(walk)
       });
       return (map.nodes || []).map(walk);
@@ -4890,6 +4895,9 @@ export const COMPONENT_JS: string = `(() => {
         }
         if (b.contrastFail)
           parts.push(\`<rect x="\${x}" y="\${y2}" width="3" height="\${h}" fill="#dc2626"/>\`);
+        if (b.svgImage) {
+          parts.push(\`<image x="\${x}" y="\${y2}" width="\${w}" height="\${h}" href="\${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>\`);
+        }
         const fg = b.colors?.fg || "#0f172a";
         const head = headOf(b);
         const detail = detailOf(b);
@@ -4913,6 +4921,14 @@ export const COMPONENT_JS: string = `(() => {
         const avail = w - 6 - inset;
         const fits = (s) => textW(s) <= avail && h >= 12;
         const fitsSmall = (s) => textW(s) * 0.85 <= avail && h >= 10;
+        if (!detail && !b.placeholder && b.editable && b.empty) {
+          const cid = \`e\${parts.length}\`;
+          const shown = fits(\`\${b.handle} (editable, empty)\`) ? \`\${b.handle} (editable, empty)\` : b.handle;
+          parts.push(\`<clipPath id="\${cid}"><rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}"/></clipPath>\` + \`<text clip-path="url(#\${cid})" x="\${tx}" y="\${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="\${fg}" opacity="0.55">\${esc(shown)}</text>\`);
+          for (const c of b.children)
+            drawPlaced(c, g, yOff);
+          return;
+        }
         if (!detail && b.placeholder) {
           const ph = \`\${b.handle} \${b.placeholder}\`;
           const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : "";
@@ -4940,6 +4956,38 @@ export const COMPONENT_JS: string = `(() => {
           if (small) {
             label = small;
             fontSize = 8.5;
+          }
+        }
+        const LINE = 12;
+        const maxLines = Math.floor((h - 4) / LINE);
+        const fullText = [head, detail].filter(Boolean).join("  ");
+        if (maxLines >= 2 && detail && !fits(fullText)) {
+          const words = fullText.split(/\\s+/);
+          const lines = [];
+          let cur = "";
+          for (const word of words) {
+            const next = cur ? \`\${cur} \${word}\` : word;
+            if (textW(next) <= avail || !cur)
+              cur = next;
+            else {
+              lines.push(cur);
+              cur = word;
+              if (lines.length >= maxLines)
+                break;
+            }
+          }
+          if (cur && lines.length < maxLines)
+            lines.push(cur);
+          if (lines.length) {
+            if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+              lines[lines.length - 1] = lines[lines.length - 1].replace(/\\S+$/, "…");
+            }
+            const cid = \`w\${parts.length}\`;
+            const spans = lines.map((ln, i) => \`<tspan x="\${tx}" y="\${y2 + 11 + i * LINE}">\${esc(ln)}</tspan>\`).join("");
+            parts.push(\`<clipPath id="\${cid}"><rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}"/></clipPath>\` + \`<text clip-path="url(#\${cid})" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="\${fg}">\${spans}</text>\`);
+            for (const c of b.children)
+              drawPlaced(c, g, yOff);
+            return;
           }
         }
         if (label) {
@@ -4994,7 +5042,8 @@ export const COMPONENT_JS: string = `(() => {
     uniformW = maxW;
     const BANNER_H = banner ? 26 : 0;
     let y = PAD + BANNER_H;
-    for (const c of canvases) {
+    const geoPre = laidOut(boxes);
+    for (const c of geoPre ? canvases.filter((k) => !k.rect) : canvases) {
       const boxH = (c.image ? c.h : 20) + 18;
       parts.push(\`<rect x="\${PAD}" y="\${y}" width="\${maxW}" height="\${boxH}" rx="4" fill="#0f172a" stroke="#334155"/>\`);
       parts.push(\`<text x="\${PAD + 6}" y="\${y + 13}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">@\${esc(c.ref)} \${esc(c.label)}\${c.error ? " — " + esc(c.error) : ""}</text>\`);
@@ -5003,12 +5052,34 @@ export const COMPONENT_JS: string = `(() => {
       }
       y += boxH + 6;
     }
-    const geo = laidOut(boxes);
+    const geo = geoPre;
     let width;
     let height;
     if (geo) {
       for (const b of boxes)
         drawPlaced(b, geo, BANNER_H);
+      for (const c of canvases) {
+        if (!c.rect)
+          continue;
+        const cx = c.rect.x - geo.x + PAD;
+        const cy = c.rect.y - geo.y + PAD + BANNER_H;
+        const cw = Math.max(2, c.rect.w);
+        const ch = Math.max(2, c.rect.h);
+        if (c.rect.x >= geo.x + geo.w || c.rect.x + cw <= geo.x)
+          continue;
+        if (c.rect.y >= geo.y + geo.h || c.rect.y + ch <= geo.y)
+          continue;
+        if (c.image) {
+          parts.push(\`<image x="\${cx}" y="\${cy}" width="\${cw}" height="\${ch}" href="\${c.image}" preserveAspectRatio="xMidYMid slice"/>\`);
+          parts.push(\`<rect x="\${cx}" y="\${cy}" width="\${cw}" height="\${ch}" fill="none" stroke="#0f172a" stroke-width="1"/>\`);
+        } else {
+          parts.push(\`<rect x="\${cx}" y="\${cy}" width="\${cw}" height="\${ch}" fill="#0f172a" stroke="#334155"/>\`);
+        }
+        const cap = \`@\${c.ref} \${c.label}\${c.error ? " — " + c.error : ""}\`;
+        if (textW(cap) + 6 <= cw) {
+          parts.push(\`<text x="\${cx + 3}" y="\${cy + 12}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">\${esc(cap)}</text>\`);
+        }
+      }
       width = Math.ceil(geo.w + PAD * 2);
       height = Math.ceil(geo.h + PAD * 2 + BANNER_H);
       y = height - PAD;
@@ -5171,8 +5242,9 @@ export const COMPONENT_JS: string = `(() => {
     return \`\${base} Check in this order: (1) \\\`hj map\\\` or \\\`hj tree\\\` to see what is actually there; \` + \`(2) if it exists but is hidden, it is deliberately not matched — untargeted commands ignore \` + \`invisible elements; (3) prefer text over structure — \\\`:text(save)\\\`, \\\`:text-is(Save)\\\` or \` + \`\\\`[data-testid=…]\\\` survive restyling where \\\`.some-class > div:nth-child(2)\\\` does not; \` + \`(4) if the page is still loading, \\\`hj wait <selector>\\\` before acting.\`;
   }
   function buildDomAffordances(maxNodes = 400) {
-    const INTERACTIVE = "a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]";
+    const INTERACTIVE = "a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable]";
     const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
+    const CONTENT = "p,li,blockquote,pre,td,th,dt,dd,figcaption,summary,img,svg,video,picture";
     let count = 0;
     let truncated = false;
     const describeEl = (el, keptEls = new Set) => {
@@ -5206,12 +5278,26 @@ export const COMPONENT_JS: string = `(() => {
         for (const c of Array.from(el.childNodes))
           collect(c);
         const text = own.join(" ").replace(/\\s+/g, " ").trim();
-        if (text && text.length <= 80)
-          node.text = text;
+        if (text)
+          node.text = text.length <= 200 ? text : text.slice(0, 199) + "…";
       }
       const val = el.value;
       if (val !== undefined && val !== "" && ["input", "textarea", "select"].includes(tag))
         node.value = val;
+      try {
+        if (el.isContentEditable) {
+          node.editable = true;
+          const inner = (el.textContent || "").trim();
+          if (inner)
+            node.value = inner.length > 80 ? inner.slice(0, 79) + "…" : inner;
+          else {
+            const hint = el.getAttribute("data-placeholder") || el.getAttribute("aria-placeholder") || el.getAttribute("placeholder");
+            if (hint)
+              node.placeholder = hint;
+            node.empty = true;
+          }
+        }
+      } catch {}
       if (el.type)
         node.type = el.type;
       if (el.disabled)
@@ -5226,6 +5312,35 @@ export const COMPONENT_JS: string = `(() => {
       } catch {}
       if (el.href)
         node.href = el.getAttribute("href");
+      if (tag === "svg") {
+        try {
+          const clone = el.cloneNode(true);
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && !clone.getAttribute("viewBox")) {
+            clone.setAttribute("viewBox", \`0 0 \${Math.round(r.width)} \${Math.round(r.height)}\`);
+          }
+          clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          const markup = new XMLSerializer().serializeToString(clone);
+          if (markup.length <= 20000) {
+            const bytes = new TextEncoder().encode(markup);
+            let bin = "";
+            for (const b of bytes)
+              bin += String.fromCharCode(b);
+            node.svgImage = "data:image/svg+xml;base64," + btoa(bin);
+          }
+        } catch {}
+      }
+      if (["img", "video", "svg", "picture"].includes(tag)) {
+        node.media = tag;
+        const alt = el.getAttribute("alt");
+        if (alt)
+          node.label = node.label || alt;
+        const src = el.currentSrc || el.getAttribute("src") || "";
+        if (src)
+          node.src = src.length > 80 ? src.slice(0, 40) + "…" + src.slice(-24) : src;
+        if (tag === "img" && alt === null)
+          node.altMissing = true;
+      }
       try {
         const c = probeColors(el);
         node.colors = c;
@@ -5259,7 +5374,8 @@ export const COMPONENT_JS: string = `(() => {
       }
       const isInteractive = el.matches(INTERACTIVE);
       const isStructural = el.matches(STRUCTURAL);
-      const vis = isInteractive || isStructural ? visibilityOf(el) : "visible";
+      const isContent = el.matches(CONTENT);
+      const vis = isInteractive || isStructural || isContent ? visibilityOf(el) : "visible";
       if (vis === "hidden")
         return null;
       const children = [];
@@ -5278,7 +5394,7 @@ export const COMPONENT_JS: string = `(() => {
           return { tag: el.tagName.toLowerCase(), children };
         return null;
       }
-      if (isInteractive || isStructural) {
+      if (isInteractive || isStructural || isContent) {
         count++;
         const node = describeEl(el, keptEls);
         if (vis === "zero-size")

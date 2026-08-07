@@ -1978,8 +1978,8 @@ function resolveCanvasDeep(selector?: string): {
  * 3D app or a chart the canvas IS the visual content. That makes the schematic fallback genuinely
  * useful rather than merely better-than-nothing.
  */
-function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> {
-  const out: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = []
+function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string; rect?: { x: number; y: number; w: number; h: number } }> {
+  const out: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string; rect?: { x: number; y: number; w: number; h: number } }> = []
   // Pierce shadow roots: a web-component renderer (<tosi-b3d>, <model-viewer>, most Babylon/Three
   // wrappers) owns its canvas inside its shadow root, so a light-DOM-only query finds nothing on
   // exactly the pages where the canvas IS the content (issue #15).
@@ -1997,7 +1997,13 @@ function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: str
       tmp.width = w
       tmp.height = h
       tmp.getContext('2d')!.drawImage(c, 0, 0, w, h)
-      out.push({ ref, label, image: tmp.toDataURL('image/png'), w, h })
+      // WHERE the canvas is, so the layout-faithful renderer can put its pixels in the right
+      // place. Without this the thumbnail was drawn in the stacked pre-amble at the top-left,
+      // landing on top of the sidebar — the one element whose real content we CAN show,
+      // shown in the wrong place.
+      const r0 = c.getBoundingClientRect()
+      const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) }
+      out.push({ ref, label, image: tmp.toDataURL('image/png'), w, h, rect })
     } catch (err: any) {
       // Tainted by cross-origin content — say so in the picture instead of omitting the canvas,
       // which would read as "there is no canvas here".
@@ -2009,7 +2015,7 @@ function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: str
 
 function renderMapSchematic(
   map: any,
-  canvases: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = [],
+  canvases: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string; rect?: { x: number; y: number; w: number; h: number } }> = [],
   banner?: string,
   fullPage = false,
 ): { svg: string; width: number; height: number } {
@@ -2027,7 +2033,8 @@ function renderMapSchematic(
 
   type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string;
     rect?: { x: number; y: number; w: number; h: number }; placeholder?: string; interactive?: boolean;
-    disabled?: boolean; focused?: boolean; checked?: boolean; inputType?: string; ownBg?: boolean; ownBorder?: boolean }
+    disabled?: boolean; focused?: boolean; checked?: boolean; inputType?: string; ownBg?: boolean; ownBorder?: boolean;
+    editable?: boolean; empty?: boolean; svgImage?: string }
 
   // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
   const toBoxes = (): Box[] => {
@@ -2053,8 +2060,11 @@ function renderMapSchematic(
     const walk = (n: any): Box => ({
       handle: n.ref ? `@${n.ref}` : '',
       label: `${n.tag}${n.role ? `[${n.role}]` : ''}`,
+      // 200, not 60: the renderer measures the box and clips to it, so a hard pre-truncation only
+      // throws away text that a wide box could have shown. A full-width paragraph has room for far
+      // more than sixty characters.
       detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : '', n.href]
-        .filter(Boolean).join('  ').slice(0, 60),
+        .filter(Boolean).join('  ').slice(0, 200),
       colors: n.colors,
       contrastFail: n.contrastFail,
       rect: n.rect,
@@ -2066,6 +2076,9 @@ function renderMapSchematic(
       inputType: n.type,
       ownBg: n.ownBg,
       ownBorder: n.ownBorder,
+      editable: n.editable,
+      empty: n.empty,
+      svgImage: n.svgImage,
       children: (n.children || []).map(walk),
     })
     return (map.nodes || []).map(walk)
@@ -2237,6 +2250,10 @@ function renderMapSchematic(
         parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
       }
       if (b.contrastFail) parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`)
+      // The actual artwork, where we could serialise it.
+      if (b.svgImage) {
+        parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`)
+      }
 
       const fg = b.colors?.fg || '#0f172a'
       const head = headOf(b)
@@ -2279,6 +2296,17 @@ function renderMapSchematic(
       // A placeholder is rendered as a placeholder: italic and faded, never as content. On the real
       // page you can see at a glance that a field is empty; the schematic said `@9 input Q3 revenue`
       // for an input containing nothing, which is the same shape of lie as a green doctor check.
+      if (!detail && !b.placeholder && b.editable && b.empty) {
+        // Say "editable, empty" rather than drawing an anonymous box. This is where typing goes.
+        const cid = `e${parts.length}`
+        const shown = fits(`${b.handle} (editable, empty)`) ? `${b.handle} (editable, empty)` : b.handle
+        parts.push(
+          `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
+            `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`,
+        )
+        for (const c of b.children) drawPlaced(c, g, yOff)
+        return
+      }
       if (!detail && b.placeholder) {
         const ph = `${b.handle} ${b.placeholder}`
         const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : ''
@@ -2311,6 +2339,43 @@ function renderMapSchematic(
         const small = candidates.find((c) => fitsSmall(c))
         if (small) { label = small; fontSize = 8.5 }
       }
+      // WRAP when the box is tall enough to hold more than one line. A paragraph or list item that
+      // wraps on the real page has the vertical room here too, and a single clipped line threw away
+      // most of it — "@108 snap-duration (number," where the box could comfortably hold the whole
+      // sentence. Only for genuinely multi-line boxes, so a 20px control keeps its single tight
+      // caption and nothing shifts.
+      const LINE = 12
+      const maxLines = Math.floor((h - 4) / LINE)
+      const fullText = [head, detail].filter(Boolean).join('  ')
+      if (maxLines >= 2 && detail && !fits(fullText)) {
+        const words = fullText.split(/\s+/)
+        const lines: string[] = []
+        let cur = ''
+        for (const word of words) {
+          const next = cur ? `${cur} ${word}` : word
+          if (textW(next) <= avail || !cur) cur = next
+          else { lines.push(cur); cur = word; if (lines.length >= maxLines) break }
+        }
+        if (cur && lines.length < maxLines) lines.push(cur)
+        if (lines.length) {
+          // Mark a caption we had to cut, so "this is all of it" and "there is more" are different
+          // pictures. The full string is always in the JSON map.
+          if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
+            lines[lines.length - 1] = lines[lines.length - 1].replace(/\S+$/, '…')
+          }
+          const cid = `w${parts.length}`
+          const spans = lines
+            .map((ln, i) => `<tspan x="${tx}" y="${y + 11 + i * LINE}">${esc(ln)}</tspan>`)
+            .join('')
+          parts.push(
+            `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
+              `<text clip-path="url(#${cid})" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="${fg}">${spans}</text>`,
+          )
+          for (const c of b.children) drawPlaced(c, g, yOff)
+          return
+        }
+      }
+
       if (label) {
         // Clipped to the box as well as measured for it. Measurement picks the best candidate;
         // the clip is the guarantee — an absolutely-positioned child can overlap a parent's caption
@@ -2394,7 +2459,8 @@ function renderMapSchematic(
 
   // Canvases FIRST: where the page has one, that's the real visual content, and we can read its
   // pixels without any permission — so the "substitute for a screenshot" actually shows the thing.
-  for (const c of canvases) {
+  const geoPre = laidOut(boxes)
+  for (const c of geoPre ? canvases.filter((k) => !k.rect) : canvases) {
     const boxH = (c.image ? c.h : 20) + 18
     parts.push(`<rect x="${PAD}" y="${y}" width="${maxW}" height="${boxH}" rx="4" fill="#0f172a" stroke="#334155"/>`)
     parts.push(
@@ -2417,11 +2483,33 @@ function renderMapSchematic(
   // and has no DOM geometry to report, so it keeps the outline. Falling back on a per-render check
   // (rather than on the tier name) also means a page whose nodes somehow lack rects degrades to
   // something readable instead of collapsing to a point.
-  const geo = laidOut(boxes)
+  const geo = geoPre
   let width: number
   let height: number
   if (geo) {
     for (const b of boxes) drawPlaced(b, geo, BANNER_H)
+    // Canvas pixels LAST and in place: a <canvas> is usually the actual content of the page that
+    // has one (a 3D scene, a chart, a render-to-texture UI), and it needs no permission to read.
+    // Drawn after the boxes so the real image sits on top of the outline of the element holding it.
+    for (const c of canvases) {
+      if (!c.rect) continue
+      const cx = c.rect.x - geo.x + PAD
+      const cy = c.rect.y - geo.y + PAD + BANNER_H
+      const cw = Math.max(2, c.rect.w)
+      const ch = Math.max(2, c.rect.h)
+      if (c.rect.x >= geo.x + geo.w || c.rect.x + cw <= geo.x) continue
+      if (c.rect.y >= geo.y + geo.h || c.rect.y + ch <= geo.y) continue
+      if (c.image) {
+        parts.push(`<image x="${cx}" y="${cy}" width="${cw}" height="${ch}" href="${c.image}" preserveAspectRatio="xMidYMid slice"/>`)
+        parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="none" stroke="#0f172a" stroke-width="1"/>`)
+      } else {
+        parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="#0f172a" stroke="#334155"/>`)
+      }
+      const cap = `@${c.ref} ${c.label}${c.error ? ' — ' + c.error : ''}`
+      if (textW(cap) + 6 <= cw) {
+        parts.push(`<text x="${cx + 3}" y="${cy + 12}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">${esc(cap)}</text>`)
+      }
+    }
     width = Math.ceil(geo.w + PAD * 2)
     height = Math.ceil(geo.h + PAD * 2 + BANNER_H)
     y = height - PAD
@@ -2705,8 +2793,20 @@ function elementNotFoundMessage(target: string): string {
 function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolean } {
   // `label` is here because it is frequently the ONLY clickable surface for a visually-hidden
   // input; without it the whole control vanished from the map.
-  const INTERACTIVE = 'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable=true]'
+  const INTERACTIVE = 'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[onclick],[tabindex],[contenteditable]'
   const STRUCTURAL = 'main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]'
+  // CONTENT: what the page actually says and shows.
+  //
+  // Without these the map had every control and none of the substance. On a documentation page —
+  // which is most of what a component library is — the entire prose and every bullet were absent,
+  // and on the carousel demo the two large images that ARE the subject of the page did not appear
+  // at all. A schematic that shows the chrome and omits the content is the wall of text it was
+  // meant to replace, minus the text.
+  //
+  // Media is included for the same reason canvases already were: an <img> is frequently the thing
+  // the page is about, and its box plus alt text is the difference between "something is here" and
+  // nothing.
+  const CONTENT = 'p,li,blockquote,pre,td,th,dt,dd,figcaption,summary,img,svg,video,picture'
 
   let count = 0
   let truncated = false
@@ -2755,10 +2855,42 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       }
       for (const c of Array.from(el.childNodes)) collect(c)
       const text = own.join(' ').replace(/\s+/g, ' ').trim()
-      if (text && text.length <= 80) node.text = text
+      // TRUNCATE, don't discard. The cap was `length <= 80` with no else, so any paragraph or
+      // list item longer than 80 characters contributed NOTHING and rendered as a bare `@107 li`.
+      // On a documentation page that silently drops the longest — usually most informative —
+      // items, and the shape of the omission (an empty box exactly where content is) reads as
+      // 'nothing here' rather than 'too long to show'.
+      if (text) node.text = text.length <= 200 ? text : text.slice(0, 199) + '…'
     }
     const val = (el as HTMLInputElement).value
     if (val !== undefined && val !== '' && ['input', 'textarea', 'select'].includes(tag)) node.value = val
+    // contenteditable is a text-entry surface and has to read like one.
+    //
+    // It is how React rich-text editors and every `document.execCommand` document works, and it was
+    // indistinguishable from a plain <div> in the map: no value, no empty state, no marker. An agent
+    // looking for "where do I type?" found the inputs and missed the editor entirely.
+    //
+    // `isContentEditable` rather than the attribute, because the property is what the BROWSER
+    // resolved — it accounts for `contenteditable=""` (true), the bare attribute, and inheritance
+    // from an editable ancestor, none of which an attribute selector catches.
+    try {
+      if ((el as HTMLElement).isContentEditable) {
+        node.editable = true
+        const inner = (el.textContent || '').trim()
+        if (inner) node.value = inner.length > 80 ? inner.slice(0, 79) + '…' : inner
+        else {
+          // An empty editor usually shows a CSS-driven hint the DOM never exposes as a value.
+          // Report the conventional attributes when present, and otherwise say plainly that it is
+          // empty — "no value" and "empty on purpose" are different facts.
+          const hint =
+            el.getAttribute('data-placeholder') ||
+            el.getAttribute('aria-placeholder') ||
+            el.getAttribute('placeholder')
+          if (hint) node.placeholder = hint
+          node.empty = true
+        }
+      }
+    } catch {}
     if ((el as HTMLInputElement).type) node.type = (el as HTMLInputElement).type
     if ((el as HTMLInputElement).disabled) node.disabled = true
     if ((el as HTMLInputElement).checked) node.checked = true
@@ -2771,6 +2903,41 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       if (el === document.activeElement && el !== document.body) node.focused = true
     } catch {}
     if ((el as HTMLAnchorElement).href) node.href = (el as HTMLAnchorElement).getAttribute('href')
+    // Media identity. `alt` is the accessible name and the only description of an image an agent
+    // can act on; the filename is the fallback when there is no alt — which is itself worth seeing,
+    // since a decorative-by-omission image and a missing alt look identical from the outside.
+    // An inline <svg> is serialisable, so the picture itself can go INTO the schematic rather than
+    // an empty box where the picture is. On an icon-heavy or illustration-led page that box is the
+    // subject of the page — the carousel demo is two large SVGs and little else.
+    if (tag === 'svg') {
+      try {
+        const clone = el.cloneNode(true) as SVGElement
+        const r = el.getBoundingClientRect()
+        if (r.width > 0 && r.height > 0 && !clone.getAttribute('viewBox')) {
+          clone.setAttribute('viewBox', `0 0 ${Math.round(r.width)} ${Math.round(r.height)}`)
+        }
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+        const markup = new XMLSerializer().serializeToString(clone)
+        // Only worth embedding if it's small enough not to dominate the payload. A huge inline SVG
+        // is usually a map or a chart, where the box plus its label is the honest summary.
+        if (markup.length <= 20000) {
+          const bytes = new TextEncoder().encode(markup)
+          let bin = ''
+          for (const b of bytes) bin += String.fromCharCode(b)
+          node.svgImage = 'data:image/svg+xml;base64,' + btoa(bin)
+        }
+      } catch {
+        // Tainted, detached, or unserialisable — fall through to the labelled box.
+      }
+    }
+    if (['img', 'video', 'svg', 'picture'].includes(tag)) {
+      node.media = tag
+      const alt = el.getAttribute('alt')
+      if (alt) node.label = node.label || alt
+      const src = (el as HTMLImageElement).currentSrc || el.getAttribute('src') || ''
+      if (src) node.src = src.length > 80 ? src.slice(0, 40) + '…' + src.slice(-24) : src
+      if (tag === 'img' && alt === null) node.altMissing = true
+    }
     // Real colours + WCAG verdict: renders the schematic in the page's own palette (so poor contrast
     // is visible at a glance) AND gives an agent a checkable number instead of "looks a bit faint".
     try {
@@ -2839,10 +3006,11 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     }
     const isInteractive = el.matches(INTERACTIVE)
     const isStructural = el.matches(STRUCTURAL)
+    const isContent = el.matches(CONTENT)
 
     // Skip anything the user can't see — an invisible control is not an affordance.
     // Ancestor-aware: a self-only check let `<div style="display:none"><button>` through.
-    const vis = (isInteractive || isStructural) ? visibilityOf(el) : 'visible'
+    const vis = (isInteractive || isStructural || isContent) ? visibilityOf(el) : 'visible'
     // `hidden` prunes the whole subtree, and that is correct: display:none and a hidden ancestor
     // hide descendants too, so nothing below can be visible.
     if (vis === 'hidden') return null
@@ -2875,7 +3043,7 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       return null
     }
 
-    if (isInteractive || isStructural) {
+    if (isInteractive || isStructural || isContent) {
       count++
       const node = describeEl(el, keptEls)
       // Say so rather than reporting it as an ordinary control — its coordinates are meaningless
