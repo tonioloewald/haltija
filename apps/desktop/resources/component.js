@@ -1544,6 +1544,18 @@
         nodes: withRect
       };
     };
+    const stripHandle = (sIn, handle) => handle && sIn.startsWith(handle) ? sIn.slice(handle.length).trim() : sIn;
+    const refChip = (handle, x, y2, size = 9) => {
+      if (!handle)
+        return { svg: "", w: 0 };
+      const pad = 2.5;
+      const cw = Math.ceil(textW(handle) * (size / 11)) + pad * 2;
+      const ch = size + 4;
+      return {
+        svg: `<rect x="${x}" y="${y2 - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` + `<text x="${x + pad}" y="${y2}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
+        w: cw
+      };
+    };
     const visibleIn = (b, g) => !!b.rect && b.rect.x < g.x + g.w && b.rect.x + b.rect.w > g.x && b.rect.y < g.y + g.h && b.rect.y + b.rect.h > g.y;
     const isPureLayout = (b) => b.children.length > 0 && !detailOf(b) && !b.placeholder && !b.contrastFail && !b.interactive && !b.ownBg && !b.ownBorder;
     const drawPlaced = (b, g, yOff) => {
@@ -1613,23 +1625,35 @@
         const inset = capX - (b.rect.x + 3);
         const tx = x + 3 + inset;
         const avail = w - 6 - inset;
-        const fits = (s) => textW(s) <= avail && h >= 12;
-        const fitsSmall = (s) => textW(s) * 0.85 <= avail && h >= 10;
+        const chipW = b.handle ? refChip(b.handle, 0, 0).w + 3 : 0;
+        const textAvail = avail - chipW;
+        const fits = (s) => textW(stripHandle(s, b.handle)) <= textAvail && h >= 12;
+        const fitsSmall = (s) => textW(stripHandle(s, b.handle)) * 0.85 <= textAvail && h >= 10;
+        const emitCaption = (full, opts = {}) => {
+          const size = opts.size ?? 10;
+          const cid = `x${parts.length}`;
+          const baseY = y2 + Math.min(h - 3, 11);
+          const style = `font-family="ui-monospace,Menlo,monospace" font-size="${size}" fill="${fg}"` + (opts.italic ? ' font-style="italic"' : "") + (opts.opacity ? ` opacity="${opts.opacity}"` : "");
+          const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>`;
+          const chip = b.handle ? refChip(b.handle, tx, baseY) : { svg: "", w: 0 };
+          const textX = tx + (chip.w ? chip.w + 3 : 0);
+          if (opts.lines) {
+            const spans = opts.lines.map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y2 + 11 + i * 12}">${esc(ln)}</tspan>`).join("");
+            parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}<text ${style}>${spans}</text></g>`);
+            return;
+          }
+          const rest = stripHandle(full, b.handle);
+          parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}` + (rest ? `<text x="${textX}" y="${baseY}" ${style}>${esc(rest)}</text>` : "") + `</g>`);
+        };
         if (!detail && !b.placeholder && b.editable && b.empty) {
-          const cid = `e${parts.length}`;
-          const shown = fits(`${b.handle} (editable, empty)`) ? `${b.handle} (editable, empty)` : b.handle;
-          parts.push(`<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>` + `<text clip-path="url(#${cid})" x="${tx}" y="${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`);
+          emitCaption(`${b.handle} (editable, empty)`, { italic: true, opacity: 0.55 });
           for (const c of b.children)
             drawPlaced(c, g, yOff);
           return;
         }
         if (!detail && b.placeholder) {
           const ph = `${b.handle} ${b.placeholder}`;
-          const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : "";
-          if (shown) {
-            const cid = `p${parts.length}`;
-            parts.push(`<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>` + `<text clip-path="url(#${cid})" x="${tx}" y="${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`);
-          }
+          emitCaption(fits(ph) ? ph : b.handle, { italic: true, opacity: 0.55 });
           for (const c of b.children)
             drawPlaced(c, g, yOff);
           return;
@@ -1656,7 +1680,7 @@
         const maxLines = Math.floor((h - 4) / LINE);
         const fullText = [head, detail].filter(Boolean).join("  ");
         if (maxLines >= 2 && detail && !fits(fullText)) {
-          const words = fullText.split(/\s+/);
+          const words = stripHandle(fullText, b.handle).split(/\s+/);
           const lines = [];
           let cur = "";
           for (const word of words) {
@@ -1676,17 +1700,16 @@
             if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
               lines[lines.length - 1] = lines[lines.length - 1].replace(/\S+$/, "…");
             }
-            const cid = `w${parts.length}`;
-            const spans = lines.map((ln, i) => `<tspan x="${tx}" y="${y2 + 11 + i * LINE}">${esc(ln)}</tspan>`).join("");
-            parts.push(`<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>` + `<text clip-path="url(#${cid})" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="${fg}">${spans}</text>`);
+            emitCaption("", { lines });
             for (const c of b.children)
               drawPlaced(c, g, yOff);
             return;
           }
         }
         if (label) {
-          const cid = `c${parts.length}`;
-          parts.push(`<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>` + `<text clip-path="url(#${cid})" x="${tx}" y="${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="${fontSize}" fill="${fg}">${esc(label)}</text>`);
+          emitCaption(label, { size: fontSize });
+        } else if (b.handle && w >= 14 && h >= 10) {
+          emitCaption(b.handle);
         }
       }
       for (const c of b.children)

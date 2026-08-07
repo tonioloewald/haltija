@@ -2147,6 +2147,36 @@ function renderMapSchematic(
     }
   }
 
+  /**
+   * The ref, drawn so it is ALWAYS readable.
+   *
+   * The handle is the one thing in this picture you act on — `hj click 42` — so it is the one thing
+   * that must never be ambiguous. Rendering it as plain text in the page's own colours meant it
+   * inherited the page's contrast problems and, once artwork started rendering underneath, sat on
+   * top of a pink robot and a row of icons. A ref you have to squint at is a ref you might mistype,
+   * and mistyping it drives the wrong element while reporting success.
+   *
+   * So: a solid dark pill with light text, independent of whatever is behind it. Small, but never
+   * competing with the content it labels. The descriptive text after it stays in the page's colours,
+   * because THAT is where seeing the real palette matters (it is how the contrast audit is legible).
+   */
+  /** Drop a leading `@42 ` from a candidate — the chip renders it, so the text must not repeat it. */
+  const stripHandle = (sIn: string, handle: string) =>
+    handle && sIn.startsWith(handle) ? sIn.slice(handle.length).trim() : sIn
+
+  const refChip = (handle: string, x: number, y: number, size = 9): { svg: string; w: number } => {
+    if (!handle) return { svg: '', w: 0 }
+    const pad = 2.5
+    const cw = Math.ceil(textW(handle) * (size / 11)) + pad * 2
+    const ch = size + 4
+    return {
+      svg:
+        `<rect x="${x}" y="${y - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` +
+        `<text x="${x + pad}" y="${y}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
+      w: cw,
+    }
+  }
+
   /** Does this box overlap the region we're drawing? */
   const visibleIn = (b: Box, g: { x: number; y: number; w: number; h: number }) =>
     !!b.rect &&
@@ -2287,8 +2317,47 @@ function renderMapSchematic(
       // Try the normal size, then one size down before giving up on a candidate. A 70px button
       // holding "Details" is the common case, and dropping to the bare ref there loses the only
       // word that says what it does.
-      const fits = (s: string) => textW(s) <= avail && h >= 12
-      const fitsSmall = (s: string) => textW(s) * 0.85 <= avail && h >= 10
+      // The chip is drawn first and the descriptive text flows after it, so the ref never competes
+      // with page colours or artwork for legibility, and the space calculations account for it.
+      const chipW = b.handle ? refChip(b.handle, 0, 0).w + 3 : 0
+      const textAvail = avail - chipW
+      const fits = (s: string) => textW(stripHandle(s, b.handle)) <= textAvail && h >= 12
+      const fitsSmall = (s: string) => textW(stripHandle(s, b.handle)) * 0.85 <= textAvail && h >= 10
+
+      /**
+       * Emit a caption: ref chip, then the rest in the page's own colours.
+       *
+       * Both clipped to the box. The ref must be readable against anything — that is the one token
+       * you retype into a command — while the descriptive text stays in the page's palette, which
+       * is what makes a contrast problem visible rather than merely reported.
+       */
+      const emitCaption = (
+        full: string,
+        opts: { size?: number; italic?: boolean; opacity?: number; lines?: string[] } = {},
+      ) => {
+        const size = opts.size ?? 10
+        const cid = `x${parts.length}`
+        const baseY = y + Math.min(h - 3, 11)
+        const style = `font-family="ui-monospace,Menlo,monospace" font-size="${size}" fill="${fg}"` +
+          (opts.italic ? ' font-style="italic"' : '') +
+          (opts.opacity ? ` opacity="${opts.opacity}"` : '')
+        const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`
+        const chip = b.handle ? refChip(b.handle, tx, baseY) : { svg: '', w: 0 }
+        const textX = tx + (chip.w ? chip.w + 3 : 0)
+        if (opts.lines) {
+          const spans = opts.lines
+            .map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y + 11 + i * 12}">${esc(ln)}</tspan>`)
+            .join('')
+          parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}<text ${style}>${spans}</text></g>`)
+          return
+        }
+        const rest = stripHandle(full, b.handle)
+        parts.push(
+          `${clip}<g clip-path="url(#${cid})">${chip.svg}` +
+            (rest ? `<text x="${textX}" y="${baseY}" ${style}>${esc(rest)}</text>` : '') +
+            `</g>`,
+        )
+      }
       // Candidates worst-case-last, and note the SECOND one drops the tag name rather than the
       // content. A nav link rendered as "@2 a" fits where "@2 a Home /home" doesn't, and tells you
       // nothing you couldn't guess — "@2 Home" fits the same space and is the thing you were
@@ -2298,25 +2367,13 @@ function renderMapSchematic(
       // for an input containing nothing, which is the same shape of lie as a green doctor check.
       if (!detail && !b.placeholder && b.editable && b.empty) {
         // Say "editable, empty" rather than drawing an anonymous box. This is where typing goes.
-        const cid = `e${parts.length}`
-        const shown = fits(`${b.handle} (editable, empty)`) ? `${b.handle} (editable, empty)` : b.handle
-        parts.push(
-          `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
-            `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`,
-        )
+        emitCaption(`${b.handle} (editable, empty)`, { italic: true, opacity: 0.55 })
         for (const c of b.children) drawPlaced(c, g, yOff)
         return
       }
       if (!detail && b.placeholder) {
         const ph = `${b.handle} ${b.placeholder}`
-        const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : ''
-        if (shown) {
-          const cid = `p${parts.length}`
-          parts.push(
-            `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
-              `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`,
-          )
-        }
+        emitCaption(fits(ph) ? ph : b.handle, { italic: true, opacity: 0.55 })
         for (const c of b.children) drawPlaced(c, g, yOff)
         return
       }
@@ -2348,7 +2405,7 @@ function renderMapSchematic(
       const maxLines = Math.floor((h - 4) / LINE)
       const fullText = [head, detail].filter(Boolean).join('  ')
       if (maxLines >= 2 && detail && !fits(fullText)) {
-        const words = fullText.split(/\s+/)
+        const words = stripHandle(fullText, b.handle).split(/\s+/)
         const lines: string[] = []
         let cur = ''
         for (const word of words) {
@@ -2363,29 +2420,19 @@ function renderMapSchematic(
           if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
             lines[lines.length - 1] = lines[lines.length - 1].replace(/\S+$/, '…')
           }
-          const cid = `w${parts.length}`
-          const spans = lines
-            .map((ln, i) => `<tspan x="${tx}" y="${y + 11 + i * LINE}">${esc(ln)}</tspan>`)
-            .join('')
-          parts.push(
-            `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
-              `<text clip-path="url(#${cid})" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="${fg}">${spans}</text>`,
-          )
+          emitCaption('', { lines })
           for (const c of b.children) drawPlaced(c, g, yOff)
           return
         }
       }
 
       if (label) {
-        // Clipped to the box as well as measured for it. Measurement picks the best candidate;
-        // the clip is the guarantee — an absolutely-positioned child can overlap a parent's caption
-        // (the checkbox sitting on its own <label> did exactly that), and text escaping its box is
-        // the "picture that misreads" this renderer already refuses to produce.
-        const cid = `c${parts.length}`
-        parts.push(
-          `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
-            `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="${fontSize}" fill="${fg}">${esc(label)}</text>`,
-        )
+        emitCaption(label, { size: fontSize })
+      } else if (b.handle && w >= 14 && h >= 10) {
+        // Nothing described fits — but the REF still must. It is the token you retype into a
+        // command, and a box you cannot address is a box you cannot use. The chip is ~14px wide, so
+        // it fits where a caption never could: the header icon row, the carousel dots.
+        emitCaption(b.handle)
       }
     }
     for (const c of b.children) drawPlaced(c, g, yOff)
