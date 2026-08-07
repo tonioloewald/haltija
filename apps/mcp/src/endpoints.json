@@ -1487,6 +1487,13 @@
           ],
           "description": "Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page."
         },
+        "fullPage": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Draw the WHOLE document rather than just the viewport (default false). The schematic is laid out at real page coordinates, so a long page becomes a tall thin strip — 1126x22304 is a 1:20 ratio that no downscaling makes readable. Ask for it only when you need the parts that are off screen."
+        },
         "maxWidth": {
           "type": [
             "number",

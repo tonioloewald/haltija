@@ -451,6 +451,7 @@ entirely, so `zeroSize` always means *operable but invisible*, never *not there*
 | `maxNodes` | number,null | Cap on DOM-fallback nodes (default 400) |
 | `image` | boolean,null | Also render the map as a schematic PNG (rasterized). Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming. |
 | `scale` | number,null | Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page. |
+| `fullPage` | boolean,null | Draw the WHOLE document rather than just the viewport (default false). The schematic is laid out at real page coordinates, so a long page becomes a tall thin strip — 1126x22304 is a 1:20 ratio that no downscaling makes readable. Ask for it only when you need the parts that are off screen. |
 | `maxWidth` | number,null | Max width in pixels for the schematic image (aspect ratio preserved) |
 | `maxHeight` | number,null | Max height in pixels for the schematic image (aspect ratio preserved) |
 | `format` | string,null | Schematic image format: png (default), webp, or jpeg |

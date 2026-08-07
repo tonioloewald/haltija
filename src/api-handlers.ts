@@ -873,6 +873,7 @@ registerHandler(api.map, async (body, ctx) => {
     maxHeight: body.maxHeight,
     format: body.format,
     quality: body.quality,
+    fullPage: body.fullPage,
   }, 15000, windowId)
 
   // Write the schematic to disk instead of returning ~700KB of base64 on stdout. Measured on

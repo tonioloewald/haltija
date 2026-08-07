@@ -1367,6 +1367,7 @@ entirely, so \`zeroSize\` always means *operable but invisible*, never *not ther
 | \`maxNodes\` | number,null | Cap on DOM-fallback nodes (default 400) |
 | \`image\` | boolean,null | Also render the map as a schematic PNG (rasterized). Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming. |
 | \`scale\` | number,null | Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page. |
+| \`fullPage\` | boolean,null | Draw the WHOLE document rather than just the viewport (default false). The schematic is laid out at real page coordinates, so a long page becomes a tall thin strip — 1126x22304 is a 1:20 ratio that no downscaling makes readable. Ask for it only when you need the parts that are off screen. |
 | \`maxWidth\` | number,null | Max width in pixels for the schematic image (aspect ratio preserved) |
 | \`maxHeight\` | number,null | Max height in pixels for the schematic image (aspect ratio preserved) |
 | \`format\` | string,null | Schematic image format: png (default), webp, or jpeg |
@@ -4748,7 +4749,7 @@ export const COMPONENT_JS: string = `(() => {
     }
     return out;
   }
-  function renderMapSchematic(map, canvases = [], banner) {
+  function renderMapSchematic(map, canvases = [], banner, fullPage = false) {
     const PAD = 8;
     const ROW = 22;
     const FONT = "11px ui-monospace, Menlo, monospace";
@@ -4783,6 +4784,15 @@ export const COMPONENT_JS: string = `(() => {
         detail: [n.label, n.text, n.value !== undefined ? \`= \${n.value}\` : "", n.href].filter(Boolean).join("  ").slice(0, 60),
         colors: n.colors,
         contrastFail: n.contrastFail,
+        rect: n.rect,
+        placeholder: n.placeholder,
+        interactive: n.interactive,
+        disabled: n.disabled,
+        focused: n.focused,
+        checked: n.checked,
+        inputType: n.type,
+        ownBg: n.ownBg,
+        ownBorder: n.ownBorder,
         children: (n.children || []).map(walk)
       });
       return (map.nodes || []).map(walk);
@@ -4798,6 +4808,147 @@ export const COMPONENT_JS: string = `(() => {
       const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2;
       const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD;
       return { w, h };
+    };
+    const laidOut = (roots) => {
+      let withRect = 0;
+      let total = 0;
+      const count = (b) => {
+        total++;
+        if (b.rect)
+          withRect++;
+        b.children.forEach(count);
+      };
+      roots.forEach(count);
+      if (!total || withRect / total < 0.5)
+        return null;
+      if (fullPage) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const bounds = (b) => {
+          if (b.rect) {
+            minX = Math.min(minX, b.rect.x);
+            minY = Math.min(minY, b.rect.y);
+            maxX = Math.max(maxX, b.rect.x + b.rect.w);
+            maxY = Math.max(maxY, b.rect.y + b.rect.h);
+          }
+          b.children.forEach(bounds);
+        };
+        roots.forEach(bounds);
+        if (!Number.isFinite(minX))
+          return null;
+        return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), nodes: withRect };
+      }
+      return {
+        x: window.scrollX,
+        y: window.scrollY,
+        w: Math.max(1, window.innerWidth),
+        h: Math.max(1, window.innerHeight),
+        nodes: withRect
+      };
+    };
+    const visibleIn = (b, g) => !!b.rect && b.rect.x < g.x + g.w && b.rect.x + b.rect.w > g.x && b.rect.y < g.y + g.h && b.rect.y + b.rect.h > g.y;
+    const isPureLayout = (b) => b.children.length > 0 && !detailOf(b) && !b.placeholder && !b.contrastFail && !b.interactive && !b.ownBg && !b.ownBorder;
+    const drawPlaced = (b, g, yOff) => {
+      if (visibleIn(b, g) && b.rect && !isPureLayout(b)) {
+        const x = b.rect.x - g.x + PAD;
+        const y2 = b.rect.y - g.y + PAD + yOff;
+        const w = Math.max(2, b.rect.w);
+        const h = Math.max(2, b.rect.h);
+        const kind = (b.inputType || "").toLowerCase();
+        if (kind === "checkbox" || kind === "radio") {
+          const s = Math.max(6, Math.min(w, h));
+          const cx = x + s / 2;
+          const cy = y2 + s / 2;
+          const stroke2 = b.disabled ? "#94a3b8" : "#334155";
+          const fill2 = b.checked ? b.disabled ? "#94a3b8" : "#2563eb" : "#ffffff";
+          if (kind === "radio") {
+            parts.push(\`<circle cx="\${cx}" cy="\${cy}" r="\${s / 2 - 1}" fill="\${fill2}" stroke="\${stroke2}" stroke-width="1.5"/>\`);
+            if (b.checked)
+              parts.push(\`<circle cx="\${cx}" cy="\${cy}" r="\${Math.max(1, s / 6)}" fill="#ffffff"/>\`);
+          } else {
+            parts.push(\`<rect x="\${x + 1}" y="\${y2 + 1}" width="\${s - 2}" height="\${s - 2}" rx="2" fill="\${fill2}" stroke="\${stroke2}" stroke-width="1.5"/>\`);
+            if (b.checked) {
+              const p1 = \`\${x + s * 0.25},\${y2 + s * 0.5}\`;
+              const p2 = \`\${x + s * 0.45},\${y2 + s * 0.7}\`;
+              const p3 = \`\${x + s * 0.78},\${y2 + s * 0.28}\`;
+              parts.push(\`<polyline points="\${p1} \${p2} \${p3}" fill="none" stroke="#ffffff" stroke-width="\${Math.max(1.5, s / 8)}" stroke-linecap="round" stroke-linejoin="round"/>\`);
+            }
+          }
+          if (b.focused)
+            parts.push(\`<rect x="\${x - 2}" y="\${y2 - 2}" width="\${s + 4}" height="\${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>\`);
+          return;
+        }
+        const fill = b.colors?.bg || "rgba(148,163,184,0.10)";
+        const stroke = b.disabled ? "#94a3b8" : b.interactive ? b.colors?.border || "#334155" : b.colors?.border || (b.colors ? "rgba(0,0,0,.18)" : "#cbd5e1");
+        const strokeW = b.interactive && !b.disabled ? 1.5 : 1;
+        const dash = b.disabled ? ' stroke-dasharray="3 2"' : "";
+        parts.push(\`<rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}" rx="3" fill="\${fill}" stroke="\${stroke}" stroke-width="\${strokeW}"\${dash}/>\`);
+        if (b.disabled) {
+          parts.push(\`<rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}" rx="3" fill="rgba(148,163,184,0.35)"/>\`);
+        }
+        if (b.focused) {
+          parts.push(\`<rect x="\${x - 2}" y="\${y2 - 2}" width="\${w + 4}" height="\${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>\`);
+        }
+        if (b.contrastFail)
+          parts.push(\`<rect x="\${x}" y="\${y2}" width="3" height="\${h}" fill="#dc2626"/>\`);
+        const fg = b.colors?.fg || "#0f172a";
+        const head = headOf(b);
+        const detail = detailOf(b);
+        let capX = b.rect.x + 3;
+        for (let pass = 0;pass < 4; pass++) {
+          let moved = false;
+          for (const c of b.children) {
+            if (!c.rect)
+              continue;
+            const vOverlap = c.rect.y < b.rect.y + b.rect.h && c.rect.y + c.rect.h > b.rect.y;
+            if (vOverlap && c.rect.x <= capX && c.rect.x + c.rect.w > capX) {
+              capX = c.rect.x + c.rect.w + 3;
+              moved = true;
+            }
+          }
+          if (!moved)
+            break;
+        }
+        const inset = capX - (b.rect.x + 3);
+        const tx = x + 3 + inset;
+        const avail = w - 6 - inset;
+        const fits = (s) => textW(s) <= avail && h >= 12;
+        const fitsSmall = (s) => textW(s) * 0.85 <= avail && h >= 10;
+        if (!detail && b.placeholder) {
+          const ph = \`\${b.handle} \${b.placeholder}\`;
+          const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : "";
+          if (shown) {
+            const cid = \`p\${parts.length}\`;
+            parts.push(\`<clipPath id="\${cid}"><rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}"/></clipPath>\` + \`<text clip-path="url(#\${cid})" x="\${tx}" y="\${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="\${fg}" opacity="0.55">\${esc(shown)}</text>\`);
+          }
+          for (const c of b.children)
+            drawPlaced(c, g, yOff);
+          return;
+        }
+        const firstWords = detail ? detail.split(/\\s+/) : [];
+        const candidates = [
+          [head, detail].filter(Boolean).join("  "),
+          detail ? \`\${b.handle} \${detail}\`.trim() : "",
+          firstWords.length > 1 ? \`\${b.handle} \${firstWords.slice(0, 2).join(" ")}\` : "",
+          firstWords.length ? \`\${b.handle} \${firstWords[0]}\` : "",
+          head,
+          b.handle
+        ].filter(Boolean);
+        let label = candidates.find((c) => fits(c)) || "";
+        let fontSize = 10;
+        if (!label) {
+          const small = candidates.find((c) => fitsSmall(c));
+          if (small) {
+            label = small;
+            fontSize = 8.5;
+          }
+        }
+        if (label) {
+          const cid = \`c\${parts.length}\`;
+          parts.push(\`<clipPath id="\${cid}"><rect x="\${x}" y="\${y2}" width="\${w}" height="\${h}"/></clipPath>\` + \`<text clip-path="url(#\${cid})" x="\${tx}" y="\${y2 + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="\${fontSize}" fill="\${fg}">\${esc(label)}</text>\`);
+        }
+      }
+      for (const c of b.children)
+        drawPlaced(c, g, yOff);
     };
     const parts = [];
     let uniformW = 0;
@@ -4852,11 +5003,22 @@ export const COMPONENT_JS: string = `(() => {
       }
       y += boxH + 6;
     }
-    for (const b of boxes) {
-      y += draw(b, PAD, y, 0) + 6;
+    const geo = laidOut(boxes);
+    let width;
+    let height;
+    if (geo) {
+      for (const b of boxes)
+        drawPlaced(b, geo, BANNER_H);
+      width = Math.ceil(geo.w + PAD * 2);
+      height = Math.ceil(geo.h + PAD * 2 + BANNER_H);
+      y = height - PAD;
+    } else {
+      for (const b of boxes) {
+        y += draw(b, PAD, y, 0) + 6;
+      }
+      width = Math.ceil(Math.max(320, maxW + PAD * 2));
+      height = Math.ceil(y + PAD);
     }
-    const width = Math.ceil(Math.max(320, maxW + PAD * 2));
-    const height = Math.ceil(y + PAD);
     const title = \`\${map.source === "tosi-agent" ? "wiring" : "dom"} · \${esc(map.title || "")}\`;
     const bannerSvg = banner ? \`<rect x="0" y="0" width="\${width}" height="\${BANNER_H}" fill="#7f1d1d"/>\` + \`<text x="\${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">\${esc(banner)}</text>\` : "";
     const svg = \`<?xml version="1.0" encoding="UTF-8"?>\` + \`<svg xmlns="http://www.w3.org/2000/svg" width="\${width}" height="\${height}" viewBox="0 0 \${width} \${height}">\` + \`<rect width="\${width}" height="\${height}" fill="#ffffff"/>\` + bannerSvg + parts.join("") + \`<text x="\${PAD}" y="\${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">\${title}</text>\` + \`</svg>\`;
@@ -4864,7 +5026,7 @@ export const COMPONENT_JS: string = `(() => {
   }
   async function buildSchematicResponse(map, payload2, banner) {
     const canvases = collectCanvasThumbnails();
-    const { svg, width, height } = renderMapSchematic(map, canvases, banner);
+    const { svg, width, height } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true);
     const format = payload2?.format || "png";
     const raster = await rasterizeSchematic(svg, width, height, payload2?.scale || 1, {
       maxWidth: payload2?.maxWidth,
@@ -5013,17 +5175,37 @@ export const COMPONENT_JS: string = `(() => {
     const STRUCTURAL = "main,nav,header,footer,aside,section,form,dialog,h1,h2,h3,h4,h5,h6,[role=region],[role=dialog],[role=navigation]";
     let count = 0;
     let truncated = false;
-    const describeEl = (el, hasKeptChildren) => {
+    const describeEl = (el, keptEls = new Set) => {
       const tag = el.tagName.toLowerCase();
       const node = { ref: refRegistry.assign(el), tag };
       const role = el.getAttribute("role");
       if (role)
         node.role = role;
-      const label = el.getAttribute("aria-label") || el.placeholder || el.getAttribute("title") || el.getAttribute("alt") || undefined;
+      const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt") || undefined;
       if (label)
         node.label = label;
-      if (!hasKeptChildren) {
-        const text = getVisibleText(el)?.trim();
+      const placeholder = el.placeholder;
+      if (placeholder)
+        node.placeholder = placeholder;
+      {
+        const own = [];
+        const collect = (n) => {
+          if (n.nodeType === 3) {
+            const t = (n.textContent || "").trim();
+            if (t)
+              own.push(t);
+            return;
+          }
+          if (n.nodeType !== 1)
+            return;
+          if (keptEls.has(n))
+            return;
+          for (const c of Array.from(n.childNodes))
+            collect(c);
+        };
+        for (const c of Array.from(el.childNodes))
+          collect(c);
+        const text = own.join(" ").replace(/\\s+/g, " ").trim();
         if (text && text.length <= 80)
           node.text = text;
       }
@@ -5036,6 +5218,12 @@ export const COMPONENT_JS: string = `(() => {
         node.disabled = true;
       if (el.checked)
         node.checked = true;
+      if (el.matches(INTERACTIVE))
+        node.interactive = true;
+      try {
+        if (el === document.activeElement && el !== document.body)
+          node.focused = true;
+      } catch {}
       if (el.href)
         node.href = el.getAttribute("href");
       try {
@@ -5043,9 +5231,24 @@ export const COMPONENT_JS: string = `(() => {
         node.colors = c;
         const hasOwnText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent || "").trim().length > 0);
         const hasReadableText = hasOwnText || !!(node.label || node.value);
-        if (!c.passes && hasReadableText && !c.uncertain) {
+        if (!c.passes && hasReadableText && !c.uncertain && !node.disabled) {
           node.contrastFail = \`\${c.contrast}:1 (needs \${c.large ? 3 : 4.5}:1)\`;
         }
+      } catch {}
+      try {
+        const own = getComputedStyle(el);
+        const ownBgColor = parseCssColor(own.backgroundColor);
+        node.ownBg = !!(ownBgColor && ownBgColor.a > 0) || own.backgroundImage !== "none";
+        node.ownBorder = (parseFloat(own.borderTopWidth) || 0) > 0 || (parseFloat(own.borderLeftWidth) || 0) > 0 || (parseFloat(own.borderBottomWidth) || 0) > 0 || (parseFloat(own.borderRightWidth) || 0) > 0;
+      } catch {}
+      try {
+        const r = el.getBoundingClientRect();
+        node.rect = {
+          x: Math.round(r.left + window.scrollX),
+          y: Math.round(r.top + window.scrollY),
+          w: Math.round(r.width),
+          h: Math.round(r.height)
+        };
       } catch {}
       return node;
     };
@@ -5060,10 +5263,13 @@ export const COMPONENT_JS: string = `(() => {
       if (vis === "hidden")
         return null;
       const children = [];
+      const keptEls = new Set;
       for (const child of Array.from(el.children)) {
         const c = walk(child);
-        if (c)
+        if (c) {
           children.push(c);
+          keptEls.add(child);
+        }
       }
       if (vis === "zero-size" && !isInteractive) {
         if (children.length === 1)
@@ -5074,7 +5280,7 @@ export const COMPONENT_JS: string = `(() => {
       }
       if (isInteractive || isStructural) {
         count++;
-        const node = describeEl(el, children.length > 0);
+        const node = describeEl(el, keptEls);
         if (vis === "zero-size")
           node.zeroSize = true;
         if (children.length)

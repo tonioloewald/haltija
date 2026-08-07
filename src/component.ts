@@ -2011,6 +2011,7 @@ function renderMapSchematic(
   map: any,
   canvases: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string }> = [],
   banner?: string,
+  fullPage = false,
 ): { svg: string; width: number; height: number } {
   const PAD = 8
   const ROW = 22
@@ -2024,7 +2025,9 @@ function renderMapSchematic(
   const esc = (s: string) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string }
+  type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string;
+    rect?: { x: number; y: number; w: number; h: number }; placeholder?: string; interactive?: boolean;
+    disabled?: boolean; focused?: boolean; checked?: boolean; inputType?: string; ownBg?: boolean; ownBorder?: boolean }
 
   // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
   const toBoxes = (): Box[] => {
@@ -2054,6 +2057,15 @@ function renderMapSchematic(
         .filter(Boolean).join('  ').slice(0, 60),
       colors: n.colors,
       contrastFail: n.contrastFail,
+      rect: n.rect,
+      placeholder: n.placeholder,
+      interactive: n.interactive,
+      disabled: n.disabled,
+      focused: n.focused,
+      checked: n.checked,
+      inputType: n.type,
+      ownBg: n.ownBg,
+      ownBorder: n.ownBorder,
       children: (n.children || []).map(walk),
     })
     return (map.nodes || []).map(walk)
@@ -2073,6 +2085,245 @@ function renderMapSchematic(
     const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2
     const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD
     return { w, h }
+  }
+
+  /**
+   * The region to draw, and whether we have the geometry to draw it.
+   *
+   * **Viewport by default, whole document only on request.** A full-page schematic of a long page
+   * is a tall thin strip: 1126x22304 is a 1:20 aspect ratio no pixel budget can rescue — capped to
+   * 8 Mpx it is 636 wide, and a vision encoder then downsamples the long edge to 1568, leaving it
+   * 79px across. Unreadable to human and model alike. What is on screen is also what the question
+   * is usually about.
+   */
+  const laidOut = (
+    roots: Box[],
+  ): { x: number; y: number; w: number; h: number; nodes: number } | null => {
+    let withRect = 0
+    let total = 0
+    const count = (b: Box) => {
+      total++
+      if (b.rect) withRect++
+      b.children.forEach(count)
+    }
+    roots.forEach(count)
+    // The tosi-agent tier reports an app's own wiring and has no DOM rects at all; a DOM map whose
+    // nodes mostly lack them is equally undrawable. Either way, say so by returning null rather
+    // than producing a diagram that is mostly empty space.
+    if (!total || withRect / total < 0.5) return null
+
+    if (fullPage) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      const bounds = (b: Box) => {
+        if (b.rect) {
+          minX = Math.min(minX, b.rect.x); minY = Math.min(minY, b.rect.y)
+          maxX = Math.max(maxX, b.rect.x + b.rect.w); maxY = Math.max(maxY, b.rect.y + b.rect.h)
+        }
+        b.children.forEach(bounds)
+      }
+      roots.forEach(bounds)
+      if (!Number.isFinite(minX)) return null
+      return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), nodes: withRect }
+    }
+    return {
+      x: window.scrollX,
+      y: window.scrollY,
+      w: Math.max(1, window.innerWidth),
+      h: Math.max(1, window.innerHeight),
+      nodes: withRect,
+    }
+  }
+
+  /** Does this box overlap the region we're drawing? */
+  const visibleIn = (b: Box, g: { x: number; y: number; w: number; h: number }) =>
+    !!b.rect &&
+    b.rect.x < g.x + g.w && b.rect.x + b.rect.w > g.x &&
+    b.rect.y < g.y + g.h && b.rect.y + b.rect.h > g.y
+
+  /**
+   * Draw one box where it actually is, then its children on top.
+   *
+   * Pre-order, so a child paints over its parent exactly as the browser stacks them. Labels appear
+   * only where they fit: a 40x16 button cannot hold "@17 button Details", and text spilling out of
+   * its box is the "picture that misreads" the measuring code above already warns about. The handle
+   * alone is the graceful degradation — it is the part you act on.
+   */
+  /**
+   * An element whose only contribution is layout — draw nothing, recurse into its children.
+   *
+   * Once boxes sit at real coordinates, a wrapper's rectangle carries no information the children's
+   * own positions don't already show: you can SEE that the two cards are side by side without a
+   * `@20 section` outline around them. Drawing it anyway costs a box, a label, and the tokens for
+   * both, and buries the affordances under nested chrome — which is precisely the "wall of text
+   * with extra steps" a diagram is supposed to beat.
+   *
+   * "Only layout" means: nothing of its own to say (no text, value, href or contrast finding) AND
+   * nothing of its own to show (no background it painted, no border). A `<header>` with a real dark
+   * background stays — that background is content, it's why the contrast audit can work, and it is
+   * how you recognise the region. The ref stays addressable in the JSON map either way; this is
+   * about what earns pixels.
+   */
+  const isPureLayout = (b: Box) =>
+    b.children.length > 0 &&
+    !detailOf(b) &&
+    !b.placeholder &&
+    !b.contrastFail &&
+    !b.interactive &&
+    !b.ownBg &&
+    !b.ownBorder
+
+  const drawPlaced = (
+    b: Box,
+    g: { x: number; y: number; w: number; h: number },
+    yOff: number,
+  ): void => {
+    if (visibleIn(b, g) && b.rect && !isPureLayout(b)) {
+      const x = b.rect.x - g.x + PAD
+      const y = b.rect.y - g.y + PAD + yOff
+      // A zero-size box would vanish; keep a hairline so "it is here and it is tiny" stays visible —
+      // exactly the accessible 0x0 input pattern that `zeroSize` exists to report.
+      const w = Math.max(2, b.rect.w)
+      const h = Math.max(2, b.rect.h)
+      const kind = (b.inputType || '').toLowerCase()
+
+      // Checkboxes and radios as GEOMETRY, not glyphs. A unicode ☑/◉ at 10px is a smudge, and
+      // "= on" is a string you have to decode — the state of a toggle is the fastest thing in a UI
+      // to read visually and was the slowest thing to read here. Drawn to the control's real box,
+      // so a 0x0 accessible input still shows up as the hairline it is.
+      if (kind === 'checkbox' || kind === 'radio') {
+        const s = Math.max(6, Math.min(w, h))
+        const cx = x + s / 2
+        const cy = y + s / 2
+        const stroke = b.disabled ? '#94a3b8' : '#334155'
+        const fill = b.checked ? (b.disabled ? '#94a3b8' : '#2563eb') : '#ffffff'
+        if (kind === 'radio') {
+          parts.push(`<circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`)
+          if (b.checked) parts.push(`<circle cx="${cx}" cy="${cy}" r="${Math.max(1, s / 6)}" fill="#ffffff"/>`)
+        } else {
+          parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${s - 2}" height="${s - 2}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`)
+          if (b.checked) {
+            const p1 = `${x + s * 0.25},${y + s * 0.5}`
+            const p2 = `${x + s * 0.45},${y + s * 0.7}`
+            const p3 = `${x + s * 0.78},${y + s * 0.28}`
+            parts.push(`<polyline points="${p1} ${p2} ${p3}" fill="none" stroke="#ffffff" stroke-width="${Math.max(1.5, s / 8)}" stroke-linecap="round" stroke-linejoin="round"/>`)
+          }
+        }
+        if (b.focused) parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${s + 4}" height="${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
+        return // its own box IS the control; no generic rect or caption
+      }
+
+      const fill = b.colors?.bg || 'rgba(148,163,184,0.10)'
+      // Interactive elements get a solid, darker outline; everything else a hairline. "Can I click
+      // this?" is the question the map exists to answer, and it was encoded nowhere in the picture.
+      const stroke = b.disabled
+        ? '#94a3b8'
+        : b.interactive
+          ? (b.colors?.border || '#334155')
+          : (b.colors?.border || (b.colors ? 'rgba(0,0,0,.18)' : '#cbd5e1'))
+      const strokeW = b.interactive && !b.disabled ? 1.5 : 1
+      // Disabled reads as "greyed out and struck through" the way it does in a real UI: dashed
+      // outline plus a wash. Distinguishable at a glance from an enabled control, which is the
+      // whole point — an agent that clicks a disabled button and reports success is the failure.
+      const dash = b.disabled ? ' stroke-dasharray="3 2"' : ''
+      parts.push(
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`,
+      )
+      if (b.disabled) {
+        parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="rgba(148,163,184,0.35)"/>`)
+      }
+      // Focus last, so it sits above the fill — same reason a focus ring is drawn outside the
+      // control in every real design system.
+      if (b.focused) {
+        parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
+      }
+      if (b.contrastFail) parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`)
+
+      const fg = b.colors?.fg || '#0f172a'
+      const head = headOf(b)
+      const detail = detailOf(b)
+      // Start the caption AFTER any child control sitting on this box's left edge. The accessible
+      // pattern `<label><input type=checkbox> Text</label>` puts the control exactly where the
+      // caption begins, so the checkbox painted over "@11" and left a stray "1" floating next to
+      // the text — a ref that reads as a different ref is worse than no ref.
+      //
+      // Asks the exact question — "is a child drawn where the caption would start?" — rather than
+      // guessing a left-edge threshold. The guess was `c.x <= b.x + 4`, and a radio sits at x=310
+      // inside a label at x=305 while a checkbox sits at 309: the same pattern, one pixel of
+      // browser default margin apart, so checkboxes were fixed and radios were not. Iterates,
+      // because clearing one control can land the caption on the next.
+      let capX = b.rect.x + 3
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false
+        for (const c of b.children) {
+          if (!c.rect) continue
+          const vOverlap = c.rect.y < b.rect.y + b.rect.h && c.rect.y + c.rect.h > b.rect.y
+          if (vOverlap && c.rect.x <= capX && c.rect.x + c.rect.w > capX) {
+            capX = c.rect.x + c.rect.w + 3
+            moved = true
+          }
+        }
+        if (!moved) break
+      }
+      const inset = capX - (b.rect.x + 3)
+      const tx = x + 3 + inset
+      const avail = w - 6 - inset
+      // Try the normal size, then one size down before giving up on a candidate. A 70px button
+      // holding "Details" is the common case, and dropping to the bare ref there loses the only
+      // word that says what it does.
+      const fits = (s: string) => textW(s) <= avail && h >= 12
+      const fitsSmall = (s: string) => textW(s) * 0.85 <= avail && h >= 10
+      // Candidates worst-case-last, and note the SECOND one drops the tag name rather than the
+      // content. A nav link rendered as "@2 a" fits where "@2 a Home /home" doesn't, and tells you
+      // nothing you couldn't guess — "@2 Home" fits the same space and is the thing you were
+      // looking for. Content outranks taxonomy when space is short.
+      // A placeholder is rendered as a placeholder: italic and faded, never as content. On the real
+      // page you can see at a glance that a field is empty; the schematic said `@9 input Q3 revenue`
+      // for an input containing nothing, which is the same shape of lie as a green doctor check.
+      if (!detail && b.placeholder) {
+        const ph = `${b.handle} ${b.placeholder}`
+        const shown = fits(ph) ? ph : fits(b.placeholder) ? b.placeholder : fits(b.handle) ? b.handle : ''
+        if (shown) {
+          const cid = `p${parts.length}`
+          parts.push(
+            `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
+              `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="10" font-style="italic" fill="${fg}" opacity="0.55">${esc(shown)}</text>`,
+          )
+        }
+        for (const c of b.children) drawPlaced(c, g, yOff)
+        return
+      }
+
+      // Progressive truncation, dropping the least informative part first. A nav link shown as
+      // "@2 a" fits where "@2 a Home /home" doesn't and tells you nothing — "@2 Home" fits the same
+      // space and is what you were looking for. Content outranks taxonomy when space is short.
+      const firstWords = detail ? detail.split(/\s+/) : []
+      const candidates = [
+        [head, detail].filter(Boolean).join('  '),
+        detail ? `${b.handle} ${detail}`.trim() : '',
+        firstWords.length > 1 ? `${b.handle} ${firstWords.slice(0, 2).join(' ')}` : '',
+        firstWords.length ? `${b.handle} ${firstWords[0]}` : '',
+        head,
+        b.handle,
+      ].filter(Boolean)
+      let label = candidates.find((c) => fits(c)) || ''
+      let fontSize = 10
+      if (!label) {
+        const small = candidates.find((c) => fitsSmall(c))
+        if (small) { label = small; fontSize = 8.5 }
+      }
+      if (label) {
+        // Clipped to the box as well as measured for it. Measurement picks the best candidate;
+        // the clip is the guarantee — an absolutely-positioned child can overlap a parent's caption
+        // (the checkbox sitting on its own <label> did exactly that), and text escaping its box is
+        // the "picture that misreads" this renderer already refuses to produce.
+        const cid = `c${parts.length}`
+        parts.push(
+          `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
+            `<text clip-path="url(#${cid})" x="${tx}" y="${y + Math.min(h - 3, 11)}" font-family="ui-monospace,Menlo,monospace" font-size="${fontSize}" fill="${fg}">${esc(label)}</text>`,
+        )
+      }
+    }
+    for (const c of b.children) drawPlaced(c, g, yOff)
   }
 
   const parts: string[] = []
@@ -2155,11 +2406,32 @@ function renderMapSchematic(
     y += boxH + 6
   }
 
-  for (const b of boxes) {
-    y += draw(b, PAD, y, 0) + 6
+  // LAYOUT-FAITHFUL when the nodes carry geometry, stacked when they don't.
+  //
+  // Layout is the high-information part of a schematic and the whole reason a rendered diagram
+  // beats the same facts as text: a right-aligned nav, a two-column grid and a sidebar are three
+  // different pictures and one identical outline. Draw at real page coordinates and they stay
+  // three different pictures.
+  //
+  // The stacked path below is NOT dead code — the `tosi-agent` tier describes an app's own wiring
+  // and has no DOM geometry to report, so it keeps the outline. Falling back on a per-render check
+  // (rather than on the tier name) also means a page whose nodes somehow lack rects degrades to
+  // something readable instead of collapsing to a point.
+  const geo = laidOut(boxes)
+  let width: number
+  let height: number
+  if (geo) {
+    for (const b of boxes) drawPlaced(b, geo, BANNER_H)
+    width = Math.ceil(geo.w + PAD * 2)
+    height = Math.ceil(geo.h + PAD * 2 + BANNER_H)
+    y = height - PAD
+  } else {
+    for (const b of boxes) {
+      y += draw(b, PAD, y, 0) + 6
+    }
+    width = Math.ceil(Math.max(320, maxW + PAD * 2))
+    height = Math.ceil(y + PAD)
   }
-  const width = Math.ceil(Math.max(320, maxW + PAD * 2))
-  const height = Math.ceil(y + PAD)
 
   const title = `${map.source === 'tosi-agent' ? 'wiring' : 'dom'} · ${esc(map.title || '')}`
   const bannerSvg = banner
@@ -2189,7 +2461,7 @@ async function buildSchematicResponse(
   banner?: string,
 ): Promise<Record<string, unknown>> {
   const canvases = collectCanvasThumbnails()
-  const { svg, width, height } = renderMapSchematic(map, canvases, banner)
+  const { svg, width, height } = renderMapSchematic(map, canvases, banner, payload?.fullPage === true)
   const format = payload?.format || 'png'
   const raster = await rasterizeSchematic(svg, width, height, payload?.scale || 1, {
     maxWidth: payload?.maxWidth,
@@ -2439,23 +2711,50 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
   let count = 0
   let truncated = false
 
-  const describeEl = (el: Element, hasKeptChildren: boolean): any => {
+  const describeEl = (el: Element, keptEls: Set<Element> = new Set()): any => {
     const tag = el.tagName.toLowerCase()
     const node: any = { ref: refRegistry.assign(el), tag }
     const role = el.getAttribute('role')
     if (role) node.role = role
+    // A placeholder is NOT a label and NOT a value — it is the absence of one. Folding it into
+    // `label` (as this did) makes "the field is empty, here's a hint" indistinguishable from "the
+    // field is called this", so a schematic showed `@9 input Q3 revenue` for an input containing
+    // nothing at all. Kept separate so the renderer can grey and italicise it, which is how a
+    // person tells the two apart on the real page.
     const label =
       el.getAttribute('aria-label') ||
-      (el as HTMLInputElement).placeholder ||
       el.getAttribute('title') ||
       el.getAttribute('alt') ||
       undefined
     if (label) node.label = label
+    const placeholder = (el as HTMLInputElement).placeholder
+    if (placeholder) node.placeholder = placeholder
     // Text ONLY for leaves. A container's textContent is the concatenation of everything beneath it
     // — it would repeat every child's label (defeating the density this map exists for) and would
     // even surface text from elements we deliberately excluded as hidden.
-    if (!hasKeptChildren) {
-      const text = getVisibleText(el)?.trim()
+    {
+      // An element's caption is its subtree's text MINUS whatever its kept descendants already
+      // show. That is the precise form of "don't repeat a child's text in its parent": it drops
+      // what would be duplicated and keeps what would otherwise vanish.
+      //
+      // The two cruder rules both lost real content. Leaf-only threw away
+      // `<label><input> Email when ready</label>`. Direct-text-nodes-only then threw away
+      // `<label><tosi-slot>Required field</tosi-slot><input></label>` — a web component putting its
+      // caption in an element child, which is most of a real design system. Both rendered as a bare
+      // "label" next to an input, which tells an agent nothing about what it is filling in.
+      const own: string[] = []
+      const collect = (n: Node) => {
+        if (n.nodeType === 3) {
+          const t = (n.textContent || '').trim()
+          if (t) own.push(t)
+          return
+        }
+        if (n.nodeType !== 1) return
+        if (keptEls.has(n as Element)) return // it speaks for itself
+        for (const c of Array.from(n.childNodes)) collect(c)
+      }
+      for (const c of Array.from(el.childNodes)) collect(c)
+      const text = own.join(' ').replace(/\s+/g, ' ').trim()
       if (text && text.length <= 80) node.text = text
     }
     const val = (el as HTMLInputElement).value
@@ -2463,6 +2762,14 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     if ((el as HTMLInputElement).type) node.type = (el as HTMLInputElement).type
     if ((el as HTMLInputElement).disabled) node.disabled = true
     if ((el as HTMLInputElement).checked) node.checked = true
+    // State the picture has to be able to show. "Can I act on this?", "is it switched off?" and
+    // "is this where typing goes?" are the three questions asked most often of a UI, and all three
+    // were absent from the map — so the schematic drew an enabled control and a disabled one
+    // identically, which is a confidently wrong answer to the first.
+    if (el.matches(INTERACTIVE)) node.interactive = true
+    try {
+      if (el === document.activeElement && el !== document.body) node.focused = true
+    } catch {}
     if ((el as HTMLAnchorElement).href) node.href = (el as HTMLAnchorElement).getAttribute('href')
     // Real colours + WCAG verdict: renders the schematic in the page's own palette (so poor contrast
     // is visible at a glance) AND gives an agent a checkable number instead of "looks a bit faint".
@@ -2481,8 +2788,45 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
         (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0,
       )
       const hasReadableText = hasOwnText || !!(node.label || node.value)
-      if (!c.passes && hasReadableText && !c.uncertain) {
+      // WCAG 1.4.3 explicitly EXEMPTS disabled controls, so flagging one is a false positive —
+      // and a contrast report that cries wolf on every greyed-out button is one nobody reads.
+      if (!c.passes && hasReadableText && !c.uncertain && !node.disabled) {
         node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
+      }
+    } catch {}
+    // Did this element paint anything ITSELF?
+    //
+    // `colors.bg` is the EFFECTIVE background — resolved up the ancestor chain so the contrast
+    // maths has a real colour to work with — which means it is essentially never empty. Using it to
+    // answer "is this just a layout wrapper?" therefore always said no, and every nested `<div>`,
+    // `<main>` and `<section>` drew a box around content whose position already showed the grouping.
+    // This is the self-painted answer, which is the one that question needs.
+    try {
+      const own = getComputedStyle(el)
+      const ownBgColor = parseCssColor(own.backgroundColor)
+      node.ownBg = !!(ownBgColor && ownBgColor.a > 0) || own.backgroundImage !== 'none'
+      node.ownBorder = (parseFloat(own.borderTopWidth) || 0) > 0 ||
+        (parseFloat(own.borderLeftWidth) || 0) > 0 ||
+        (parseFloat(own.borderBottomWidth) || 0) > 0 ||
+        (parseFloat(own.borderRightWidth) || 0) > 0
+    } catch {}
+    // WHERE it is, in page coordinates.
+    //
+    // The schematic was always meant to carry layout — that is the high-information part, and the
+    // reason a rendered diagram beats the same facts as a wall of text. Without a rect the renderer
+    // could only stack boxes in DOM order, so a right-aligned nav, a two-column grid and a sidebar
+    // all came out as one vertical list: structurally faithful, spatially a fiction. An agent
+    // asking "do these cards sit side by side?" got a confident wrong answer from a picture.
+    //
+    // Page coordinates (rect + scroll), not viewport, so the map of a long page is stable
+    // regardless of where it happens to be scrolled when you ask.
+    try {
+      const r = el.getBoundingClientRect()
+      node.rect = {
+        x: Math.round(r.left + window.scrollX),
+        y: Math.round(r.top + window.scrollY),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
       }
     } catch {}
     return node
@@ -2509,9 +2853,15 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     // whose only child was display:none reported zero height, taking a sibling button with it).
     // Descend first; decide about THIS element afterwards.
     const children: any[] = []
+    // Which DOM elements became nodes of their own. A parent's caption is everything in its subtree
+    // EXCEPT what these already display — see describeEl.
+    const keptEls = new Set<Element>()
     for (const child of Array.from(el.children)) {
       const c = walk(child)
-      if (c) children.push(c)
+      if (c) {
+        children.push(c)
+        keptEls.add(child)
+      }
     }
 
     // A zero-size INTERACTIVE element is still operable — the accessible file-input /
@@ -2527,7 +2877,7 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
 
     if (isInteractive || isStructural) {
       count++
-      const node = describeEl(el, children.length > 0)
+      const node = describeEl(el, keptEls)
       // Say so rather than reporting it as an ordinary control — its coordinates are meaningless
       // and clicking it directly may do nothing.
       if (vis === 'zero-size') node.zeroSize = true

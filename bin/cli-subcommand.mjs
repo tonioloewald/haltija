@@ -290,6 +290,7 @@ export const ARG_MAPS = {
       if (args[i] === '--maxHeight' || args[i] === '--max-height') { body.maxHeight = num(args[++i]); continue }
       if (args[i] === '--format') { body.format = args[++i]; continue }
       if (args[i] === '--quality') { const q = normalizeQuality(args[++i]); if (q != null) body.quality = q; continue }
+      if (args[i] === '--full-page') { body.fullPage = true; continue }
     }
     return body
   },
@@ -911,7 +912,7 @@ export const KNOWN_FLAGS = {
   // Added after an invariant test derived them from the parsers themselves. Missing entries are
   // not cosmetic: BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on an entry
   // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
-  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality'],
+  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],

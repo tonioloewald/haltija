@@ -1246,6 +1246,10 @@ var ARG_MAPS = {
           body.quality = q;
         continue;
       }
+      if (args[i] === "--full-page") {
+        body.fullPage = true;
+        continue;
+      }
     }
     return body;
   },
@@ -1832,7 +1836,7 @@ var KNOWN_FLAGS = {
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
-  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality"],
+  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page"],
   "events-watch": ["--preset"],
   "mutations-watch": ["--preset"],
   "network-watch": ["--preset"],
