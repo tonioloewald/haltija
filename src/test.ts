@@ -119,13 +119,50 @@ function expandTestDir(dir: string): string[] {
 // Test Client
 // ============================================
 
+/**
+ * Which server a test client talks to when it isn't told.
+ *
+ * The default was a hardcoded `http://localhost:8700` with NO env override — in the SHIPPED
+ * `haltija/test` helper, so every adopter inherited it. On any machine running more than one
+ * project, 8700 is a shared interactive server, and the client's only gate is "does /status answer
+ * 200?", which is true of somebody else's server too. `hj.navigate()` then posts with no `window`
+ * param, so it routes to whatever tab is focused: an integration suite silently drives a
+ * developer's live browser, and the damage lands on the machine where it is least expected.
+ *
+ * `hj` has resolved this correctly for releases (--port > HALTIJA_PORT > cwd match > default). The
+ * test helper simply never learned the ladder. It does now, minus the cwd step — a library has no
+ * business inferring intent from the working directory.
+ */
+export function resolveTestServerUrl(env: Record<string, string | undefined> = process.env): {
+  url: string
+  source: 'HALTIJA_URL' | 'HALTIJA_PORT' | 'DEV_CHANNEL_PORT' | 'default'
+} {
+  if (env.HALTIJA_URL) return { url: env.HALTIJA_URL, source: 'HALTIJA_URL' }
+  if (env.HALTIJA_PORT) return { url: `http://localhost:${env.HALTIJA_PORT}`, source: 'HALTIJA_PORT' }
+  if (env.DEV_CHANNEL_PORT) return { url: `http://localhost:${env.DEV_CHANNEL_PORT}`, source: 'DEV_CHANNEL_PORT' }
+  return { url: 'http://localhost:8700', source: 'default' }
+}
+
 export class HaltijaTestClient {
   private client: DevChannelClient
   readonly baseUrl: string
 
-  constructor(serverUrl = 'http://localhost:8700') {
-    this.baseUrl = serverUrl
-    this.client = new DevChannelClient(serverUrl)
+  constructor(serverUrl?: string) {
+    const resolved = serverUrl ? { url: serverUrl, source: 'explicit' as const } : resolveTestServerUrl()
+    this.baseUrl = resolved.url
+    // Say so when falling back to the SHARED default. A test run that is about to drive whatever
+    // browser tab happens to be focused should announce it — the failure is otherwise silent and
+    // looks like a flaky test rather than "we drove the wrong browser". Mirrors the same warning
+    // `hj` prints. Set HALTIJA_PORT (or pass a URL) to target your own instance; `haltija
+    // --private --headless` prints one to drive.
+    if (resolved.source === 'default' && !process.env.HALTIJA_TEST_QUIET) {
+      process.stderr.write(
+        '[haltija/test] no HALTIJA_URL or HALTIJA_PORT set — using the shared default ' +
+          'http://localhost:8700. Commands will target whatever tab is focused there, which may ' +
+          'belong to another project. Set HALTIJA_PORT to target your own instance.\n',
+      )
+    }
+    this.client = new DevChannelClient(this.baseUrl)
   }
 
   // --- Lifecycle ---

@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.12.0-rc.1
+
+Release candidate. Everything below is 1.12.0; the `-rc` tag exists because the schematic
+renderer changed substantially late in the cycle and deserves real-world use before the minor is
+blessed. Install with `npm i haltija@rc`.
+
+### The schematic draws the page where it actually is
+
+Previously it stacked nested boxes in DOM order and sized them from *text width* — no page
+geometry anywhere. A right-aligned nav, a two-column grid and a sidebar all came out as one
+vertical list: structurally faithful, spatially a fiction. Asking "do these cards sit side by
+side?" got a confident wrong answer from a picture.
+
+Now boxes sit at real page coordinates, and:
+
+- **Viewport by default**, `fullPage: true` on request. A whole-document schematic of a long page
+  is a tall thin strip — 1126×22304 is 1:20, and no pixel budget rescues it.
+- **Layout-only elements draw nothing.** Once positions are real, a wrapper's rectangle says
+  nothing the children's placement doesn't already show.
+- **Page content is included** — `p`, `li`, `blockquote`, `td`, `img`, `svg` and friends were in
+  neither the interactive nor structural selector, so a documentation page showed its controls and
+  none of its documentation.
+- **Inline SVG and canvases render as real artwork**, in place.
+- **Checkboxes and radios are drawn as geometry**, not glyphs; **placeholders** are italic and
+  faded so an empty field can't read as a filled one; **disabled**, **focused** and **interactive**
+  are visually distinct.
+- **`contenteditable` is surfaced as the text-entry surface it is** — how React rich-text editors
+  and every `execCommand` document work, previously indistinguishable from a plain `<div>`.
+- **Refs render on a contrasting chip**, so the one token you retype into a command is legible over
+  artwork, over any palette, and in boxes too small for a caption.
+
+Captions carry an element's own text *minus* what its kept descendants already show, so a
+web-component label like `<label><tosi-slot>Required field</tosi-slot><input></label>` reads
+correctly instead of as a bare `label`.
+
+### `haltija --private --app` says which server to drive
+
+App mode starts two servers and both printed a byte-identical `HALTIJA_PRIVATE_READY` line. The
+payload now carries `"role":"public"` / `"role":"internal"`.
+
+### `haltija/test` resolves its server like `hj` does
+
+`HaltijaTestClient` hardcoded `http://localhost:8700` with no env override, so an adopter's
+integration suite pointed at the shared interactive server and drove whatever tab was focused. It
+now honours `HALTIJA_URL` / `HALTIJA_PORT` / `DEV_CHANNEL_PORT`, and says so on stderr when it
+falls back to the shared default.
+
 ## 1.12.0
 
 **Trustworthy by default.** A minor, gated on the nine-lens pre-release review: every finding it
