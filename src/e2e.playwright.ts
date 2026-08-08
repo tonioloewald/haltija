@@ -389,6 +389,104 @@ test.describe('haltija-dev CLI', () => {
     expect(unbounded.data.format).toBe('png') // and the default is still PNG
   })
 
+  test('map and query pierce open shadow DOM, but never report haltija itself (#19)', async ({ page }) => {
+    // `hj tree` has pierced shadow roots since 1.5; `map` and `query` did not, so an agent asking
+    // the flagship question — "what's here and what is it wired to" — was told a web component was
+    // empty, while `tree` had listed its contents correctly one command earlier.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', '<my-el-19></my-el-19>')
+      customElements.define(
+        'my-el-19',
+        class extends HTMLElement {
+          connectedCallback() {
+            this.attachShadow({ mode: 'open' }).innerHTML =
+              '<h2>shadow heading</h2><button>shadow button</button>'
+          }
+        },
+      )
+    })
+    await page.waitForTimeout(200)
+
+    const map = await (await fetch(`${SERVER_URL}/map`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json()
+    const flat: string[] = []
+    const walk = (n: any) => { flat.push(`${n.tag}:${n.text || ''}`); (n.children || []).forEach(walk) }
+    ;(map.data.nodes || []).forEach(walk)
+
+    expect(flat.join(' | ')).toContain('shadow button')
+    expect(flat.join(' | ')).toContain('shadow heading')
+
+    // …and NOT haltija's own controls. The widget's buttons live in ITS shadow root, so they were
+    // excluded only by accident — nothing crossed shadow boundaries. Piercing removed that
+    // protection, and every map briefly listed 👆 / REC / 🖥 / LOG as page affordances. A tool that
+    // reports itself as part of the page under test is the observer effect this product exists to
+    // avoid.
+    for (const ours of ['REC', '🖥', 'LOG', '👆']) {
+      expect([ours, flat.join(' | ')]).toEqual([ours, expect.not.stringContaining(ours)])
+    }
+
+    // query reaches shadow content too, and is likewise clean.
+    const q = await (await fetch(`${SERVER_URL}/query`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: 'button', all: true }),
+    })).json()
+    const texts = (Array.isArray(q.data) ? q.data : [q.data]).map((d: any) => (d.textContent || '').trim())
+    expect(texts).toContain('shadow button')
+    expect(texts.join('|')).not.toContain('REC')
+  })
+
+  test(':text() matches the INNERMOST element, ignores script/style, and hj find prints (#18)', async ({ page }) => {
+    // Four defects, one repro. Reported against 1.12.0-rc.2 by an agent driving a mixed
+    // React/tosijs app, and reproduced here exactly.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        '<ul><li role="option">plain Svenska</li></ul>' +
+          '<p>unique-needle-string appears exactly once here</p>' +
+          '<script>/* the words shadow button appear only in this script */</script>',
+      )
+    })
+
+    // (2) The smallest element containing the text — not html/body/ul, which all "contain" it.
+    // Every singular consumer took the outermost match, so `hj click ":text(X)"` clicked <html>
+    // and failed, while `hj click "li:text(X)"` worked: the tag qualifier was doing the
+    // pseudo-selector's job.
+    const all = await (await fetch(`${SERVER_URL}/query`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: ':text(plain Svenska)', all: true }),
+    })).json()
+    const tags = (Array.isArray(all.data) ? all.data : [all.data]).map((d: any) => d.tagName)
+    expect(tags).toEqual(['li'])
+
+    // …so clicking by bare text works, which is what the not-found message recommends.
+    const clicked = await (await fetch(`${SERVER_URL}/click`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: ':text(plain Svenska)' }),
+    })).json()
+    expect(clicked.success).toBe(true)
+
+    // (4) Script source is not page text. `innerText` is rendering-aware only for an ATTACHED node,
+    // and getVisibleText clones — so on a detached clone it degraded to textContent and script
+    // literals matched.
+    const scripty = await (await fetch(`${SERVER_URL}/query`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selector: ':text(shadow button)', all: true }),
+    })).json()
+    expect(Array.isArray(scripty.data) ? scripty.data : []).toEqual([])
+
+    // (1) /find answers at the TOP level, not under `data` — so the CLI's unwrap printed nothing
+    // and exited 0 on a call that had succeeded. Endpoint was always right; the rendering wasn't.
+    const found = await (await fetch(`${SERVER_URL}/find`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'unique-needle-string' }),
+    })).json()
+    expect(found.found).toBe(true)
+    expect(found.element.tag).toBe('p')
+  })
+
   test('/type and /key work BY REF — the documented `hj tree` → `hj <cmd> <ref>` flow', async ({ page }) => {
     // `ref` was declared in the schema, parsed by the CLI, and resolved by the widget — and absent
     // from both handlers' forwarding lists. `hj type <ref> <text>` is the headline example in

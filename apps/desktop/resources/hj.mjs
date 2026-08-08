@@ -2086,8 +2086,16 @@ async function doRequest(url, method, body, context = {}) {
           console.error(`${subcommand} failed: ${json.error || "unknown error"}`);
           process.exit(1);
         }
-        const result = json.data;
-        if (result === null || result === undefined) {} else if (typeof result === "string") {
+        const ENVELOPE = new Set(["success", "id", "timestamp", "error", "window"]);
+        let result = json.data;
+        if (result === undefined || result === null) {
+          const rest = Object.fromEntries(Object.entries(json).filter(([k]) => !ENVELOPE.has(k)));
+          if (Object.keys(rest).length)
+            result = rest;
+        }
+        if (result === null || result === undefined) {
+          console.error(`${subcommand}: no result`);
+        } else if (typeof result === "string") {
           process.stdout.write(result);
           if (!result.endsWith(`
 `))

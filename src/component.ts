@@ -748,9 +748,18 @@ import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schema
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
-  // Clone the element and remove SVGs to avoid their internal text (titles, descs, etc.)
+  // Clone, then strip everything whose text is not rendered.
+  //
+  // `innerText` is normally rendering-aware and skips <script>/<style> on its own — but only for an
+  // ATTACHED node. On a detached clone there is no layout, so it degrades to textContent semantics
+  // and script source leaks in: a page whose only occurrence of "shadow button" was inside a
+  // `<script>` string literal matched `:text(shadow button)`, and `<body>` was returned as the
+  // innermost match because the text really was in its subtree.
+  //
+  // SVG was already stripped here for the same class of reason (titles and descs are not page
+  // text). This extends the list rather than inventing a mechanism.
   const clone = el.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('svg').forEach(svg => svg.remove())
+  clone.querySelectorAll('svg, script, style, noscript, template').forEach(n => n.remove())
   return clone.innerText ?? ''
 }
 
@@ -760,30 +769,49 @@ function elementTextMatches(el: Element, parsed: ParsedTextSelector): boolean {
 }
 
 /** querySelector with :text() pseudo-selector support */
+/**
+ * Text matches, INNERMOST first — the smallest element containing the text.
+ *
+ * `<html>`, `<body>`, `<ul>` and `<li>` all "contain" the text of the `<li>`, and this returned
+ * them in document order, so every singular consumer took `<html>`. `hj click ":text(Save)"` then
+ * tried to click the document element and failed, while `hj click "li:text(Save)"` worked — the tag
+ * qualifier was doing the job the pseudo-selector should have done. Worse, the not-found error
+ * recommends the bare form, so the guidance pointed at the one variant that cannot work.
+ *
+ * Playwright's `:text()` matches the smallest element containing the text; this now does too. An
+ * ancestor is dropped when a descendant also matches, which is precise — a container with its OWN
+ * matching text and no matching child is still returned.
+ *
+ * `<script>` and `<style>` are excluded: their contents are source, not visible text, so
+ * `:text(shadow button)` matched a page whose only occurrence was inside a script literal.
+ */
+const NON_RENDERED_TEXT = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TITLE'])
+
+function textMatchesInDocument(parsed: ParsedTextSelector): Element[] {
+  const candidates = queryAllDeep(parsed.baseSelector).filter(
+    el => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed),
+  )
+  // Drop any match that contains another match: what's left is the innermost set.
+  return candidates.filter(el => !candidates.some(other => other !== el && el.contains(other)))
+}
+
 function resolveSelector(selector: string): Element | null {
   if (!TEXT_PSEUDO_RE.test(selector)) {
-    return document.querySelector(selector)
+    return document.querySelector(selector) || queryAllDeep(selector)[0] || null
   }
   const parsed = parseTextSelector(selector)
   if (!parsed) return document.querySelector(selector)
-
-  const candidates = document.querySelectorAll(parsed.baseSelector)
-  for (const el of candidates) {
-    if (elementTextMatches(el, parsed)) return el
-  }
-  return null
+  return textMatchesInDocument(parsed)[0] || null
 }
 
 /** querySelectorAll with :text() pseudo-selector support */
 function resolveSelectorAll(selector: string): Element[] {
   if (!TEXT_PSEUDO_RE.test(selector)) {
-    return Array.from(document.querySelectorAll(selector))
+    return queryAllDeep(selector)
   }
   const parsed = parseTextSelector(selector)
   if (!parsed) return Array.from(document.querySelectorAll(selector))
-
-  const candidates = document.querySelectorAll(parsed.baseSelector)
-  return Array.from(candidates).filter(el => elementTextMatches(el, parsed))
+  return textMatchesInDocument(parsed)
 }
 
 /**
@@ -1868,6 +1896,56 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
  * only thing worth looking at (issue #15). Walks open roots; a closed root is genuinely unreachable
  * and nothing can be done about that.
  */
+/**
+ * querySelectorAll that crosses OPEN shadow boundaries.
+ *
+ * `hj tree` has pierced shadow DOM since 1.5 (`pierceShadow` defaults true) — but `map` and
+ * `query` used `document.querySelectorAll`, which stops dead at a shadow root. So an agent asking
+ * the flagship question, "what's here and what is it wired to", was told a web component is empty,
+ * while `tree` listed its contents correctly two commands earlier. In a design-system codebase
+ * that's most of the page.
+ *
+ * Open roots only: a closed root is unreachable by construction, and pretending otherwise would be
+ * the kind of confident wrong answer this tool exists not to give.
+ */
+/**
+ * Is this haltija's own widget (or inside it)?
+ *
+ * The widget's controls live in its shadow root, so nothing that stopped at shadow boundaries could
+ * ever see them — the exclusion was ACCIDENTAL, a side effect of not piercing. The moment `map` and
+ * `query` learned to cross open roots, haltija's own 👆 / REC / 🖥 / LOG buttons appeared in every
+ * affordance map as page affordances, and `hj query button` started returning them.
+ *
+ * A tool that reports itself as part of the page under test is exactly the observer effect this
+ * whole product exists to avoid, so the exclusion is now deliberate and stated in one place.
+ */
+function isOwnWidget(el: Element): boolean {
+  if (el.tagName === TAG_NAME.toUpperCase()) return true
+  try {
+    return !!(el as HTMLElement).closest?.(TAG_NAME)
+  } catch {
+    return false
+  }
+}
+
+function queryAllDeep(selector: string, root: ParentNode = document): Element[] {
+  const out: Element[] = []
+  const visit = (node: ParentNode) => {
+    try {
+      out.push(...Array.from(node.querySelectorAll(selector)).filter((el) => !isOwnWidget(el)))
+    } catch {
+      // Invalid selector for this root; the caller's own error path reports it.
+    }
+    for (const el of Array.from(node.querySelectorAll('*'))) {
+      if (isOwnWidget(el)) continue
+      const sr = (el as HTMLElement).shadowRoot
+      if (sr) visit(sr)
+    }
+  }
+  visit(root)
+  return out
+}
+
 function findCanvasesDeep(root: ParentNode = document): HTMLCanvasElement[] {
   const found: HTMLCanvasElement[] = []
   const visit = (node: ParentNode) => {
@@ -3056,6 +3134,9 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       truncated = true
       return null
     }
+    // Never map ourselves. See isOwnWidget: the widget's controls are in its shadow root, so this
+    // exclusion used to be a free side effect of not piercing shadow DOM.
+    if (isOwnWidget(el)) return null
     const isInteractive = el.matches(INTERACTIVE)
     const isStructural = el.matches(STRUCTURAL)
     const isContent = el.matches(CONTENT)
@@ -3076,7 +3157,15 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     // Which DOM elements became nodes of their own. A parent's caption is everything in its subtree
     // EXCEPT what these already display — see describeEl.
     const keptEls = new Set<Element>()
-    for (const child of Array.from(el.children)) {
+    // Shadow content FIRST, then light DOM. `tree` has pierced open shadow roots since 1.5; the
+    // affordance map never did, so `hj map` reported a web component as empty while `hj tree`
+    // listed its contents. In a design-system codebase that is most of the interactive page —
+    // and `map` is the surface an agent is told to start from.
+    const kids = [
+      ...(el.shadowRoot ? Array.from(el.shadowRoot.children) : []),
+      ...Array.from(el.children),
+    ]
+    for (const child of kids) {
       const c = walk(child)
       if (c) {
         children.push(c)

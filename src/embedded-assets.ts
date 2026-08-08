@@ -3909,36 +3909,35 @@ export const COMPONENT_JS: string = `(() => {
   }
   function getVisibleText(el) {
     const clone = el.cloneNode(true);
-    clone.querySelectorAll("svg").forEach((svg) => svg.remove());
+    clone.querySelectorAll("svg, script, style, noscript, template").forEach((n) => n.remove());
     return clone.innerText ?? "";
   }
   function elementTextMatches(el, parsed) {
     const text = getVisibleText(el);
     return textMatches(text, parsed);
   }
+  var NON_RENDERED_TEXT = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TITLE"]);
+  function textMatchesInDocument(parsed) {
+    const candidates = queryAllDeep(parsed.baseSelector).filter((el) => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed));
+    return candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)));
+  }
   function resolveSelector(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
-      return document.querySelector(selector);
+      return document.querySelector(selector) || queryAllDeep(selector)[0] || null;
     }
     const parsed = parseTextSelector(selector);
     if (!parsed)
       return document.querySelector(selector);
-    const candidates = document.querySelectorAll(parsed.baseSelector);
-    for (const el of candidates) {
-      if (elementTextMatches(el, parsed))
-        return el;
-    }
-    return null;
+    return textMatchesInDocument(parsed)[0] || null;
   }
   function resolveSelectorAll(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
-      return Array.from(document.querySelectorAll(selector));
+      return queryAllDeep(selector);
     }
     const parsed = parseTextSelector(selector);
     if (!parsed)
       return Array.from(document.querySelectorAll(selector));
-    const candidates = document.querySelectorAll(parsed.baseSelector);
-    return Array.from(candidates).filter((el) => elementTextMatches(el, parsed));
+    return textMatchesInDocument(parsed);
   }
   function resolveRefOrSelector(ref, selector) {
     if (ref) {
@@ -4641,6 +4640,32 @@ export const COMPONENT_JS: string = `(() => {
       hint: \`No agent surface found at globalThis.\${globalName}. This map is reconstructed from the DOM, \` + \`so it has no binding provenance (what a control is wired to). A tosijs app can expose the \` + \`real wiring via enableAgentInterface().\`,
       ...buildDomAffordances(opts.maxNodes)
     };
+  }
+  function isOwnWidget(el) {
+    if (el.tagName === TAG_NAME.toUpperCase())
+      return true;
+    try {
+      return !!el.closest?.(TAG_NAME);
+    } catch {
+      return false;
+    }
+  }
+  function queryAllDeep(selector, root = document) {
+    const out = [];
+    const visit = (node) => {
+      try {
+        out.push(...Array.from(node.querySelectorAll(selector)).filter((el) => !isOwnWidget(el)));
+      } catch {}
+      for (const el of Array.from(node.querySelectorAll("*"))) {
+        if (isOwnWidget(el))
+          continue;
+        const sr = el.shadowRoot;
+        if (sr)
+          visit(sr);
+      }
+    };
+    visit(root);
+    return out;
   }
   function findCanvasesDeep(root = document) {
     const found = [];
@@ -5397,6 +5422,8 @@ export const COMPONENT_JS: string = `(() => {
         truncated = true;
         return null;
       }
+      if (isOwnWidget(el))
+        return null;
       const isInteractive = el.matches(INTERACTIVE);
       const isStructural = el.matches(STRUCTURAL);
       const isContent = el.matches(CONTENT);
@@ -5405,7 +5432,11 @@ export const COMPONENT_JS: string = `(() => {
         return null;
       const children = [];
       const keptEls = new Set;
-      for (const child of Array.from(el.children)) {
+      const kids = [
+        ...el.shadowRoot ? Array.from(el.shadowRoot.children) : [],
+        ...Array.from(el.children)
+      ];
+      for (const child of kids) {
         const c = walk(child);
         if (c) {
           children.push(c);

@@ -1260,9 +1260,27 @@ async function doRequest(url, method, body, context = {}) {
           console.error(`${subcommand} failed: ${json.error || 'unknown error'}`)
           process.exit(1)
         }
-        const result = json.data
+        // `json.data` when there is one, otherwise the envelope minus its bookkeeping.
+        //
+        // Not every endpoint nests its payload under `data`: `/find` answers
+        // `{success, found, element, selector}` at the TOP level, so `json.data` was `undefined`,
+        // this fell into "nothing to print", and `hj find "needle"` printed NOTHING and exited 0 —
+        // on a call that had succeeded and located the element. Silence plus a success code is the
+        // worst possible rendering of a correct answer: no human sees it and no script can detect
+        // it either.
+        //
+        // Reported for `find` (#18); probing every command in this list found `form` doing exactly
+        // the same, unreported. Fixing the shape rather than the two instances.
+        const ENVELOPE = new Set(['success', 'id', 'timestamp', 'error', 'window'])
+        let result = json.data
+        if (result === undefined || result === null) {
+          const rest = Object.fromEntries(Object.entries(json).filter(([k]) => !ENVELOPE.has(k)))
+          if (Object.keys(rest).length) result = rest
+        }
         if (result === null || result === undefined) {
-          // nothing to print
+          // Genuinely nothing — say so rather than exiting silently, which is indistinguishable
+          // from a command that never ran.
+          console.error(`${subcommand}: no result`)
         } else if (typeof result === 'string') {
           process.stdout.write(result)
           if (!result.endsWith('\n')) process.stdout.write('\n')
