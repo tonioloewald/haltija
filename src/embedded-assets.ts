@@ -5275,7 +5275,7 @@ export const COMPONENT_JS: string = `(() => {
       fg: cssRgb(fg),
       bg: cssRgb(bg),
       border,
-      contrast: Math.round(ratio * 10) / 10,
+      contrast: Math.floor(ratio * 10) / 10,
       passes: ratio >= (large ? 3 : 4.5),
       large,
       ...bg.imaged ? { uncertain: true } : {}
@@ -5395,9 +5395,21 @@ export const COMPONENT_JS: string = `(() => {
         const c = probeColors(el);
         node.colors = c;
         const hasOwnText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent || "").trim().length > 0);
-        const hasReadableText = hasOwnText || !!(node.label || node.value);
-        if (!c.passes && hasReadableText && !c.uncertain && !node.disabled) {
-          node.contrastFail = \`\${c.contrast}:1 (needs \${c.large ? 3 : 4.5}:1)\`;
+        const textRenderer = hasOwnText ? el : Array.from(el.querySelectorAll("*")).find((d) => Array.from(d.childNodes).some((n) => n.nodeType === 3 && (n.textContent || "").trim().length > 0)) || null;
+        const hasReadableText = hasOwnText || !!textRenderer || !!(node.label || node.value);
+        const graded = textRenderer && textRenderer !== el ? probeColors(textRenderer) : c;
+        if (graded !== c) {
+          node.colors = {
+            ...c,
+            fg: graded.fg,
+            contrast: graded.contrast,
+            passes: graded.passes,
+            large: graded.large,
+            ...graded.uncertain ? { uncertain: true } : {}
+          };
+        }
+        if (!graded.passes && hasReadableText && !graded.uncertain && !node.disabled) {
+          node.contrastFail = \`\${graded.contrast}:1 (needs \${graded.large ? 3 : 4.5}:1)\`;
         }
       } catch {}
       try {

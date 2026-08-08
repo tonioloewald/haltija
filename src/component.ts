@@ -2880,7 +2880,15 @@ function probeColors(el: Element): {
     fg: cssRgb(fg),
     bg: cssRgb(bg),
     border,
-    contrast: Math.round(ratio * 10) / 10,
+    // FLOOR, not round. Rounding crossed the threshold: a true ratio of 2.991 displayed as `3`,
+    // so `contrastFail` read "3:1 (needs 3:1)" — a failure phrased as a pass, on the one number in
+    // the response whose entire job is to be believed. `passes` uses the raw ratio, so the verdict
+    // was right and the sentence explaining it was wrong.
+    //
+    // Flooring is exactly correct rather than merely safer: both thresholds (3 and 4.5) have one
+    // decimal place, so for any ratio >= T the floored value is still >= T, and for any ratio < T
+    // it is still < T. The displayed number is always on the same side of the line as the truth.
+    contrast: Math.floor(ratio * 10) / 10,
     passes: ratio >= (large ? 3 : 4.5),
     large,
     ...(bg.imaged ? { uncertain: true } : {}),
@@ -3084,11 +3092,47 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       const hasOwnText = Array.from(el.childNodes).some(
         (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0,
       )
-      const hasReadableText = hasOwnText || !!(node.label || node.value)
+      // …but a wrapper around exactly one text-bearing descendant IS the thing rendering that text.
+      //
+      // Requiring a DIRECT text node silently skipped every design-system button: MUI (and tosijs,
+      // and most others) put the label in a `<span>`, so `hasOwnText` was false and a genuinely
+      // failing control emitted no `contrastFail` at all. Reported as "inconsistently emitted, can't
+      // isolate it" — the discriminator wasn't the colours or the element type, it was whether the
+      // text happened to be a direct child.
+      //
+      // The #13 concern still holds and is why this isn't just `node.text`: an element with no text
+      // of its own has no font size of its own, so `large` is UNKNOWABLE and defaulting it to false
+      // manufactures failures. So find the element that actually renders the text and grade with
+      // ITS metrics, rather than guessing with the wrapper's.
+      const textRenderer = hasOwnText
+        ? el
+        : Array.from(el.querySelectorAll('*')).find((d) =>
+            Array.from(d.childNodes).some(
+              (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0,
+            ),
+          ) || null
+      const hasReadableText = hasOwnText || !!textRenderer || !!(node.label || node.value)
       // WCAG 1.4.3 explicitly EXEMPTS disabled controls, so flagging one is a false positive —
       // and a contrast report that cries wolf on every greyed-out button is one nobody reads.
-      if (!c.passes && hasReadableText && !c.uncertain && !node.disabled) {
-        node.contrastFail = `${c.contrast}:1 (needs ${c.large ? 3 : 4.5}:1)`
+      // `large` from whatever actually renders the text — the wrapper's font-size is not the one
+      // the reader sees when a child overrides it.
+      const graded = textRenderer && textRenderer !== el ? probeColors(textRenderer) : c
+      if (graded !== c) {
+        // The VERDICT fields must describe what was actually judged, or we reproduce the reported
+        // inconsistency in a new form: `passes: true` sitting next to a `contrastFail`. The box
+        // still paints with the element's own background and border — those are what you SEE — but
+        // the text colour, ratio and verdict come from whatever renders the text.
+        node.colors = {
+          ...c,
+          fg: graded.fg,
+          contrast: graded.contrast,
+          passes: graded.passes,
+          large: graded.large,
+          ...(graded.uncertain ? { uncertain: true } : {}),
+        }
+      }
+      if (!graded.passes && hasReadableText && !graded.uncertain && !node.disabled) {
+        node.contrastFail = `${graded.contrast}:1 (needs ${graded.large ? 3 : 4.5}:1)`
       }
     } catch {}
     // Did this element paint anything ITSELF?
