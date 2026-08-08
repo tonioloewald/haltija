@@ -1,5 +1,30 @@
 # TODO
 
+- [ ] **Replace the 7 `s.any` uses once tosijs-schema#3 lands** (or sooner, with concrete types).
+  Our published schemas carry invalid JSON Schema fragments today. Deferred past 1.12.0 because
+  changing validation on `test`/`tests` — the JSON test runner's payload — right before a release
+  is the kind of late change that bites. See `UPSTREAM.md`.
+
+## Schematic: more instantaneous accessibility wins
+
+Exposing contrast in the schematic turned an invisible audit into something you SEE, and it paid
+off immediately — a reporter found three genuine WCAG failures on their own login page without
+looking for them. The same trick should extend:
+
+- [ ] **Surface `role`, and shortcomings in role.** The map already reads `role`; the schematic
+  does not show it. Draw it, and flag what's wrong or missing: an interactive element with no
+  accessible name, a `role` that contradicts the tag (`<div role="button">` with no `tabindex`), a
+  `role=checkbox` with no `aria-checked`, a landmark used twice with no label to tell them apart,
+  a `<button>` whose only content is an icon. Each of those is invisible in a screenshot, obvious
+  in a diagram that draws it, and — like contrast — a real defect rather than a style opinion.
+- [ ] **Localization checking.** A schematic drawn at true geometry already shows where text will
+  not fit; the map knows the text and the box. Candidates: text that overflows or is clipped by its
+  container, a `lang` attribute that disagrees with the content, hard-coded strings in a page that
+  otherwise uses a translation mechanism, untranslated fallbacks sitting next to translated
+  siblings, and layout that breaks under a longer translation (German/Finnish are the usual
+  canaries). Pseudo-localization — re-render the map with every string expanded ~40% — would show the
+  breakage before a translator ever sees it.
+
 ## Schematic: delegate rendering to tosijs-schematic (1.13)
 
 - [ ] **Stop maintaining our own renderer.** See `UPSTREAM.md` and

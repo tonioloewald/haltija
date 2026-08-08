@@ -2096,7 +2096,8 @@ function renderMapSchematic(
   canvases: Array<{ ref: string; label: string; image?: string; w: number; h: number; error?: string; rect?: { x: number; y: number; w: number; h: number } }> = [],
   banner?: string,
   fullPage = false,
-): { svg: string; width: number; height: number } {
+  layoutMode: 'auto' | 'geometric' | 'structural' = 'auto',
+): { svg: string; width: number; height: number; layout: 'geometric' | 'structural'; boundsCoverage: string } {
   const PAD = 8
   const ROW = 22
   const FONT = '11px ui-monospace, Menlo, monospace'
@@ -2187,6 +2188,7 @@ function renderMapSchematic(
    * 79px across. Unreadable to human and model alike. What is on screen is also what the question
    * is usually about.
    */
+  let boundsCoverage = { withRect: 0, total: 0 }
   const laidOut = (
     roots: Box[],
   ): { x: number; y: number; w: number; h: number; nodes: number } | null => {
@@ -2198,10 +2200,22 @@ function renderMapSchematic(
       b.children.forEach(count)
     }
     roots.forEach(count)
+    boundsCoverage = { withRect, total }
     // The tosi-agent tier reports an app's own wiring and has no DOM rects at all; a DOM map whose
     // nodes mostly lack them is equally undrawable. Either way, say so by returning null rather
     // than producing a diagram that is mostly empty space.
-    if (!total || withRect / total < 0.5) return null
+    //
+    // `layoutMode` lets a caller pin the choice. This used to be an invisible automatic switch —
+    // a page would render geometrically or as stacked boxes with nothing in the response saying
+    // which, or why, and a reporter who ruled out node count, page height AND element visibility
+    // still could not find the switch. An automatic decision the caller cannot see, explain or
+    // override is indistinguishable from a bug.
+    if (layoutMode === 'structural') return null
+    if (layoutMode === 'geometric') {
+      if (!total) return null
+    } else if (!total || withRect / total < 0.5) {
+      return null
+    }
 
     if (fullPage) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -2659,7 +2673,13 @@ function renderMapSchematic(
     parts.join('') +
     `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` +
     `</svg>`
-  return { svg, width, height }
+  return {
+    svg,
+    width,
+    height,
+    layout: geo ? 'geometric' : 'structural',
+    boundsCoverage: `${boundsCoverage.withRect}/${boundsCoverage.total}`,
+  }
 }
 
 /**
@@ -2674,7 +2694,7 @@ async function buildSchematicResponse(
   banner?: string,
 ): Promise<Record<string, unknown>> {
   const canvases = collectCanvasThumbnails()
-  const { svg, width, height } = renderMapSchematic(map, canvases, banner, payload?.fullPage === true)
+  const { svg, width, height, layout, boundsCoverage } = renderMapSchematic(map, canvases, banner, payload?.fullPage === true, payload?.layout || 'auto')
   const format = payload?.format || 'png'
   const raster = await rasterizeSchematic(svg, width, height, payload?.scale || 1, {
     maxWidth: payload?.maxWidth,
@@ -2688,6 +2708,10 @@ async function buildSchematicResponse(
     height: raster.height,
     format: raster.format,
     source: 'schematic',
+    // WHICH renderer drew this, and the evidence behind the choice. Two modes with no way to tell
+    // them apart is the complaint that produced this field.
+    layout,
+    boundsCoverage,
     canvasesRendered: canvases.filter((c) => c.image).length,
     map,
   }
@@ -9235,6 +9259,12 @@ export class DevChannel extends HTMLElement {
           const jsonChars = JSON.stringify(map).length
           this.respond(msg.id, true, {
             ...map,
+            // Spread what the builder produced rather than re-listing four of its fields. The
+            // hand-picked list is the same shape of bug as /map's handler dropping maxWidth and
+            // /type's dropping `ref`: `layout` and `boundsCoverage` were computed, returned, and
+            // then quietly not copied — so the field added specifically to make the rendering mode
+            // discoverable was itself undiscoverable. Third instance of this in one release.
+            ...built,
             image: built.image,
             width: built.width,
             height: built.height,

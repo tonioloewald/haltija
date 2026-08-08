@@ -1487,6 +1487,13 @@
           ],
           "description": "Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page."
         },
+        "layout": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Schematic layout: 'auto' (default), 'geometric' (boxes at true page coordinates) or 'structural' (nested stacked boxes). 'auto' picks geometric when most nodes carry bounds — which they do for a DOM map, but never for the tosi-agent tier, which describes wiring and has no geometry. The response reports which was used in `layout` and the evidence in `boundsCoverage`."
+        },
         "fullPage": {
           "type": [
             "boolean",

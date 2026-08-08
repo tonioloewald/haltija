@@ -1470,7 +1470,7 @@
     }
     return out;
   }
-  function renderMapSchematic(map, canvases = [], banner, fullPage = false) {
+  function renderMapSchematic(map, canvases = [], banner, fullPage = false, layoutMode = "auto") {
     const PAD = 8;
     const ROW = 22;
     const FONT = "11px ui-monospace, Menlo, monospace";
@@ -1533,6 +1533,7 @@
       const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD;
       return { w, h };
     };
+    let boundsCoverage = { withRect: 0, total: 0 };
     const laidOut = (roots) => {
       let withRect = 0;
       let total = 0;
@@ -1543,8 +1544,15 @@
         b.children.forEach(count);
       };
       roots.forEach(count);
-      if (!total || withRect / total < 0.5)
+      boundsCoverage = { withRect, total };
+      if (layoutMode === "structural")
         return null;
+      if (layoutMode === "geometric") {
+        if (!total)
+          return null;
+      } else if (!total || withRect / total < 0.5) {
+        return null;
+      }
       if (fullPage) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         const bounds = (b) => {
@@ -1835,11 +1843,17 @@
     const title = `${map.source === "tosi-agent" ? "wiring" : "dom"} · ${esc(map.title || "")}`;
     const bannerSvg = banner ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` + `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>` : "";
     const svg = `<?xml version="1.0" encoding="UTF-8"?>` + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` + `<rect width="${width}" height="${height}" fill="#ffffff"/>` + bannerSvg + parts.join("") + `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` + `</svg>`;
-    return { svg, width, height };
+    return {
+      svg,
+      width,
+      height,
+      layout: geo ? "geometric" : "structural",
+      boundsCoverage: `${boundsCoverage.withRect}/${boundsCoverage.total}`
+    };
   }
   async function buildSchematicResponse(map, payload2, banner) {
     const canvases = collectCanvasThumbnails();
-    const { svg, width, height } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true);
+    const { svg, width, height, layout, boundsCoverage } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true, payload2?.layout || "auto");
     const format = payload2?.format || "png";
     const raster = await rasterizeSchematic(svg, width, height, payload2?.scale || 1, {
       maxWidth: payload2?.maxWidth,
@@ -1853,6 +1867,8 @@
       height: raster.height,
       format: raster.format,
       source: "schematic",
+      layout,
+      boundsCoverage,
       canvasesRendered: canvases.filter((c) => c.image).length,
       map
     };
@@ -6690,6 +6706,7 @@ ${elementSummary}${moreText}`;
             const jsonChars = JSON.stringify(map).length;
             this.respond(msg2.id, true, {
               ...map,
+              ...built,
               image: built.image,
               width: built.width,
               height: built.height,

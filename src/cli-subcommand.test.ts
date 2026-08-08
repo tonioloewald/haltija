@@ -1266,3 +1266,27 @@ describe('a weak guess is not a licence to run a different command', () => {
     expect(getSuggestion('clickety')).toBe('click')
   })
 })
+
+describe('a POST always carries a JSON body, even an empty one', () => {
+  // `hj snapshot` is documented as taking an OPTIONAL argument and its schema says `required: []`,
+  // yet the documented default invocation was the one form that could not succeed:
+  //
+  //   ARG_MAPS.snapshot([])  ->  {}
+  //   clean({})              ->  undefined
+  //   if (body)              ->  false, so no body AND no Content-Type
+  //   server                 ->  "Invalid JSON body"
+  //
+  // The 400 attaches the endpoint schema, which contains an unrelated malformed entry from
+  // `s.any` (`"type": [null, "null"]`, tosijs-schema#3) — so the reporter reasonably blamed the
+  // schema. It validates `{}` perfectly well. The request simply never carried one.
+  test('an all-optional command produces an empty body, not undefined', () => {
+    expect(ARG_MAPS.snapshot([])).toEqual({})
+  })
+
+  test('clean() reducing it to undefined is the trap', () => {
+    // Pinned because this is the step that made the body vanish. If `clean` ever stops doing this
+    // the doRequest guard becomes belt-and-braces rather than load-bearing — no harm either way,
+    // but the reason should not be a mystery to the next reader.
+    expect(clean(ARG_MAPS.snapshot([]))).toBeUndefined()
+  })
+})

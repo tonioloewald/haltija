@@ -1670,6 +1670,7 @@ entirely, so \`zeroSize\` always means *operable but invisible*, never *not ther
     // byte-identical full-size PNG for `{maxWidth:300, maxHeight:300, format:'jpeg'}`, with a 200.
     // The rasterizer fix was real and, on this path, entirely dead. Same shape as a CLI flag that
     // exists in the help text and in no parser: two registries, one updated.
+    layout: s.string.describe("Schematic layout: 'auto' (default), 'geometric' (boxes at true page coordinates) or 'structural' (nested stacked boxes). 'auto' picks geometric when most nodes carry bounds — which they do for a DOM map, but never for the tosi-agent tier, which describes wiring and has no geometry. The response reports which was used in `layout` and the evidence in `boundsCoverage`.").optional,
     fullPage: s.boolean.describe('Draw the WHOLE document rather than just the viewport (default false). The schematic is laid out at real page coordinates, so a long page becomes a tall thin strip — 1126x22304 is a 1:20 ratio that no downscaling makes readable. Ask for it only when you need the parts that are off screen.').optional,
     maxWidth: s.number.describe('Max width in pixels for the schematic image (aspect ratio preserved)').optional,
     maxHeight: s.number.describe('Max height in pixels for the schematic image (aspect ratio preserved)').optional,

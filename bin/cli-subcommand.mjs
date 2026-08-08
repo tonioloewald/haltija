@@ -291,6 +291,7 @@ export const ARG_MAPS = {
       if (args[i] === '--format') { body.format = args[++i]; continue }
       if (args[i] === '--quality') { const q = normalizeQuality(args[++i]); if (q != null) body.quality = q; continue }
       if (args[i] === '--full-page') { body.fullPage = true; continue }
+      if (args[i] === '--layout') { body.layout = args[++i]; continue }
     }
     return body
   },
@@ -923,7 +924,7 @@ export const KNOWN_FLAGS = {
   // Added after an invariant test derived them from the parsers themselves. Missing entries are
   // not cosmetic: BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on an entry
   // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
-  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page'],
+  map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page', '--layout'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],
@@ -1159,9 +1160,21 @@ async function doRequest(url, method, body, context = {}) {
     const headers = {}
     if (process.env.HALTIJA_TOKEN) headers['X-Haltija-Token'] = process.env.HALTIJA_TOKEN
     const opts = { method, headers }
-    if (body) {
+    // A POST always carries a JSON body, even an empty one.
+    //
+    // `clean()` reduces `{context: undefined}` to `undefined`, so a command whose arguments are all
+    // optional sent a POST with NO body and NO Content-Type — and the server answered "Invalid JSON
+    // body". `hj snapshot` is documented as taking an optional argument, its schema says
+    // `required: []`, and the documented default invocation was the one form that could not
+    // succeed.
+    //
+    // The error dumped the schema alongside, which happens to contain an unrelated malformed entry
+    // (`"type": [null, "null"]`, from `s.any`) — so the reporter reasonably blamed the schema. It
+    // validates `{}` perfectly well; the request simply never carried one. A diagnostic that
+    // volunteers a plausible-looking irrelevance costs more than a terse one.
+    if (body || method === 'POST') {
       opts.headers['Content-Type'] = 'application/json'
-      opts.body = JSON.stringify(body)
+      opts.body = JSON.stringify(body || {})
     }
 
     const resp = await fetch(url, opts)

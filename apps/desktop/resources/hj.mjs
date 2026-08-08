@@ -1250,6 +1250,10 @@ var ARG_MAPS = {
         body.fullPage = true;
         continue;
       }
+      if (args[i] === "--layout") {
+        body.layout = args[++i];
+        continue;
+      }
     }
     return body;
   },
@@ -1839,7 +1843,7 @@ var KNOWN_FLAGS = {
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
-  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page"],
+  map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page", "--layout"],
   "events-watch": ["--preset"],
   "mutations-watch": ["--preset"],
   "network-watch": ["--preset"],
@@ -2024,9 +2028,9 @@ async function doRequest(url, method, body, context = {}) {
     if (process.env.HALTIJA_TOKEN)
       headers["X-Haltija-Token"] = process.env.HALTIJA_TOKEN;
     const opts = { method, headers };
-    if (body) {
+    if (body || method === "POST") {
       opts.headers["Content-Type"] = "application/json";
-      opts.body = JSON.stringify(body);
+      opts.body = JSON.stringify(body || {});
     }
     const resp = await fetch(url, opts);
     warnOnVersionSkew(resp);

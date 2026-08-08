@@ -135,3 +135,22 @@ pure function over plain data rather than entangled with the widget.
 flow both ways instead of diverging. **1.13, not 1.12**: it is an architectural change, and 1.12.0
 is in RC.
 
+## tosijs-schema — `s.any` emits invalid JSON Schema
+
+- **https://github.com/tonioloewald/tosijs-schema/issues/3** — filed 2026-08-08.
+
+`s.any` serializes to `{"type": [null, "null"]}`; the first entry is a literal `null` rather than
+a type-name string, so it is not valid JSON Schema. It appears in 7 haltija endpoint definitions,
+which means `API.md`, `llms.txt`, the MCP manifest and our 400 response bodies all carry invalid
+fragments.
+
+**Measured cost, not theoretical:** an agent testing 1.12.0-rc.2 hit an unrelated CLI bug (a POST
+sent with no body), saw this fragment in the schema our 400 helpfully attaches, and reasonably
+filed it as "invalid schema" — quoting it as the cause. It wasn't; `validateInput(endpoint, {})`
+passes. Both of us spent time on the wrong thing.
+
+**Not worked around locally, deliberately.** Replacing all 7 `s.any` uses with concrete types
+immediately before a release means changing validation on `test`/`tests` (the JSON test runner's
+payload) without knowing how lenient the current validator is being — exactly the kind of
+late change that bites. Tracked in `TODO.md` for after 1.12.0.
+
