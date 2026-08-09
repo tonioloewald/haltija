@@ -1890,7 +1890,25 @@ export const recordingGenerate = endpoint({
   description: 'Deprecated: Use POST /recording {"action":"generate"} instead.',
   category: 'recording',
   input: s.object({
+    // NINE fields are read by the handler; only `name` was declared. tosijs-schema 1.1.3 did not
+    // enforce `additionalProperties: false`, so the other eight silently worked and nobody noticed
+    // — the e2e case for this endpoint passes `events` and had been green for months. Upgrading to
+    // 1.5.1, which does enforce it, turned "undeclared but working" into a 400.
+    //
+    // This is the MIRROR of the class fixed elsewhere this release. `handler-forwarding.test.ts`
+    // asserts every DECLARED parameter reaches the widget; nothing asserted that every parameter
+    // the handler READS is declared. Same family, opposite direction, and only a dependency bump
+    // exposed it.
     name: s.string.describe('Test name').optional,
+    events: s.array(s.any).describe('Semantic events to convert. Omit to use the server-side event buffer (see `since`).').optional,
+    since: s.number.describe('When reading from the event buffer, only events after this timestamp').optional,
+    url: s.string.describe('Starting URL for the generated test (defaults to the first navigation event)').optional,
+    description: s.string.describe('Test description').optional,
+    tags: s.array(s.string).describe('Tags to attach to the generated test').optional,
+    createdBy: s.string.describe("Author recorded in the test ('human' by default)").optional,
+    addAssertions: s.boolean.describe('Infer assertions from the events (default true)').optional,
+    suggestAssertions: s.boolean.describe('Append suggested assertions at the end (default false)').optional,
+    minDelay: s.number.describe('Drop inter-step delays shorter than this many ms').optional,
   }),
 })
 

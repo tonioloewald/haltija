@@ -107,3 +107,75 @@ describe('every declared parameter reaches the widget', () => {
     expect(unused).toEqual([])
   })
 })
+
+
+/** From a marker to the matching close of the handler's argument list, by brace/paren depth. */
+function handlerBody(src: string, start: number): string {
+  let depth = 0
+  let seen = false
+  for (let i = start; i < src.length; i++) {
+    const c = src[i]
+    if (c === '(' || c === '{') { depth++; seen = true }
+    else if (c === ')' || c === '}') {
+      depth--
+      if (seen && depth <= 0) return src.slice(start, i + 1)
+    }
+  }
+  return src.slice(start)
+}
+
+describe('every parameter a handler READS is declared by its schema', () => {
+  /**
+   * The mirror of the check above, and the one that was missing.
+   *
+   * `/recording/generate` read NINE fields from the body and declared ONE. tosijs-schema 1.1.3 did
+   * not enforce `additionalProperties: false`, so the other eight worked anyway and the e2e case
+   * that passes `events` stayed green for months. Only a dependency bump to 1.5.1 — which does
+   * enforce it — turned "undeclared but working" into a 400 on a documented endpoint.
+   *
+   * Undeclared-but-read is worse than the forward direction, because it fails LATER and somewhere
+   * else: the parameter works until validation tightens, or until a consumer generates a client
+   * from the published schema and omits a field the endpoint actually needs.
+   *
+   * Scanned from `src/server.ts` as well as `api-handlers.ts` — several endpoints are handled
+   * there via `schemaEndpoint`, and that is exactly where this one hid.
+   */
+  const SOURCES = ['api-handlers.ts', 'server.ts'].map(f =>
+    readFileSync(join(import.meta.dir, f), 'utf-8'),
+  )
+
+  /** Fields the router injects or consumes before the handler sees them. */
+  const ROUTER_PROVIDED = new Set(['window'])
+
+  it('finds handler bodies to scan — not a vacuous check', () => {
+    const total = SOURCES.join('\n').match(/body\.[a-zA-Z_$][\w$]*/g) || []
+    expect(total.length).toBeGreaterThan(50)
+  })
+
+  it('no handler reads a field its endpoint does not declare', () => {
+    const undeclared: string[] = []
+    for (const [name, ep] of Object.entries(endpoints as Record<string, any>)) {
+      const marker = `registerHandler(api.${name},`
+      const marker2 = `schemaEndpoint(api.${name},`
+      for (const src of SOURCES) {
+        const start = src.indexOf(marker) !== -1 ? src.indexOf(marker) : src.indexOf(marker2)
+        if (start === -1) continue
+        // Brace-match to the end of THIS handler. Slicing to "the next marker" overran: server.ts
+        // dispatches with `if (path === …)` blocks, so the next `schemaEndpoint(` can be far past
+        // the end of the current one — and the overrun attributed a neighbour's `body.agentId` to
+        // /snapshot. A check whose findings name the wrong endpoint is worse than none: it sends
+        // you to fix code that is already correct.
+        const body = handlerBody(src, start)
+        const declared = new Set(
+          Object.keys(((getInputSchema(ep) as any)?.properties ?? {}) as Record<string, unknown>),
+        )
+        for (const m of body.matchAll(/\bbody\.([a-zA-Z_$][\w$]*)/g)) {
+          const field = m[1]
+          if (ROUTER_PROVIDED.has(field) || declared.has(field)) continue
+          undeclared.push(`${name} reads body.${field}, /${name} does not declare it`)
+        }
+      }
+    }
+    expect([...new Set(undeclared)]).toEqual([])
+  })
+})

@@ -108,14 +108,24 @@ half is entirely ours: verify the grant with `track.getSettings().displaySurface
 `setCaptureHandleConfig()` / `getCaptureHandle()`, then warn or re-prompt when the captured surface
 isn't this tab. Filed in TODO.md rather than upstream.
 
-## tosijs-schematic — converge the renderer (haltija should stop maintaining one)
+## tosijs-floorplan — converge the renderer (haltija should stop maintaining one)
 
-- **https://github.com/tonioloewald/tosijs-schematic/issues/1** — filed 2026-08-07;
-  **all four gaps adopted in tosijs-schematic 0.2.0** (2026-08-09), re-validated against a real
-  map. Two residual facts filed on the same issue: `href` and `value`. Adoption sequenced for
-  haltija 1.13 — not mid-RC.
+- **https://github.com/tonioloewald/tosijs-floorplan/issues/1** — filed 2026-08-07;
+  **all four gaps adopted in tosijs-floorplan 0.3.0 (renamed from tosijs-floorplan)** (2026-08-09), re-validated against a real
+  map. `href` and `value` landed in **0.3.0**, along with a `SchematicResult {svg, legend}` and a
+  `targetSize` option — i.e. the legend + give-up-threshold pattern was adopted into the renderer
+  too, which shrinks haltija's side of the split further.
+- **https://github.com/tonioloewald/tosijs-floorplan/issues/2** — filed 2026-08-09. Two gaps stop
+  `undersized` firing for a DOM producer: `interactive` is inferred tosijs-style (needs `on`
+  handlers / `contentEditable` / a two-way binding), and `textSizedLink` exempts EVERY link with
+  text rather than only inline ones — so a 16x16 icon link in a nav row is exempt whenever it has
+  an aria-label. Isolated with one variable per case. Not blocking us: haltija computes
+  `smallTarget` itself (it has `getComputedStyle` and the parent chain, so it can implement the
+  spec's real exception) and `producerTargetFlag` already defers to it.
 
-`tosijs-schematic` is a pure, dependency-free (12KB, 23 tests) renderer for exactly what
+  Adoption sequenced for haltija 1.13 — not mid-RC.
+
+`tosijs-floorplan` is a pure, dependency-free (12KB, 23 tests) renderer for exactly what
 haltija's schematic draws: "one shape per element at its true geometry". We built the same thing
 independently, in the same week, without either knowing.
 

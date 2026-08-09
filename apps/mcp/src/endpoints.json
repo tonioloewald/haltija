@@ -459,7 +459,8 @@
           "enum": [
             "mouse",
             "keyboard",
-            "direct"
+            "direct",
+            null
           ],
           "description": "How to focus: mouse (default), keyboard, or direct"
         },
@@ -985,11 +986,7 @@
           "description": "Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none"
         },
         "filters": {
-          "description": "Custom filter configuration",
-          "type": [
-            null,
-            "null"
-          ]
+          "description": "Custom filter configuration"
         },
         "pierceShadow": {
           "type": [
@@ -1381,7 +1378,8 @@
             "result",
             "cancel",
             "clear",
-            "status"
+            "status",
+            null
           ],
           "description": "Selection action to perform (default: result)"
         },
@@ -1640,13 +1638,12 @@
             },
             {
               "type": "number"
+            },
+            {
+              "type": "null"
             }
           ],
-          "description": "Recording ID or index number (for replay action)",
-          "type": [
-            null,
-            "null"
-          ]
+          "description": "Recording ID or index number (for replay action)"
         },
         "window": {
           "type": [
@@ -1708,6 +1705,73 @@
             "null"
           ],
           "description": "Test name"
+        },
+        "events": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {},
+          "description": "Semantic events to convert. Omit to use the server-side event buffer (see `since`)."
+        },
+        "since": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "When reading from the event buffer, only events after this timestamp"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Starting URL for the generated test (defaults to the first navigation event)"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Test description"
+        },
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags to attach to the generated test"
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Author recorded in the test ('human' by default)"
+        },
+        "addAssertions": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Infer assertions from the events (default true)"
+        },
+        "suggestAssertions": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Append suggested assertions at the end (default false)"
+        },
+        "minDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Drop inter-step delays shorter than this many ms"
         }
       },
       "required": [],
@@ -1739,7 +1803,8 @@
           "enum": [
             "json",
             "github",
-            "human"
+            "human",
+            null
           ],
           "description": "Output format: json (structured), github (annotations + summary), human (readable)"
         },
@@ -1813,7 +1878,8 @@
           "enum": [
             "json",
             "github",
-            "human"
+            "human",
+            null
           ],
           "description": "Output format: json (structured), github (annotations + summary), human (readable)"
         },
@@ -1907,11 +1973,7 @@
           "description": "What triggered the snapshot (e.g., \"manual\", \"test-failure\")"
         },
         "context": {
-          "description": "Additional context about the snapshot",
-          "type": [
-            null,
-            "null"
-          ]
+          "description": "Additional context about the snapshot"
         }
       },
       "required": [],
@@ -2000,11 +2062,7 @@
           "description": "\"accept\" or \"dismiss\""
         },
         "prompt": {
-          "description": "\"dismiss\" or { \"response\": \"text\" } to auto-fill",
-          "type": [
-            null,
-            "null"
-          ]
+          "description": "\"dismiss\" or { \"response\": \"text\" } to auto-fill"
         },
         "beforeunload": {
           "type": [

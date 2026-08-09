@@ -111,7 +111,7 @@ and every node carries `colors` + a `contrastFail` verdict so it is machine-chec
 - `hj recording [action, name, id, ...]` - Record user actions and generate tests
 - `hj recording-start [name]` - [Deprecated] Use /recording with action:"start"
 - `hj recording-stop` - [Deprecated] Use /recording with action:"stop"
-- `hj recording-generate [name]` - [Deprecated] Use /recording with action:"generate"
+- `hj recording-generate [name, events, since, ...]` - [Deprecated] Use /recording with action:"generate"
 - `hj recordings` - [Deprecated] Use /recording with action:"list"
 
 ### Run Tests

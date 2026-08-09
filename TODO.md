@@ -25,12 +25,12 @@ looking for them. The same trick should extend:
   canaries). Pseudo-localization — re-render the map with every string expanded ~40% — would show the
   breakage before a translator ever sees it.
 
-## Schematic: delegate rendering to tosijs-schematic (1.13)
+## Schematic: delegate rendering to tosijs-floorplan (1.13)
 
 - [ ] **Stop maintaining our own renderer.** See `UPSTREAM.md` and
-  https://github.com/tonioloewald/tosijs-schematic/issues/1.
+  https://github.com/tonioloewald/tosijs-floorplan/issues/1.
 
-  **All four contract gaps were adopted in tosijs-schematic 0.2.0** — `ref` (takes the index slot,
+  **All four contract gaps were adopted in tosijs-floorplan 0.3.0 (renamed from tosijs-floorplan)** — `ref` (takes the index slot,
   so a vision consumer reads a handle it can actually `hj click`), `flags` (severity bars on the
   left edge; our contrast verdict maps in one line), `image` (data-URL only, so the renderer stays
   pure), and caption wrapping. Re-validated against a real map: **145 records, 133 refs, 20

@@ -2042,7 +2042,7 @@ Get captured mutations via /mutations/status.
 | \`subtree\` | boolean,null | Watch all descendants (default true) |
 | \`debounce\` | number,null | Debounce ms (default 100) |
 | \`preset\` | string,null | Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none |
-| \`filters\` | ,null | Custom filter configuration |
+| \`filters\` | any | Custom filter configuration |
 | \`pierceShadow\` | boolean,null | Watch inside shadow DOM (default false) |
 
 **Examples:**
@@ -2299,7 +2299,7 @@ Workflow: start → (user interacts, navigates pages) → stop → list → repl
 |------|------|-------------|
 | \`action\` | string | Recording action to perform *(required)* |
 | \`name\` | string,null | Test name (for generate action) |
-| \`id\` | ,null | Recording ID or index number (for replay action) |
+| \`id\` | any | Recording ID or index number (for replay action) |
 | \`window\` | string,null | Target window ID |
 
 **Examples:**
@@ -2368,6 +2368,15 @@ Deprecated: Use POST /recording {"action":"generate"} instead.
 | Name | Type | Description |
 |------|------|-------------|
 | \`name\` | string,null | Test name |
+| \`events\` | array,null | Semantic events to convert. Omit to use the server-side event buffer (see \`since\`). |
+| \`since\` | number,null | When reading from the event buffer, only events after this timestamp |
+| \`url\` | string,null | Starting URL for the generated test (defaults to the first navigation event) |
+| \`description\` | string,null | Test description |
+| \`tags\` | array,null | Tags to attach to the generated test |
+| \`createdBy\` | string,null | Author recorded in the test ('human' by default) |
+| \`addAssertions\` | boolean,null | Infer assertions from the events (default true) |
+| \`suggestAssertions\` | boolean,null | Append suggested assertions at the end (default false) |
+| \`minDelay\` | number,null | Drop inter-step delays shorter than this many ms |
 
 ---
 
@@ -2680,7 +2689,7 @@ Great for debugging test failures - call this when something goes wrong.
 | Name | Type | Description |
 |------|------|-------------|
 | \`trigger\` | string,null | What triggered the snapshot (e.g., "manual", "test-failure") |
-| \`context\` | ,null | Additional context about the snapshot |
+| \`context\` | any | Additional context about the snapshot |
 
 **Examples:**
 
@@ -2792,7 +2801,7 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }
 |------|------|-------------|
 | \`alert\` | string,null | "dismiss" (only option for alerts) |
 | \`confirm\` | string,null | "accept" or "dismiss" |
-| \`prompt\` | ,null | "dismiss" or { "response": "text" } to auto-fill |
+| \`prompt\` | any | "dismiss" or { "response": "text" } to auto-fill |
 | \`beforeunload\` | string,null | "allow" or "block" — controls page unload |
 | \`window\` | string,null | Target window ID |
 
@@ -2997,7 +3006,7 @@ and every node carries \`colors\` + a \`contrastFail\` verdict so it is machine-
 - \`hj recording [action, name, id, ...]\` - Record user actions and generate tests
 - \`hj recording-start [name]\` - [Deprecated] Use /recording with action:"start"
 - \`hj recording-stop\` - [Deprecated] Use /recording with action:"stop"
-- \`hj recording-generate [name]\` - [Deprecated] Use /recording with action:"generate"
+- \`hj recording-generate [name, events, since, ...]\` - [Deprecated] Use /recording with action:"generate"
 - \`hj recordings\` - [Deprecated] Use /recording with action:"list"
 
 ### Run Tests
