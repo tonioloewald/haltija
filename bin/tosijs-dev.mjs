@@ -659,14 +659,29 @@ function launchApp(desktopDir, port) {
   // In CI/wait-ready mode, wait for server + browser to be ready
   if (waitReady) {
     (async () => {
+      // Resolve the port the SAME way the headless path does.
+      //
+      // A `--private` run binds an EPHEMERAL port and `port` is still the shared default, so
+      // `--wait-ready` polled 8700 while the private browser connected on (say) 49815 — never saw
+      // it, timed out, and exited non-zero. That exit then correctly tore down the instance, so a
+      // false negative destroyed a working run. `--ci` implies `--wait-ready`, which is exactly
+      // where nobody is watching to notice.
+      //
+      // The app writes the caller's port-file once with the PUBLIC address (each child server
+      // writes its own separately), so this can't pick up the internal chrome server by mistake.
+      const readyPort = privateMode ? await discoverPrivatePort(privatePortFile) : port
+      if (!readyPort) {
+        console.error(red('✗') + ' Private server did not report its port within timeout')
+        process.exit(1)
+      }
       console.log('[haltija] Waiting for server...')
-      const serverReady = await waitForServer(port)
+      const serverReady = await waitForServer(readyPort)
       if (!serverReady) {
         console.error(red('✗') + ' Server failed to start within timeout')
         process.exit(1)
       }
       console.log('[haltija] Server ready, waiting for browser...')
-      const browserReady = await waitForBrowser(port)
+      const browserReady = await waitForBrowser(readyPort)
       if (!browserReady) {
         console.error(red('✗') + ' Browser failed to connect within timeout')
         process.exit(1)
