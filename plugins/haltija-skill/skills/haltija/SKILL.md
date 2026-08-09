@@ -208,6 +208,12 @@ another one. Doing so needs `setCaptureHandleConfig()`, which mutates document-l
 page the widget is injected into — an injected tool shouldn't quietly change its host's
 configuration. So `browser` means "a tab", not "your tab".
 
+Nodes can carry **`smallTarget`** — an interactive control below WCAG 2.5.8's 24×24 CSS px
+minimum (44×44 is the AAA/Apple/Material recommendation), reported as e.g.
+`"16x16 (WCAG 2.5.8 needs 24x24; 44x44 recommended)"` and drawn as an amber bar along the bottom
+edge. Inline links inside a sentence are exempt, per the spec — they are sized by their text, and
+flagging them would fire on every paragraph.
+
 Nodes can carry **`zeroSize: true`** — a control that works but occupies no box (the accessible
 file-input / custom-checkbox pattern: a 0x0 `<input>` operated through its `<label>`). Click the
 label, not the input; the input's coordinates mean nothing. Anything genuinely hidden is left out
@@ -218,6 +224,14 @@ box per control, nested by structure, each showing its handle (`@ref` or `#index
 an index you can glance at and then act on. Sizing and encoding take the same flags as a screenshot:
 `--max-width`, `--max-height`, `--format png|webp|jpeg`, `--quality`, `--scale`. Pass `--data-url`
 for an inline base64 string, or `--json` if you want the map JSON *and* the image together.
+
+**`hj map --image` writes a LEGEND beside the image.** stdout stays a bare path; stderr names the
+sibling `*.legend.json`, which maps every `@ref` on the picture to what it is — tag, text, role,
+href, value, state, and any findings. The image says *where* and *which*; the legend says *what*.
+
+That split is what lets the renderer stop cramming. A 16×16 icon button can never hold
+`@42 button Delete account`, so below the touch-target threshold it draws the ref and nothing else,
+and you look the ref up. Read the number off the picture, find it in the legend.
 
 Three things to know:
 

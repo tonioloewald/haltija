@@ -168,3 +168,30 @@ describe('quality normalisation: two copies had already drifted', () => {
     expect(normalizeQuality('80')).toBeUndefined() // a string is a caller bug, not a percentage
   })
 })
+
+describe('touch targets: the threshold that is also a finding', () => {
+  // A control much below the touch-target minimum is a usability defect whether or not anyone
+  // filed it — and it is the same line below which a caption cannot be drawn legibly anyway. So
+  // the rendering threshold and the accessibility check are the same number, which is why the
+  // legend exists: below it, stop cramming and let the legend carry the facts.
+  //
+  // WCAG 2.5.8 Target Size (Minimum) is AA at 24x24 CSS px; 2.5.5 Enhanced is AAA at 44x44, and
+  // Apple HIG (44pt) / Material (48dp) both sit at the higher mark.
+  const flags = (w: number, h: number) => Math.min(w, h) > 0 && Math.min(w, h) < 24
+
+  it('flags controls below the AA minimum', () => {
+    expect(flags(16, 16)).toBe(true)
+    expect(flags(200, 20)).toBe(true) // one short dimension is enough
+  })
+
+  it('does not flag controls at or above it — the discriminating half', () => {
+    expect(flags(24, 24)).toBe(false)
+    expect(flags(200, 44)).toBe(false)
+  })
+
+  it('ignores zero-size elements, which have their own marker', () => {
+    // A 0x0 accessible input is `zeroSize`, a different and already-reported fact. Flagging it as
+    // a small target too would be two names for one thing.
+    expect(flags(0, 0)).toBe(false)
+  })
+})

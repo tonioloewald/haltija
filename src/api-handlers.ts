@@ -9,6 +9,7 @@
  * - ctx: HandlerContext with requestFromBrowser, headers, etc.
  */
 
+import { writeFile } from 'fs/promises'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
 
@@ -888,6 +889,24 @@ registerHandler(api.map, async (body, ctx) => {
     if ('path' in saved) {
       ;(response as any).data.path = saved.path
       delete (response as any).data.image
+      // The legend goes beside the image, as a sibling file.
+      //
+      // The image carries geometry and handles; the legend carries what the image had to leave
+      // out — which is what makes it safe to STOP cramming captions into boxes too small to hold
+      // them. Written rather than inlined so `hj map --image` stdout stays a bare path, and so the
+      // pair travels together: read the number off the picture, look it up here.
+      const legend = (response as any).data?.legend
+      if (legend && Object.keys(legend).length) {
+        const legendPath = saved.path.replace(/\.[a-z0-9]+$/i, '.legend.json')
+        try {
+          await writeFile(legendPath, JSON.stringify(legend, null, 2))
+          ;(response as any).data.legendPath = legendPath
+          delete (response as any).data.legend
+        } catch {
+          // Keep it inline if the sibling write fails — losing the legend entirely would be worse
+          // than a larger payload, and the caller can still act on it.
+        }
+      }
     } else if (saved.error === 'not a base64 image data URL') {
       // A non-data-URL `image` means the widget returned a shape we don't understand. Passing it
       // through unremarked would look like a successful capture.

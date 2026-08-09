@@ -1246,9 +1246,14 @@ async function doRequest(url, method, body, context = {}) {
         // floor. For this 491x480 schematic the real figure is ~314; with --max-width 200 it is
         // ~52. Telling an agent the cheap option costs 25x what it does inverts the very decision
         // this line exists to inform.
+        const bits0 = []
         const imgTokens = d.cost?.approxImageTokens ?? (d.width && d.height ? Math.round((d.width * d.height) / 750) : null)
         const k = (n) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n))
+        // The legend is the other half of the deliverable: the image says WHERE and WHICH, the
+        // legend says WHAT. Named on stderr so stdout stays a bare path.
+        if (d.legendPath) bits0.push(`legend ${d.legendPath}`)
         const bits = [
+          ...bits0,
           meta,
           imgTokens != null
             ? `this map as JSON: ~${k(plainChars)} chars (~${k(jsonTokens)} tokens); as this image: ~${k(imgTokens)} tokens`

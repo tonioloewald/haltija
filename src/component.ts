@@ -2113,7 +2113,7 @@ function renderMapSchematic(
   type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string;
     rect?: { x: number; y: number; w: number; h: number }; placeholder?: string; interactive?: boolean;
     disabled?: boolean; focused?: boolean; checked?: boolean; inputType?: string; ownBg?: boolean; ownBorder?: boolean;
-    editable?: boolean; empty?: boolean; svgImage?: string }
+    editable?: boolean; empty?: boolean; svgImage?: string; smallTarget?: string }
 
   // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
   const toBoxes = (): Box[] => {
@@ -2157,6 +2157,7 @@ function renderMapSchematic(
       ownBorder: n.ownBorder,
       editable: n.editable,
       empty: n.empty,
+      smallTarget: n.smallTarget,
       svgImage: n.svgImage,
       children: (n.children || []).map(walk),
     })
@@ -2372,6 +2373,10 @@ function renderMapSchematic(
         parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
       }
       if (b.contrastFail) parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`)
+      // A too-small target gets its own edge marker, amber rather than red: it is a real finding
+      // but a weaker one than a contrast failure, and it is frequently the SAME box that was too
+      // small to caption — so the marker is often the only thing the picture can say about it.
+      if (b.smallTarget) parts.push(`<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`)
       // The actual artwork, where we could serialise it.
       if (b.svgImage) {
         parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`)
@@ -2688,6 +2693,45 @@ function renderMapSchematic(
  * drifted — and all three defaulted `scale` to 2 while every real capture path uses 1, so the
  * schematic was quietly 4x the pixels of a screenshot of the same page.
  */
+/**
+ * The legend: every ref on the image, mapped to the facts about it.
+ *
+ * The image carries geometry and handles; this carries everything the image had to leave out. That
+ * split is what makes it safe to STOP cramming captions into small boxes — a 20x20 icon button can
+ * never hold "@42 button Delete account", and the previous behaviour (shrink the font, then drop
+ * to the ref, then collide with a neighbour) produced a row of unreadable smudges. Draw the ref,
+ * put the facts here.
+ *
+ * Deliberately compact: refs are the key, and a field is present only when it says something. An
+ * agent reads a number off the picture and looks it up; nothing is lost, and the image stays a
+ * picture rather than a table.
+ */
+function buildLegend(map: any): Record<string, Record<string, unknown>> {
+  const legend: Record<string, Record<string, unknown>> = {}
+  const visit = (n: any) => {
+    if (n?.ref) {
+      const entry: Record<string, unknown> = { tag: n.tag }
+      for (const k of ['role', 'label', 'placeholder', 'text', 'value', 'href', 'type'] as const) {
+        if (n[k] !== undefined && n[k] !== '') entry[k] = n[k]
+      }
+      if (n.disabled) entry.disabled = true
+      if (n.checked) entry.checked = true
+      if (n.focused) entry.focused = true
+      if (n.editable) entry.editable = true
+      if (n.zeroSize) entry.zeroSize = true
+      // Findings ride the legend too, so a consumer that only reads this still gets the audit.
+      const flags: string[] = []
+      if (n.contrastFail) flags.push(`contrast ${n.contrastFail}`)
+      if (n.smallTarget) flags.push(`target ${n.smallTarget}`)
+      if (flags.length) entry.flags = flags
+      legend[n.ref] = entry
+    }
+    ;(n?.children || []).forEach(visit)
+  }
+  ;(map?.nodes || []).forEach(visit)
+  return legend
+}
+
 async function buildSchematicResponse(
   map: any,
   payload: any,
@@ -2712,6 +2756,7 @@ async function buildSchematicResponse(
     // them apart is the complaint that produced this field.
     layout,
     boundsCoverage,
+    legend: buildLegend(map),
     canvasesRendered: canvases.filter((c) => c.image).length,
     map,
   }
@@ -2968,7 +3013,7 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
   let count = 0
   let truncated = false
 
-  const describeEl = (el: Element, keptEls: Set<Element> = new Set()): any => {
+  const describeEl = (el: Element, keptEls: Map<Element, string | undefined> = new Map()): any => {
     const tag = el.tagName.toLowerCase()
     const node: any = { ref: refRegistry.assign(el), tag }
     const role = el.getAttribute('role')
@@ -3007,7 +3052,18 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
           return
         }
         if (n.nodeType !== 1) return
-        if (keptEls.has(n as Element)) return // it speaks for itself
+        if (keptEls.has(n as Element)) {
+          // It speaks for itself — but leave a marker where it was.
+          //
+          // Eliding it silently turned "Read the <a>documentation</a> for details." into
+          // "Read the for details.", which reads as a bug rather than as an omission. A ref marker
+          // is strictly better than either alternative: it preserves the sentence's shape, says
+          // exactly which element sits in the hole, and cross-references the legend — so a reader
+          // can follow "@1" to the link's text and href instead of guessing what was removed.
+          const childRef = keptEls.get(n as Element)
+          if (childRef) own.push(`[@${childRef}]`)
+          return
+        }
         // "Not kept" has TWO meanings and they are not interchangeable: not an affordance (absorb
         // its text), or DELIBERATELY EXCLUDED as hidden (absorb nothing). Conflating them leaked
         // `display:none` content into a parent's caption, so the map described text nobody can see
@@ -3175,6 +3231,32 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
         (parseFloat(own.borderBottomWidth) || 0) > 0 ||
         (parseFloat(own.borderRightWidth) || 0) > 0
     } catch {}
+    // Is it big enough to hit?
+    //
+    // WCAG 2.5.8 Target Size (Minimum) is AA at 24x24 CSS px; 2.5.5 Enhanced is AAA at 44x44, and
+    // Apple HIG (44pt) and Material (48dp) both sit at the higher mark. An interactive control much
+    // below that is a usability defect whether or not anyone has filed it — and, usefully, it is
+    // the same line below which a caption cannot be drawn legibly anyway.
+    //
+    // The spec's inline exception is honoured: a link inside a sentence is sized by its text and is
+    // explicitly exempt, so flagging those would cry wolf on every paragraph with a link in it —
+    // and a check that fires on correct code is one that gets ignored, taking the real findings
+    // with it.
+    try {
+      if (node.interactive && !node.disabled) {
+        const r = el.getBoundingClientRect()
+        const min = Math.min(r.width, r.height)
+        const inlineInText =
+          getComputedStyle(el).display.startsWith('inline') &&
+          !!el.parentElement &&
+          Array.from(el.parentElement.childNodes).some(
+            (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0,
+          )
+        if (min > 0 && min < 24 && !inlineInText) {
+          node.smallTarget = `${Math.round(r.width)}x${Math.round(r.height)} (WCAG 2.5.8 needs 24x24; 44x44 recommended)`
+        }
+      }
+    } catch {}
     // WHERE it is, in page coordinates.
     //
     // The schematic was always meant to carry layout — that is the high-information part, and the
@@ -3222,9 +3304,13 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     // whose only child was display:none reported zero height, taking a sibling button with it).
     // Descend first; decide about THIS element afterwards.
     const children: any[] = []
-    // Which DOM elements became nodes of their own. A parent's caption is everything in its subtree
-    // EXCEPT what these already display — see describeEl.
-    const keptEls = new Set<Element>()
+    // Which DOM elements became nodes of their own, and the ref each one got. A parent's caption is
+    // everything in its subtree EXCEPT what these already display — see describeEl.
+    //
+    // A Map rather than a Set because the elision marker must name a ref that EXISTS: hoisted
+    // containers are kept but carry no ref, and minting one for them would put a number in the
+    // text that appears nowhere in the legend.
+    const keptEls = new Map<Element, string | undefined>()
     // Shadow content FIRST, then light DOM. `tree` has pierced open shadow roots since 1.5; the
     // affordance map never did, so `hj map` reported a web component as empty while `hj tree`
     // listed its contents. In a design-system codebase that is most of the interactive page —
@@ -3237,7 +3323,7 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
       const c = walk(child)
       if (c) {
         children.push(c)
-        keptEls.add(child)
+        keptEls.set(child, c.ref)
       }
     }
 

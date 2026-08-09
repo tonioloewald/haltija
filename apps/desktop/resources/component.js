@@ -1516,6 +1516,7 @@
         ownBorder: n.ownBorder,
         editable: n.editable,
         empty: n.empty,
+        smallTarget: n.smallTarget,
         svgImage: n.svgImage,
         children: (n.children || []).map(walk)
       });
@@ -1634,6 +1635,8 @@
         }
         if (b.contrastFail)
           parts.push(`<rect x="${x}" y="${y2}" width="3" height="${h}" fill="#dc2626"/>`);
+        if (b.smallTarget)
+          parts.push(`<rect x="${x}" y="${y2 + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`);
         if (b.svgImage) {
           parts.push(`<image x="${x}" y="${y2}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`);
         }
@@ -1851,6 +1854,39 @@
       boundsCoverage: `${boundsCoverage.withRect}/${boundsCoverage.total}`
     };
   }
+  function buildLegend(map) {
+    const legend = {};
+    const visit = (n) => {
+      if (n?.ref) {
+        const entry = { tag: n.tag };
+        for (const k of ["role", "label", "placeholder", "text", "value", "href", "type"]) {
+          if (n[k] !== undefined && n[k] !== "")
+            entry[k] = n[k];
+        }
+        if (n.disabled)
+          entry.disabled = true;
+        if (n.checked)
+          entry.checked = true;
+        if (n.focused)
+          entry.focused = true;
+        if (n.editable)
+          entry.editable = true;
+        if (n.zeroSize)
+          entry.zeroSize = true;
+        const flags = [];
+        if (n.contrastFail)
+          flags.push(`contrast ${n.contrastFail}`);
+        if (n.smallTarget)
+          flags.push(`target ${n.smallTarget}`);
+        if (flags.length)
+          entry.flags = flags;
+        legend[n.ref] = entry;
+      }
+      (n?.children || []).forEach(visit);
+    };
+    (map?.nodes || []).forEach(visit);
+    return legend;
+  }
   async function buildSchematicResponse(map, payload2, banner) {
     const canvases = collectCanvasThumbnails();
     const { svg, width, height, layout, boundsCoverage } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true, payload2?.layout || "auto");
@@ -1869,6 +1905,7 @@
       source: "schematic",
       layout,
       boundsCoverage,
+      legend: buildLegend(map),
       canvasesRendered: canvases.filter((c) => c.image).length,
       map
     };
@@ -2005,7 +2042,7 @@
     const CONTENT = "p,li,blockquote,pre,td,th,dt,dd,figcaption,summary,img,svg,video,picture";
     let count = 0;
     let truncated = false;
-    const describeEl = (el, keptEls = new Set) => {
+    const describeEl = (el, keptEls = new Map) => {
       const tag = el.tagName.toLowerCase();
       const node = { ref: refRegistry.assign(el), tag };
       const role = el.getAttribute("role");
@@ -2028,8 +2065,12 @@
           }
           if (n.nodeType !== 1)
             return;
-          if (keptEls.has(n))
+          if (keptEls.has(n)) {
+            const childRef = keptEls.get(n);
+            if (childRef)
+              own.push(`[@${childRef}]`);
             return;
+          }
           if (visibilityOf(n) === "hidden")
             return;
           for (const c of Array.from(n.childNodes))
@@ -2129,6 +2170,16 @@
         node.ownBorder = (parseFloat(own.borderTopWidth) || 0) > 0 || (parseFloat(own.borderLeftWidth) || 0) > 0 || (parseFloat(own.borderBottomWidth) || 0) > 0 || (parseFloat(own.borderRightWidth) || 0) > 0;
       } catch {}
       try {
+        if (node.interactive && !node.disabled) {
+          const r = el.getBoundingClientRect();
+          const min = Math.min(r.width, r.height);
+          const inlineInText = getComputedStyle(el).display.startsWith("inline") && !!el.parentElement && Array.from(el.parentElement.childNodes).some((n) => n.nodeType === 3 && (n.textContent || "").trim().length > 0);
+          if (min > 0 && min < 24 && !inlineInText) {
+            node.smallTarget = `${Math.round(r.width)}x${Math.round(r.height)} (WCAG 2.5.8 needs 24x24; 44x44 recommended)`;
+          }
+        }
+      } catch {}
+      try {
         const r = el.getBoundingClientRect();
         node.rect = {
           x: Math.round(r.left + window.scrollX),
@@ -2153,7 +2204,7 @@
       if (vis === "hidden")
         return null;
       const children = [];
-      const keptEls = new Set;
+      const keptEls = new Map;
       const kids = [
         ...el.shadowRoot ? Array.from(el.shadowRoot.children) : [],
         ...Array.from(el.children)
@@ -2162,7 +2213,7 @@
         const c = walk(child);
         if (c) {
           children.push(c);
-          keptEls.add(child);
+          keptEls.set(child, c.ref);
         }
       }
       if (vis === "zero-size" && !isInteractive) {

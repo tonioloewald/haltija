@@ -2069,9 +2069,13 @@ async function doRequest(url, method, body, context = {}) {
         const { image, width, height, format, cost, path, ...mapOnly } = d;
         const plainChars = JSON.stringify(mapOnly, null, 2).length;
         const jsonTokens = Math.round(plainChars / 4);
+        const bits0 = [];
         const imgTokens = d.cost?.approxImageTokens ?? (d.width && d.height ? Math.round(d.width * d.height / 750) : null);
         const k = (n) => n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n);
+        if (d.legendPath)
+          bits0.push(`legend ${d.legendPath}`);
         const bits = [
+          ...bits0,
           meta,
           imgTokens != null ? `this map as JSON: ~${k(plainChars)} chars (~${k(jsonTokens)} tokens); as this image: ~${k(imgTokens)} tokens` : `hj map on this page prints ~${k(plainChars)} chars (~${k(jsonTokens)} tokens)`
         ];
