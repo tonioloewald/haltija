@@ -13,10 +13,20 @@ looking for them. The same trick should extend:
 
 - [ ] **Surface `role`, and shortcomings in role.** The map already reads `role`; the schematic
   does not show it. Draw it, and flag what's wrong or missing: an interactive element with no
-  accessible name, a `role` that contradicts the tag (`<div role="button">` with no `tabindex`), a
-  `role=checkbox` with no `aria-checked`, a landmark used twice with no label to tell them apart,
-  a `<button>` whose only content is an icon. Each of those is invisible in a screenshot, obvious
-  in a diagram that draws it, and — like contrast — a real defect rather than a style opinion.
+  accessible name, a `role` that contradicts the tag, a `role=checkbox` with no `aria-checked`, a
+  landmark used twice with no label to tell them apart, a `<button>` whose only content is an icon.
+  Each is invisible in a screenshot, obvious in a diagram that draws it, and — like contrast — a
+  real defect rather than a style opinion.
+
+  **Sharpened framing (from the tosijs-floorplan#3 discussion):** separate *intrinsic* interactivity
+  (`<button>`, `<a href>`, `<input>`, `role=button|link|…` — true by specification) from *observed
+  wiring* (a handler). The disagreements are the findings:
+  - **intrinsic, not wired** → a control that may be dead, or wired by something outside the
+    framework. haltija cannot see handlers at all, so this is upstream's case more than ours.
+  - **wired, not intrinsic** → the classic clickable `<div>`: keyboard users cannot reach it and a
+    screen reader announces nothing. **We CAN detect this today** — `[onclick]` is already in our
+    INTERACTIVE selector, so a node matching on `onclick` alone, with no `role` and no `tabindex`,
+    is exactly this defect. Cheapest real a11y win left after contrast and target size.
 - [ ] **Localization checking.** A schematic drawn at true geometry already shows where text will
   not fit; the map knows the text and the box. Candidates: text that overflows or is clipped by its
   container, a `lang` attribute that disagrees with the content, hard-coded strings in a page that
