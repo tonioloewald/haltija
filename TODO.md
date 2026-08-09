@@ -28,11 +28,26 @@ looking for them. The same trick should extend:
 ## Schematic: delegate rendering to tosijs-schematic (1.13)
 
 - [ ] **Stop maintaining our own renderer.** See `UPSTREAM.md` and
-  https://github.com/tonioloewald/tosijs-schematic/issues/1. Their package is a pure,
-  dependency-free 12KB function over plain records that draws exactly what we draw; our map already
-  converts to it near-1:1 (verified: 145 records, 133 with bounds, rendered first try). Contingent
-  on the four contract gaps in that issue — stable `ref`, a verdict slot for the contrast audit,
-  embedded media, caption wrapping. Not before 1.12.0 final.
+  https://github.com/tonioloewald/tosijs-schematic/issues/1.
+
+  **All four contract gaps were adopted in tosijs-schematic 0.2.0** — `ref` (takes the index slot,
+  so a vision consumer reads a handle it can actually `hj click`), `flags` (severity bars on the
+  left edge; our contrast verdict maps in one line), `image` (data-URL only, so the renderer stays
+  pure), and caption wrapping. Re-validated against a real map: **145 records, 133 refs, 20
+  embedded images, rendered correctly**, with our own `@refs` on the image.
+
+  Their `structural` treatment — a recessive dashed outline — is better than ours, which was
+  binary draw-or-omit and lost the grouping.
+
+  **Two facts still have no home** and are filed on that issue: `href` (37 of 145 records — the
+  left sidebar renders as empty boxes because a nav link's distinguishing content IS its
+  destination) and `value` (10 records — what separates a filled form from an empty one; tosijs
+  carries it as a bound prop, a plain-DOM producer has no binding to ride on).
+
+  **Sequencing: 1.13, deliberately.** 1.12.0 is in RC with an agent testing it; swapping the
+  rendering engine mid-RC to fix two cosmetic issues would invalidate that testing. When it lands,
+  our renderer is deleted and haltija becomes a producer only — DOM extraction is the competence
+  worth keeping.
 
 ## Schematic: a repeatable head-to-head corpus
 

@@ -110,7 +110,10 @@ isn't this tab. Filed in TODO.md rather than upstream.
 
 ## tosijs-schematic — converge the renderer (haltija should stop maintaining one)
 
-- **https://github.com/tonioloewald/tosijs-schematic/issues/1** — filed 2026-08-07.
+- **https://github.com/tonioloewald/tosijs-schematic/issues/1** — filed 2026-08-07;
+  **all four gaps adopted in tosijs-schematic 0.2.0** (2026-08-09), re-validated against a real
+  map. Two residual facts filed on the same issue: `href` and `value`. Adoption sequenced for
+  haltija 1.13 — not mid-RC.
 
 `tosijs-schematic` is a pure, dependency-free (12KB, 23 tests) renderer for exactly what
 haltija's schematic draws: "one shape per element at its true geometry". We built the same thing
