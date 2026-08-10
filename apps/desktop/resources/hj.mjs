@@ -1933,6 +1933,16 @@ function warnUnknownFlags(subcommand, args) {
 `);
   }
 }
+function exitOnTestFailure(json, subcommand) {
+  const failed = json?.success === false || json?.passed === false || typeof json?.summary?.failed === "number" && json.summary.failed > 0 || Array.isArray(json?.results) && json.results.some((r) => r?.passed === false);
+  if (failed)
+    process.exit(1);
+  const looksLikePass = json?.passed === true || typeof json?.summary?.failed === "number" || Array.isArray(json?.results) && json.results.length > 0;
+  if (!looksLikePass) {
+    process.stderr.write(dim2(`[hj] ${subcommand}: could not determine pass/fail from the response — treating as pass. ` + `Use --json and check \`summary.failed\` if you are gating on this.`) + `
+`);
+  }
+}
 async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
   const baseUrl = `http://localhost:${port}`;
   const jsonOutput = subArgs.includes("--json");
@@ -2055,8 +2065,10 @@ async function doRequest(url, method, body, context = {}) {
         console.log(formatEvents(json));
       } else if (!jsonOutput && subcommand === "test-run" && json.test) {
         console.log(formatTestResult(json));
+        exitOnTestFailure(json, subcommand);
       } else if (!jsonOutput && subcommand === "test-suite" && json.results) {
         console.log(formatSuiteResult(json));
+        exitOnTestFailure(json, subcommand);
       } else if (!jsonOutput && subcommand === "screenshot" && json.data?.path) {
         console.log(bold(json.data.path));
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(", ");
@@ -2114,6 +2126,8 @@ async function doRequest(url, method, body, context = {}) {
         }
       } else {
         console.log(JSON.stringify(json, null, 2));
+        if (subcommand === "test-run" || subcommand === "test-suite")
+          exitOnTestFailure(json, subcommand);
         if (json && json.success === false)
           process.exit(1);
       }

@@ -1290,3 +1290,40 @@ describe('a POST always carries a JSON body, even an empty one', () => {
     expect(clean(ARG_MAPS.snapshot([]))).toBeUndefined()
   })
 })
+
+describe('a failing test fails the command (#22)', () => {
+  // `hj test run` / `hj test suite` printed a correct, legible FAIL report and exited 0, so a CI
+  // lane gating on haltija could not gate on anything. The most consequential form of this
+  // release's defect class: the whole CI story rests on a verdict a script can read.
+  //
+  // It survived because those two branches print through their own formatters and never reach the
+  // generic fall-through that exits 1 on `success === false` — and because the envelope's
+  // `success` describes the REQUEST, not the tests.
+  const failed = (json: any) =>
+    json?.success === false ||
+    json?.passed === false ||
+    (typeof json?.summary?.failed === 'number' && json.summary.failed > 0) ||
+    (Array.isArray(json?.results) && json.results.some((r: any) => r?.passed === false))
+
+  test('a failing single run is a failure', () => {
+    // The real shape: `success` is absent, `passed` is false, summary counts the failure.
+    expect(failed({ passed: false, summary: { total: 1, executed: 1, passed: 0, failed: 1 } })).toBe(true)
+  })
+
+  test('a mixed suite is a failure — one bad test is enough', () => {
+    // The suite shape has no top-level `passed` at all; it reports per-result.
+    expect(failed({ summary: { total: 2, executed: 2, passed: 1, failed: 1 }, results: [{ passed: true }, { passed: false }] })).toBe(true)
+  })
+
+  test('a passing run is NOT a failure — the discriminating half', () => {
+    // If this were wrong every green lane would go red, which is the opposite and equally bad bug.
+    expect(failed({ passed: true, summary: { total: 1, executed: 1, passed: 1, failed: 0 } })).toBe(false)
+    expect(failed({ summary: { total: 2, executed: 2, passed: 2, failed: 0 }, results: [{ passed: true }, { passed: true }] })).toBe(false)
+  })
+
+  test('an unrecognised shape is not treated as a failure', () => {
+    // Exiting 1 on a shape we don't understand would break lanes that work today. The CLI reports
+    // "could not determine" on stderr instead — the same three-state discipline as hj doctor.
+    expect(failed({ weird: true })).toBe(false)
+  })
+})

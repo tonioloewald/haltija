@@ -766,6 +766,39 @@ registerHandler(api.unhighlight, async (_body, ctx) => {
 // Navigate handler
 registerHandler(api.navigate, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
+
+  // Refuse a `file://` navigation in the DESKTOP APP, rather than wedging the instance.
+  //
+  // The app cannot inject the widget into a `file://` page, so navigating there disconnects the tab
+  // permanently: the widget dies with the old document and nothing attaches to the new one. The
+  // command reported `success: true` — truthfully, the navigation happened — and the damage
+  // surfaced on the NEXT command as a generic "No browser connected", which reads like the app
+  // crashed rather than like the previous command did it. That misattribution costs a restart
+  // before anyone thinks to look at the URL.
+  //
+  // Worse, there is no way back: `hj tabs open` is the obvious recovery and it needs a connected
+  // browser to service the request, so the one command that could fix it is unavailable exactly
+  // when it is needed. Only `hj shutdown` and relaunch recovers.
+  //
+  // Scoped to the desktop app ON PURPOSE. `file://` works fine under the Playwright headless
+  // engine — this repo's own fixtures rely on it — so a blanket refusal would break a path that
+  // works today. Refusing where it is known broken, and saying what to do instead, leaves the tab
+  // intact and teaches the workaround in one line.
+  if (process.env.HALTIJA_DESKTOP === '1' && /^file:\/\//i.test(String(body.url || ''))) {
+    return Response.json(
+      {
+        success: false,
+        error:
+          `The desktop app cannot inject the widget into a file:// page, so navigating there would ` +
+          `disconnect this tab permanently with no CLI way back. The current page is untouched. ` +
+          `Serve the file over HTTP instead — e.g. \`python3 -m http.server 8911\` in that ` +
+          `directory, then navigate to http://127.0.0.1:8911/<file>. (file:// does work under ` +
+          `\`haltija --headless\`, which uses Playwright.)`,
+      },
+      { status: 400, headers: ctx.headers },
+    )
+  }
+
   const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
   return Response.json(response, { headers: ctx.headers })
 })

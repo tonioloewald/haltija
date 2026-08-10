@@ -1024,6 +1024,47 @@ export function warnUnknownFlags(subcommand, args) {
   }
 }
 
+
+/**
+ * A failing test must fail the command.
+ *
+ * `hj test run` and `hj test suite` printed a correct, legible FAIL report and exited **0** — so a
+ * CI lane gating on haltija could not gate on anything. This is the single most consequential form
+ * of the "reports success while doing otherwise" defect in the product: the whole CI story rests on
+ * a runner whose verdict a script can read, and the verdict was unreadable.
+ *
+ * It survived because these two branches print through their own formatters and never reach the
+ * generic fall-through that exits 1 on `success === false` — and because the envelope's `success`
+ * describes the REQUEST, not the tests. "The run happened" and "the tests passed" are different
+ * facts, and only the second belongs in an exit code. Every other command gets this right:
+ * `hj click "#nope"` already exits 1.
+ *
+ * Keyed on explicit failure signals only. Exiting non-zero on a shape we don't recognise would
+ * break lanes that currently work, and "I could not tell" is reported rather than guessed — the
+ * same three-state discipline as `hj doctor`.
+ */
+function exitOnTestFailure(json, subcommand) {
+  const failed =
+    json?.success === false ||
+    json?.passed === false ||
+    (typeof json?.summary?.failed === 'number' && json.summary.failed > 0) ||
+    (Array.isArray(json?.results) && json.results.some((r) => r?.passed === false))
+  if (failed) process.exit(1)
+
+  // Neither a pass nor a recognised failure. Say so on stderr rather than exiting 0 silently: a
+  // green lane that never actually checked anything is the failure this whole fix is about.
+  const looksLikePass =
+    json?.passed === true ||
+    (typeof json?.summary?.failed === 'number') ||
+    (Array.isArray(json?.results) && json.results.length > 0)
+  if (!looksLikePass) {
+    process.stderr.write(
+      dim(`[hj] ${subcommand}: could not determine pass/fail from the response — treating as pass. ` +
+        `Use --json and check \`summary.failed\` if you are gating on this.`) + '\n',
+    )
+  }
+}
+
 export async function runSubcommand(subcommand, subArgs, port = '8700', options = {}) {
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
@@ -1216,8 +1257,10 @@ async function doRequest(url, method, body, context = {}) {
         console.log(formatEvents(json))
       } else if (!jsonOutput && subcommand === 'test-run' && json.test) {
         console.log(formatTestResult(json))
+        exitOnTestFailure(json, subcommand)
       } else if (!jsonOutput && subcommand === 'test-suite' && json.results) {
         console.log(formatSuiteResult(json))
+        exitOnTestFailure(json, subcommand)
       } else if (!jsonOutput && subcommand === 'screenshot' && json.data?.path) {
         console.log(bold(json.data.path))
         const meta = [json.data.width && json.data.height ? `${json.data.width}×${json.data.height}` : null, json.data.format, json.data.source].filter(Boolean).join(', ')
@@ -1317,6 +1360,11 @@ async function doRequest(url, method, body, context = {}) {
         // than none: you can't tell "the page is broken" from "my probe is broken". A click
         // that didn't click, or a probe with no browser, is a failure and now exits 1.
         console.log(JSON.stringify(json, null, 2))
+        // Test verdicts fail the command here TOO. This is the `--json` path, which is the form a
+        // CI lane is most likely to use — so fixing only the pretty-printed branches would have
+        // left the bug exactly where it does the most damage. `success` is about the REQUEST and is
+        // undefined for a test result, so it can never catch this on its own.
+        if (subcommand === 'test-run' || subcommand === 'test-suite') exitOnTestFailure(json, subcommand)
         if (json && json.success === false) process.exit(1)
       }
     } else {
