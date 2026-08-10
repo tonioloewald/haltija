@@ -1451,12 +1451,17 @@ registerHandler(api.find, async (body, ctx) => {
     // "Rendered", matching assert visible/hidden — NOT \`offsetParent === null\`, which is null for
     // \`html\`, \`body\` and EVERY \`position: fixed\` element. Fixed shells, modals and sticky chrome
     // are perfectly visible and were all being skipped.
-    const isVisible = (el) => {
+    //
+    // Prefers the WIDGET'S OWN predicate so \`find\` and \`click\` cannot disagree about which element
+    // a text selector means — they did, and it also let \`find\` return an element parked off-canvas
+    // at \`left:-9999px\` (#27). The inline copy below is only a fallback for a widget too old to
+    // export it; keeping two rules in permanent use is what caused #24 in the first place.
+    const isVisible = window.__haltija_isActionable || ((el) => {
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
-    };
+    });
 
     const textOf = (el) => (el.textContent || '').trim();
     const hits = elements.filter((el) => {

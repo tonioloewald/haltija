@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+### Text selectors pick the element you could actually click — [#27](https://github.com/tonioloewald/haltija/issues/27)
+
+Two ways the same selector chose the wrong element, both found driving a real admin app:
+
+- **A hidden duplicate that came first won.** `click` took the first match in DOM order and left the
+  visibility gate to complain afterwards, so a `display:none` copy made `hj click ':text(Save
+  Changes)'` fail with "zero-size bounding rect" while the visible copy sat right there — and
+  `hj find`, which filters before choosing, returned the right one. One selector, two answers.
+- **An off-canvas element was clicked silently.** The `position:absolute; left:-9999px` skip-link
+  idiom has a perfectly normal box (measured: 99x35 at x=-9999), so every size and style check
+  passed it. `click` actuated an element no human can see and reported **success** — a script then
+  asserts against a state it never produced. This is the worse of the two: it fails confidently.
+
+Resolution now filters *before* choosing, and `find` and `click` share one predicate so they cannot
+disagree. An off-canvas element that is the ONLY match fails loudly (`positioned off-canvas`) rather
+than being clicked invisibly.
+
+Off-canvas is measured in **page** coordinates, so content merely **below the fold** is unaffected —
+visible still means *rendered*, not *on screen*. That is also why `elementFromPoint` isn't used
+here despite catching this case: it rejects everything scrolled out of view, which would fail
+legitimate content in a small headless viewport.
+
+### `hj doctor` probes requestAnimationFrame — [#28](https://github.com/tonioloewald/haltija/issues/28)
+
+**A tab can report `visibilityState: "visible"` and still not be compositing.** Occluded windows,
+offscreen windows and a sleeping display all do it. Nothing rAF-driven then renders — React's
+scheduler, tosijs `queueRender`, animations, virtual scrollers — while geometry probes keep
+returning real numbers, so the absence of an element stops being evidence of anything.
+
+That doesn't merely hide information, it manufactures a plausible wrong answer. The reporter found
+four routes "not mounting" on hard navigation, had a coherent mechanism (the router gates its first
+mount on rAF), reproduced it four times, and nearly filed it as an application bug. Opening a second
+tab fixed all four.
+
+`hj doctor` now measures it directly and fails with `requestAnimationFrame DID NOT FIRE within 2s`.
+If the probe itself can't run, that is reported as **unchecked** — never as a pass — and the probe
+is bounded at 3s so a pre-flight can't hang on a socket that never answers.
+
+### `hj tabs` — the array is `windows`, and a `tabs` alias now exists ([#29](https://github.com/tonioloewald/haltija/issues/29))
+
+`d['tabs']` KeyError'd because the payload key is `windows` — accurate, since the list holds popups
+and iframes too, but the command is `hj tabs`, so the obvious guess failed and it looked like the
+caller's bug. `tabs` is now sent as an alias of the same array. The hint no longer mixes the two
+vocabularies in one sentence ("Multiple **tabs** connected. Use `?window=<id>`"), which is where the
+wrong idea came from.
+
+Popups being indistinguishable from user-opened tabs, the other half of that report, is fixed by the
+popup work below: they carry `windowType: "popup"` and never take focus.
+
 ### Popups are popups again (desktop app) — [#25](https://github.com/tonioloewald/haltija/issues/25)
 
 A page calling `window.open(url, name, 'width=...')` now gets a genuine popup: `window.open()`

@@ -3874,14 +3874,23 @@ Run 'hj --help' for all commands.`
     // reachable, just possibly stale, which is what the hidden-tab warning is for.
     const ready = isDrivable(windowList)
 
+    // The hint used to say "Multiple TABS connected. Use ?window=<id>" — mixing the two vocabularies
+    // in one sentence, which is where a reporter got the idea the array was called `tabs` (#29).
+    // The list is `windows` because it holds popups and iframes too, not only tabs; say `window`
+    // throughout so the prose matches the payload.
     const hint = windowList.length > 1
-      ? 'Multiple tabs connected. Use ?window=<id> to target specific tab (e.g., /tree?window=abc123)'
+      ? 'Multiple windows connected. Use ?window=<id> to target a specific one (e.g., /tree?window=abc123). The array is `windows` — it includes popups and iframes, not only tabs.'
       : windowList.length === 1
-        ? 'One tab connected. Commands automatically target it.'
-        : 'No tabs connected. Inject the widget into a browser tab.'
+        ? 'One window connected. Commands automatically target it.'
+        : 'No windows connected. Inject the widget into a browser tab.'
 
     return Response.json({
       windows: windowList,
+      // `hj tabs` is the CLI name, so `d['tabs']` is the natural first guess and KeyErrors — it cost
+      // the reporter two debug cycles, and the failure looks like their parser's fault rather than
+      // ours, so it doesn't get reported quickly. An alias is a cheap way to make the obvious guess
+      // work; `windows` remains the documented name because the list is not only tabs.
+      tabs: windowList,
       focused: focusedWindowId,
       count: windowList.length,
       ready,

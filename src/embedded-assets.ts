@@ -2187,7 +2187,15 @@ Deprecated: Use POST /select {"action":"clear"} instead.
 
 Returns all connected browser windows/tabs with IDs, URLs, and titles.
 
-Response: { windows: [{ id, url, title, focused, active, hidden, windowType }], count, ready, hint }
+Response: { windows: [{ id, url, title, focused, active, hidden, windowType }], tabs, count, ready, hint }
+
+The array is **\`windows\`**, not \`tabs\` — it includes popups (\`windowType: "popup"\`) and
+iframes (\`"iframe"\`), not only tabs. Because the CLI command is \`hj tabs\`, \`d['tabs']\` is the
+natural first guess and used to KeyError, so **\`tabs\` is also sent as an alias** of the same
+array. Prefer \`windows\`; \`tabs\` exists so the obvious guess works.
+
+Only real tabs can be the target of an UNTARGETED command — a popup or iframe never becomes
+\`focused\`, so a page opening a popup cannot silently re-route your commands.
 
 \`active\` and \`hidden\` are exact inverses, and BOTH are sent on purpose: /status historically
 emitted only \`hidden\` and /windows only \`active\`, so code moving between the two silently
@@ -3958,6 +3966,19 @@ export const COMPONENT_JS: string = `(() => {
     const candidates = queryAllDeep(parsed.baseSelector).filter((el) => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed));
     return candidates.filter((el) => !candidates.some((other) => other !== el && containsDeep(el, other)));
   }
+  function isOffCanvas(el) {
+    const r = el.getBoundingClientRect();
+    return r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0;
+  }
+  function isActionable(el) {
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0")
+      return false;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0)
+      return false;
+    return !isOffCanvas(el);
+  }
   function resolveSelector(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
       return document.querySelector(selector) || queryAllDeep(selector)[0] || null;
@@ -3965,7 +3986,8 @@ export const COMPONENT_JS: string = `(() => {
     const parsed = parseTextSelector(selector);
     if (!parsed)
       return document.querySelector(selector);
-    return textMatchesInDocument(parsed)[0] || null;
+    const matches = textMatchesInDocument(parsed);
+    return matches.find(isActionable) || matches[0] || null;
   }
   function resolveSelectorAll(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
@@ -10892,6 +10914,9 @@ export const COMPONENT_JS: string = `(() => {
       };
     }
     getHiddenReason(el) {
+      if (isOffCanvas(el)) {
+        return "positioned off-canvas (e.g. left:-9999px) — rendered but not reachable by a user";
+      }
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {
         return "zero-size bounding rect (element not rendered or in hidden container)";
@@ -12048,6 +12073,7 @@ export const COMPONENT_JS: string = `(() => {
     currentTagName = TAG_NAME;
     window.__haltija_resolveSelector = resolveSelector;
     window.__haltija_resolveSelectorAll = resolveSelectorAll;
+    window.__haltija_isActionable = isActionable;
     window.__haltija_refRegistry = refRegistry;
   }
   registerDevChannel();

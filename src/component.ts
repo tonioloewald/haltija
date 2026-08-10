@@ -811,13 +811,60 @@ function textMatchesInDocument(parsed: ParsedTextSelector): Element[] {
   return candidates.filter(el => !candidates.some(other => other !== el && containsDeep(el, other)))
 }
 
+/**
+ * Is this element parked OFF-CANVAS — the `position:absolute; left:-9999px` skip-link idiom?
+ *
+ * It has a perfectly normal box (measured: `99x35 at x=-9999`), so no size or style check can see
+ * it, and `click` happily actuated an invisible element and reported success (issue #27). That is a
+ * silent wrong action: a script then asserts against a state it never produced.
+ *
+ * Deliberately measured in PAGE coordinates, not viewport coordinates. Content below the fold is
+ * legitimate — the whole product treats "visible" as *rendered*, not *on screen*, because a small
+ * headless viewport otherwise fails perfectly good pages. Below-the-fold content has positive page
+ * coordinates just past the viewport; the off-canvas idiom sits entirely at NEGATIVE ones. That
+ * distinction is what lets this reject the skip-link without flaking on a long page.
+ *
+ * This is why an `elementFromPoint` hit-test isn't used here, though it was suggested twice and
+ * would catch this case: it also rejects everything scrolled out of view, which would make CI fail
+ * on legitimate content.
+ */
+function isOffCanvas(el: Element): boolean {
+  const r = el.getBoundingClientRect()
+  return r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0
+}
+
+/**
+ * Would a human be able to act on this element? Rendered, non-empty, and on the canvas.
+ *
+ * Shared so that `find` and `click` cannot disagree about which element a text selector means —
+ * they did, and #24 was the same disease: two implementations of one idea, only one updated.
+ */
+function isActionable(el: Element): boolean {
+  const cs = getComputedStyle(el)
+  if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false
+  const r = el.getBoundingClientRect()
+  if (r.width <= 0 || r.height <= 0) return false
+  return !isOffCanvas(el)
+}
+
 function resolveSelector(selector: string): Element | null {
   if (!TEXT_PSEUDO_RE.test(selector)) {
     return document.querySelector(selector) || queryAllDeep(selector)[0] || null
   }
   const parsed = parseTextSelector(selector)
   if (!parsed) return document.querySelector(selector)
-  return textMatchesInDocument(parsed)[0] || null
+  const matches = textMatchesInDocument(parsed)
+  // FILTER BEFORE CHOOSING, not choose-then-reject.
+  //
+  // This took the first match in document order and left the visibility gate to complain about it
+  // afterwards — so a `display:none` copy that happened to come first made `hj click` fail with
+  // "zero-size bounding rect" while the visible copy sat right there, and `hj find`, which filters
+  // first, returned the right one. Same selector, two answers (#27).
+  //
+  // Falls back to the first match when NOTHING is actionable, so a genuinely hidden element still
+  // resolves and the gate can say *why* it can't be clicked. Reporting "not found" for an element
+  // that is plainly in the DOM would trade one confusing answer for another.
+  return matches.find(isActionable) || matches[0] || null
 }
 
 /** querySelectorAll with :text() pseudo-selector support */
@@ -10648,6 +10695,14 @@ export class DevChannel extends HTMLElement {
    * Returns null if visible, or a string describing why it's hidden.
    */
   private getHiddenReason(el: HTMLElement): string | null {
+    // Parked off-canvas (`position:absolute; left:-9999px`) — the standard skip-link idiom. It has
+    // a normal box, so every size and style check passes it, and clicking it "succeeded" while
+    // actuating something no human can see (#27). Rejecting it loudly beats a silent wrong action.
+    // Measured in PAGE coordinates so content merely below the fold is unaffected — see isOffCanvas.
+    if (isOffCanvas(el)) {
+      return 'positioned off-canvas (e.g. left:-9999px) — rendered but not reachable by a user'
+    }
+
     // Check bounding rect - zero size means hidden or not rendered
     const rect = el.getBoundingClientRect()
     if (rect.width === 0 && rect.height === 0) {
@@ -12295,6 +12350,9 @@ function registerDevChannel() {
   // Expose custom selector resolver globally for eval'd code
   ;(window as any).__haltija_resolveSelector = resolveSelector
   ;(window as any).__haltija_resolveSelectorAll = resolveSelectorAll
+  // ...and the actionability predicate, so server-side eval'd helpers (`/find`) apply the SAME rule
+  // as `click`. They had separate copies and disagreed about which element a text selector meant.
+  ;(window as any).__haltija_isActionable = isActionable
   // Expose ref registry for eval'd code that needs to resolve refs
   ;(window as any).__haltija_refRegistry = refRegistry
 }

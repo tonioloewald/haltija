@@ -1709,7 +1709,15 @@ export const windows = endpoint({
   summary: 'List connected windows',
   description: `Returns all connected browser windows/tabs with IDs, URLs, and titles.
 
-Response: { windows: [{ id, url, title, focused, active, hidden, windowType }], count, ready, hint }
+Response: { windows: [{ id, url, title, focused, active, hidden, windowType }], tabs, count, ready, hint }
+
+The array is **\`windows\`**, not \`tabs\` — it includes popups (\`windowType: "popup"\`) and
+iframes (\`"iframe"\`), not only tabs. Because the CLI command is \`hj tabs\`, \`d['tabs']\` is the
+natural first guess and used to KeyError, so **\`tabs\` is also sent as an alias** of the same
+array. Prefer \`windows\`; \`tabs\` exists so the obvious guess works.
+
+Only real tabs can be the target of an UNTARGETED command — a popup or iframe never becomes
+\`focused\`, so a page opening a popup cannot silently re-route your commands.
 
 \`active\` and \`hidden\` are exact inverses, and BOTH are sent on purpose: /status historically
 emitted only \`hidden\` and /windows only \`active\`, so code moving between the two silently

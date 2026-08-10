@@ -357,6 +357,58 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`)
     }
+
+    // Does this tab actually PAINT? `visibilityState` answers "is this tab selected", not "is this
+    // tab being composited", and the two diverge for occluded windows, offscreen windows and a
+    // sleeping display. A starved tab renders nothing while reporting `visible`, geometry probes
+    // still return real numbers, and the absence of an element stops being evidence of anything.
+    //
+    // That is worse than a missing feature: it invites a plausible code-level explanation. An agent
+    // driving a React app found four routes "not mounting" on hard navigation, had a coherent
+    // mechanism (the router gates its first mount on rAF), reproduced it four times, and nearly
+    // filed it as an application bug. Opening a second tab fixed all four (#28). This check is here
+    // to convert that silent, confidently-wrong outcome into a visible one.
+    if (ready && tabs.length) {
+      const probe =
+        `new Promise(r => { const s = Date.now();` +
+        ` const t = setTimeout(() => r({ fired: false, ms: Date.now() - s }), 2000);` +
+        ` requestAnimationFrame(() => { clearTimeout(t); r({ fired: true, ms: Date.now() - s }) }) })`
+      let raf = null
+      try {
+        // BOUND IT. The probe resolves in ~2s at the latest when a browser is there to answer, so a
+        // longer wait means nothing is coming — and doctor is a pre-flight: a lane runs it to find
+        // out quickly, not to sit through another component's timeout. Without this, a connected
+        // socket that never answers `/eval` (a widget mid-teardown, or a test harness holding an
+        // open WebSocket) made `hj doctor` block for the server's full browser timeout.
+        const cancel = AbortSignal.timeout(3000)
+        const r = await fetch(`http://localhost:${port}/eval`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Haltija-Token': token } : {}) },
+          body: JSON.stringify({ code: probe }),
+          signal: cancel,
+        })
+        if (r.ok) {
+          const j = await r.json()
+          if (j && j.success && j.data && typeof j.data.fired === 'boolean') raf = j.data
+        }
+      } catch {
+        // Fall through to the unchecked branch — never a pass.
+      }
+      if (raf === null) {
+        unchecked.push(
+          `could not run the requestAnimationFrame probe — whether this tab actually paints is ` +
+            `UNKNOWN. If elements seem missing, suspect a non-compositing tab before the page.`,
+        )
+      } else if (!raf.fired) {
+        problems.push(
+          `requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though ` +
+            `it reports visibilityState "visible". Anything rAF-driven (React's scheduler, tosijs ` +
+            `queueRender, animations, virtual scrollers) will never render, so a missing element ` +
+            `is NOT evidence of an application bug. Bring a window to the front, or wake the ` +
+            `display, and re-run.`,
+        )
+      }
+    }
     // Declared origins decide WHICH tab answers. A broken declaration silently disables the
     // routing it configures, and doctor is where a CI lane finds out.
     const origins = describeOrigins(tabs)

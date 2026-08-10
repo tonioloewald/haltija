@@ -3131,3 +3131,88 @@ test.describe('/find returns the innermost match, not the whole app', () => {
     expect(deep.element.inShadow).toBe(true)
   })
 })
+
+test.describe('text selectors prefer the element a human could act on', () => {
+  /**
+   * Two ways the same selector chose the wrong element (issue #27), both found by an agent driving
+   * a real admin app:
+   *
+   *  - a `display:none` copy that came FIRST in DOM order was selected, then rejected by the
+   *    visibility gate — so `hj click` failed with "zero-size bounding rect" while the visible copy
+   *    sat right there, and `hj find`, which filters before choosing, returned the right one. One
+   *    selector, two answers.
+   *  - the `position:absolute; left:-9999px` skip-link idiom has a perfectly normal box (measured:
+   *    99x35 at x=-9999), so every size and style check passed it. `click` actuated an element no
+   *    human can see and reported SUCCESS — a script then asserts against a state it never produced.
+   *
+   * The second is the dangerous one: it fails silently and confidently.
+   */
+  test('a hidden or off-canvas duplicate never wins over a visible one', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = '.offscreen { position: absolute; left: -9999px; }'
+      document.head.appendChild(style)
+      document.body.insertAdjacentHTML('beforeend', `
+        <div style="position:fixed;inset:0;padding:20px">
+          <button id="hidden-save" style="display:none">Save Changes</button>
+          <button id="visible-save">Save Changes</button>
+          <a class="offscreen" id="offscreen-link" href="#skip">Export CSV</a>
+          <button id="visible-export">Export CSV</button>
+        </div>`)
+      ;(window as any).__clicked = null
+      document.addEventListener(
+        'click',
+        (e) => { (window as any).__clicked = ((e.target as Element).closest('[id]') as HTMLElement)?.id },
+        true,
+      )
+    })
+
+    const clickText = async (text: string) => {
+      const res = await fetch(`${SERVER_URL}/click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selector: `:text(${text})` }),
+      })
+      const json = await res.json()
+      const actuated = await page.evaluate(() => (window as any).__clicked)
+      return { ok: json.success, actuated }
+    }
+
+    // The visible copy wins even though the hidden one comes first in DOM order.
+    const save = await clickText('Save Changes')
+    expect(save.ok).toBe(true)
+    expect(save.actuated).toBe('visible-save')
+
+    // ...and even though the off-canvas one has a real, non-zero box.
+    const exp = await clickText('Export CSV')
+    expect(exp.ok).toBe(true)
+    expect(exp.actuated).toBe('visible-export')
+
+    // `find` must agree with `click` — them disagreeing is what made this reportable.
+    const found = await (await fetch(`${SERVER_URL}/find`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Export CSV' }),
+    })).json()
+    expect(found.element.id).toBe('visible-export')
+  })
+
+  test('an off-canvas element alone fails loudly rather than clicking invisibly', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = '.offscreen { position: absolute; left: -9999px; }'
+      document.head.appendChild(style)
+      document.body.insertAdjacentHTML('beforeend', '<a class="offscreen" id="only" href="#s">Skip to content</a>')
+    })
+    const res = await fetch(`${SERVER_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selector: ':text(Skip to content)' }),
+    })
+    const json = await res.json()
+    expect(json.success).toBe(false)
+    expect(String(json.error)).toContain('off-canvas')
+  })
+})

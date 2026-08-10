@@ -624,6 +624,19 @@
     const candidates = queryAllDeep(parsed.baseSelector).filter((el) => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed));
     return candidates.filter((el) => !candidates.some((other) => other !== el && containsDeep(el, other)));
   }
+  function isOffCanvas(el) {
+    const r = el.getBoundingClientRect();
+    return r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0;
+  }
+  function isActionable(el) {
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0")
+      return false;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0)
+      return false;
+    return !isOffCanvas(el);
+  }
   function resolveSelector(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
       return document.querySelector(selector) || queryAllDeep(selector)[0] || null;
@@ -631,7 +644,8 @@
     const parsed = parseTextSelector(selector);
     if (!parsed)
       return document.querySelector(selector);
-    return textMatchesInDocument(parsed)[0] || null;
+    const matches = textMatchesInDocument(parsed);
+    return matches.find(isActionable) || matches[0] || null;
   }
   function resolveSelectorAll(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
@@ -7558,6 +7572,9 @@ ${elementSummary}${moreText}`;
       };
     }
     getHiddenReason(el) {
+      if (isOffCanvas(el)) {
+        return "positioned off-canvas (e.g. left:-9999px) — rendered but not reachable by a user";
+      }
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {
         return "zero-size bounding rect (element not rendered or in hidden container)";
@@ -8714,6 +8731,7 @@ ${elementSummary}${moreText}`;
     currentTagName = TAG_NAME;
     window.__haltija_resolveSelector = resolveSelector;
     window.__haltija_resolveSelectorAll = resolveSelectorAll;
+    window.__haltija_isActionable = isActionable;
     window.__haltija_refRegistry = refRegistry;
   }
   registerDevChannel();

@@ -2676,6 +2676,29 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`);
     }
+    if (ready && tabs.length) {
+      const probe = `new Promise(r => { const s = Date.now();` + ` const t = setTimeout(() => r({ fired: false, ms: Date.now() - s }), 2000);` + ` requestAnimationFrame(() => { clearTimeout(t); r({ fired: true, ms: Date.now() - s }) }) })`;
+      let raf = null;
+      try {
+        const cancel = AbortSignal.timeout(3000);
+        const r = await fetch(`http://localhost:${port}/eval`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...token ? { "X-Haltija-Token": token } : {} },
+          body: JSON.stringify({ code: probe }),
+          signal: cancel
+        });
+        if (r.ok) {
+          const j = await r.json();
+          if (j && j.success && j.data && typeof j.data.fired === "boolean")
+            raf = j.data;
+        }
+      } catch {}
+      if (raf === null) {
+        unchecked.push(`could not run the requestAnimationFrame probe — whether this tab actually paints is ` + `UNKNOWN. If elements seem missing, suspect a non-compositing tab before the page.`);
+      } else if (!raf.fired) {
+        problems.push(`requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though ` + `it reports visibilityState "visible". Anything rAF-driven (React's scheduler, tosijs ` + `queueRender, animations, virtual scrollers) will never render, so a missing element ` + `is NOT evidence of an application bug. Bring a window to the front, or wake the ` + `display, and re-run.`);
+      }
+    }
     const origins = describeOrigins(tabs);
     if (origins.problem)
       problems.push(origins.problem);

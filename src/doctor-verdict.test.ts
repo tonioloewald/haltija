@@ -34,16 +34,35 @@ afterAll(() => {
   }
 })
 
-/** A stand-in haltija that serves exactly the `/status` body we hand it, and nothing else. */
-function fakeServer(body: Record<string, unknown>): number {
+/**
+ * A stand-in haltija that serves the `/status` body we hand it, plus `/eval`.
+ *
+ * `/eval` is here because doctor probes requestAnimationFrame through it: a tab can report
+ * visibilityState "visible" and still not be compositing, which silently breaks every
+ * render-dependent conclusion (#28). A fake that 404s that probe is a server doctor genuinely
+ * CANNOT check, so it lands in `unchecked` — correct behaviour, but it makes every assertion here
+ * about a clean verdict fail for a reason that has nothing to do with what each test is about.
+ *
+ * `raf` chooses what the probe reports, so the starved case can be tested deliberately rather than
+ * arrived at by accident.
+ */
+function fakeServer(body: Record<string, unknown>, opts: { raf?: 'fired' | 'starved' | 'absent' } = {}): number {
   const port = uniqueTestPort()
+  const raf = opts.raf ?? 'fired'
   const server = Bun.serve({
     port,
     fetch(req) {
-      if (new URL(req.url).pathname === '/status') {
+      const path = new URL(req.url).pathname
+      if (path === '/status') {
         return new Response(JSON.stringify(body), {
           headers: { 'content-type': 'application/json' },
         })
+      }
+      if (path === '/eval' && raf !== 'absent') {
+        return new Response(
+          JSON.stringify({ success: true, data: { fired: raf === 'fired', ms: raf === 'fired' ? 8 : 2000 } }),
+          { headers: { 'content-type': 'application/json' } },
+        )
       }
       return new Response('not found', { status: 404 })
     },
@@ -270,5 +289,53 @@ describe('declared origins are visible in the diagnostics that exist to explain 
     expect(code).toBe(0)
     expect(out).toMatch(/none declared/)
     expect(out).toMatch(/\.haltija\.json/) // names the remedy at the moment of the question
+  }, 30_000)
+})
+
+describe('a tab that reports "visible" but never paints', () => {
+  /**
+   * `visibilityState` answers "is this tab selected", not "is this tab being composited". They
+   * diverge for occluded windows, offscreen windows and a sleeping display, and a starved tab
+   * renders nothing while every geometry probe keeps returning real numbers.
+   *
+   * That combination doesn't just hide information, it manufactures a plausible wrong answer: an
+   * agent found four routes "not mounting", had a coherent mechanism (the router gates its first
+   * mount on rAF), reproduced it four times, and nearly filed it as an application bug. Opening a
+   * second tab fixed all four (#28).
+   */
+  it('is a PROBLEM, not a pass — the tab looks visible in /status', async () => {
+    const port = fakeServer(
+      { serverVersion: '1.12.0', windows: [tab({ hidden: false, active: true })] },
+      { raf: 'starved' },
+    )
+    const { json, code } = await doctor(port)
+    expect(json.ok).toBe(false)
+    expect(code).toBe(1)
+    expect(json.problems.join(' ')).toContain('requestAnimationFrame DID NOT FIRE')
+  }, 30_000)
+
+  it('a compositing tab passes — so the check above can actually pass', async () => {
+    // The vacuous-assertion guard: without this, a doctor that failed unconditionally would look
+    // just as green.
+    const port = fakeServer(
+      { serverVersion: '1.12.0', windows: [tab({ hidden: false, active: true })] },
+      { raf: 'fired' },
+    )
+    const { json, code } = await doctor(port)
+    expect(json.ok).toBe(true)
+    expect(code).toBe(0)
+    expect(json.problems.join(' ')).not.toContain('requestAnimationFrame')
+  }, 30_000)
+
+  it('a probe that cannot run is UNCHECKED, never a pass', async () => {
+    // "I could not check" and "I checked and it is fine" are different claims. Folding the first
+    // into the second is the exact failure this command exists to remove.
+    const port = fakeServer(
+      { serverVersion: '1.12.0', windows: [tab({ hidden: false, active: true })] },
+      { raf: 'absent' },
+    )
+    const { json } = await doctor(port)
+    expect(json.unchecked.join(' ')).toContain('requestAnimationFrame')
+    expect(json.problems.join(' ')).not.toContain('requestAnimationFrame DID NOT FIRE')
   }, 30_000)
 })

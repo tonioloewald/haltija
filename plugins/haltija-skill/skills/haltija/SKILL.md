@@ -88,11 +88,19 @@ hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRI
 
 - **`hj doctor`** is the one-line pre-flight for a test lane. It checks, in the order they bite:
   server reachable → a tab is actually connected → the target isn't ambiguous (your cwd matches, or
-  you chose explicitly) → tabs aren't all hidden → versions aligned. **Non-zero exit** when any of
+  you chose explicitly) → tabs aren't all hidden → **the tab actually paints** → versions aligned. **Non-zero exit** when any of
   those fails, so the lane stops on the real cause. `--json` for machine-readable output.
 - **`--strict` / `HALTIJA_STRICT=1`** makes the warnings you'd otherwise only *read* into failures:
   cross-project targeting, hidden tab, focus ambiguity. In strict mode a suspect result is **not
   printed to stdout at all** — a script must not consume a value that may be wrong.
+- **A tab can report `visible` and still not be painting.** `visibilityState` means "is this tab
+  selected", not "is it being composited" — they diverge for occluded windows, offscreen windows
+  and a sleeping display. In that state nothing rAF-driven ever renders (React's scheduler, tosijs
+  `queueRender`, animations, virtual scrollers) while geometry probes keep returning real numbers,
+  so **a missing element is not evidence of an application bug**. `hj doctor` probes
+  `requestAnimationFrame` directly and fails with `requestAnimationFrame DID NOT FIRE` — believe it
+  and bring a window to the front before you debug the page. If the probe itself can't run, doctor
+  reports it as *unchecked*, which is not a pass.
 - Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand.
 - Best of all, don't share: `haltija --private` (with `--app` or `--headless`) gives a lane its own
   isolated server + browser on an ephemeral port that nothing else can adopt.
@@ -260,6 +268,10 @@ registers separately — `hj windows` lists it with `windowType: "iframe"`, and 
 same-origin frame silently *overwrote* the tab's entry, because both read the same window id out of
 the sessionStorage they share — so the tab became unaddressable while still appearing present.)
 
+**`hj tabs` returns its array under `windows`.** The list holds popups and iframes too, not only
+tabs — so `windows` is the accurate name. Because the command is `hj tabs`, a `tabs` alias of the
+same array is also sent, so the obvious guess works either way.
+
 **Popups are real popups (desktop app).** A page calling `window.open(url, name, 'width=…')` gets a
 genuine popup: `window.open()` returns a real `WindowProxy`, the child has `window.opener`, and
 `opener.postMessage(...)` reaches the parent. That is what OAuth flows need — an SDK keeps the
@@ -337,6 +349,14 @@ hj click '.menu :has-text("Edit")'   # Playwright-compatible alias for :text()
 Prefer these (or `[data-testid=…]`, or a ref ID from `hj tree`) over structural selectors like
 `.some-lib-menu-item > div:nth-child(2)`. Works everywhere a selector is accepted — `click`,
 `type`, `query`, `inspect`, `tree`, and test JSON.
+
+**When several elements match, the one you can ACT on wins.** A `display:none` duplicate that
+happens to come first in the DOM no longer beats the visible copy, and neither does one parked
+off-canvas (`position:absolute; left:-9999px` — the skip-link idiom, which has a perfectly normal
+box and used to be clicked *silently*). `find` and `click` share one predicate, so they always
+agree about which element a text selector means. If the only match is off-canvas, `click` fails
+with `positioned off-canvas` rather than actuating something invisible and reporting success.
+Content merely **below the fold** is still fine — visible means *rendered*, not *on screen*.
 
 ## Targeting a specific tab — and trusting the warnings
 
