@@ -241,7 +241,9 @@ retrying would re-run any side effects the code already had. Keep that guard if 
 
 ### Shadow DOM & Iframe Piercing
 
-`/tree`, `/query`, and related lookups support optional `pierceShadow` and `pierceFrames` flags (CLI: `hj tree --shadow`, `hj tree --frames`). With these, the widget descends into open shadow roots and same-origin iframe documents and flattens them into the same tree / ref ID space. Use when targeting Web Components or framed content.
+`/tree`, `/query`, and related lookups take `pierceShadow` and `pierceFrames` — **both default to `true`** (CLI: `hj tree --shadow`, `hj tree --frames` are the explicit forms, not the enabling ones). The widget descends into open shadow roots and same-origin iframe documents and flattens them into the same tree / ref ID space. `/map` traverses open shadow roots but **not** iframes.
+
+A **closed** shadow root is invisible to any script, so its host reports as childless everywhere and no flag changes that. Where a page injects the widget into an iframe, that frame registers as its own window (`windowType: 'iframe'`) — it gets a fresh id per load and never persists one, because sessionStorage is shared with the parent and a frame reusing the stored id used to *overwrite the tab's* registry entry, silently rerouting every command into the frame.
 
 ### Multi-Window Support
 

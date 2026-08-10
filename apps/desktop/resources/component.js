@@ -2919,14 +2919,25 @@
       } else {
         const WINDOW_ID_KEY = "haltija-window-id";
         let storedWindowId = null;
-        try {
-          storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
-          if (!storedWindowId) {
-            storedWindowId = uid();
-            sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
+        const isTopWindow = (() => {
+          try {
+            return window.top === window.self;
+          } catch {
+            return false;
           }
-        } catch {
+        })();
+        if (!isTopWindow) {
           storedWindowId = uid();
+        } else {
+          try {
+            storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY);
+            if (!storedWindowId) {
+              storedWindowId = uid();
+              sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId);
+            }
+          } catch {
+            storedWindowId = uid();
+          }
         }
         this.windowId = storedWindowId;
       }

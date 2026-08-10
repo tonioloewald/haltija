@@ -239,6 +239,27 @@ So `nodes` and the legend legitimately contain different sets. Comparing them na
 map has "lost" elements it has not: a non-recursive read of `nodes` shows the `<ul>` and none of its
 `<li>`s, while the legend shows the `<li>`s and no `<ul>`.
 
+**A node with no children is not necessarily an empty element.** The walk stops at four places, and
+a childless host reads identically to a genuinely empty one:
+
+| Looks empty because | Can you see inside? |
+| --- | --- |
+| **Open** shadow root | Yes — traversed since 1.12.0; shadow content sits under its host |
+| **Closed** shadow root (`mode:'closed'`) | **No.** Invisible to every script; nothing can pierce it |
+| `<iframe>` | Not in `map`. `hj tree` pierces same-origin frames (on by default) |
+| `<canvas>`, `<video>`, images | No — there is nothing inside to report |
+| `maxNodes` cap (default 400) | Subtrees past it are absent; the map carries `truncated: true` |
+
+When a node looks empty and you expected content: `hj tree` pierces open shadow roots and
+same-origin frames **by default** (`--shadow` / `--frames` are on unless you turn them off), and
+`hj map --image` at least shows you the box that is there.
+
+**A framed widget is its own window.** Where the page injects haltija into an iframe, that frame
+registers separately — `hj windows` lists it with `windowType: "iframe"`, and you drive it with
+`--window <id>`. It never becomes the untargeted target: only real tabs do. (Before 1.12.0 a
+same-origin frame silently *overwrote* the tab's entry, because both read the same window id out of
+the sessionStorage they share — so the tab became unaddressable while still appearing present.)
+
 **`hj map --image` writes a LEGEND beside the image.** stdout stays a bare path; stderr names the
 sibling `*.legend.json`, which maps every `@ref` on the picture to what it is — tag, text, role,
 href, value, state, and any findings. The image says *where* and *which*; the legend says *what*.

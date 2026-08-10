@@ -443,6 +443,24 @@ so its coordinates are meaningless and clicking it directly may do nothing: clic
 `<label>` instead. Genuinely hidden elements (`display:none`, hidden ancestor) are excluded
 entirely, so `zeroSize` always means *operable but invisible*, never *not there*.
 
+**Where the walk STOPS — an element with no children may not be empty.** A childless node in
+`nodes` reads exactly like a genuinely empty element, and the two are worth telling apart:
+
+- **Open shadow roots ARE traversed** (since 1.12.0) — shadow content appears under its host. But a
+  **closed** shadow root (`attachShadow({mode:'closed'})`) is invisible to any script, so its host
+  is reported childless and nothing can change that.
+- **Iframes are NOT traversed here** — an `<iframe>` has no element children, so it is always a
+  leaf in the map. `/tree` pierces same-origin frames (`pierceFrames`, default true). Where the
+  frame has its own widget it also registers as a separate window: see `/windows` for a
+  `windowType: "iframe"` entry and target it with `window`.
+- **Opaque content** — `<canvas>`, `<video>`, images. There is nothing inside to report.
+- **`maxNodes` truncation** (default 400) sets `truncated: true` alongside `nodes` (so on the
+  map itself — top level for JSON, under `map` with `--image`); subtrees past the cap are simply
+  absent. Check that flag before reading a short map as a small page.
+
+So: when a node looks empty and you expected content, reach for `hj tree --shadow --frames` (which
+pierces more) or `hj map --image` (which shows you the box that is there).
+
 **Parameters:**
 
 | Name | Type | Description |

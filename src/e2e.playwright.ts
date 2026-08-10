@@ -2981,3 +2981,94 @@ test.describe('haltija-dev :text() pseudo-selectors', () => {
     expect(data.data?.id).toBe('subtitle')
   })
 })
+
+test.describe('a framed widget does not steal the tab\'s identity', () => {
+  /**
+   * sessionStorage is scoped per-origin per-TAB, and a same-origin (or `srcdoc`/`about:blank`)
+   * iframe shares its parent's. So a widget injected into a frame read the very same
+   * `haltija-window-id` and registered under it — and because the server keys `windows` by that id,
+   * the frame OVERWROTE the tab. `/windows` then listed ONE window whose `windowType` had flipped
+   * to `iframe` and whose url had become `about:blank`, and every command — including one
+   * explicitly targeting the tab's own id — was answered by the frame. The page you meant to drive
+   * was gone while still looking present.
+   *
+   * Framed widgets are wanted (a frame is a legitimate target), so the fix gives the frame its own
+   * identity rather than refusing to inject.
+   *
+   * TWO things make this test representative, and it is worthless without either:
+   *  - a REAL http origin (not `page.setContent`, whose `about:blank` document has no usable
+   *    sessionStorage — every widget then mints a fresh id anyway and the test passes unfixed);
+   *  - component.js loaded INSIDE the frame, so the widget's own `window` is the frame's. Creating
+   *    the element with the PARENT's constructor captures the parent's `window`, and the frame then
+   *    reports itself as a `tab`.
+   */
+  test('a same-origin iframe registers as its own window', async ({ page }) => {
+    // A real origin, so sessionStorage exists and is shared with the frame.
+    await page.goto(SERVER_URL)
+    await page.evaluate(async (wsUrl) => {
+      await new Promise<void>((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = '/component.js'
+        s.onload = () => resolve()
+        s.onerror = () => reject(new Error('component.js failed to load'))
+        document.head.appendChild(s)
+      })
+      await customElements.whenDefined('haltija-dev')
+      if (!document.querySelector('haltija-dev')) {
+        const DC = (window as any).DevChannel
+        const el = DC.elementCreator()()
+        el.setAttribute('server', wsUrl)
+        document.body.appendChild(el)
+      }
+    }, WS_URL)
+
+    let before: any
+    for (let i = 0; i < 40; i++) {
+      before = await (await fetch(`${SERVER_URL}/windows`)).json()
+      if (before.windows.length >= 1) break
+      await page.waitForTimeout(200)
+    }
+    expect(before.windows.length).toBe(1)
+    const tabId = before.windows[0].id
+    expect(before.windows[0].windowType).toBe('tab')
+
+    // A same-origin frame that loads the component ITSELF, so its widget sees the frame's window
+    // — and its frame-shared sessionStorage already holds the tab's id.
+    await page.evaluate((wsUrl) => {
+      const f = document.createElement('iframe')
+      f.style.width = '300px'
+      f.style.height = '120px'
+      f.srcdoc =
+        `<!DOCTYPE html><html><body><button>FrameOnly</button>` +
+        `<script src="/component.js"><\/script>` +
+        `<script>customElements.whenDefined('haltija-dev').then(() => {` +
+        `  const el = window.DevChannel.elementCreator()();` +
+        `  el.setAttribute('server', ${JSON.stringify(wsUrl)});` +
+        `  document.body.appendChild(el);` +
+        `})<\/script></body></html>`
+      document.body.appendChild(f)
+    }, WS_URL)
+
+    let after: any
+    for (let i = 0; i < 40; i++) {
+      after = await (await fetch(`${SERVER_URL}/windows`)).json()
+      if (after.windows.length > 1) break
+      await page.waitForTimeout(200)
+    }
+
+    // TWO windows, not one overwritten one. THIS is the assertion that fails without the fix:
+    // the frame reuses the tab's id, so the map never grows past one entry.
+    expect(after.windows.length).toBe(2)
+    expect(new Set(after.windows.map((w: any) => w.id)).size).toBe(2)
+
+    // The tab is still there, still a tab, still the untargeted target.
+    const tab = after.windows.find((w: any) => w.id === tabId)
+    expect(tab).toBeTruthy()
+    expect(tab.windowType).toBe('tab')
+    expect(tab.focused).toBe(true)
+
+    // And the frame is present under an id of its own, correctly typed.
+    const frame = after.windows.find((w: any) => w.id !== tabId)
+    expect(frame.windowType).toBe('iframe')
+  })
+})

@@ -4381,15 +4381,43 @@ export class DevChannel extends HTMLElement {
       // Browser context - use sessionStorage (survives same-origin navigations only)
       const WINDOW_ID_KEY = 'haltija-window-id'
       let storedWindowId: string | null = null
-      try {
-        storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
-        if (!storedWindowId) {
-          storedWindowId = uid()
-          sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
+
+      // ONLY THE TOP-LEVEL WINDOW MAY CLAIM THE PERSISTED ID.
+      //
+      // sessionStorage is scoped per-origin per-TAB, and a same-origin (or `about:blank`) iframe
+      // shares its parent's. So a framed widget read the very same `haltija-window-id` and
+      // registered under it — and since the server keys `windows` by that id, the frame OVERWROTE
+      // the tab. `hj windows` then showed one window whose type had flipped to `iframe` and whose
+      // url had become `about:blank`, and every command — including one explicitly targeting the
+      // tab's own id — was answered by the frame. The page you meant to drive became unaddressable
+      // while still appearing present.
+      //
+      // Injecting into subframes is deliberate (a frame is a legitimate target), so the fix is to
+      // give a frame its OWN identity rather than to stop injecting. Frames mint a fresh id per
+      // load and never write the shared key: persistence exists so the tab an agent is driving
+      // survives navigation, and a frame silently inheriting that guarantee is what caused this.
+      const isTopWindow = (() => {
+        try {
+          return window.top === window.self
+        } catch {
+          // Cross-origin parent — the comparison is blocked, which itself means we are framed.
+          return false
         }
-      } catch {
-        // sessionStorage not available - generate a new ID each time
+      })()
+
+      if (!isTopWindow) {
         storedWindowId = uid()
+      } else {
+        try {
+          storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
+          if (!storedWindowId) {
+            storedWindowId = uid()
+            sessionStorage.setItem(WINDOW_ID_KEY, storedWindowId)
+          }
+        } catch {
+          // sessionStorage not available - generate a new ID each time
+          storedWindowId = uid()
+        }
       }
       this.windowId = storedWindowId
     }
