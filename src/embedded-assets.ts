@@ -3945,9 +3945,18 @@ export const COMPONENT_JS: string = `(() => {
     return textMatches(text, parsed);
   }
   var NON_RENDERED_TEXT = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TITLE"]);
+  function containsDeep(ancestor, node) {
+    let cur = node;
+    while (cur) {
+      if (cur === ancestor)
+        return true;
+      cur = cur.parentNode ?? cur.host ?? null;
+    }
+    return false;
+  }
   function textMatchesInDocument(parsed) {
     const candidates = queryAllDeep(parsed.baseSelector).filter((el) => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed));
-    return candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)));
+    return candidates.filter((el) => !candidates.some((other) => other !== el && containsDeep(el, other)));
   }
   function resolveSelector(selector) {
     if (!TEXT_PSEUDO_RE.test(selector)) {
@@ -10898,7 +10907,7 @@ export const COMPONENT_JS: string = `(() => {
       if (hiddenAncestor) {
         return \`ancestor has hidden attribute: \${hiddenAncestor.tagName.toLowerCase()}\${hiddenAncestor.id ? "#" + hiddenAncestor.id : ""}\`;
       }
-      if (el.offsetParent === null && style.position !== "fixed" && el.tagName !== "BODY") {
+      if (el.offsetParent === null && style.position !== "fixed" && el.tagName !== "BODY" && el.tagName !== "HTML") {
         return "offsetParent is null (likely hidden ancestor)";
       }
       return null;

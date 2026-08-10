@@ -51,6 +51,34 @@ Accessibility findings ride along, because the geometry was already there: **con
 ratio used to round *up* into a pass, so 4.49 reported as 4.5 and passed) and **touch targets**
 below the 24x24 / 44x44 thresholds, flagged on the image and in the legend.
 
+### `hj find` returned the entire application, and said `found: true`
+
+[#24](https://github.com/tonioloewald/haltija/issues/24), reported against rc.5 while this release
+was being cut.
+
+`/find` carried its **own** text search — `document.querySelectorAll(tag)` in document order,
+returning the FIRST match. Every ancestor of a hit also contains its text, so the first match is the
+**outermost** one: on a real app it answered `app-layout:nth-of-type(1)`, the whole application,
+with `found: true` and exit 0. A false positive that reads as a success is worse than a miss,
+because you act on it.
+
+It survived because `:text()` was fixed to prefer the innermost match in a *different* code path,
+and nothing tied the two together. `/find` now gathers candidates through the widget's own resolver,
+so there is one implementation of "find me the element with this text" — which also gets `/find`
+shadow-DOM piercing for free. Matches inside a shadow root are marked `inShadow`, because the CSS
+selector we hand back cannot cross that boundary and pretending otherwise is the same class of lie.
+
+Two related visibility fixes, both from the same report:
+
+- **`offsetParent === null` is not a hidden test.** It is null for `html`, `body`, and **every
+  `position: fixed` element** — fixed app shells, modals and sticky chrome are all perfectly
+  visible. `/find` used that gate with no exemptions at all and skipped them; the click path had
+  exemptions but was missing `HTML`. `/find` now uses the same "rendered" rule as
+  `assert visible` (non-zero rect plus display/visibility/opacity).
+- **The innermost filter was shadow-blind.** `Node.contains` stops at a shadow boundary while the
+  candidate list pierces it, so a real ancestor reported "does not contain" and the outermost match
+  won anyway. Both filters now walk through shadow hosts.
+
 ### A same-origin iframe silently overwrote the tab it was inside
 
 sessionStorage is shared between a tab and its same-origin (or `srcdoc`/`about:blank`) frames, so a

@@ -3072,3 +3072,62 @@ test.describe('a framed widget does not steal the tab\'s identity', () => {
     expect(frame.windowType).toBe('iframe')
   })
 })
+
+test.describe('/find returns the innermost match, not the whole app', () => {
+  /**
+   * `/find` carried its OWN text search — `document.querySelectorAll(tag)` in document order,
+   * returning the FIRST match. Every ancestor of a hit also contains its text, so the first match
+   * is the OUTERMOST one: on a real app it answered `app-layout:nth-of-type(1)` — the entire
+   * application — with `found: true` and exit 0. A false positive that reads as success is worse
+   * than a miss (issue #24).
+   *
+   * It survived because `:text()` was fixed to prefer the innermost match in a DIFFERENT code path
+   * (`resolveSelectorAll`), and nothing tied the two together. Two implementations of "find me the
+   * element with this text" will always diverge; `/find` now gathers candidates through the
+   * widget's own resolver, which also gets it shadow-DOM piercing for free.
+   */
+  test('nested ancestors do not win, and shadow content is reachable', async ({ page }) => {
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', `
+        <app-layout style="display:block">
+          <div style="position:fixed;inset:0">
+            <nav style="display:block;width:200px;height:300px">
+              <a href="/insights" style="display:block;width:200px;height:40px">
+                <span style="display:inline-block">Automation Insights</span>
+              </a>
+            </nav>
+          </div>
+        </app-layout>`)
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      host.attachShadow({ mode: 'open' }).innerHTML =
+        '<section><a href="/deep" style="display:block;width:180px;height:40px">Deep Shadow Link</a></section>'
+    })
+
+    const find = async (text: string) => {
+      const res = await fetch(`${SERVER_URL}/find`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      return res.json()
+    }
+
+    // The innermost element whose text is the match — NOT app-layout, nav, or the <a>.
+    const hit = await find('Automation Insights')
+    expect(hit.found).toBe(true)
+    expect(hit.element.tag).toBe('span')
+
+    // A `position: fixed` ancestor must not make anything unfindable: the old visibility gate was
+    // `offsetParent === null`, which is null for html, body and EVERY fixed element.
+    expect(hit.element.text).toContain('Automation Insights')
+
+    // Shadow content is reachable, and flagged — the generated CSS selector cannot cross the
+    // boundary, and handing one back unqualified would be a selector that resolves to nothing.
+    const deep = await find('Deep Shadow Link')
+    expect(deep.found).toBe(true)
+    expect(deep.element.tag).toBe('a')
+    expect(deep.element.inShadow).toBe(true)
+  })
+})

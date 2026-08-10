@@ -787,12 +787,28 @@ function elementTextMatches(el: Element, parsed: ParsedTextSelector): boolean {
  */
 const NON_RENDERED_TEXT = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TITLE'])
 
+/**
+ * Containment that CROSSES shadow boundaries.
+ *
+ * `Node.contains` stops at the boundary, and the candidate list here is shadow-PIERCING — so a real
+ * ancestor reported `false` for a match inside a shadow root, survived the innermost filter, and
+ * the outermost element won after all. The two halves have to agree about what "inside" means.
+ */
+function containsDeep(ancestor: Node, node: Node): boolean {
+  let cur: Node | null = node
+  while (cur) {
+    if (cur === ancestor) return true
+    cur = cur.parentNode ?? ((cur as ShadowRoot).host as Node | undefined) ?? null
+  }
+  return false
+}
+
 function textMatchesInDocument(parsed: ParsedTextSelector): Element[] {
   const candidates = queryAllDeep(parsed.baseSelector).filter(
     el => !NON_RENDERED_TEXT.has(el.tagName) && elementTextMatches(el, parsed),
   )
   // Drop any match that contains another match: what's left is the innermost set.
-  return candidates.filter(el => !candidates.some(other => other !== el && el.contains(other)))
+  return candidates.filter(el => !candidates.some(other => other !== el && containsDeep(el, other)))
 }
 
 function resolveSelector(selector: string): Element | null {
@@ -10645,11 +10661,16 @@ export class DevChannel extends HTMLElement {
       return `ancestor has hidden attribute: ${hiddenAncestor.tagName.toLowerCase()}${hiddenAncestor.id ? '#' + hiddenAncestor.id : ''}`
     }
 
-    // Check if offsetParent is null (usually means hidden, except for fixed/body)
+    // offsetParent is null for a display:none ancestor — but ALSO, legitimately, for `html`,
+    // `body` and every `position: fixed` element. `HTML` was missing from the exemptions, so a
+    // selector that resolved to the document element was rejected as "hidden" (issue #24). Fixed
+    // shells, modals and sticky chrome are the common case and were already exempt; the root
+    // element is the same kind of false positive.
     if (
       el.offsetParent === null &&
       style.position !== 'fixed' &&
-      el.tagName !== 'BODY'
+      el.tagName !== 'BODY' &&
+      el.tagName !== 'HTML'
     ) {
       return 'offsetParent is null (likely hidden ancestor)'
     }

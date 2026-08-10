@@ -1414,23 +1414,62 @@ registerHandler(api.find, async (body, ctx) => {
   const all = body.all ?? false
   const visible = body.visible ?? true
   
+  // `/find` used to carry its OWN text search — `document.querySelectorAll(tag)` in document
+  // order, returning the FIRST match. Every ancestor of a hit also contains its text, so the first
+  // match is the OUTERMOST one: on a real app it answered `app-layout:nth-of-type(1)` — the entire
+  // application — with `found: true` and exit 0. A false positive that reads as a success is worse
+  // than a miss, and it survived because `:text()` was fixed to return the innermost match in a
+  // different code path (`resolveSelectorAll`) while this one was never touched. Two
+  // implementations of "find me the element with this text" WILL diverge; there is now one.
+  //
+  // Reported as https://github.com/tonioloewald/haltija/issues/24.
+  //
+  // Candidates come from the widget's own resolver, so `/find` inherits shadow-DOM piercing and
+  // agrees with `:text()` about which element is meant. The text is NOT interpolated into a
+  // `:text(...)` selector — arbitrary text containing `)` or quotes would break the parser — so
+  // matching stays here and only candidate GATHERING is delegated.
   const findCode = `(function() {
-    const elements = document.querySelectorAll(${JSON.stringify(tag)});
+    const gather = window.__haltija_resolveSelectorAll;
+    const elements = gather ? gather(${JSON.stringify(tag)}) : Array.from(document.querySelectorAll(${JSON.stringify(tag)}));
     const searchText = ${JSON.stringify(body.text)};
     const exact = ${exact};
     const visibleOnly = ${visible};
     const results = [];
-    
-    for (const el of elements) {
-      // Check visibility if required
-      if (visibleOnly && (el.offsetParent === null || getComputedStyle(el).visibility === 'hidden')) {
-        continue;
+
+    // Containment that CROSSES shadow boundaries. \`Node.contains\` stops at the boundary, so with
+    // shadow-piercing candidates it reports false for a real ancestor and the outermost match
+    // survives the innermost filter — the very bug being fixed, reintroduced one layer down.
+    const containsDeep = (ancestor, node) => {
+      let cur = node;
+      while (cur) {
+        if (cur === ancestor) return true;
+        cur = cur.parentNode ? cur.parentNode : cur.host;
       }
-      
-      const text = el.textContent?.trim() || '';
-      const matches = exact ? text === searchText : text.includes(searchText);
-      
-      if (matches) {
+      return false;
+    };
+
+    // "Rendered", matching assert visible/hidden — NOT \`offsetParent === null\`, which is null for
+    // \`html\`, \`body\` and EVERY \`position: fixed\` element. Fixed shells, modals and sticky chrome
+    // are perfectly visible and were all being skipped.
+    const isVisible = (el) => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+
+    const textOf = (el) => (el.textContent || '').trim();
+    const hits = elements.filter((el) => {
+      if (visibleOnly && !isVisible(el)) return false;
+      const t = textOf(el);
+      return exact ? t === searchText : t.includes(searchText);
+    });
+    // Innermost only: drop any hit that contains another hit.
+    const innermost = hits.filter((el) => !hits.some((o) => o !== el && containsDeep(el, o)));
+
+    for (const el of innermost) {
+      const text = textOf(el);
+      {
         // Generate selector
         let selector;
         if (el.id) selector = '#' + el.id;
@@ -1451,12 +1490,19 @@ registerHandler(api.find, async (body, ctx) => {
           }
         }
         
+        // A match inside a shadow root cannot be reached by the selector we just generated:
+        // document.querySelector does not cross the boundary. Saying so beats handing back a
+        // selector that silently resolves to nothing (or, worse, to a different element).
+        const inShadow = el.getRootNode() !== document;
+
         const result = {
           selector,
           tag: el.tagName.toLowerCase(),
           text: text.substring(0, 100),
           id: el.id || undefined,
           classes: el.className && typeof el.className === 'string' ? el.className.split(' ').filter(Boolean).slice(0, 5) : undefined,
+          inShadow: inShadow || undefined,
+          note: inShadow ? 'inside a shadow root — this selector will not resolve from the document; use hj tree --shadow to get a ref, or click by ref' : undefined,
         };
         
         if (!${all}) return { found: true, element: result, selector };
