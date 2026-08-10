@@ -1476,7 +1476,7 @@
             "boolean",
             "null"
           ],
-          "description": "Also render the map as a schematic PNG (rasterized). Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming."
+          "description": "Also render the map as a schematic PNG (rasterized). NOTE: response.nodes is a TREE (recurse into .children — a <ul> holds its <li>s, a custom element holds its shadow content) while response.legend is a FLAT ref->facts index of only the ref-bearing nodes, so the two legitimately contain different sets. Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming."
         },
         "scale": {
           "type": [

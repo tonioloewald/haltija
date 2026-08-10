@@ -225,6 +225,20 @@ an index you can glance at and then act on. Sizing and encoding take the same fl
 `--max-width`, `--max-height`, `--format png|webp|jpeg`, `--quality`, `--scale`. Pass `--data-url`
 for an inline base64 string, or `--json` if you want the map JSON *and* the image together.
 
+**`nodes` is a TREE; the legend is FLAT.** This bites, so it is worth stating plainly:
+
+- `map.nodes` is nested — a `<ul>` appears with its `<li>` children under `children`, and shadow
+  content appears under its host. **You must recurse.** Reading only the top level shows containers
+  and none of the affordances inside them.
+- Structural containers that are only there for grouping carry **no `@ref`** (nothing to act on), so
+  they appear in `nodes` and *not* in the legend.
+- The legend is a flat `ref → facts` index of the ref-bearing nodes, which is what makes it useful
+  next to the image.
+
+So `nodes` and the legend legitimately contain different sets. Comparing them naively suggests the
+map has "lost" elements it has not: a non-recursive read of `nodes` shows the `<ul>` and none of its
+`<li>`s, while the legend shows the `<li>`s and no `<ul>`.
+
 **`hj map --image` writes a LEGEND beside the image.** stdout stays a bare path; stderr names the
 sibling `*.legend.json`, which maps every `@ref` on the picture to what it is — tag, text, role,
 href, value, state, and any findings. The image says *where* and *which*; the legend says *what*.
