@@ -1,36 +1,38 @@
 # TODO
 
-## 1.12.0 — where it stands (handoff, 2026-08-09)
+## 1.12.0 — RELEASED (2026-08-10)
 
-`main` is `1.12.0-rc.3`, **uncut and unpublished**. `1.12.0-rc.2` is the published `rc` dist-tag;
-`latest` is still `1.11.2`. All four CI lanes green on HEAD. 802 unit + 119 e2e.
+Tagged `v1.12.0`. All four lanes green at the tag: 806 unit, 120 e2e, QA fixtures (playground 26
+steps, homepage 15), docs-drift clean. Publish is the maintainer's step: `npm publish` (no `--tag`),
+then `npm dist-tag add haltija@1.12.0 latest`.
 
-**Cut rc.4 when snowfox is ready to test again** — deliberately not cut yet, since the delta since
-rc.2 is large and an untested RC helps nobody.
+The targeted review over the schematic diff (rc.2..HEAD) ran and found three things, all fixed:
 
-Delta since rc.2, all from snowfox's reports (#18–#21) plus review follow-ups:
-- `hj find` printed nothing and exited 0; `form` did the same, unreported (top-level payloads)
-- `:text()` matched the OUTERMOST element, so `hj click ":text(x)"` clicked `<html>`
-- `:text()` matched `<script>` source (detached-clone `innerText` degrades to `textContent`)
-- `map`/`query` were blind to open shadow DOM — and fixing it exposed that haltija's own widget
-  was excluded only by accident
-- contrast: 2.991 rendered as `"3:1 (needs 3:1)"`; design-system buttons were never graded at all
-- `hj snapshot` with no args could not succeed; `--wait-ready` false-negatived and killed private runs
-- `hj constructor` silently ran `hj console`; `hj toString` crashed inside node's bootstrap
-- the schematic legend + touch-target diagnostic
-- tosijs-schema 1.5.1, which exposed 8 undeclared parameters on `/recording/generate`
+1. **A same-origin iframe silently overwrote the tab it was inside.** Found chasing snowfox's
+   follow-up that a shadow host "reads like an empty element" — the shadow half was already fixed in
+   rc.5, but the check turned up something worse next door. sessionStorage is shared with
+   same-origin frames, so a framed widget reused the tab's `haltija-window-id` and took over its
+   registry entry; every command, including one explicitly targeting the tab, was answered by the
+   frame. Frames now mint their own id. Regression test in `e2e.playwright.ts`, verified to fail
+   without the fix (expected 2 windows, got 1).
+2. **`queryAllDeep` threw on very large pages** — `push(...matches)` exceeds the engine argument cap
+   (measured: 120k fine, 200k `RangeError`).
+3. **The schematic legend could overwrite the image it describes** where a path had no extension —
+   latent, now impossible by construction.
 
-**Before cutting final:**
-1. rc.4 → snowfox exercises it
-2. **targeted** review over the schematic diff only — NOT all nine lenses. Per the exit rule in
-   `tosijs-coding-practices/practices/review.md`, a full re-review here restarts the clock; the RC
-   is the honest stopping state.
-3. bump both package.json files to `1.12.0`, tag, `npm publish` (no `--tag`), then
-   `npm dist-tag add haltija@1.12.0 latest`
+Measured and deliberately left alone: `map` is 41ms on a 12k-element page (the `maxNodes` cap bounds
+the walk); a deliberately broad `:text()` matching ~12k candidates is 1.7s for a 596KB answer — slow
+but it answers, and the innermost-match filter is not worth rewriting on the eve of a release.
 
 **Deliberately NOT fixed for 1.12.0:** #20.2 / #20.5 (contrast annotations and zero-size markers in
 geometric mode). The 1.13 tosijs-floorplan adoption supersedes both — patching a renderer that is
 about to be deleted is wasted work.
+
+### Next up (1.13)
+
+- Adopt **tosijs-floorplan** as the schematic renderer (see `UPSTREAM.md`), which subsumes #20.2/#20.5.
+- The head-to-head schematic corpus — judgement-heavy and non-deterministic, so an exercise to run
+  when schematic rendering changes, not a CI gate.
 
 
 - [ ] **Replace the 7 `s.any` uses once tosijs-schema#3 lands** (or sooner, with concrete types).

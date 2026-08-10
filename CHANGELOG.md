@@ -1,147 +1,6 @@
 # Changelog
 
-## 1.12.0-rc.5
-
-Release candidate. Two fixes on top of rc.4, one of them the reason to upgrade promptly.
-Install with `npm i haltija@rc`.
-
-### `hj test` can fail a build again
-
-**`hj test run` and `hj test suite` exited 0 even when tests failed** — in every form, including
-`--json`, `--strict` and `HALTIJA_STRICT=1`. The FAIL report printed correctly; only the exit code
-was wrong, so a CI lane gating on haltija could not gate on anything. **Present in 1.11.2**, so if
-you have a lane running haltija tests today, it has been green regardless of results.
-
-The cause is worth knowing if you consume the API directly: the response envelope's `success`
-describes the **request**, not the tests. "The run happened" and "the tests passed" are different
-facts. Gate on `summary.failed`, `passed`, or `results[].passed` — never on `success`.
-
-An unrecognised response shape is still treated as a pass (exiting 1 on something we don't
-understand would break working lanes) but now says so on stderr rather than exiting 0 silently.
-
-### `hj navigate file://…` no longer wedges the desktop app
-
-The desktop app cannot inject its widget into a `file://` page, so navigating there disconnected
-the tab permanently — and `navigate` reported `success: true`, because the navigation genuinely
-happened. The failure surfaced on the *next* command as a generic "No browser connected", which
-reads like the app crashed. There was no way back: `hj tabs open` needs a connected browser to
-service the request.
-
-`/navigate` now refuses `file://` **in the desktop app**, leaves the tab intact, and tells you to
-serve over HTTP instead. `file://` still works under `haltija --headless` (Playwright), which is
-unaffected.
-
-## 1.12.0-rc.4
-
-Superseded by rc.5. Release candidate. Everything in 1.12.0 plus the fixes below, all from an agent driving a mixed
-React/tosijs app against rc.2. Install with `npm i haltija@rc`.
-
-### Commands that reported success while doing the wrong thing
-
-- **`hj find` printed nothing and exited 0.** The endpoint was always right — it answers at the
-  *top level*, not under `data`, and the CLI's unwrap read `json.data`. Silence plus a success code
-  is the worst rendering of a correct answer: no human sees it and no script can detect it. `hj form`
-  had the same defect, unreported.
-- **`:text()` matched the OUTERMOST element**, so `hj click ":text(Save)"` tried to click `<html>`
-  and failed, while `hj click "li:text(Save)"` worked — the tag qualifier was doing the
-  pseudo-selector's job. Now matches the smallest element containing the text, as Playwright does.
-  The not-found message recommends the bare form, so this also fixed the guidance.
-- **`:text()` matched `<script>` source.** `innerText` is rendering-aware only for an *attached*
-  node, and the text extractor clones.
-- **`hj constructor` silently ran `hj console`** — the fuzzy matcher auto-executed on a shared
-  3-character stem. The bar for "one match" is the bar for running something you didn't type.
-- **`hj toString` crashed inside node's bootstrap** — lookup tables keyed on user input inherited
-  `Object.prototype`.
-- **`hj snapshot` with no arguments could not succeed**, which is the form `--help` documents.
-- **`--wait-ready` false-negatived and then killed the run.** In `--private` mode it polled the
-  shared default port while the server had bound an ephemeral one, so it never saw the browser
-  connect. `--ci` implies `--wait-ready`.
-
-### The map can see web components now
-
-`hj tree` has pierced open shadow roots since 1.5; `map` and `query` could not — so an agent asking
-the flagship question was told a web component was empty, having just seen its contents in `tree`.
-In a design-system codebase that is most of the interactive page.
-
-Fixing it revealed that haltija's own widget was excluded only *by accident* — its controls live in
-its shadow root, so nothing that stopped at shadow boundaries could see them. That exclusion is now
-deliberate: a tool that reports itself as part of the page under test is the observer effect this
-product exists to avoid.
-
-### Accessibility findings you can see
-
-- **Contrast no longer contradicts itself.** A true ratio of 2.9910 displayed as `3` and read
-  `"3:1 (needs 3:1)"` — a failure phrased as a pass. Floored, so the number is always on the same
-  side of the threshold as the truth.
-- **Design-system buttons are graded at all.** The check required a *direct* text node, and MUI —
-  like tosijs and most others — wraps labels in a `<span>`, so every such button silently escaped a
-  genuine WCAG failure. haltija now grades using the element that actually renders the text.
-- **New: `smallTarget`.** Interactive controls below WCAG 2.5.8's 24×24 minimum are flagged and
-  drawn. The spec's inline exception is honoured — a link inside a sentence is exempt, so this does
-  not fire on every paragraph.
-
-### Schematics: a legend, and two visible modes
-
-`hj map --image` now writes a sibling `*.legend.json` mapping every `@ref` on the picture to what it
-is. The image says *where* and *which*; the legend says *what* — which is what makes it safe to stop
-cramming captions into boxes too small to hold them.
-
-The response also reports `layout` (`geometric` / `structural`) and `boundsCoverage`, and `layout`
-is overridable. An automatic choice the caller cannot see, explain or override is indistinguishable
-from a bug.
-
-## 1.12.0-rc.2
-
-Superseded by rc.4. Release candidate. Everything below is 1.12.0; the `-rc` tag exists because the schematic
-renderer changed substantially late in the cycle and deserves real-world use before the minor is
-blessed. Install with `npm i haltija@rc`.
-
-rc.2 fixes an import-time warning in `haltija/test`: the module-scope `hj` singleton meant merely
-importing the module warned about the shared default server, including for callers passing an
-explicit URL. It now warns on first USE, so doing the right thing is silent.
-
-### The schematic draws the page where it actually is
-
-Previously it stacked nested boxes in DOM order and sized them from *text width* — no page
-geometry anywhere. A right-aligned nav, a two-column grid and a sidebar all came out as one
-vertical list: structurally faithful, spatially a fiction. Asking "do these cards sit side by
-side?" got a confident wrong answer from a picture.
-
-Now boxes sit at real page coordinates, and:
-
-- **Viewport by default**, `fullPage: true` on request. A whole-document schematic of a long page
-  is a tall thin strip — 1126×22304 is 1:20, and no pixel budget rescues it.
-- **Layout-only elements draw nothing.** Once positions are real, a wrapper's rectangle says
-  nothing the children's placement doesn't already show.
-- **Page content is included** — `p`, `li`, `blockquote`, `td`, `img`, `svg` and friends were in
-  neither the interactive nor structural selector, so a documentation page showed its controls and
-  none of its documentation.
-- **Inline SVG and canvases render as real artwork**, in place.
-- **Checkboxes and radios are drawn as geometry**, not glyphs; **placeholders** are italic and
-  faded so an empty field can't read as a filled one; **disabled**, **focused** and **interactive**
-  are visually distinct.
-- **`contenteditable` is surfaced as the text-entry surface it is** — how React rich-text editors
-  and every `execCommand` document work, previously indistinguishable from a plain `<div>`.
-- **Refs render on a contrasting chip**, so the one token you retype into a command is legible over
-  artwork, over any palette, and in boxes too small for a caption.
-
-Captions carry an element's own text *minus* what its kept descendants already show, so a
-web-component label like `<label><tosi-slot>Required field</tosi-slot><input></label>` reads
-correctly instead of as a bare `label`.
-
-### `haltija --private --app` says which server to drive
-
-App mode starts two servers and both printed a byte-identical `HALTIJA_PRIVATE_READY` line. The
-payload now carries `"role":"public"` / `"role":"internal"`.
-
-### `haltija/test` resolves its server like `hj` does
-
-`HaltijaTestClient` hardcoded `http://localhost:8700` with no env override, so an adopter's
-integration suite pointed at the shared interactive server and drove whatever tab was focused. It
-now honours `HALTIJA_URL` / `HALTIJA_PORT` / `DEV_CHANNEL_PORT`, and says so on stderr when it
-falls back to the shared default.
-
-## 1.12.0
+## 1.12.0 — trustworthy by default
 
 **Trustworthy by default.** A minor, gated on the nine-lens pre-release review: every finding it
 raised is fixed, not deferred. The theme is narrow and deliberate — *the instrument must not lie*,
@@ -165,6 +24,57 @@ captures, copy them out of that directory. Anything already in `/tmp/haltija-scr
 `/tmp/haltija-schematics` from an earlier version is **left alone** — an upgrade that deletes your
 files to tidy up its own directory move is exactly the behaviour this release exists to stop.
 
+### The schematic map is now a map
+
+`hj map --image` used to be a stack of boxes — one small step up from the wall of text it exists to
+replace. It now draws the page **where it actually is**, at real coordinates. That is the whole
+point: layout is high-information, and a diagram that throws it away is barely better than prose.
+
+- **Layout-faithful**, and it reports which renderer ran (`layout`, `boundsCoverage`) instead of
+  leaving you to infer it. Force either with `--layout geometric|structural`.
+- **Clipped to the viewport by default.** Full-page renders produced 1126x22304 strips that no
+  amount of downscaling makes readable. Use `--full-page` when you need what is off screen.
+- **Content, not just controls** — text, headings and images are drawn; elements whose only
+  contribution is layout are not.
+- **A legend beside the image** (`*.legend.json`; path on stderr): a flat `ref -> facts` index. The
+  image says *where* and *which*, the legend says *what* — which is what makes it safe to stop
+  cramming captions into boxes too small to hold them.
+- **Refs on a contrasting chip**, legible against any background; **checkboxes and radios drawn as
+  SVG** rather than unicode glyphs that rasterize to mush; **placeholders distinguished from real
+  text**; interactive, disabled and focused states visually distinct.
+- **Child text is no longer duplicated inside its parent's caption** — a parent shows `[@42]` where
+  the child already speaks for itself.
+- **`/map` and `/query` pierce open shadow roots.** `hj map` reported a web component as empty while
+  `hj tree` listed its contents — in a design-system codebase that is most of the interactive page.
+
+Accessibility findings ride along, because the geometry was already there: **contrast** (a failing
+ratio used to round *up* into a pass, so 4.49 reported as 4.5 and passed) and **touch targets**
+below the 24x24 / 44x44 thresholds, flagged on the image and in the legend.
+
+### A same-origin iframe silently overwrote the tab it was inside
+
+sessionStorage is shared between a tab and its same-origin (or `srcdoc`/`about:blank`) frames, so a
+widget injected into a frame read the same `haltija-window-id` and **overwrote the tab's entry** in
+the server's window map. `hj windows` then listed one window whose type had flipped to `iframe` and
+whose url had become `about:blank`, and every command — including one explicitly targeting the
+tab's own id — was answered by the frame. The page you meant to drive was unaddressable while still
+appearing present. It bites hardest in CI, where the widget is auto-injected into every frame.
+
+Frames now mint their own id and register as their own window (`windowType: "iframe"`, drivable with
+`--window <id>`); only real tabs ever become the untargeted target.
+
+### `hj test` can fail a build again
+
+**`hj test run` and `hj test suite` exited 0 even when tests failed** — in every form, including
+`--json`, `--strict` and `HALTIJA_STRICT=1`. The FAIL report printed correctly; only the exit code
+was wrong, so a CI lane gating on haltija could not gate on anything. Present in 1.11.2.
+
+The envelope's `success` describes the **request**, not the tests: "the run happened" and "the tests
+passed" are different facts, and only the second belongs in an exit code. Gate on `summary.failed`,
+`passed`, or `results[].passed`. An unrecognised response shape is still treated as a pass — exiting
+1 on something we do not understand would break working lanes — but now says so on stderr instead of
+exiting 0 silently.
+
 ### Commands that reported success without doing the thing
 
 - **`hj wait <selector>` returned success in ~50 ms without waiting.** The CLI sent `selector`; the
@@ -180,6 +90,21 @@ files to tidy up its own directory move is exactly the behaviour this release ex
   so `{maxWidth:300, format:'jpeg'}` returned a byte-identical full-size PNG with a 200. Now
   declared, forwarded, and available from the CLI as `--max-width` / `--max-height` / `--format` /
   `--quality`.
+- **`hj type <ref> "text"` never typed, and `hj key --ref` hit the wrong element.** `/type` and
+  `/key` both *declared* `ref` and neither handler forwarded it — so the headline example in README,
+  DOCS.md and SKILL.md failed every time, and `/key {ref}` returned `success: true` having acted on
+  `document.activeElement`.
+- **`hj find` printed nothing and exited 0** on a call that had succeeded and located the element.
+  `/find` answers at the top level and the CLI only ever printed `json.data`. Probing every command
+  found `hj form` doing the same, unreported. Silence plus a success code is the worst possible
+  rendering of a correct answer: no human sees it and no script can detect it.
+- **`hj snapshot` with no arguments could never succeed.** An all-optional body was reduced to no
+  body at all, so the server answered "Invalid JSON body" — and dumped a schema alongside that
+  happens to contain an unrelated malformed entry, so the reporter reasonably blamed the schema. A
+  diagnostic that volunteers a plausible-looking irrelevance costs more than a terse one.
+- **`hj wait --hidden` (no selector) was a 1-second `sleep` reported as success**, because the CLI
+  manufactured an `ms` the user never asked for, which suppressed the endpoint's own 400.
+
 - **The desktop app's "Server URL" setting reverted on every launch.** It saved, displayed, and
   silently stopped applying. A URL you type now persists; a `--private` instance still overrides it,
   because isolation is not a preference.
@@ -219,6 +144,24 @@ files to tidy up its own directory move is exactly the behaviour this release ex
 - `haltija --private` without `--port-file` crashed with `ReferenceError: tmpdir is not defined`
   ([#17](https://github.com/tonioloewald/haltija/issues/17)) — shipped dead in **nineteen** tagged
   releases, v1.4.1 through v1.11.3.
+- `hj navigate file://…` no longer wedges the desktop app. It cannot inject the widget there, so
+  the tab disconnected permanently — and `navigate` reported `success: true`, because the navigation
+  genuinely happened. The next command failed with a generic "No browser connected", and `hj tabs
+  open`, the obvious recovery, needs a connected browser. Now refused **in the desktop app** with
+  the HTTP workaround in the message; `file://` still works under `--headless`.
+- `hj <anything on Object.prototype>` no longer crashes or runs the wrong command. `hj toString`
+  died inside node's own bootstrap; `hj constructor` silently ran `hj console`, because suggestions
+  matched on a shared three-character stem. Lookup tables keyed by user input are now
+  prototype-less, and a suggestion must be a whole command that prefixes what you typed.
+- `queryAllDeep` threw on very large pages: `push(...matches)` passes every match as an argument and
+  the engine caps that (measured — 120k fine, 200k `RangeError`). The failure scaled with page size,
+  so it appeared only on the documents most worth inspecting.
+- The schematic legend could overwrite the image it describes, where an artifact path had no
+  extension. Latent rather than live, and now impossible by construction rather than by that
+  invariant holding.
+- Docs state where the map walk **stops** — closed shadow roots (which nothing can pierce), iframes,
+  opaque media, `maxNodes` truncation — so a childless node can be told from a genuinely empty
+  element. Related: `pierceShadow` and `pierceFrames` **default to true**; the docs implied opt-in.
 
 ### Guards, because most of the above should have been caught
 
@@ -228,8 +171,13 @@ files to tidy up its own directory move is exactly the behaviour this release ex
   build, which made 116 tests the least-checked code in the repo.
 - A declarative invariant asserts every command whose parser handles flags is registered in
   `KNOWN_FLAGS`. It found the ten dead flags above.
-- `/map`'s forwarding list is asserted against its schema, so a declared parameter cannot be
-  silently dropped again.
+- Every handler is asserted against its schema in **both** directions: nothing an endpoint
+  declares may be dropped, and nothing a handler reads may be undeclared. The first version of
+  that check covered `/map` alone — which is precisely how `/type` and `/key` went out broken in
+  the release that fixed `/map`. **A guard written for one instance of a class does not guard the
+  class.** The read-direction half was added after a dependency bump began enforcing
+  `additionalProperties: false` and turned nine undeclared-but-working fields on
+  `/recording/generate` into a 400 on a documented endpoint.
 - Running the unit suite **deleted the developer's screenshots** older than 24 h — production prune
   defaults, no test seam. Fixed, and CI now fails if the suite touches the real artifact directory.
 - Two Playwright suites still held fixed ports with unconfirmed teardown, so an interrupted run
