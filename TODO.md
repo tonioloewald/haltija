@@ -20,6 +20,19 @@ The targeted review over the schematic diff (rc.2..HEAD) ran and found three thi
 3. **The schematic legend could overwrite the image it describes** where a path had no extension —
    latent, now impossible by construction.
 
+Then, while the tag was being cut, snowfox filed [#24](https://github.com/tonioloewald/haltija/issues/24)
+against rc.5 from a real app — **`hj find` returned the entire application with `found: true` and
+exit 0.** Verified and fixed; the tag was moved to include it (nothing had been published to npm).
+`/find` carried its own text search returning the first match in document order, which is the
+outermost one — `:text()` had been fixed in a different code path and nothing tied the two together.
+There is now one implementation. Same report also killed the `offsetParent === null` visibility gate
+(null for `html`, `body` and every `position: fixed` element) and exposed that the innermost filter
+was shadow-blind, since `Node.contains` stops at a boundary the candidate list pierces.
+
+**The pattern worth remembering from this release:** every one of these was two implementations of
+one idea with only one of them updated — `/type`'s `ref`, `/map`'s parameters, `:text()` vs `/find`.
+Guards that name a single instance do not guard the class.
+
 Measured and deliberately left alone: `map` is 41ms on a 12k-element page (the `maxNodes` cap bounds
 the walk); a deliberately broad `:text()` matching ~12k candidates is 1.7s for a 596KB answer — slow
 but it answers, and the innermost-match filter is not worth rewriting on the eve of a release.
