@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Popups are popups again (desktop app) — [#25](https://github.com/tonioloewald/haltija/issues/25)
+
+A page calling `window.open(url, name, 'width=...')` now gets a genuine popup: `window.open()`
+returns a real `WindowProxy`, the child has `window.opener`, and `opener.postMessage(...)` reaches
+the parent.
+
+Previously the desktop app decided by **guessing from the URL** — allow if it contained `oauth`,
+`signin`, `login`, `accounts.google.com` or `/__/auth/`; deny everything else and re-open it as a
+tab, which severs the opener in both directions. `window.open()` returned `null` and the child had
+no `opener`. That is the shape of every OAuth popup flow: the SDK keeps the returned window to poll
+`.closed` and to `.close()`, and the callback page delivers its credential via `opener.postMessage`.
+With neither, a user can complete a sign-in in a window that cannot report back and the app just
+waits — arguably worse than a clean block.
+
+The heuristic failed both ways: an innocent `/login-help` page became a popup, while the common SDK
+pattern of opening `about:blank` and *then* navigating matched nothing and was denied — the very
+case the list existed to catch. The decision now keys on Electron's `disposition`, which is what the
+page actually asked for, so there is nothing to guess.
+
+Two things come free, because the window model already handled popups correctly: the popup registers
+as `windowType: "popup"` (tellable from a user-opened tab) and it **does not steal focus**, so
+untargeted commands keep going to the tab you were driving.
+
+Ordinary `<a target="_blank">` links still open as tabs in the app's tab strip — that behaviour is
+deliberate and unchanged. **Known residual:** a featureless `window.open(url, '_blank')` is
+indistinguishable from a `target="_blank"` link at this layer (both report `foreground-tab`), so it
+still becomes a tab and still returns `null`.
+
 ## 1.12.0 — trustworthy by default
 
 **Trustworthy by default.** A minor, gated on the nine-lens pre-release review: every finding it

@@ -260,6 +260,18 @@ registers separately — `hj windows` lists it with `windowType: "iframe"`, and 
 same-origin frame silently *overwrote* the tab's entry, because both read the same window id out of
 the sessionStorage they share — so the tab became unaddressable while still appearing present.)
 
+**Popups are real popups (desktop app).** A page calling `window.open(url, name, 'width=…')` gets a
+genuine popup: `window.open()` returns a real `WindowProxy`, the child has `window.opener`, and
+`opener.postMessage(...)` reaches the parent. That is what OAuth flows need — an SDK keeps the
+returned window to poll `.closed`, and the callback page posts its credential back. `hj windows`
+lists it as `windowType: "popup"`, drivable with `--window <id>`, and **it does not take focus**, so
+your untargeted commands keep going to the tab you were driving.
+
+An ordinary `<a target="_blank">` (or a featureless `window.open(url, '_blank')`) still opens as a
+**tab** in the app's tab strip — that is deliberate, not a bug. Before 1.12.1 every non-auth
+`window.open` was re-opened as a tab with the opener severed, so it returned `null` and OAuth popups
+could never complete.
+
 **`hj map --image` writes a LEGEND beside the image.** stdout stays a bare path; stderr names the
 sibling `*.legend.json`, which maps every `@ref` on the picture to what it is — tag, text, role,
 href, value, state, and any findings. The image says *where* and *which*; the legend says *what*.

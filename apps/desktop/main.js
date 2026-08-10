@@ -690,28 +690,47 @@ function setupWebContentsInjection(wc) {
 
   console.log('[Haltija Desktop] Monitoring webContents:', wc.id, wc.getType())
 
-  // Intercept window.open() calls - redirect to tabs instead of new windows
-  // Exception: allow auth popups which need to close and callback
-  wc.setWindowOpenHandler(({ url, frameName, features }) => {
-    console.log('[Haltija Desktop] Intercepted window.open:', url)
+  // Intercept window.open(): a genuine POPUP stays a popup; an ordinary new-window link becomes a
+  // tab in our own tab strip.
+  //
+  // This used to decide by GUESSING FROM THE URL — allow if it contained `oauth`, `signin`,
+  // `login`, `accounts.google.com`, `/__/auth/`. Everything else was denied and re-opened as a tab,
+  // which severs the opener relationship in both directions: `window.open()` returns **null** and
+  // the child has no `window.opener`. That is the shape of every OAuth popup flow (issue #25):
+  // an SDK keeps the returned WindowProxy to poll `.closed` and to `.close()`, and the callback
+  // page delivers its credential via `opener.postMessage(...)`. With neither, the user can complete
+  // a sign-in in a window that cannot report back — worse than a clean block, because the app just
+  // waits.
+  //
+  // The heuristic failed in both directions: an innocent `/login-help` page became a popup, while
+  // the common SDK pattern of opening `about:blank` and *then* navigating matched nothing and was
+  // denied — the case the list was written to catch.
+  //
+  // `disposition` is what the page actually asked for, so there is nothing to guess (verified
+  // against Electron):
+  //   window.open(url, name, 'width=420,height=320')  -> 'new-window'     features: "width=..."
+  //   window.open(url, '_blank')                      -> 'foreground-tab' features: ""
+  //   <a target="_blank">                             -> 'foreground-tab' features: ""
+  //
+  // Allowing a real popup also fixes two things for free, because the window model already handles
+  // popups correctly: it registers as `windowType: "popup"` (so scripts can tell it from a
+  // user-opened tab) and it does NOT steal focus, since only real tabs become the untargeted
+  // command target.
+  //
+  // KNOWN RESIDUAL: a featureless `window.open(url, '_blank')` is indistinguishable from a
+  // `target="_blank"` link at this layer — both report 'foreground-tab' — so it still becomes a tab
+  // and still returns null. Preserving the tab UX for ordinary links is worth that; if an SDK turns
+  // up that opens featureless popups and needs the opener, this is the line to revisit.
+  wc.setWindowOpenHandler((details) => {
+    const { url, disposition } = details
+    console.log('[Haltija Desktop] Intercepted window.open:', url, `(disposition: ${disposition})`)
 
-    // Allow OAuth/auth popups - they need popup behavior to work
-    const isAuthPopup =
-      url.includes('accounts.google.com') ||
-      url.includes('/__/auth/') ||
-      url.includes('/emulator/auth') ||
-      url.includes('firebaseapp.com/__/auth') ||
-      url.includes('oauth') ||
-      url.includes('signin') ||
-      url.includes('login') ||
-      frameName === 'firebaseAuth'
-
-    if (isAuthPopup) {
-      console.log('[Haltija Desktop] Allowing auth popup:', url)
+    if (disposition === 'new-window') {
+      console.log('[Haltija Desktop] Genuine popup — preserving the opener relationship:', url)
       return { action: 'allow' }
     }
 
-    // Regular links: open as new tab instead of window
+    // Ordinary new-window link: open as a tab instead.
     if (mainWindow && mainWindow.webContents) {
       mainWindow.webContents.send('open-url-in-tab', url)
     }
