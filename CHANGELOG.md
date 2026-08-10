@@ -1,8 +1,67 @@
 # Changelog
 
+## 1.12.0-rc.4
+
+Release candidate. Everything in 1.12.0 plus the fixes below, all from an agent driving a mixed
+React/tosijs app against rc.2. Install with `npm i haltija@rc`.
+
+### Commands that reported success while doing the wrong thing
+
+- **`hj find` printed nothing and exited 0.** The endpoint was always right — it answers at the
+  *top level*, not under `data`, and the CLI's unwrap read `json.data`. Silence plus a success code
+  is the worst rendering of a correct answer: no human sees it and no script can detect it. `hj form`
+  had the same defect, unreported.
+- **`:text()` matched the OUTERMOST element**, so `hj click ":text(Save)"` tried to click `<html>`
+  and failed, while `hj click "li:text(Save)"` worked — the tag qualifier was doing the
+  pseudo-selector's job. Now matches the smallest element containing the text, as Playwright does.
+  The not-found message recommends the bare form, so this also fixed the guidance.
+- **`:text()` matched `<script>` source.** `innerText` is rendering-aware only for an *attached*
+  node, and the text extractor clones.
+- **`hj constructor` silently ran `hj console`** — the fuzzy matcher auto-executed on a shared
+  3-character stem. The bar for "one match" is the bar for running something you didn't type.
+- **`hj toString` crashed inside node's bootstrap** — lookup tables keyed on user input inherited
+  `Object.prototype`.
+- **`hj snapshot` with no arguments could not succeed**, which is the form `--help` documents.
+- **`--wait-ready` false-negatived and then killed the run.** In `--private` mode it polled the
+  shared default port while the server had bound an ephemeral one, so it never saw the browser
+  connect. `--ci` implies `--wait-ready`.
+
+### The map can see web components now
+
+`hj tree` has pierced open shadow roots since 1.5; `map` and `query` could not — so an agent asking
+the flagship question was told a web component was empty, having just seen its contents in `tree`.
+In a design-system codebase that is most of the interactive page.
+
+Fixing it revealed that haltija's own widget was excluded only *by accident* — its controls live in
+its shadow root, so nothing that stopped at shadow boundaries could see them. That exclusion is now
+deliberate: a tool that reports itself as part of the page under test is the observer effect this
+product exists to avoid.
+
+### Accessibility findings you can see
+
+- **Contrast no longer contradicts itself.** A true ratio of 2.9910 displayed as `3` and read
+  `"3:1 (needs 3:1)"` — a failure phrased as a pass. Floored, so the number is always on the same
+  side of the threshold as the truth.
+- **Design-system buttons are graded at all.** The check required a *direct* text node, and MUI —
+  like tosijs and most others — wraps labels in a `<span>`, so every such button silently escaped a
+  genuine WCAG failure. haltija now grades using the element that actually renders the text.
+- **New: `smallTarget`.** Interactive controls below WCAG 2.5.8's 24×24 minimum are flagged and
+  drawn. The spec's inline exception is honoured — a link inside a sentence is exempt, so this does
+  not fire on every paragraph.
+
+### Schematics: a legend, and two visible modes
+
+`hj map --image` now writes a sibling `*.legend.json` mapping every `@ref` on the picture to what it
+is. The image says *where* and *which*; the legend says *what* — which is what makes it safe to stop
+cramming captions into boxes too small to hold them.
+
+The response also reports `layout` (`geometric` / `structural`) and `boundsCoverage`, and `layout`
+is overridable. An automatic choice the caller cannot see, explain or override is indistinguishable
+from a bug.
+
 ## 1.12.0-rc.2
 
-Release candidate. Everything below is 1.12.0; the `-rc` tag exists because the schematic
+Superseded by rc.4. Release candidate. Everything below is 1.12.0; the `-rc` tag exists because the schematic
 renderer changed substantially late in the cycle and deserves real-world use before the minor is
 blessed. Install with `npm i haltija@rc`.
 
