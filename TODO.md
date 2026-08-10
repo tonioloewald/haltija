@@ -3,8 +3,15 @@
 ## 1.12.1 — RELEASED (2026-08-10)
 
 Tagged `v1.12.1`. All four lanes green at the tag: 809 unit, 123 e2e, QA fixtures (playground 26
-steps, homepage 15), docs-drift clean. Publish: `npm publish` (no `--tag`), then
-`npm dist-tag add haltija@1.12.1 latest`.
+steps, homepage 15), docs-drift clean. Publish: **`npm publish`** — that is the whole command for a
+stable release. A plain publish sets `latest` itself, so a following
+`npm dist-tag add <pkg>@<version> latest` is a no-op; it is only needed to **promote** something
+published under another tag (`npm publish --tag rc`). Earlier notes here carried that redundant
+second step.
+
+**Leave the `rc` dist-tag alone.** It points at `1.12.0-rc.5`, which really is the newest
+prerelease, and `rc` naming a superseded release candidate is accurate — it moves on its own at the
+next prerelease. Repointing it at a stable release would make `@rc` mean something it isn't.
 
 Everything in it came from one agent driving a real React + web-components admin app against
 1.12.0 — a surface none of our fixtures reproduce, and worth remembering next time we judge a
