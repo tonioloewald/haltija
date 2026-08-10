@@ -1,8 +1,39 @@
 # Changelog
 
+## 1.12.0-rc.5
+
+Release candidate. Two fixes on top of rc.4, one of them the reason to upgrade promptly.
+Install with `npm i haltija@rc`.
+
+### `hj test` can fail a build again
+
+**`hj test run` and `hj test suite` exited 0 even when tests failed** — in every form, including
+`--json`, `--strict` and `HALTIJA_STRICT=1`. The FAIL report printed correctly; only the exit code
+was wrong, so a CI lane gating on haltija could not gate on anything. **Present in 1.11.2**, so if
+you have a lane running haltija tests today, it has been green regardless of results.
+
+The cause is worth knowing if you consume the API directly: the response envelope's `success`
+describes the **request**, not the tests. "The run happened" and "the tests passed" are different
+facts. Gate on `summary.failed`, `passed`, or `results[].passed` — never on `success`.
+
+An unrecognised response shape is still treated as a pass (exiting 1 on something we don't
+understand would break working lanes) but now says so on stderr rather than exiting 0 silently.
+
+### `hj navigate file://…` no longer wedges the desktop app
+
+The desktop app cannot inject its widget into a `file://` page, so navigating there disconnected
+the tab permanently — and `navigate` reported `success: true`, because the navigation genuinely
+happened. The failure surfaced on the *next* command as a generic "No browser connected", which
+reads like the app crashed. There was no way back: `hj tabs open` needs a connected browser to
+service the request.
+
+`/navigate` now refuses `file://` **in the desktop app**, leaves the tab intact, and tells you to
+serve over HTTP instead. `file://` still works under `haltija --headless` (Playwright), which is
+unaffected.
+
 ## 1.12.0-rc.4
 
-Release candidate. Everything in 1.12.0 plus the fixes below, all from an agent driving a mixed
+Superseded by rc.5. Release candidate. Everything in 1.12.0 plus the fixes below, all from an agent driving a mixed
 React/tosijs app against rc.2. Install with `npm i haltija@rc`.
 
 ### Commands that reported success while doing the wrong thing
