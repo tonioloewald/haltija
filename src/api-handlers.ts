@@ -930,7 +930,10 @@ registerHandler(api.map, async (body, ctx) => {
       // pair travels together: read the number off the picture, look it up here.
       const legend = (response as any).data?.legend
       if (legend && Object.keys(legend).length) {
-        const legendPath = saved.path.replace(/\.[a-z0-9]+$/i, '.legend.json')
+        // Strip-then-append, NOT replace-with. A `replace(/\.\w+$/, '.legend.json')` is a no-op
+        // when the path has no extension, and the legend would then be written OVER the image we
+        // just saved. Appending always yields a distinct name, so the two can never collide.
+        const legendPath = saved.path.replace(/\.[a-z0-9]+$/i, '') + '.legend.json'
         try {
           await writeFile(legendPath, JSON.stringify(legend, null, 2))
           ;(response as any).data.legendPath = legendPath

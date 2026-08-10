@@ -4682,7 +4682,10 @@ export const COMPONENT_JS: string = `(() => {
     const out = [];
     const visit = (node) => {
       try {
-        out.push(...Array.from(node.querySelectorAll(selector)).filter((el) => !isOwnWidget(el)));
+        for (const el of node.querySelectorAll(selector)) {
+          if (!isOwnWidget(el))
+            out.push(el);
+        }
       } catch {}
       for (const el of Array.from(node.querySelectorAll("*"))) {
         if (isOwnWidget(el))

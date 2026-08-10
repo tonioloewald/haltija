@@ -1932,7 +1932,15 @@ function queryAllDeep(selector: string, root: ParentNode = document): Element[] 
   const out: Element[] = []
   const visit = (node: ParentNode) => {
     try {
-      out.push(...Array.from(node.querySelectorAll(selector)).filter((el) => !isOwnWidget(el)))
+      // Appended one at a time, NOT `out.push(...matches)`. Spreading passes every match as a
+      // separate ARGUMENT, and the engine caps that: measured in this Chromium, 120k is fine and
+      // 200k throws RangeError. So a broad selector (`*`, which is what a bare `:text()` compiles
+      // to) on a document with that many nodes threw instead of returning an answer — a big
+      // generated table or log view reaches it. The failure scales with the user's page, so it
+      // would only ever appear on the documents most worth inspecting.
+      for (const el of node.querySelectorAll(selector)) {
+        if (!isOwnWidget(el)) out.push(el)
+      }
     } catch {
       // Invalid selector for this root; the caller's own error path reports it.
     }
