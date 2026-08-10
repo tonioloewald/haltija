@@ -1,45 +1,37 @@
 # TODO
 
-## 1.12.0 — RELEASED (2026-08-10)
+## 1.12.1 — RELEASED (2026-08-10)
 
-Tagged `v1.12.0`. All four lanes green at the tag: 806 unit, 120 e2e, QA fixtures (playground 26
-steps, homepage 15), docs-drift clean. Publish is the maintainer's step: `npm publish` (no `--tag`),
-then `npm dist-tag add haltija@1.12.0 latest`.
+Tagged `v1.12.1`. All four lanes green at the tag: 809 unit, 123 e2e, QA fixtures (playground 26
+steps, homepage 15), docs-drift clean. Publish: `npm publish` (no `--tag`), then
+`npm dist-tag add haltija@1.12.1 latest`.
 
-The targeted review over the schematic diff (rc.2..HEAD) ran and found three things, all fixed:
+Everything in it came from one agent driving a real React + web-components admin app against
+1.12.0 — a surface none of our fixtures reproduce, and worth remembering next time we judge a
+release "verified" off green lanes:
 
-1. **A same-origin iframe silently overwrote the tab it was inside.** Found chasing snowfox's
-   follow-up that a shadow host "reads like an empty element" — the shadow half was already fixed in
-   rc.5, but the check turned up something worse next door. sessionStorage is shared with
-   same-origin frames, so a framed widget reused the tab's `haltija-window-id` and took over its
-   registry entry; every command, including one explicitly targeting the tab, was answered by the
-   frame. Frames now mint their own id. Regression test in `e2e.playwright.ts`, verified to fail
-   without the fix (expected 2 windows, got 1).
-2. **`queryAllDeep` threw on very large pages** — `push(...matches)` exceeds the engine argument cap
-   (measured: 120k fine, 200k `RangeError`).
-3. **The schematic legend could overwrite the image it describes** where a path had no extension —
-   latent, now impossible by construction.
+- **#27** text selectors chose the wrong element two ways: a `display:none` duplicate first in DOM
+  order won (choose-then-reject instead of filter-then-choose), and the `left:-9999px` skip-link
+  idiom was clicked *silently* because it has a normal box. `find` and `click` now share ONE
+  predicate — the #24 disease again, two copies of one idea.
+- **#28** `hj doctor` probes requestAnimationFrame. A tab can report `visible` and not be
+  compositing; the reporter nearly filed a phantom application bug off the back of it.
+- **#29** `tabs` alias on `/windows`; the hint no longer mixes both vocabularies.
+- **#25** genuine popups keep their opener (`disposition`, not URL guessing).
+- Re-injection can revive a tab whose widget was `killed` — previously unrecoverable.
 
-Then, while the tag was being cut, snowfox filed [#24](https://github.com/tonioloewald/haltija/issues/24)
-against rc.5 from a real app — **`hj find` returned the entire application with `found: true` and
-exit 0.** Verified and fixed; the tag was moved to include it (nothing had been published to npm).
-`/find` carried its own text search returning the first match in document order, which is the
-outermost one — `:text()` had been fixed in a different code path and nothing tied the two together.
-There is now one implementation. Same report also killed the `offsetParent === null` visibility gate
-(null for `html`, `body` and every `position: fixed` element) and exposed that the innermost filter
-was shadow-blind, since `Node.contains` stops at a boundary the candidate list pierces.
+**Deliberately NOT in it: [#26](https://github.com/tonioloewald/haltija/issues/26)**, a reported
+1.12.0 regression where tabs disconnect permanently on webpack-dev-server (CRA) origins. **Could not
+reproduce** — a real webpack-dev-server (v5 client, hot + liveReload) survived on both 1.12.0 and
+the rc.5 widget, the opposite of the reporter's A/B. An eager same-origin `about:blank` iframe
+doesn't do it either, which was the obvious suspect since the iframe window-id guard is the only
+connection-related change in that range. Waiting on whether a **stock CRA** reproduces it. The
+changelog says plainly that it is unfixed rather than letting the release imply otherwise.
 
-**The pattern worth remembering from this release:** every one of these was two implementations of
-one idea with only one of them updated — `/type`'s `ref`, `/map`'s parameters, `:text()` vs `/find`.
-Guards that name a single instance do not guard the class.
-
-Measured and deliberately left alone: `map` is 41ms on a 12k-element page (the `maxNodes` cap bounds
-the walk); a deliberately broad `:text()` matching ~12k candidates is 1.7s for a 596KB answer — slow
-but it answers, and the innermost-match filter is not worth rewriting on the eve of a release.
-
-**Deliberately NOT fixed for 1.12.0:** #20.2 / #20.5 (contrast annotations and zero-size markers in
-geometric mode). The 1.13 tosijs-floorplan adoption supersedes both — patching a renderer that is
-about to be deleted is wasted work.
+**Deliberately deferred:** `openedBy` on popups (#29.2 — `windowType: "popup"` already makes them
+findable; no concrete flow needs it yet), an opt-in `elementFromPoint` hit-test for occlusion (#27 —
+declined as the default because it rejects below-the-fold content and would flake CI), and #20.2 /
+#20.5, superseded by the 1.13 floorplan adoption.
 
 ### Next up (1.13)
 

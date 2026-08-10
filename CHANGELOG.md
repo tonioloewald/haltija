@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.12.1
+
+A patch of fixes reported by an agent driving a real React + web-components admin app against
+1.12.0 — the kind of surface no fixture reproduces. Four of the five below are cases where haltija
+answered confidently and wrongly, which is the same thread 1.12.0 was pulling on.
+
+**Still open: [#26](https://github.com/tonioloewald/haltija/issues/26)** — tabs reportedly
+disconnect permanently on webpack-dev-server (CRA) origins in 1.12.0, and rc.5 is unaffected. It is
+**not fixed here**, because I could not reproduce it: a real webpack-dev-server (v5 client, `hot` +
+`liveReload`) survived on both 1.12.0 and the rc.5 widget, the opposite of the reporter's A/B. The
+re-injection fix below may cover it and may not. If you drive a CRA dev server, test before you rely
+on this release, and please add to that issue.
+
 
 ### Text selectors pick the element you could actually click — [#27](https://github.com/tonioloewald/haltija/issues/27)
 
