@@ -8361,6 +8361,9 @@ export const COMPONENT_JS: string = `(() => {
       }
       this.render();
     }
+    get isDefunct() {
+      return this.killed;
+    }
     kill() {
       this.killed = true;
       hideHighlight();
@@ -12056,6 +12059,9 @@ export const COMPONENT_JS: string = `(() => {
       const existingVersion = existing.getAttribute("data-version") || "0.0.0";
       if (existingVersion !== VERSION2) {
         console.log(\`\${LOG_PREFIX} Version mismatch (\${existingVersion} -> \${VERSION2}), replacing\`);
+        existing.remove();
+      } else if (existing.isDefunct) {
+        console.log(\`\${LOG_PREFIX} Existing widget is defunct (killed), replacing\`);
         existing.remove();
       } else {
         return existing;

@@ -7035,6 +7035,17 @@ export class DevChannel extends HTMLElement {
     this.render()
   }
 
+  /**
+   * Can this widget never talk to the server again?
+   *
+   * `killed` is set when the element is removed from the DOM or `kill()` runs, and it permanently
+   * stops the 3-second reconnect loop. An ordinary disconnected socket is NOT defunct — that retries
+   * forever and heals itself, so callers must not treat it as dead.
+   */
+  get isDefunct(): boolean {
+    return this.killed
+  }
+
   private kill() {
     this.killed = true // Prevent reconnection
     hideHighlight() // Clean up visual artifacts
@@ -12317,6 +12328,19 @@ export function inject(
       console.log(
         `${LOG_PREFIX} Version mismatch (${existingVersion} -> ${VERSION}), replacing`,
       )
+      existing.remove()
+      // Fall through to create new widget
+    } else if (existing.isDefunct) {
+      // PRESENT BUT DEAD. A killed widget never reconnects by design, so handing it back makes the
+      // tab permanently undrivable: every later command answers "No browser connected", and the
+      // only cure is restarting the whole instance. Re-injecting is the documented recovery, and it
+      // silently did nothing because this check keyed on the element EXISTING rather than working.
+      //
+      // Deliberately keyed on `killed` alone, NOT on "the socket isn't open". An ordinary
+      // disconnect retries every 3s forever and heals itself; replacing the widget mid-backoff
+      // would throw away the event buffer and any in-progress recording to fix something that was
+      // already fixing itself. `killed` is the one state that cannot recover.
+      console.log(`${LOG_PREFIX} Existing widget is defunct (killed), replacing`)
       existing.remove()
       // Fall through to create new widget
     } else {
