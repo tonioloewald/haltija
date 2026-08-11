@@ -433,6 +433,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `HALTIJA_PORT` | HTTP server port; if unset, server tries 8700 then ephemeral. Also read by `hj`. | — |
+| `HALTIJA_URL` | Full base URL override. Highest priority in the `haltija/test` helper (beats `HALTIJA_PORT`) and in the MCP bridge. | — |
 | `HALTIJA_NAME` | Register/look up the server under this name in `~/.haltija/servers/` | — |
 | `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
@@ -451,6 +452,8 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_PUBLIC_URL` | *Set by haltija.* The app instance's own public server, for the renderer | — |
 | `HALTIJA_MACHINE_LOG` | Path for the machine-scope action receipt (tests point this at a temp dir) | `~/.haltija/machine-actions.log` |
 | `HALTIJA_REGISTRY_DIR` | Instance registry location (tests must point this at a temp dir) | `~/.haltija/servers` |
+| `HALTIJA_ARTIFACT_DIR` | Where screenshots/schematics/videos are written (tests must point this at a temp dir) | `tmpdir()` |
+| `HALTIJA_TEST_QUIET` | Silence `haltija/test`'s shared-default-port warning | — |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
