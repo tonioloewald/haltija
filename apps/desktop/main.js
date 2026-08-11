@@ -44,6 +44,44 @@ const IS_PRIVATE = process.env.HALTIJA_PRIVATE === '1'
 // consumer (e.g. a dev-server test lane) can drive this instance.
 const CALLER_PORT_FILE = IS_PRIVATE ? (process.env.HALTIJA_PORT_FILE || null) : null
 
+// A PRIVATE INSTANCE GETS ITS OWN ELECTRON PROFILE.
+//
+// Private mode isolated the ports, the registry, retirement and teardown — but not the profile, so
+// every instance ran with the same `--user-data-dir`. Chromium single-instance locking means the
+// second one to launch cannot take the profile lock and falls back to caches it cannot persist,
+// losing the HTTP cache and the V8 code cache. A large app bundle is then fully re-parsed on every
+// navigation: measured at roughly 10x slower page boots (issue #31).
+//
+// The damage is not just slowness, it is a LIE in the one workflow private mode exists for. Running
+// two versions side by side, the failure followed LAUNCH ORDER rather than version — 22.1s vs 2.04s,
+// and the same version passed or failed depending only on which started first. The reporter nearly
+// wrote up a version regression that did not exist. Every health signal read green throughout,
+// including `hj doctor` and a 120fps rAF cadence, because nothing was broken; it was just slow.
+//
+// Keyed on pid, not port: the private ports are ephemeral and not known yet at this point, and pid
+// is unique across concurrent runs by construction. Set BEFORE `app.whenReady()` and before
+// anything reads `app.getPath('userData')` (preferences.json does), or the isolation is partial —
+// which is how this bug existed at all.
+let PRIVATE_USER_DATA = null
+if (IS_PRIVATE) {
+  PRIVATE_USER_DATA = path.join(os.tmpdir(), `haltija-private-${process.pid}`)
+  try {
+    fs.mkdirSync(PRIVATE_USER_DATA, { recursive: true })
+    app.setPath('userData', PRIVATE_USER_DATA)
+    // Also keep the disk cache with it, so nothing is left in the shared profile.
+    app.setPath('sessionData', PRIVATE_USER_DATA)
+  } catch (err) {
+    // Falling back to the shared profile is slow and pollutes it, but it still WORKS — so say so
+    // loudly rather than refusing to start a run over a temp-directory failure.
+    console.error(
+      `[Haltija Desktop] Could not create a private profile at ${PRIVATE_USER_DATA}: ${err.message}. ` +
+        `Falling back to the shared profile — concurrent private instances will be slow and are ` +
+        `NOT safe to compare against each other (see issue #31).`,
+    )
+    PRIVATE_USER_DATA = null
+  }
+}
+
 // Haltija server config
 let HALTIJA_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_PORT || '8700')
 let HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
@@ -1694,11 +1732,24 @@ if (!gotTheLock) {
     }
     // Drop a marker so hj's auto-launch knows the user explicitly quit.
     // Cleared next time the user manually starts Haltija.
-    try {
-      const dir = path.join(os.homedir(), '.haltija')
-      fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(path.join(dir, 'last-quit'), String(Date.now()))
-    } catch {}
+    //
+    // NOT in private mode: `~/.haltija/last-quit` is SHARED state, and an automated run ending is
+    // not the user quitting anything. Writing it suppressed auto-launch for the interactive app the
+    // developer is actually using — the same class as the profile sharing above (#31), where
+    // "private" turned out to mean "private ports" rather than "touches nothing of yours".
+    if (!IS_PRIVATE) {
+      try {
+        const dir = path.join(os.homedir(), '.haltija')
+        fs.mkdirSync(dir, { recursive: true })
+        fs.writeFileSync(path.join(dir, 'last-quit'), String(Date.now()))
+      } catch {}
+    }
+
+    // NOTE: the private profile is deliberately NOT deleted here. Chromium flushes its caches
+    // AFTER 'will-quit', so removing the directory at this point just gets it recreated — measured:
+    // both dirs survived a clean shutdown. Stale profiles are swept at the START of the next
+    // private run instead (see sweepStalePrivateState in bin/tosijs-dev.mjs), keyed on whether the
+    // owning pid is still alive, which is immune to shutdown ordering.
   })
 
   // Handle certificate errors (for self-signed certs in dev)

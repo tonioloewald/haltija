@@ -13,10 +13,11 @@
  */
 
 import { spawn, execSync as execSyncImported } from 'child_process'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'fs'
 import { homedir, platform, tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { stalePrivateEntries, pidIsAlive } from './private-state.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const serverPath = join(__dirname, '../dist/server.js')
@@ -452,7 +453,44 @@ if (privateMode) {
     ? args[portFileIdx + 1]
     : join(tmpdir(), `haltija-private-${process.pid}.json`)
   env.HALTIJA_PORT_FILE = privatePortFile
+  sweepStalePrivateState()
 }
+
+/**
+ * Remove the scratch left by private runs that are no longer alive.
+ *
+ * Two kinds accumulate in tmpdir, both named `haltija-private-<pid>`:
+ *   - the port-file (`<pid>.json`) this launcher writes
+ *   - the Electron profile directory (issue #31), several MB of cache per run
+ *
+ * Swept at STARTUP rather than on exit because Chromium flushes its caches AFTER Electron's
+ * 'will-quit' fires — deleting the profile there simply gets it recreated, which is what happened
+ * when this was first written that way. Liveness of the owning pid is the test, so a sweep can
+ * never touch a concurrent run: the whole point of private mode is that instances don't interfere,
+ * and a cleanup that deletes a live peer's profile would be a far worse bug than the litter.
+ *
+ * Runs for `--private --headless` too, since the launcher is common to both.
+ */
+function sweepStalePrivateState() {
+  const dir = tmpdir()
+  let entries
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return
+  }
+  // The decision lives in src/private-state.ts and is unit-tested: never sweep a live peer, never
+  // sweep ourselves, and treat EPERM from kill(pid,0) as ALIVE (the process exists, it is just not
+  // ours to signal). Getting that backwards would delete another user's running instance.
+  for (const name of stalePrivateEntries(entries, { selfPid: process.pid, isAlive: pidIsAlive })) {
+    try {
+      rmSync(join(dir, name), { recursive: true, force: true })
+    } catch {
+      // Best effort — the OS reaps tmpdir eventually, and failing to tidy must never stop a run.
+    }
+  }
+}
+
 
 /** Poll the private instance's port-file until it reports its ephemeral port. */
 /**

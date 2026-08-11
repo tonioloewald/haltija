@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### `--private` instances get their own Electron profile — [#31](https://github.com/tonioloewald/haltija/issues/31)
+
+Private mode isolated ports, the registry, retirement and teardown — but **not the Electron
+profile**, so every instance ran with the same `--user-data-dir`. Chromium's single-instance locking
+means the second one to launch can't take the profile lock and falls back to caches it cannot
+persist, losing the HTTP cache and the V8 code cache. A large app bundle is then fully re-parsed on
+every navigation: **roughly 10x slower page boots**.
+
+The damage isn't the slowness, it's that it **lies in the one workflow private mode exists for**.
+Comparing two versions side by side, the failure followed **launch order, not version** — 22.1s vs
+2.04s, the same version passing or failing depending only on which started first, and each fine
+alone. The reporter nearly wrote up a version regression that did not exist. Every health signal
+read green throughout, including `hj doctor` and a measured 120fps rAF cadence, because nothing was
+broken — it was just slow.
+
+Each private instance now gets `<tmpdir>/haltija-private-<pid>` as its `userData` and `sessionData`,
+set before `app.whenReady()` and before anything reads `preferences.json`.
+
+Two related leaks closed at the same time, both cases of "private" having meant *private ports*
+rather than *touches nothing of yours*:
+
+- **A private run no longer writes `~/.haltija/last-quit`.** That marker tells `hj`'s auto-launch the
+  user deliberately quit, so an automated run ending was suppressing auto-launch for the interactive
+  app a developer was using.
+- **Stale private scratch is swept** at the start of the next private run — profiles and the
+  port-files the launcher writes (175 had accumulated on one machine). Swept at startup rather than
+  on exit because Chromium flushes its caches *after* `will-quit`, so deleting the profile there
+  just gets it recreated. The sweep keys on whether the owning pid is still alive and **never
+  touches a live peer** — `EPERM` from `kill(pid, 0)` counts as alive, since the process exists and
+  merely belongs to someone else. That decision is a tested function (`src/private-state.ts`), not a
+  loop in the launcher, because deleting a running instance's profile would be far worse than the
+  litter it tidies.
+
 ### The test-suite runner gains `drag`, and a `wait` can no longer pass without waiting — [#30](https://github.com/tonioloewald/haltija/issues/30)
 
 **`drag` is now a step action.** `hj drag` and `POST /drag` had shipped for releases; the runner's
