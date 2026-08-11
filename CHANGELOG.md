@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 1.12.2
+
+Two fixes, both from an agent driving real apps. Each is a case where haltija reported success — or
+green health — while quietly producing something you couldn't trust, which is the same thread the
+1.12.x line has been pulling on throughout.
+
+**[#26](https://github.com/tonioloewald/haltija/issues/26) remains open and is NOT a 1.12.0
+regression.** The reporter's own control run settled it: the known-bad version survived the original
+failing surface through seven hard navigations plus an HMR rebuild. A tab becoming permanently
+undrivable was really observed, so the issue stays open as a standing record — but neither of us can
+currently reproduce it on any version, and nothing here claims to fix it.
+
 
 ### `--private` instances get their own Electron profile — [#31](https://github.com/tonioloewald/haltija/issues/31)
 

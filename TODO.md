@@ -1,44 +1,31 @@
 # TODO
 
-## 1.12.1 — RELEASED (2026-08-10)
+## 1.12.2 — RELEASED (2026-08-11)
 
-Tagged `v1.12.1`. All four lanes green at the tag: 809 unit, 123 e2e, QA fixtures (playground 26
-steps, homepage 15), docs-drift clean. Publish: **`npm publish`** — that is the whole command for a
-stable release. A plain publish sets `latest` itself, so a following
-`npm dist-tag add <pkg>@<version> latest` is a no-op; it is only needed to **promote** something
-published under another tag (`npm publish --tag rc`). Earlier notes here carried that redundant
-second step.
+Tagged `v1.12.2`. Lanes green at the tag: 825 unit, 123 e2e, QA fixtures (playground 26, homepage
+15), `hj doctor` exit 0, docs-drift clean. **Publish: `npm publish`** — that is the whole command;
+a plain publish sets `latest` itself.
 
-**Leave the `rc` dist-tag alone.** It points at `1.12.0-rc.5`, which really is the newest
-prerelease, and `rc` naming a superseded release candidate is accurate — it moves on its own at the
-next prerelease. Repointing it at a stable release would make `@rc` mean something it isn't.
+- **#30** the suite runner gained `drag` (the routine moved to `src/drag.ts` so `/drag` and the
+  runner share it), a `wait` with nothing to wait for is now an ERROR instead of a silently passing
+  guard, and `TEST_STEP_ACTIONS` is published + enforced by a both-directions test against the
+  runner's switch. Writing that guard found `screenshot` documented in SKILL.md as a step action
+  that never existed.
+- **#31** `--private` now gives each instance its own Electron profile. Sharing one made the second
+  instance ~10x slower and produced a **false version regression** in side-by-side A/B — the one
+  workflow private mode exists for. Also stopped private runs writing the shared
+  `~/.haltija/last-quit`, and added a startup sweep for stale private scratch.
 
-Everything in it came from one agent driving a real React + web-components admin app against
-1.12.0 — a surface none of our fixtures reproduce, and worth remembering next time we judge a
-release "verified" off green lanes:
+**Still open, deliberately: [#26](https://github.com/tonioloewald/haltija/issues/26).** The
+reporter's control run disproved the "1.12.0 regression" framing — the known-bad version survived
+the original failing surface. A permanently-undrivable tab was really observed, so it stays open,
+but neither of us can reproduce it on any version and 1.12.2 claims no fix.
 
-- **#27** text selectors chose the wrong element two ways: a `display:none` duplicate first in DOM
-  order won (choose-then-reject instead of filter-then-choose), and the `left:-9999px` skip-link
-  idiom was clicked *silently* because it has a normal box. `find` and `click` now share ONE
-  predicate — the #24 disease again, two copies of one idea.
-- **#28** `hj doctor` probes requestAnimationFrame. A tab can report `visible` and not be
-  compositing; the reporter nearly filed a phantom application bug off the back of it.
-- **#29** `tabs` alias on `/windows`; the hint no longer mixes both vocabularies.
-- **#25** genuine popups keep their opener (`disposition`, not URL guessing).
-- Re-injection can revive a tab whose widget was `killed` — previously unrecoverable.
-
-**Deliberately NOT in it: [#26](https://github.com/tonioloewald/haltija/issues/26)**, a reported
-1.12.0 regression where tabs disconnect permanently on webpack-dev-server (CRA) origins. **Could not
-reproduce** — a real webpack-dev-server (v5 client, hot + liveReload) survived on both 1.12.0 and
-the rc.5 widget, the opposite of the reporter's A/B. An eager same-origin `about:blank` iframe
-doesn't do it either, which was the obvious suspect since the iframe window-id guard is the only
-connection-related change in that range. Waiting on whether a **stock CRA** reproduces it. The
-changelog says plainly that it is unfixed rather than letting the release imply otherwise.
-
-**Deliberately deferred:** `openedBy` on popups (#29.2 — `windowType: "popup"` already makes them
-findable; no concrete flow needs it yet), an opt-in `elementFromPoint` hit-test for occlusion (#27 —
-declined as the default because it rejects below-the-fold content and would flake CI), and #20.2 /
-#20.5, superseded by the 1.13 floorplan adoption.
+**The pattern across the whole 1.12.x line, worth carrying into 1.13:** every one of these was ONE
+idea with TWO implementations and only one of them updated — `/type`'s `ref`, `/map`'s parameters,
+`:text()` vs `/find`, the CLI's `hj wait` vs the runner's `wait`, the runner's action list, and the
+drag routine. The fix that sticks is a test that derives one registry from the other; the fix that
+doesn't is patching the instance you were shown.
 
 ### Next up (1.13)
 
