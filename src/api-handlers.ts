@@ -10,6 +10,7 @@
  */
 
 import { writeFile } from 'fs/promises'
+import { performDrag } from './drag'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
 
@@ -549,72 +550,21 @@ registerHandler(api.call, async (body, ctx) => {
 
 // Drag handler
 registerHandler(api.drag, async (body, ctx) => {
-  const ref = body.ref
-  const selector = body.selector
-  const deltaX = body.deltaX || 0
-  const deltaY = body.deltaY || 0
-  const duration = body.duration || 300
-  const steps = Math.max(5, Math.floor(duration / 16))
-  const windowId = body.window || ctx.targetWindowId
-  const targetDesc = ref ? `@${ref}` : selector
-  
-  // Scroll into view (use ref or selector)
-  if (ref) {
-    await ctx.requestFromBrowser('eval', 'exec', {
-      code: `(window.__haltija_refRegistry?.resolve(${JSON.stringify(ref)}) || document.body)?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-  } else if (selector) {
-    await ctx.requestFromBrowser('eval', 'exec', {
-      code: `${qs(selector)}?.scrollIntoView({behavior: "smooth", block: "center"})`
-    }, 5000, windowId)
-  }
-  await sleep(100)
-  
-  // Get element center (pass ref or selector to inspect)
-  const inspectResponse = await ctx.requestFromBrowser('dom', 'inspect', { ref, selector }, 5000, windowId)
-  if (!inspectResponse.success || !inspectResponse.data) {
-    return Response.json({
-      success: false,
-      error:
-        `Element not found: ${targetDesc}. Run \`hj map\` or \`hj tree\` to see what is on the page; ` +
-        `prefer text selectors (\`:text(save)\`, \`:text-is(Save)\`) or \`[data-testid=…]\` over ` +
-        `structural ones, and \`hj wait <selector>\` if the page may still be loading.`,
-    }, { headers: ctx.headers })
-  }
-  const box = inspectResponse.data.box
-  const startX = box.x + box.width / 2
-  const startY = box.y + box.height / 2
-  
-  // mouseenter, mouseover, mousemove to start
-  for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
-    await ctx.requestFromBrowser('events', 'dispatch', {
-      ref, selector, event, options: { clientX: startX, clientY: startY },
-    }, 5000, windowId)
-  }
-  
-  // mousedown
-  await ctx.requestFromBrowser('events', 'dispatch', {
-    ref, selector, event: 'mousedown', options: { clientX: startX, clientY: startY },
-  }, 5000, windowId)
-  
-  // mousemove steps
-  const stepDelay = duration / steps
-  for (let i = 1; i <= steps; i++) {
-    const progress = i / steps
-    const x = startX + deltaX * progress
-    const y = startY + deltaY * progress
-    await ctx.requestFromBrowser('eval', 'exec', {
-      code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`
-    }, 5000, windowId)
-    await sleep(stepDelay)
-  }
-  
-  // mouseup
-  await ctx.requestFromBrowser('eval', 'exec', {
-    code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`
-  }, 5000, windowId)
-  
-  return Response.json({ success: true, from: { x: startX, y: startY }, to: { x: startX + deltaX, y: startY + deltaY } }, { headers: ctx.headers })
+  // The routine itself lives in src/drag.ts because the test-suite runner needs it too — it had no
+  // `drag` step at all (#30), and a copy in the runner's switch would be the fourth instance this
+  // cycle of two implementations drifting apart.
+  const result = await performDrag(
+    ctx.requestFromBrowser,
+    {
+      ref: body.ref,
+      selector: body.selector,
+      deltaX: body.deltaX,
+      deltaY: body.deltaY,
+      duration: body.duration,
+    },
+    body.window || ctx.targetWindowId,
+  )
+  return Response.json(result, { headers: ctx.headers })
 })
 
 // Type handler - realistic typing with full event lifecycle

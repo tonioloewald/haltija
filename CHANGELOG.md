@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+### The test-suite runner gains `drag`, and a `wait` can no longer pass without waiting — [#30](https://github.com/tonioloewald/haltija/issues/30)
+
+**`drag` is now a step action.** `hj drag` and `POST /drag` had shipped for releases; the runner's
+dispatcher simply had no case, so a perfectly reasonable suite failed with `Unsupported step action:
+drag`. Sliders, resize handles and drag-reorder lists are exactly the interactions you cannot cover
+another way — a synthetic keydown on a slider thumb is not a faithful substitute.
+
+The routine now lives in `src/drag.ts` and both `/drag` and the runner call it. Dragging is not one
+message to the widget (scroll into view → measure → mouseenter/over/move → mousedown → N
+interpolated mousemoves → mouseup), and a second copy in the runner's switch would have been the
+fifth instance this cycle of one idea with two implementations.
+
+**A `wait` step with nothing to wait for was reported as PASSING.** `{"action": "wait",
+"forElement": "tbody tr", "timeout": 10000}` fell out of the runner's chain to `break`, and since a
+step passes by default it looked green — so a guard that had never waited for anything let every
+assertion after it race the page. Two fixes: `forElement` is now accepted as an alias of `selector`
+(the name `/wait` uses, and the name **our own SKILL.md example used**, which means the documented
+example never waited), and a `wait` carrying none of `duration`/`ms`/`selector`/`forElement`/
+`forWindow`/`url` is now an **error**.
+
+This is the same defect as the CLI's `hj wait --hidden`, fixed in 1.12.0 — that fix landed in the
+CLI and never reached the runner.
+
+**`hj test validate` now rejects illegal steps before the suite runs**, with a "did you mean":
+
+```
+step 0: unknown step action "drg" — did you mean "drag"?. Legal actions: navigate, click, …
+step 1: wait step has nothing to wait for — give it `duration` (ms), `selector` (or `forElement`) …
+```
+
+Validation previously checked only that selectors resolved, so `{"action": "drag"}` validated clean
+and then died in CI.
+
+**And the list is published and enforced.** There was nowhere to look up the legal actions: `hj api`
+documents the HTTP endpoints, which reads as though the same verbs work as steps. The canonical list
+is now `TEST_STEP_ACTIONS` in `src/test-actions.ts`, printed in `SKILL.md`, `CLAUDE.md` and
+`docs/CI-INTEGRATION.md` — and a test asserts it matches the runner's `switch (step.action)` in
+**both** directions. Writing that guard immediately found `screenshot` documented in `SKILL.md` as a
+step action when the runner has never had one.
+
 ## 1.12.1
 
 A patch of fixes reported by an agent driving a real React + web-components admin app against

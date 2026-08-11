@@ -32,7 +32,12 @@ const read = (f: string) => readFileSync(join(SRC, f), 'utf-8')
 
 const SCHEMA = read('api-schema.ts')
 /** Where defaults are actually applied. */
-const IMPL = [read('component.ts'), read('api-handlers.ts'), read('server.ts')].join('\n')
+// `drag.ts` is here because the drag routine moved OUT of api-handlers.ts when the test-suite
+// runner needed it too (#30) — and this guard immediately went red for `/drag`'s documented
+// "(default 300)", which now lives there. That is the check working: a default the scan can't see
+// is one it can't verify, and a list of implementation files is exactly the kind of thing that
+// silently stops covering the code it was written for. Add a file here whenever behaviour moves.
+const IMPL = [read('component.ts'), read('api-handlers.ts'), read('server.ts'), read('drag.ts')].join('\n')
 
 interface Claim {
   param: string

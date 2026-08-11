@@ -594,6 +594,7 @@ export type TestStep =
   | TabsOpenStep
   | TabsCloseStep
   | TabsFocusStep
+  | DragStep
 
 interface BaseStep {
   /** Human-readable description of what this step does (the "what") */
@@ -682,12 +683,39 @@ export interface WaitStep extends BaseStep {
   action: 'wait'
   /** Wait for selector to appear */
   selector?: string
+  /**
+   * Alias for `selector` — the name `/wait` and the recorder use. Accepted because a step author
+   * copying from the REST endpoint reasonably writes this, and it used to match nothing and make
+   * the whole step a silent PASS (#30).
+   */
+  forElement?: string
   /** Wait for fixed duration (ms) */
   duration?: number
   /** Wait for URL to match */
   url?: string | RegExp
   /** Wait for a new window/tab to connect (use after tabs-open) */
   forWindow?: boolean
+}
+
+/**
+ * Drag from an element's centre by a pixel delta.
+ *
+ * `hj drag` and `POST /drag` shipped long before this type allowed it as a STEP — which is exactly
+ * why the runner had no case for it and a suite reported "Unsupported step action: drag" (#30).
+ * Sliders, resize handles and drag-reorder lists are the interactions hardest to cover any other
+ * way: a synthetic keydown on a slider thumb is not a faithful substitute, and hand-rolling
+ * mousedown/mousemove/mouseup through an `eval` step re-implements what /drag already does.
+ */
+export interface DragStep extends BaseStep, StepWithSelector {
+  action: 'drag'
+  /** Horizontal distance in pixels */
+  deltaX?: number
+  /** Vertical distance in pixels */
+  deltaY?: number
+  /** Drag duration in ms (default 300); also sets how many mousemoves are interpolated */
+  duration?: number
+  /** Target window ID */
+  window?: string
 }
 
 export interface AssertStep extends BaseStep {

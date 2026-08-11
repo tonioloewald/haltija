@@ -257,7 +257,8 @@ Tests are JSON files with steps:
 | `type` (paste) | `{"action": "type", "selector": "#input", "text": "...", "paste": true}` | Paste text (fast, React-compatible) |
 | `check` | `{"action": "check", "selector": "#agree"}` | Toggle checkbox/radio |
 | `key` | `{"action": "key", "key": "Enter"}` | Press key |
-| `wait` | `{"action": "wait", "selector": ".loaded"}` | Wait for element |
+| `drag` | `{"action": "drag", "selector": ".thumb", "deltaX": 50}` | Drag from the element's centre by a pixel delta (sliders, resize handles, reorder lists) |
+| `wait` | `{"action": "wait", "selector": ".loaded"}` | Wait for element (`forElement` is an accepted alias) |
 | `assert` | `{"action": "assert", "assertion": {...}}` | Check condition |
 | `eval` | `{"action": "eval", "code": "..."}` | Run JavaScript (auto-awaits promises) |
 | `verify` | `{"action": "verify", "eval": "...", "expect": {...}}` | Poll until expression matches |
@@ -265,6 +266,11 @@ Tests are JSON files with steps:
 | `tabs-close` | `{"action": "tabs-close", "window": "id"}` | Close a tab |
 | `tabs-focus` | `{"action": "tabs-focus", "window": "id"}` | Focus a tab |
 | `wait` (window) | `{"action": "wait", "forWindow": true}` | Wait for new tab to connect |
+
+**A `wait` must be given something to wait for** — `duration`, `selector` (or `forElement`),
+`forWindow`, or `url`. A `wait` carrying none of them used to be reported as a PASSING step,
+so a guard that had never waited for anything looked green and every assertion after it raced
+the page. It is now an error, and `hj test validate` catches it without running the suite.
 
 ### Text Selectors
 

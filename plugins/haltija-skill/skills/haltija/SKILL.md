@@ -448,9 +448,21 @@ seeded data) so the render set can run as a quick gate.
 }
 ```
 
-- **Common actions:** `navigate` (`url`), `wait` (`ms`, or `selector`/`forElement` + `timeout`),
-  `click` (`selector`), `type` (`selector`,`text`), `key`, `drag` (`selector`,`deltaX`,`deltaY`),
-  `select`, `assert`, `screenshot`. See `hj api` for the complete list.
+- **Every legal action, in full** — there are only seventeen, so here they all are rather than a
+  pointer you have to chase:
+  `navigate` (`url`), `click` (`selector`), `type` (`selector`,`text`), `check` (`selector`),
+  `key` (`key`), `select`, `cut`, `copy`, `paste`, `drag` (`selector`,`deltaX`,`deltaY`,`duration`),
+  `wait`, `assert` (`assertion`), `eval` (`code`), `verify` (`eval`,`expect`),
+  `tabs-open`, `tabs-close`, `tabs-focus`.
+
+  **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, which
+  is a superset — `/drag` was documented there for releases while the runner had no `drag` case, so
+  a reasonable-looking suite failed with `Unsupported step action: drag`. `hj test validate` now
+  rejects an unknown action (with a "did you mean") before the suite runs.
+- **A `wait` must be given something to wait for**: `duration`/`ms`, `selector` (or `forElement`),
+  `forWindow: true`, or `url`. A `wait` with none of them used to be reported as a **passing** step
+  — so a guard that had never waited for anything looked green, and every assertion after it raced
+  the page. It is now an error.
 - **Assertion types:** `exists`, `visible`, `hidden`, `text`, `value`, `attribute`, `url`.
 - **Selectors — prefer user-centric:** `button:has-text("Submit")`, `a:has-text("Settings")`,
   `input[type='email']`, `[data-testid='user-menu']`. Avoid brittle structural selectors.

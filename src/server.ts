@@ -25,6 +25,8 @@ import { SCHEMA_FINGERPRINT, computeSchemaFingerprint } from './api-schema'
 import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman, inferSuggestion, type OutputFormat, type TestRunResult, type SuiteRunResult } from './test-formatters'
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
+import { performDrag } from './drag'
+import { staticStepIssue } from './test-actions'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
@@ -2365,9 +2367,20 @@ Run 'hj --help' for all commands.`
   if (path === '/test/validate' && req.method === 'POST') {
     const test = await req.json() as DevChannelTest
     const issues: Array<{ step: number; selector: string; error: string }> = []
-    
+
     for (let i = 0; i < test.steps.length; i++) {
       const step = test.steps[i]
+
+      // STATIC problems first — an illegal action or a wait with nothing to wait for. Validation
+      // used to check only that selectors resolved, so `{"action":"drag"}` validated CLEAN and then
+      // died in CI with "Unsupported step action: drag" (#30). A validate command that cannot catch
+      // a step the runner will refuse is not doing the job it exists for.
+      const staticIssue = staticStepIssue(step as unknown as Record<string, unknown>)
+      if (staticIssue) {
+        issues.push({ step: i, selector: '', error: staticIssue })
+        continue
+      }
+
       let selector: string | undefined
       
       // Extract selector from step
@@ -2856,14 +2869,18 @@ Run 'hj --help' for all commands.`
           
           case 'wait': {
             const waitDuration = step.duration ?? (step as any).ms
+            // `forElement` is what the REST endpoint calls this, and `hj wait <selector>` sends
+            // `selector` — so a step author copying from either one reasonably writes `forElement`.
+            // It used to match NOTHING here and fall out of the chain below as a pass.
+            const waitSelector = step.selector ?? (step as any).forElement
             if (waitDuration) {
               await new Promise(r => setTimeout(r, waitDuration))
-            } else if (step.selector) {
+            } else if (waitSelector) {
               // Wait for selector to appear
               const waitStart = Date.now()
               let found = false
               while (Date.now() - waitStart < stepTimeout) {
-                const response = await requestFromBrowser('dom', 'query', { selector: step.selector })
+                const response = await requestFromBrowser('dom', 'query', { selector: waitSelector })
                 if (response.success && response.data) {
                   found = true
                   break
@@ -2872,7 +2889,7 @@ Run 'hj --help' for all commands.`
               }
               if (!found) {
                 stepPassed = false
-                error = `Timeout waiting for selector: ${step.selector}`
+                error = `Timeout waiting for selector: ${waitSelector}`
               }
             } else if (step.forWindow) {
               // Wait for a new window/tab to connect (use after tabs-open)
@@ -2920,6 +2937,20 @@ Run 'hj --help' for all commands.`
                 const locResponse = await requestFromBrowser('navigation', 'location', {})
                 context = { actualUrl: locResponse.data?.url || locResponse.data?.href }
               }
+            } else {
+              // NOTHING TO WAIT ON. This used to fall straight out of the chain to `break`, and
+              // since stepPassed defaults to true the step was reported as PASSING — so a guard
+              // like {"action":"wait","forElement":"tbody tr","timeout":10000} had never waited for
+              // anything, and every assertion after it silently raced the page.
+              //
+              // This is the same defect as the CLI's `hj wait --hidden`, fixed in 1.12.0 — the CLI
+              // half was fixed and the runner half was not, which is the pattern this whole cycle
+              // has been about. A guard that cannot fail is worse than no guard: it is a green
+              // light nobody earned.
+              stepPassed = false
+              error =
+                'wait step has nothing to wait for — give it `duration` (ms), `selector` ' +
+                '(or `forElement`), `forWindow: true`, or `url`'
             }
             break
           }
@@ -3210,6 +3241,36 @@ Run 'hj --help' for all commands.`
             if (!step.window || !setFocusedWindow(step.window)) {
               stepPassed = false
               error = `Tab ${step.window ?? '(none)'} not found`
+            }
+            break
+          }
+
+          case 'drag': {
+            // `hj drag` and POST /drag both existed; the runner had no case, so a suite step failed
+            // with "Unsupported step action: drag" (#30). Sliders, resize handles and drag-reorder
+            // lists are exactly what you cannot cover another way — a synthetic keydown on a slider
+            // thumb is not a faithful substitute.
+            //
+            // Shares performDrag() with the REST handler rather than re-implementing the
+            // mousedown/move/up sequence here. Dragging is a multi-message routine, not one
+            // dispatch, and a second copy is how these two would drift.
+            const result = await performDrag(
+              (channel, action, payload, timeout, windowId) =>
+                requestFromBrowser(channel as never, action, payload as never, timeout, windowId),
+              {
+                ref: (step as any).ref,
+                selector: step.selector,
+                deltaX: (step as any).deltaX,
+                deltaY: (step as any).deltaY,
+                duration: (step as any).duration,
+              },
+              (step as any).window,
+            )
+            if (!result.success) {
+              stepPassed = false
+              error = result.error || 'Drag failed'
+            } else {
+              context = { from: result.from, to: result.to }
             }
             break
           }
