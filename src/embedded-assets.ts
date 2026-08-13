@@ -7520,7 +7520,7 @@ export const COMPONENT_JS: string = `(() => {
           case "interaction:select":
             const selectedText = this.cleanDescription(event.payload?.text || "", 50);
             steps.push({
-              action: "select",
+              action: "select-text",
               selector,
               text: event.payload?.text || "",
               description: \`Select text "\${selectedText}"\`,

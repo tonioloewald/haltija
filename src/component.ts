@@ -5916,7 +5916,8 @@ export class DevChannel extends HTMLElement {
             50,
           )
           steps.push({
-            action: 'select',
+            // Emit the canonical name: a freshly recorded suite should never be born deprecated.
+            action: 'select-text',
             selector,
             text: event.payload?.text || '',
             description: `Select text "${selectedText}"`,

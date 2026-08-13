@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### `select` is now `select-text` — and `select` is being freed
+
+Measured, not argued. Shown the bare step vocabulary with no descriptions, **3/3 agents reached for
+`select` to choose an option from a dropdown, and 3/3 read it cold as "choose an `<option>`".
+Nobody read it as text selection** — which is what it does. A name that unanimously means something
+else to competent readers is not a documentation problem.
+
+`select-text` says what it does. **`select` still works** as a deprecated alias, so existing suites
+keep running; steps using it now carry a `warning` naming the replacement. Freshly recorded suites
+emit the new name.
+
+The point of the deprecation is the reuse: once the alias can be dropped, `select` is free to mean
+what everyone already expects — pick an option from a `<select>` — which haltija cannot do at all
+today. A test enforces that the two meanings can never overlap (`no alias may shadow a live
+action`), because a word meaning two things depending on vintage is exactly the silent-wrong-action
+trap the rename exists to remove.
+
+Three other names I had confidently called broken — `check`, `verify`, `tabs-focus` — were measured
+and are **fine**: agents disambiguate all three from context. The probe overturned three of my four
+predictions, which is why it exists. Harness: `tools/naming-probe.mjs`.
+
 ## 1.12.2
 
 Two fixes, both from an agent driving real apps. Each is a case where haltija reported success — or

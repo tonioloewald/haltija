@@ -411,7 +411,7 @@ seeded data) so the render set can run as a quick gate.
 <!-- Do not edit by hand — see src/test-actions.ts -->
 `navigate` — url; `click` — selector or ref; `type` — selector/ref, text, clear, paste, humanlike; `key` — key, selector, modifiers; `wait` — duration, selector, forWindow, url; `assert` — assertion — exists, visible, hidden, text, value, attribute, url; `eval` — code.
 
-Also available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
+Also available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select-text`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
 <!-- END:step-actions -->
 
   **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, which

@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { TEST_STEP_ACTIONS, staticStepIssue, isTestStepAction } from './test-actions'
+import { TEST_STEP_ACTIONS, staticStepIssue, isTestStepAction, resolveStepAction, deprecationNotice, DEPRECATED_ACTION_ALIASES } from './test-actions'
 
 const SERVER_SRC = readFileSync(join(import.meta.dir, 'server.ts'), 'utf-8')
 
@@ -117,5 +117,54 @@ describe('static step validation catches what used to reach CI as a pass', () =>
     expect(staticStepIssue({ action: 'drag', selector: '.thumb', deltaX: 50 })).toBeNull()
     expect(isTestStepAction('drag')).toBe(true)
     expect(isTestStepAction('dragon')).toBe(false)
+  })
+})
+
+describe('deprecated action aliases', () => {
+  it('an alias resolves to its canonical action', () => {
+    expect(resolveStepAction('select')).toEqual({ action: 'select-text', deprecatedFrom: 'select' })
+  })
+
+  it('a canonical action passes through untouched', () => {
+    expect(resolveStepAction('click')).toEqual({ action: 'click' })
+    expect(resolveStepAction('select-text')).toEqual({ action: 'select-text' })
+  })
+
+  it('an alias still validates — old suites must not start failing', () => {
+    expect(staticStepIssue({ action: 'select', selector: '#note' })).toBeNull()
+  })
+
+  it('checks that apply to the canonical action apply THROUGH the alias', () => {
+    // Resolution happens before validation, so a rename cannot create a hole where a rule stops
+    // being enforced for anyone still using the old spelling.
+    expect(staticStepIssue({ action: 'wait' })).toContain('nothing to wait for')
+  })
+
+  it('the notice names the replacement, and says the old name is being reused', () => {
+    const msg = deprecationNotice('select', 'select-text')
+    expect(msg).toContain('`select-text`')
+    expect(msg).toContain('freed for a different meaning')
+  })
+
+  /**
+   * THE INVARIANT THAT MAKES THE PLAN SAFE.
+   *
+   * `select` is being freed so it can later mean "pick an option from a <select>". If it were ever
+   * registered as a live action while still aliased, the same word would mean two things depending
+   * on vintage — a silent wrong action, which is the exact failure the rename exists to remove.
+   * Reusing the name requires DELETING the alias first, and this test is what forces that order.
+   */
+  it('no alias may shadow a live action', () => {
+    const live = new Set(TEST_STEP_ACTIONS as readonly string[])
+    const shadowed = Object.keys(DEPRECATED_ACTION_ALIASES).filter((a) => live.has(a))
+    expect(shadowed).toEqual([])
+  })
+
+  it('every alias points at an action that exists', () => {
+    const live = new Set(TEST_STEP_ACTIONS as readonly string[])
+    const dangling = Object.entries(DEPRECATED_ACTION_ALIASES)
+      .filter(([, to]) => !live.has(to))
+      .map(([from, to]) => `${from} -> ${to}`)
+    expect(dangling).toEqual([])
   })
 })

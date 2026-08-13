@@ -14,7 +14,7 @@
  * - Buffers recent messages for late joiners
  */
 
-import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode, VerifyExpectation, VerifyStep } from './types'
+import type { DevMessage, DevResponse, ConsoleEntry, BuildEvent, DevChannelTest, StepResult, PageSnapshot, DomTreeNode, VerifyExpectation, VerifyStep, TestStep } from './types'
 import type { SelectionElement } from './agent-message-format'
 import { injectorCode } from './bookmarklet'
 import { VERSION } from './version'
@@ -26,7 +26,7 @@ import { formatTestGitHub, formatTestHuman, formatSuiteGitHub, formatSuiteHuman,
 import { createRouter, type ContextFactory } from './api-router'
 import type { HandlerContext } from './api-handlers'
 import { performDrag } from './drag'
-import { staticStepIssue } from './test-actions'
+import { staticStepIssue, resolveStepAction, deprecationNotice } from './test-actions'
 import { register as registerNamedInstance, unregister as unregisterNamedInstance, autoNameFor, list as listInstances } from './sessions'
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
@@ -2556,11 +2556,25 @@ Run 'hj --help' for all commands.`
     let passed = true
     
     for (let i = 0; i < test.steps.length; i++) {
-      const step = test.steps[i]
+      // Resolve a deprecated spelling ONCE, by rewriting the step, so everything downstream — the
+      // dispatch switch, the error messages, the recorded result — sees the canonical name. Doing
+      // it here rather than at the switch keeps `step.action` as the DISCRIMINANT TypeScript needs
+      // to narrow the union; switching on a separate string variable gave that up and produced 149
+      // type errors, which was the compiler correctly objecting rather than getting in the way.
+      const rawStep = test.steps[i]
+      const resolved = resolveStepAction((rawStep as { action?: unknown }).action)
+      const step = (resolved.deprecatedFrom
+        ? { ...rawStep, action: resolved.action }
+        : rawStep) as TestStep
       const stepStart = Date.now()
       let stepPassed = true
       let error: string | undefined
       let context: Record<string, any> | undefined
+      // Advisory, never fatal: a deprecated spelling still runs. Surfaced on the step result so a
+      // suite author sees it in the report rather than discovering it when the alias is removed.
+      const stepWarning = resolved.deprecatedFrom
+        ? deprecationNotice(resolved.deprecatedFrom, resolved.action)
+        : undefined
       
       // Check patience before starting step
       if (patience > 0 && (remainingPatience <= 0 || consecutiveFailures >= patienceStreak)) {
@@ -2852,13 +2866,15 @@ Run 'hj --help' for all commands.`
 
           // Text-selection and clipboard steps (recorded by the widget). Replayed
           // as the corresponding DOM event dispatched at the target element.
-          case 'select':
+          case 'select-text':
           case 'cut':
           case 'copy':
           case 'paste': {
+            // The DOM event for `select-text` is still called `select` — the rename is ours, the
+            // platform's event name is not.
             const resp = await requestFromBrowser('events', 'dispatch', {
               selector: step.selector || 'body',
-              event: step.action === 'select' ? 'select' : step.action,
+              event: step.action === 'select-text' ? 'select' : step.action,
             })
             if (!resp.success) {
               stepPassed = false
@@ -3309,6 +3325,7 @@ Run 'hj --help' for all commands.`
         purpose: step.purpose,
         context,
         snapshotId: stepSnapshotId,
+        warning: stepWarning,
         // Track fallback selector usage
         usedFallback: context?.usedFallback,
         matchedSelector: context?.matchedSelector,
