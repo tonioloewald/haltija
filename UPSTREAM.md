@@ -3,6 +3,23 @@
 Cross-repo work surfaced by haltija reviews. **We file, we don't fix** — never edit another repo
 directly. Each entry links the issue once filed.
 
+## tosijs-ui#66 — doc/build system should afford drift control (PROPOSAL)
+
+https://github.com/tonioloewald/tosijs-ui/issues/66
+
+We hand-rolled three drift-control mechanisms because nothing shared existed: generated
+marker-blocks written into hand-written docs, a mandatory `core` tier that splits the always-read
+surface from the reference, and a byte ceiling on the agent prompt. They work
+(`scripts/build.ts` → `writeGeneratedBlocks`, `src/test-actions.ts` → `core`,
+`src/prompt-budget.test.ts`).
+
+**We would rather delete all three and adopt tosijs-ui's** once it affords them. Every project
+solving this separately is the duplication problem one level up — which is the thing the practice
+is about. Volunteered as first adopter; the hand-rolled version is there to diff against.
+
+Practice write-up (proposal, open for comment):
+`tosijs-coding-practices/practices/documentation-surface.md`.
+
 ## tosijs-ui — dev-server test lane should drive a `--private` haltija, not adopt the shared browser
 
 **Status:** filed — https://github.com/tonioloewald/tosijs-ui/issues/21
