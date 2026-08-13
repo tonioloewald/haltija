@@ -448,17 +448,19 @@ seeded data) so the render set can run as a quick gate.
 }
 ```
 
-- **Every legal action, in full** — there are only seventeen, so here they all are rather than a
-  pointer you have to chase:
-  `navigate` (`url`), `click` (`selector`), `type` (`selector`,`text`), `check` (`selector`),
-  `key` (`key`), `select`, `cut`, `copy`, `paste`, `drag` (`selector`,`deltaX`,`deltaY`,`duration`),
-  `wait`, `assert` (`assertion`), `eval` (`code`), `verify` (`eval`,`expect`),
-  `tabs-open`, `tabs-close`, `tabs-focus`.
+- **Step actions.** The ones you need constantly:
+
+<!-- GENERATED:step-actions -->
+<!-- Do not edit by hand — see src/test-actions.ts -->
+`navigate` — url; `click` — selector or ref; `type` — selector/ref, text, clear, paste, humanlike; `key` — key, selector, modifiers; `wait` — duration, selector, forWindow, url; `assert` — assertion — exists, visible, hidden, text, value, attribute, url; `eval` — code.
+
+Also available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
+<!-- END:step-actions -->
 
   **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, which
   is a superset — `/drag` was documented there for releases while the runner had no `drag` case, so
-  a reasonable-looking suite failed with `Unsupported step action: drag`. `hj test validate` now
-  rejects an unknown action (with a "did you mean") before the suite runs.
+  a reasonable-looking suite failed with `Unsupported step action: drag`. `hj test validate` rejects
+  an unknown action (with a "did you mean") before the suite runs.
 - **A `wait` must be given something to wait for**: `duration`/`ms`, `selector` (or `forElement`),
   `forWindow: true`, or `url`. A `wait` with none of them used to be reported as a **passing** step
   — so a guard that had never waited for anything looked green, and every assertion after it raced

@@ -336,6 +336,48 @@ function generateApiMd(): string {
   return lines.join('\n')
 }
 
+/**
+ * Write generated content into marker-delimited blocks in HAND-WRITTEN docs.
+ *
+ * The durable fix for doc drift in this repo has always had one shape: make the second copy a build
+ * artifact rather than a promise. Fully generated files (API.md, DOCS.md, llms.txt) already work
+ * that way; this extends it to prose files that are mostly hand-written but contain an ENUMERATION
+ * — a list a human maintains badly and a build maintains perfectly.
+ *
+ * Idempotent, so `docs-drift.yml` (which asserts a build leaves the tree clean) fails on staleness.
+ * Silent if a marker is absent: a doc that has not opted in is not broken, it just isn't generated.
+ */
+function writeGeneratedBlocks(file: string, blocks: Record<string, string>): void {
+  if (!existsSync(file)) return
+  let body = readFileSync(file, 'utf-8')
+  let touched = false
+  for (const [name, content] of Object.entries(blocks)) {
+    const re = new RegExp(
+      `(<!-- GENERATED:${name} -->)[\\s\\S]*?(<!-- END:${name} -->)`,
+      'g',
+    )
+    if (!re.test(body)) continue
+    body = body.replace(re, `$1\n<!-- Do not edit by hand — see src/test-actions.ts -->\n${content}\n$2`)
+    touched = true
+  }
+  if (touched) writeFileSync(file, body)
+}
+
+// 6c. Step-action tables, generated from src/test-actions.ts into the hand-written docs. The main
+// prompt gets CORE actions only — see the size gate in src/prompt-budget.test.ts.
+{
+  const { stepActionsTable, stepActionsCompact, nonCoreActionsInline } = await import('../src/test-actions.ts')
+  // The main prompt gets the COMPACT core line; the full table lives in the reference docs. Every
+  // byte here is loaded on every invocation and competes with the user's actual task.
+  const coreLine =
+    stepActionsCompact() +
+    `.\n\nAlso available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): ` +
+    `${nonCoreActionsInline()}.`
+  writeGeneratedBlocks('plugins/haltija-skill/skills/haltija/SKILL.md', { 'step-actions': coreLine })
+  writeGeneratedBlocks('docs/CI-INTEGRATION.md', { 'step-actions': stepActionsTable() })
+  writeGeneratedBlocks('CLAUDE.md', { 'step-actions': stepActionsTable() })
+}
+
 writeFileSync('API.md', generateApiMd())
 
 // 7. Generate DOCS.md - hj-centric quick start (single source of truth)

@@ -1,47 +1,222 @@
 /**
- * The legal `action` values for a test-suite step — ONE list, published and enforced.
+ * The legal `action` values for a test-suite step — ONE definition, carrying its own prose.
  *
  * There was no such list. `hj api` documents the HTTP endpoints, which reads as though the same
- * verbs work as steps, and `/drag` is documented there — so a suite using `{"action": "drag"}` was
- * a perfectly reasonable thing to write, validated clean, and then failed in CI with "Unsupported
- * step action: drag" (issue #30). The capability existed; only the runner's switch didn't know.
+ * verbs work as steps, and `/drag` is documented there — so a suite using `{"action": "drag"}` was a
+ * perfectly reasonable thing to write, validated clean, and then failed in CI with "Unsupported step
+ * action: drag" (issue #30). The capability existed; only the runner's switch didn't know.
  *
- * Two things follow from having the list here rather than implicit in a switch statement:
+ * **The description lives HERE, beside the definition, and the docs are generated from it.** Adding
+ * a step type means writing its one-line summary and example in the same edit that adds it — you
+ * cannot forget the documentation, because it is the thing you are looking at. The alternative,
+ * which this replaces, was three hand-maintained copies of the list (SKILL.md, CLAUDE.md,
+ * docs/CI-INTEGRATION.md) that nothing checked and that silently drifted. Keeping documentation in
+ * step with code has been this project's most persistent failure, and every durable fix has had the
+ * same shape: make the second copy a build artifact rather than a promise.
  *
- *  - `/test/validate` can reject an unknown action *before* a lane runs, which is where a typo or a
- *    verb-that-isn't-a-step should be caught. That is the whole point of a validate command.
- *  - `src/test-actions.test.ts` asserts this list and the runner's `switch (step.action)` contain
- *    exactly the same members. A step type added to one and not the other is the defect this
- *    release cycle keeps repeating — `/type`'s `ref`, `/map`'s parameters, `:text()` vs `/find`,
- *    the CLI's `hj wait` vs the runner's `wait`. A list nobody checks becomes wrong; a list a test
- *    checks stays true.
+ * Three things are enforced against this list:
+ *   - `src/test-actions.test.ts` — the runner's `switch (step.action)` contains exactly these
+ *   - `/test/validate` — rejects an unknown action before a suite runs
+ *   - `bun run build` — regenerates the doc blocks; `docs-drift.yml` fails if they are stale
  */
-export const TEST_STEP_ACTIONS = [
-  'navigate',
-  'click',
-  'type',
-  'check',
-  'key',
-  'select',
-  'cut',
-  'copy',
-  'paste',
-  'drag',
-  'wait',
-  'assert',
-  'eval',
-  'verify',
-  'tabs-open',
-  'tabs-close',
-  'tabs-focus',
-] as const
 
-export type TestStepAction = (typeof TEST_STEP_ACTIONS)[number]
+export interface TestActionDoc {
+  /**
+   * Is this action CORE — worth spending main-prompt budget on?
+   *
+   * The agent-facing prompt is loaded on every invocation, so every line in it competes with the
+   * user's actual task for attention and context. Marking this is mandatory (no default) because a
+   * default would always be taken, and everything would drift into "core" one reasonable addition
+   * at a time. Non-core actions are still fully documented — in the generated reference, which is
+   * read on demand rather than always.
+   *
+   * The bar: would a competent agent driving a browser for the first time be unable to do the job
+   * without it? Recorder-generated steps (select/cut/copy/paste) and specialised ones (drag, verify,
+   * tabs-*) are looked up when needed; navigate/click/type/wait/assert/eval are not.
+   */
+  core: boolean
+  /** One line: what the step does. Rendered into every generated table. */
+  summary: string
+  /** A minimal, valid example — the thing a reader copies. */
+  example: string
+  /** Named fields beyond `action`, most important first. */
+  fields?: string
+}
 
-const ACTION_SET: ReadonlySet<string> = new Set(TEST_STEP_ACTIONS)
+/**
+ * Every legal step action, in the order they are presented to a reader.
+ *
+ * A `Record` rather than an array of strings so a new action cannot be added without its prose:
+ * the type makes `summary` and `example` mandatory.
+ */
+export const TEST_ACTIONS = {
+  navigate: {
+    core: true,
+    summary: 'Load a URL, then wait for the widget to reconnect in that same tab.',
+    fields: '`url`',
+    example: '{"action": "navigate", "url": "http://localhost:3000/login"}',
+  },
+  click: {
+    core: true,
+    summary:
+      'Realistic click (scroll into view, mouseenter/over/down/up/click). Prefers the match a user could act on when several exist.',
+    fields: '`selector` or `ref`',
+    example: '{"action": "click", "selector": "button:text(Sign in)"}',
+  },
+  type: {
+    core: true,
+    summary:
+      'Per-character typing with the full key lifecycle. `paste: true` for fast entry that still triggers framework validation.',
+    fields: '`selector`/`ref`, `text`, `clear`, `paste`, `humanlike`',
+    example: '{"action": "type", "selector": "#email", "text": "a@b.com"}',
+  },
+  check: {
+    core: false,
+    summary: 'Toggle a checkbox or radio via a realistic click.',
+    fields: '`selector` or `ref`',
+    example: '{"action": "check", "selector": "#agree"}',
+  },
+  key: {
+    core: true,
+    summary: 'Press a key, optionally with modifiers, at the focused element.',
+    fields: '`key`, `selector`, `modifiers`',
+    example: '{"action": "key", "key": "Enter"}',
+  },
+  select: {
+    core: false,
+    summary: 'Select text within an element (generated by the recorder).',
+    fields: '`selector`, `text`',
+    example: '{"action": "select", "selector": "#note"}',
+  },
+  cut: {
+    core: false,
+    summary: 'Dispatch a cut event at the element (generated by the recorder).',
+    fields: '`selector`, `text`',
+    example: '{"action": "cut", "selector": "#note"}',
+  },
+  copy: {
+    core: false,
+    summary: 'Dispatch a copy event at the element (generated by the recorder).',
+    fields: '`selector`, `text`',
+    example: '{"action": "copy", "selector": "#note"}',
+  },
+  paste: {
+    core: false,
+    summary: 'Dispatch a paste event at the element (generated by the recorder).',
+    fields: '`selector`, `text`',
+    example: '{"action": "paste", "selector": "#note"}',
+  },
+  drag: {
+    core: false,
+    summary:
+      "Drag from the element's centre by a pixel delta — sliders, resize handles, drag-reorder lists.",
+    fields: '`selector`/`ref`, `deltaX`, `deltaY`, `duration`',
+    example: '{"action": "drag", "selector": ".slider-thumb", "deltaX": 50}',
+  },
+  wait: {
+    core: true,
+    summary:
+      'Pause, or poll until something is true. **Must be given something to wait for** — a wait with none of these fields is an error, not a no-op.',
+    fields: '`duration` (ms), `selector` (alias `forElement`), `forWindow`, `url`',
+    example: '{"action": "wait", "selector": ".dashboard", "timeout": 10000}',
+  },
+  assert: {
+    core: true,
+    summary: 'Fail the step unless the assertion holds.',
+    fields: '`assertion` — `exists`, `visible`, `hidden`, `text`, `value`, `attribute`, `url`',
+    example: '{"action": "assert", "assertion": {"type": "visible", "selector": ".dashboard"}}',
+  },
+  eval: {
+    core: true,
+    summary:
+      'Run JavaScript in the page. Async works; multi-statement code needs an explicit `return`.',
+    fields: '`code`',
+    example: '{"action": "eval", "code": "return document.title"}',
+  },
+  verify: {
+    core: false,
+    summary: 'Poll an expression until it matches an expectation (or time out).',
+    fields: '`eval`, `expect`',
+    example: '{"action": "verify", "eval": "app.items.length", "expect": {"equals": 3}}',
+  },
+  'tabs-open': {
+    core: false,
+    summary: 'Open a new tab (desktop app). Follow with `wait` + `forWindow` to await its widget.',
+    fields: '`url`',
+    example: '{"action": "tabs-open", "url": "http://localhost:3000"}',
+  },
+  'tabs-close': {
+    core: false,
+    summary: 'Close a tab by window id.',
+    fields: '`window`',
+    example: '{"action": "tabs-close", "window": "hj-abc-1"}',
+  },
+  'tabs-focus': {
+    core: false,
+    summary:
+      'Point untargeted commands at a tab — a server-side routing change, so it cannot time out on a hidden tab.',
+    fields: '`window`',
+    example: '{"action": "tabs-focus", "window": "hj-abc-1"}',
+  },
+} as const satisfies Record<string, TestActionDoc>
+
+export const TEST_STEP_ACTIONS = Object.keys(TEST_ACTIONS) as Array<keyof typeof TEST_ACTIONS>
+
+export type TestStepAction = keyof typeof TEST_ACTIONS
+
+const ACTION_SET: ReadonlySet<string> = new Set(TEST_STEP_ACTIONS as readonly string[])
 
 export function isTestStepAction(action: unknown): action is TestStepAction {
   return typeof action === 'string' && ACTION_SET.has(action)
+}
+
+/**
+ * The generated markdown table, written into the docs by `bun run build`.
+ *
+ * `coreOnly` is what keeps the main prompt from growing without limit: the agent-facing skill gets
+ * the core rows plus a pointer, the reference gets everything.
+ */
+export function stepActionsTable(opts: { coreOnly?: boolean } = {}): string {
+  const actions = opts.coreOnly
+    ? TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
+    : TEST_STEP_ACTIONS
+  const rows = actions.map((a) => {
+    const d = TEST_ACTIONS[a] as TestActionDoc
+    return `| \`${a}\` | ${d.fields ?? '—'} | ${d.summary} |`
+  })
+  return ['| action | fields | what it does |', '| --- | --- | --- |', ...rows].join('\n')
+}
+
+/** The generated compact list, for places where a table is too heavy. */
+export function stepActionsInline(opts: { coreOnly?: boolean } = {}): string {
+  const actions = opts.coreOnly
+    ? TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
+    : TEST_STEP_ACTIONS
+  return actions.map((a) => `\`${a}\``).join(', ')
+}
+
+/**
+ * The COMPACT rendering for the main prompt: one line, fields only.
+ *
+ * A three-column table with a sentence per row costs ~1.2KB; this costs ~200 bytes and carries the
+ * part an agent cannot guess — the field names. What `click` does is inferable from its name; that
+ * `wait` needs a target, and which fields satisfy it, is not. Budget spent where it buys something.
+ */
+export function stepActionsCompact(): string {
+  return TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
+    .map((a) => {
+      const d = TEST_ACTIONS[a] as TestActionDoc
+      const fields = (d.fields ?? '').replace(/`/g, '').replace(/ \(ms\)| \(alias [^)]+\)/g, '')
+      return `\`${a}\`${fields ? ` — ${fields}` : ''}`
+    })
+    .join('; ')
+}
+
+/** Actions deliberately kept OUT of the main prompt — named so the reference can point at them. */
+export function nonCoreActionsInline(): string {
+  return TEST_STEP_ACTIONS.filter((a) => !(TEST_ACTIONS[a] as TestActionDoc).core)
+    .map((a) => `\`${a}\``)
+    .join(', ')
 }
 
 /**
@@ -102,11 +277,7 @@ function editDistance(a: string, b: string): number {
   for (let i = 1; i <= m; i++) {
     const cur = [i]
     for (let j = 1; j <= n; j++) {
-      cur[j] = Math.min(
-        prev[j] + 1,
-        cur[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      )
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
     }
     prev = cur
   }
