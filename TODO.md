@@ -52,8 +52,18 @@ So the rename list collapses from four to one.
   option today, which is why the probe's honest expected answer was "none".
   Sequencing matters: the alias and the new meaning must not overlap, or one word means two things
   at once and we are back to a silent wrong action.
-- [ ] Probe the **CLI command** vocabulary the same way (`hj map` vs `tree` vs `query` vs `find`,
-  `snapshot` vs `screenshot`) — that surface is larger and has never been examined this way.
+- [ ] **`map` is not the word agents reach for — and `map` is where every doc tells them to start.**
+  Measured twice, two framings, and it lost both times: "list everything you can interact with and
+  what each control is wired to" got **3/3 `form`** (the word "control" pulls toward form fields);
+  neutrally reworded to "orient yourself on an unfamiliar page — which command first?" it got
+  **`tree`**. `map` never won. The affordance map is the single most valuable thing haltija offers
+  an agent, and its name is losing to two neighbours. Options: rename it something that says what it
+  is, or accept that `tree` is the natural entry point and make `tree` the thing that leads to it.
+  Worth more samples before acting — n=3 and n=1.
+- [x] Probe the **CLI command** vocabulary — done. `find`, `where`, `doctor`, `snapshot` all scored
+  3/3; `snapshot` vs `screenshot` and `call` vs `eval` were both read correctly cold. Those names
+  are fine and need no defending prose.
+
 
 ### Next up (1.13)
 

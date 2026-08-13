@@ -14,17 +14,21 @@
  * measured is a first impression. Reusing one session would let the first answer teach the rest.
  */
 import { spawn } from 'child_process'
-import { PROBES, REACH_VOCABULARY, scoreAnswer, summarize } from '../src/naming-probe.ts'
+import { PROBES, CLI_PROBES, REACH_VOCABULARY, CLI_VOCABULARY, scoreAnswer, summarize } from '../src/naming-probe.ts'
 
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 const n = Number(args[args.indexOf('--n') + 1]) || 3
+// Which surface: the test-step actions, or the `hj` command vocabulary.
+const surface = args.includes('--cli') ? 'cli' : args.includes('--all') ? 'all' : 'steps'
+const probeSet = surface === 'cli' ? CLI_PROBES : surface === 'all' ? [...PROBES, ...CLI_PROBES] : PROBES
+const vocabFor = (probe) => (CLI_PROBES.includes(probe) ? CLI_VOCABULARY : REACH_VOCABULARY)
 
 function buildPrompt(probe) {
   if (probe.kind === 'reach') {
     return (
-      `Here is the complete list of step actions in a browser-automation test format:\n\n` +
-      `${REACH_VOCABULARY.join(', ')}\n\n${probe.prompt}\n\n` +
+      `Here is the complete command list of a browser-automation CLI:\n\n` +
+      `${vocabFor(probe).join(', ')}\n\n${probe.prompt}\n\n` +
       `Answer with ONLY the action name, or the single word "none" if none fits. No explanation.`
     )
   }
@@ -44,7 +48,7 @@ function ask(prompt) {
 }
 
 const results = []
-for (const probe of PROBES) {
+for (const probe of probeSet) {
   const prompt = buildPrompt(probe)
   if (dryRun) {
     console.log(`\n--- ${probe.kind} ---\n${prompt}`)

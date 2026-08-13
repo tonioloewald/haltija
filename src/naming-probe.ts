@@ -29,6 +29,16 @@ export interface Probe {
   /** The answer that matches what the code actually does. */
   expected: string
   /**
+   * For `cold-read`: the ideas the answer must contain, as lowercase substrings. ALL must appear.
+   *
+   * A cold-read answer is a free-form sentence, and comparing it to one canonical sentence is
+   * hopeless — the first run scored three CORRECT answers as failures because they said the right
+   * thing in different words. That is the mirror of the failure this file warns about: an
+   * instrument that mis-scores launders the truth either way, and under-reporting is just as
+   * useless as over-reporting. Keywords describe the IDEA, not the phrasing.
+   */
+  expectedKeywords?: string[]
+  /**
    * Answers that reveal a specific confusion, mapped to what that confusion tells us.
    *
    * This is the payload of the whole exercise: a wrong answer that recurs is a named design
@@ -101,6 +111,7 @@ export const PROBES: Probe[] = [
     prompt:
       'In a browser-automation test format, there is a step action called `check`. With no other information, what do you think it does?',
     expected: 'toggles a checkbox or radio',
+    expectedKeywords: ['checkbox'],
     traps: {
       assert: 'read as an assertion — the exact misreading that produces a silent wrong action',
       verify: 'read as a verification step',
@@ -112,6 +123,7 @@ export const PROBES: Probe[] = [
     prompt:
       'In a browser-automation test format, there is a step action called `select`. With no other information, what do you think it does?',
     expected: 'selects text within an element',
+    expectedKeywords: ['text'],
     traps: { option: 'read as choosing an option from a <select> element — the natural meaning we do not implement' },
     rationale: 'Direct measurement of the `select` overload.',
   },
@@ -144,7 +156,9 @@ export function scoreAnswer(probe: Probe, raw: string): ProbeResult {
   const correct =
     probe.kind === 'reach'
       ? answer === expected || answer.startsWith(expected + ' ')
-      : answer.includes(expected) || expected.includes(answer)
+      : probe.expectedKeywords
+        ? probe.expectedKeywords.every((k) => answer.includes(k.toLowerCase()))
+        : answer.includes(expected) || expected.includes(answer)
   let trap: string | undefined
   for (const [needle, meaning] of Object.entries(probe.traps ?? {})) {
     if (!correct && answer.includes(normalizeAnswer(needle))) {
@@ -183,3 +197,96 @@ export function summarize(results: ProbeResult[]): string {
   }
   return lines.join('\n')
 }
+
+/**
+ * The `hj` command vocabulary — 70 names, none of which has ever been examined this way.
+ *
+ * Much larger surface than the step actions, with several clusters of near-synonyms that were named
+ * at different times: the look-at-the-page verbs (`map`/`tree`/`query`/`find`/`inspect`), the
+ * capture verbs (`screenshot`/`snapshot`), and the which-server verbs (`status`/`where`/`doctor`/
+ * `servers`). Any of those could be fine; the point is that nobody knows, and after the step-action
+ * run overturned three of four confident predictions, an untested intuition here is worth little.
+ */
+export const CLI_VOCABULARY = [
+  'api', 'call', 'click', 'console', 'docs', 'doctor', 'drag', 'eval', 'events', 'fetch', 'find',
+  'form', 'highlight', 'inspect', 'key', 'location', 'ls', 'map', 'navigate', 'network', 'query',
+  'quit', 'recording', 'refresh', 'screenshot', 'scroll', 'send', 'servers', 'shutdown', 'snapshot',
+  'stats', 'status', 'styles', 'tabs-close', 'tabs-focus', 'tabs-open', 'test-run', 'test-suite',
+  'test-validate', 'tree', 'type', 'version', 'wait', 'where', 'windows',
+]
+
+export const CLI_PROBES: Probe[] = [
+  {
+    kind: 'reach',
+    prompt:
+      'You want a list of everything on the page you can interact with, and what each control is wired to. Which command?',
+    expected: 'map',
+    traps: {
+      tree: '`tree` gives DOM structure, not affordances — if agents reach here, `map` is not announcing itself',
+      inspect: '`inspect` is single-element deep detail',
+    },
+    rationale: 'Five commands look at the page; `map` is the one an agent is told to start from.',
+  },
+  {
+    kind: 'reach',
+    prompt:
+      'You are driving an unfamiliar web page and want to orient yourself: what is on it, and what can you act on? Which single command do you run first?',
+    expected: 'map',
+    traps: {
+      tree: 'wins on neutral wording — `tree` reads as "show me the page" more than `map` does',
+      form: 'wins when the question mentions "controls" — the word pulls toward form fields',
+    },
+    rationale:
+      'The same question as above with NEUTRAL wording. The first version said "controls" and got 3/3 `form`; ' +
+      'this one avoids the word entirely, and still does not get `map`. Two framings, neither reaching the ' +
+      'command every doc says to start from.',
+  },
+  {
+    kind: 'reach',
+    prompt:
+      'You want to locate the element whose visible text is "Sign in" so you can click it. Which command?',
+    expected: 'find',
+    traps: { query: '`query` takes a CSS selector; `find` takes text — the split is not in either name' },
+    rationale: 'find vs query is a distinction by ARGUMENT TYPE, which a name cannot easily carry.',
+  },
+  {
+    kind: 'reach',
+    prompt: 'You want to know which haltija server this shell will talk to, and why. Which command?',
+    expected: 'where',
+    traps: {
+      status: '`status` reports the server you already resolved — it cannot tell you WHICH you resolved',
+      servers: '`servers` lists all of them without saying which is yours',
+    },
+    rationale: 'Three commands answer overlapping questions about servers.',
+  },
+  {
+    kind: 'reach',
+    prompt:
+      'Before a CI run, you want one command that fails if anything about the setup would make results untrustworthy. Which command?',
+    expected: 'doctor',
+    rationale: 'The command a lane should gate on. If it is not obvious, lanes gate on the wrong thing.',
+  },
+  {
+    kind: 'reach',
+    prompt: 'You want to capture the page state so you can compare against it later. Which command?',
+    expected: 'snapshot',
+    traps: { screenshot: 'snapshot/screenshot differ by one syllable and both mean "capture" to most readers' },
+    rationale: 'The closest pair in the vocabulary.',
+  },
+  {
+    kind: 'cold-read',
+    prompt:
+      'A browser-automation CLI has both a `snapshot` command and a `screenshot` command. With no other information, what do you think the difference is?',
+    expected: 'snapshot captures page state/DOM; screenshot captures an image',
+    expectedKeywords: ['snapshot', 'screenshot', 'image'],
+    rationale: 'Whether the pair is self-explaining, or just two words for "capture".',
+  },
+  {
+    kind: 'cold-read',
+    prompt:
+      'A browser-automation CLI has a `call` command and an `eval` command. With no other information, what do you think the difference is?',
+    expected: 'call invokes a method or reads a property on an element; eval runs arbitrary JavaScript',
+    expectedKeywords: ['call', 'eval', 'arbitrary'],
+    rationale: '`call` is the least self-evident of the code-running verbs.',
+  },
+]

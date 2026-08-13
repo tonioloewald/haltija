@@ -5,7 +5,7 @@
  * percentage, which is precisely the failure this repo keeps finding in itself.
  */
 import { describe, it, expect } from 'bun:test'
-import { PROBES, scoreAnswer, normalizeAnswer, summarize } from './naming-probe'
+import { PROBES, CLI_PROBES, scoreAnswer, normalizeAnswer, summarize } from './naming-probe'
 
 const reach = PROBES.find((p) => p.kind === 'reach' && p.expected === 'assert')!
 const coldCheck = PROBES.find((p) => p.kind === 'cold-read' && p.prompt.includes('`check`'))!
@@ -56,5 +56,23 @@ describe('summarize', () => {
     expect(out).toContain('2x check')
     // The trap explanation must survive into the report, or a reader sees a number and no cause.
     expect(out).toContain('toggles a checkbox')
+  })
+})
+
+describe('cold-read scoring uses keywords, not sentence matching', () => {
+  const snap = CLI_PROBES.find((p) => p.prompt.includes('`snapshot` command'))!
+
+  it('accepts a correct answer phrased differently', () => {
+    // These are VERBATIM answers from the first run, all scored 0 by the old containment matcher.
+    for (const a of [
+      'snapshot captures the DOM/page state as structured text an agent can read, while screenshot captures a pixel image',
+      'snapshot captures the page\'s DOM/state as structured data (text you can query), while screenshot captures a pixel image of what it looks like',
+    ]) {
+      expect(scoreAnswer(snap, a).correct).toBe(true)
+    }
+  })
+
+  it('still rejects an answer missing the distinguishing idea', () => {
+    expect(scoreAnswer(snap, 'they both capture the page, more or less the same thing').correct).toBe(false)
   })
 })
