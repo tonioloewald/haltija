@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.12.3
+
+Documentation-drift machinery, a measured rename, and the six blockers a nine-lens review raised
+against all of it. **Known open:** [#26](https://github.com/tonioloewald/haltija/issues/26) (a tab
+becoming permanently undrivable — observed, not reproducible on any version) and
+[#16](https://github.com/tonioloewald/haltija/issues/16) (native tosiAgent bridge, on hold).
+
+**Recorded suites now use `select-text`, which servers before 1.12.3 reject.** If you record on an
+updated machine and run against a pinned older haltija, that step fails with `unknown step action`.
+The paved CI path (`bunx haltija@latest`) is unaffected.
+
 
 ### `select` is now `select-text` — and `select` is being freed
 
