@@ -27,6 +27,34 @@ idea with TWO implementations and only one of them updated — `/type`'s `ref`, 
 drag routine. The fix that sticks is a test that derives one registry from the other; the fix that
 doesn't is patching the instance you were shown.
 
+## Naming: measured, not argued (`tools/naming-probe.mjs`)
+
+An instrument that asks fresh agents what our vocabulary *means to them*, in the spirit of the
+tjs-lang intuitiveness harnesses. **Not a CI gate** — real model calls, non-deterministic, and a
+flaky naming test would be switched off within a week. Run it when changing the vocabulary; read the
+distribution, not the score.
+
+**First run (n=3) overturned three of my four hand-waved claims**, which is the whole argument for
+measuring instead of asserting:
+
+| claim | verdict |
+| --- | --- |
+| `check` is dangerously confusable with `assert` | **WRONG.** 3/3 reached for `assert` for an assertion; 3/3 reached for `check` to tick a checkbox; 2/3 cold-read it correctly. Agents disambiguate it in context. |
+| `verify` vs `assert` is arbitrary | **WRONG.** 3/3 picked `verify` for the polling task. |
+| `tabs-focus` misleads (sounds like a browser action) | **WRONG.** 3/3 picked it correctly. |
+| `select` is mis-assigned | **CONFIRMED, unanimously.** 3/3 reached for `select` to choose a dropdown option; 3/3 cold-read it as "choose an `<option>`". **Nobody** read it as text selection. |
+
+So the rename list collapses from four to one.
+
+- [ ] **`select` → `select-text`, with `select` as a deprecated alias.** Then, once the alias can be
+  dropped, `select` is free to mean the thing every reader already thinks it means: pick an option
+  from a `<select>`. That is also a real capability gap — haltija has no way to choose a dropdown
+  option today, which is why the probe's honest expected answer was "none".
+  Sequencing matters: the alias and the new meaning must not overlap, or one word means two things
+  at once and we are back to a silent wrong action.
+- [ ] Probe the **CLI command** vocabulary the same way (`hj map` vs `tree` vs `query` vs `find`,
+  `snapshot` vs `screenshot`) — that surface is larger and has never been examined this way.
+
 ### Next up (1.13)
 
 - Adopt **tosijs-floorplan** as the schematic renderer (see `UPSTREAM.md`), which subsumes #20.2/#20.5.
