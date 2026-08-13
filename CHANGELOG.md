@@ -10,8 +10,14 @@ Nobody read it as text selection** — which is what it does. A name that unanim
 else to competent readers is not a documentation problem.
 
 `select-text` says what it does. **`select` still works** as a deprecated alias, so existing suites
-keep running; steps using it now carry a `warning` naming the replacement. Freshly recorded suites
-emit the new name.
+keep running; steps using it now carry a `warning` naming the replacement, rendered in the test
+report rather than only present in `--json`.
+
+The recorder also stopped emitting two illegal steps it had emitted since long before this release:
+`set` (not a step action at all — recorded suites died with "Unsupported step action: set") and
+`select` for **dropdowns**, which resolved to `select-text` and dispatched a text-selection event at
+the `<select>`, passing while choosing nothing. Both now record an explicit `eval` that works, and a
+test asserts every action the recorder can emit is legal and non-deprecated.
 
 The point of the deprecation is the reuse: once the alias can be dropped, `select` is free to mean
 what everyone already expects — pick an option from a `<select>` — which haltija cannot do at all
@@ -19,9 +25,19 @@ today. A test enforces that the two meanings can never overlap (`no alias may sh
 action`), because a word meaning two things depending on vintage is exactly the silent-wrong-action
 trap the rename exists to remove.
 
-Three other names I had confidently called broken — `check`, `verify`, `tabs-focus` — were measured
-and are **fine**: agents disambiguate all three from context. The probe overturned three of my four
-predictions, which is why it exists. Harness: `tools/naming-probe.mjs`.
+**Correction, and it matters more than the rename.** An earlier draft of these notes acquitted
+`check`, `verify` and `tabs-focus` as "measured and fine". That was wrong: the harness spawned each
+agent **in this repo**, so every "first impression" had our own `CLAUDE.md` — which documents the
+vocabulary under test — in context. Re-run from a neutral directory, `check` is cold-read as
+*"asserts that some condition is true"* by **3/3** (the exact confusion it was cleared of), and
+`verify` slips to 2/3. What survives is narrower and honest: with the full vocabulary in view agents
+still pick `assert` for assertions and `check` for checkboxes, so `check` is safe **in context** and
+misleading **in isolation**. `tabs-focus` holds at 3/3.
+
+The `select` verdict is unaffected — contamination ran in its favour and it still lost 3/3, and the
+clean re-run agrees. The probe now runs each sample in an empty temp directory, and its vocabularies
+are derived from the registries rather than hand-copied (the old copy still listed `select`, stale
+as of the commit it motivated). Harness: `tools/naming-probe.mjs`, run with bun.
 
 ## 1.12.2
 

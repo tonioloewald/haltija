@@ -243,6 +243,10 @@ function buildSuiteSummary(result: SuiteRunResult, tests: DevChannelTest[]): str
  * Format a single test result for human reading in terminal.
  */
 export function formatTestHuman(result: TestRunResult, test: DevChannelTest): string {
+  // Deprecations are advisory and the steps PASSED, so they are reported separately from failures
+  // rather than filtered out with them — which is what used to happen, silently.
+  const deprecated = (result.steps || []).filter((s: any) => s.warning)
+
   const lines: string[] = []
   const icon = result.passed ? '✓' : '✗'
   const color = result.passed ? '\x1b[32m' : '\x1b[31m'
@@ -286,6 +290,10 @@ export function formatTestHuman(result: TestRunResult, test: DevChannelTest): st
     lines.push(`  ${pColor}Patience:${reset} ${p.remaining}/${p.allowed} remaining, ${p.failures} failures, timeout ${p.finalTimeoutMs}ms`)
   }
 
+  if (deprecated.length) {
+    lines.push('')
+    for (const d of deprecated) lines.push(`! step ${(d as any).index + 1}: ${(d as any).warning}`)
+  }
   return lines.join('\n')
 }
 

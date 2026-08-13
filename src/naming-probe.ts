@@ -20,6 +20,9 @@
  *   - `reach`      — given a task and the bare list of names, which would you use?
  */
 
+import { TEST_STEP_ACTIONS } from './test-actions'
+import { ROUTED_COMMANDS, LOCAL_COMMANDS } from './cli-commands'
+
 export type ProbeKind = 'cold-read' | 'reach'
 
 export interface Probe {
@@ -54,11 +57,13 @@ export interface Probe {
  *
  * Deliberately the bare list. Showing summaries would measure whether our prose is clear, which we
  * already know how to fix. The question here is whether the WORD is clear.
+ *
+ * DERIVED, not hand-copied. The first version was a byte-copy of the action list and went stale in
+ * the very commit it motivated — it still offered `select` and never `select-text`, so the probe
+ * was measuring a vocabulary that no longer existed. A hand-copied list inside the instrument that
+ * exists to catch hand-copied lists is not irony, it is the same bug.
  */
-export const REACH_VOCABULARY = [
-  'navigate', 'click', 'type', 'check', 'key', 'select', 'cut', 'copy', 'paste',
-  'drag', 'wait', 'assert', 'eval', 'verify', 'tabs-open', 'tabs-close', 'tabs-focus',
-]
+export const REACH_VOCABULARY: string[] = [...TEST_STEP_ACTIONS]
 
 export const PROBES: Probe[] = [
   {
@@ -199,7 +204,13 @@ export function summarize(results: ProbeResult[]): string {
 }
 
 /**
- * The `hj` command vocabulary — 70 names, none of which has ever been examined this way.
+ * The `hj` command vocabulary, derived from the command registries — never a hand copy.
+ *
+ * The first version held 45 of the real 69 while its own comment said "70" and the runner told the
+ * model the list was COMPLETE. The 24 it omitted included `select-start` / `select-result` /
+ * `select-cancel` / `select-clear`, so the probe could not see that `select` ALREADY has a third
+ * meaning in this product (interactive element picking) — and the "free `select` for option-picking"
+ * plan was measured against a vocabulary that hid the conflict.
  *
  * Much larger surface than the step actions, with several clusters of near-synonyms that were named
  * at different times: the look-at-the-page verbs (`map`/`tree`/`query`/`find`/`inspect`), the
@@ -207,13 +218,9 @@ export function summarize(results: ProbeResult[]): string {
  * `servers`). Any of those could be fine; the point is that nobody knows, and after the step-action
  * run overturned three of four confident predictions, an untested intuition here is worth little.
  */
-export const CLI_VOCABULARY = [
-  'api', 'call', 'click', 'console', 'docs', 'doctor', 'drag', 'eval', 'events', 'fetch', 'find',
-  'form', 'highlight', 'inspect', 'key', 'location', 'ls', 'map', 'navigate', 'network', 'query',
-  'quit', 'recording', 'refresh', 'screenshot', 'scroll', 'send', 'servers', 'shutdown', 'snapshot',
-  'stats', 'status', 'styles', 'tabs-close', 'tabs-focus', 'tabs-open', 'test-run', 'test-suite',
-  'test-validate', 'tree', 'type', 'version', 'wait', 'where', 'windows',
-]
+export const CLI_VOCABULARY: string[] = [
+  ...new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS] as readonly string[]),
+].sort()
 
 export const CLI_PROBES: Probe[] = [
   {

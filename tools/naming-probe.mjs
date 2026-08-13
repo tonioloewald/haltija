@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Run the naming-intuition probes against fresh agents and print the distribution.
  *
@@ -6,15 +6,25 @@
  * are changing the vocabulary, read the answers, and decide. See src/naming-probe.ts for why the
  * wrong answers matter more than the score.
  *
- *   node tools/naming-probe.mjs            # 3 samples per probe
- *   node tools/naming-probe.mjs --n 5      # more samples = a clearer distribution
- *   node tools/naming-probe.mjs --dry-run  # print the prompts, call nothing
+ *   bun tools/naming-probe.mjs             # 3 samples per probe (step actions)
+ *   bun tools/naming-probe.mjs --cli       # the `hj` command vocabulary instead
+ *   bun tools/naming-probe.mjs --n 5       # more samples = a clearer distribution
+ *   bun tools/naming-probe.mjs --dry-run   # print the prompts, call nothing
+ *
+ * Run with BUN, not node: it imports the derived vocabularies straight from the TypeScript
+ * registries, which is what stops them drifting into hand copies again.
  *
  * Each sample is a SEPARATE `claude -p` invocation with no shared context, because the thing being
  * measured is a first impression. Reusing one session would let the first answer teach the rest.
  */
 import { spawn } from 'child_process'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { PROBES, CLI_PROBES, REACH_VOCABULARY, CLI_VOCABULARY, scoreAnswer, summarize } from '../src/naming-probe.ts'
+
+/** An empty directory outside any project, so no CLAUDE.md or repo context can leak into a probe. */
+const NEUTRAL_CWD = mkdtempSync(join(tmpdir(), 'haltija-naming-probe-'))
 
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
@@ -37,8 +47,17 @@ function buildPrompt(probe) {
 
 function ask(prompt) {
   return new Promise((resolve) => {
+    // A NEUTRAL CWD IS THE INSTRUMENT, not a detail.
+    //
+    // Without it every "fresh agent" inherited this repo and loaded our own CLAUDE.md — which
+    // documents the very vocabulary under test, and now contains the generated action table, so
+    // the answer key grew with each doc commit and the harness could never falsify anything.
+    // Reproduced by the pre-release review: the `check` cold-read answers "toggles a checkbox"
+    // from inside the repo (near-verbatim from CLAUDE.md) and "asserts a condition is true" from
+    // a neutral directory — a flipped verdict, and the flipped one is the trap.
+    //
     // stdin must be closed, not merely ignored: `claude -p` waits 3s for piped input otherwise.
-    const proc = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const proc = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'], cwd: NEUTRAL_CWD })
     try { proc.stdin?.end() } catch {}
     let out = ''
     proc.stdout.on('data', (d) => (out += d))

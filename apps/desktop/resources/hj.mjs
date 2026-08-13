@@ -233,6 +233,9 @@ hj test-run --json`;
       const dur = step.duration ? `${step.duration}ms` : "";
       const err = !step.passed && step.error && step.error !== "skipped" ? step.error : "";
       lines.push(`  ${step.index + 1} ${[stepStatus, desc, dur, err].filter(Boolean).join(" ")}`);
+      if (step.warning) {
+        lines.push(`      ! ${step.warning}`);
+      }
       if (!step.passed && step.context) {
         const detail = formatFailureContext(step.context);
         if (detail)
@@ -1943,6 +1946,39 @@ function exitOnTestFailure(json, subcommand) {
 `);
   }
 }
+function filterApiSection(markdown, args) {
+  const wanted = (args || []).find((a) => !a.startsWith("-"));
+  if (!wanted)
+    return markdown;
+  const lines = markdown.split(`
+`);
+  const needle = wanted.replace(/^\/+/, "").toLowerCase();
+  let start = -1;
+  for (let i = 0;i < lines.length; i++) {
+    const m = /^### `[A-Z]+ (\/\S*)`/.exec(lines[i]);
+    if (!m)
+      continue;
+    const seg = m[1].replace(/^\//, "").toLowerCase();
+    if (seg === needle || seg.split("/").pop() === needle) {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) {
+    process.stderr.write(dim2(`[hj] no API section named "${wanted}" — printing the full reference. ` + `Section headings look like \`### \`POST /screenshot\`\`.`) + `
+`);
+    return markdown;
+  }
+  let end = lines.length;
+  for (let i = start + 1;i < lines.length; i++) {
+    if (/^#{2,3} /.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start, end).join(`
+`).trimEnd();
+}
 async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
   const baseUrl = `http://localhost:${port}`;
   const jsonOutput = subArgs.includes("--json");
@@ -2021,7 +2057,7 @@ async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
     if (isGet) {
       const url2 = new URL(path, baseUrl);
       url2.searchParams.set("window", targetWindowId);
-      return doRequest(url2.toString(), "GET", undefined, { subcommand, jsonOutput });
+      return doRequest(url2.toString(), "GET", undefined, { subcommand, jsonOutput, args: filteredArgs });
     } else {
       if (!body)
         body = {};
@@ -2029,10 +2065,10 @@ async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
     }
   }
   const url = `${baseUrl}${path}`;
-  return doRequest(url, isGet ? "GET" : "POST", body, { subcommand, jsonOutput });
+  return doRequest(url, isGet ? "GET" : "POST", body, { subcommand, jsonOutput, args: filteredArgs });
 }
 async function doRequest(url, method, body, context = {}) {
-  const { subcommand, jsonOutput } = context;
+  const { subcommand, jsonOutput, args: cmdArgs } = context;
   try {
     const headers = {};
     if (process.env.HALTIJA_TOKEN)
@@ -2133,7 +2169,7 @@ async function doRequest(url, method, body, context = {}) {
       }
     } else {
       const text = await resp.text();
-      console.log(text);
+      console.log(subcommand === "api" ? filterApiSection(text, cmdArgs) : text);
     }
     if (resp.ok && !jsonOutput && !UNWRAP_DATA_SUBCOMMANDS.has(subcommand)) {
       const hint = COMMAND_HINTS[subcommand];

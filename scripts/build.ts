@@ -7,6 +7,7 @@
 import { $ } from 'bun'
 import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs'
 import { HJ_MARKER } from '../src/hj-install'
+import { stepActionsInline as stepActionsInlineForDocs } from '../src/test-actions'
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
@@ -371,7 +372,7 @@ function writeGeneratedBlocks(file: string, blocks: Record<string, string>): voi
   // byte here is loaded on every invocation and competes with the user's actual task.
   const coreLine =
     stepActionsCompact() +
-    `.\n\nAlso available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): ` +
+    `.\n\nAlso available (see [CI integration](../../../../docs/CI-INTEGRATION.md#test-step-actions)): ` +
     `${nonCoreActionsInline()}.`
   writeGeneratedBlocks('plugins/haltija-skill/skills/haltija/SKILL.md', { 'step-actions': coreLine })
   writeGeneratedBlocks('docs/CI-INTEGRATION.md', { 'step-actions': stepActionsTable() })
@@ -628,7 +629,13 @@ function generateDocsMd(): string {
   lines.push('hj test-suite tests/a.json tests/b.json  # Run multiple')
   lines.push('```')
   lines.push('')
-  lines.push('Test steps: `navigate`, `click`, `type`, `check`, `key`, `select`, `cut`, `copy`, `paste`, `wait`, `assert`, `eval`, `verify`')
+  // DERIVED, never a literal. This line is served at `GET /docs`, embedded into dist/server.js and
+  // shipped on npm — and SKILL.md tells agents `hj docs` is the quick start. Hardcoded, it advertised
+  // the deprecated `select` and omitted `drag` and all three `tabs-*`, and docs-drift could never
+  // catch it: a wrong literal regenerates to the same wrong bytes forever, so the tree stays clean.
+  // That is the limit of a "generated output matches its generator" gate — it cannot tell you the
+  // generator is wrong.
+  lines.push(`Test steps: ${stepActionsInlineForDocs()}`)
   lines.push('')
   lines.push('The `type` action uses realistic per-character keystroke simulation by default.')
   lines.push('Add `"paste": true` for fast paste-style input (still framework-compatible).')

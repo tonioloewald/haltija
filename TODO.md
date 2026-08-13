@@ -39,8 +39,8 @@ measuring instead of asserting:
 
 | claim | verdict |
 | --- | --- |
-| `check` is dangerously confusable with `assert` | **WRONG.** 3/3 reached for `assert` for an assertion; 3/3 reached for `check` to tick a checkbox; 2/3 cold-read it correctly. Agents disambiguate it in context. |
-| `verify` vs `assert` is arbitrary | **WRONG.** 3/3 picked `verify` for the polling task. |
+| `check` is dangerously confusable with `assert` | **PARTLY RIGHT — the first verdict was contaminated.** In context, fine: 3/3 pick `assert` for an assertion, 3/3 pick `check` for a checkbox. Cold, from a NEUTRAL cwd: **3/3 read it as "asserts a condition is true"**. The original 2/3-correct cold read came from our own CLAUDE.md being in the agent's context. |
+| `verify` vs `assert` is arbitrary | **MOSTLY WRONG, weaker than first measured.** 2/3 picked `verify` (was 3/3 contaminated); 1 said `wait`. |
 | `tabs-focus` misleads (sounds like a browser action) | **WRONG.** 3/3 picked it correctly. |
 | `select` is mis-assigned | **CONFIRMED, unanimously.** 3/3 reached for `select` to choose a dropdown option; 3/3 cold-read it as "choose an `<option>`". **Nobody** read it as text selection. |
 

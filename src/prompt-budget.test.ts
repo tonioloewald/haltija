@@ -18,13 +18,19 @@
 
 import { describe, it, expect } from 'bun:test'
 import { readFileSync, existsSync } from 'fs'
-import { join } from 'path'
+import { join, dirname, resolve } from 'path'
 
 const ROOT = join(import.meta.dir, '..')
 const SKILL_PATH = join(ROOT, 'plugins/haltija-skill/skills/haltija/SKILL.md')
 
 /**
- * Ceiling in bytes for the main prompt.
+ * Ceiling in BYTES for the main prompt — measured with `Buffer.byteLength`, not `String.length`.
+ *
+ * The first version measured `.length`, which is UTF-16 code units, and called the number "bytes".
+ * On this file that understated the real size by 218 (em-dashes, arrows, emoji), so the gate
+ * silently allowed a prompt over its stated ceiling. A budget that measures something other than
+ * what it claims is the same defect class as everything else this release fixed, applied to the
+ * instrument itself.
  *
  * History — keep appending, and only in one direction:
  *   2026-08-13  31_600  set at first measurement (31,304) with minimal headroom, when the step
@@ -41,7 +47,7 @@ const approxTokens = (bytes: number) => Math.round(bytes / 4)
 
 describe('the main prompt stays within budget', () => {
   it('SKILL.md is under the ceiling', () => {
-    const bytes = readFileSync(SKILL_PATH, 'utf-8').length
+    const bytes = Buffer.byteLength(readFileSync(SKILL_PATH, 'utf-8'), 'utf8')
     const headroom = SKILL_BUDGET_BYTES - bytes
     if (bytes > SKILL_BUDGET_BYTES) {
       throw new Error(
@@ -61,7 +67,7 @@ describe('the main prompt stays within budget', () => {
   it('the budget is not vacuously generous — headroom stays tight', () => {
     // A ceiling far above actual usage enforces nothing. If this fails because the prompt SHRANK,
     // that is the good case: lower SKILL_BUDGET_BYTES to lock the win in.
-    const bytes = readFileSync(SKILL_PATH, 'utf-8').length
+    const bytes = Buffer.byteLength(readFileSync(SKILL_PATH, 'utf-8'), 'utf8')
     const headroom = SKILL_BUDGET_BYTES - bytes
     expect(headroom).toBeLessThan(2_000)
   })
@@ -78,6 +84,32 @@ describe('the main prompt stays within budget', () => {
     )
     expect(between.length).toBeGreaterThan(200)
     expect(between).toContain('`navigate`')
+  })
+})
+
+describe('every pointer out of the main prompt actually goes somewhere', () => {
+  /**
+   * Deferring content to a reference is only cheaper if the reader can GET there.
+   *
+   * The generated link to the non-core action table was `../../../docs/…` — one level short, so it
+   * resolved to `plugins/docs/`, which does not exist. It was the only pointer to 10 of 17 actions,
+   * including `verify`, which has no REST endpoint and therefore no `hj api` fallback either. The
+   * budget test certified that the reference CONTAINED the words and never that anyone could reach
+   * it, which is certifying the wrong half.
+   */
+  it('resolves every relative link from SKILL.md\'s own directory', () => {
+    const body = readFileSync(SKILL_PATH, 'utf-8')
+    const dir = dirname(SKILL_PATH)
+    const broken: string[] = []
+    for (const m of body.matchAll(/\]\((\.\.?\/[^)#]+)(#[^)]*)?\)/g)) {
+      if (!existsSync(resolve(dir, m[1]))) broken.push(m[1])
+    }
+    expect(broken).toEqual([])
+  })
+
+  it('finds links to check — not a vacuous check', () => {
+    const body = readFileSync(SKILL_PATH, 'utf-8')
+    expect([...body.matchAll(/\]\(\.\.?\//g)].length).toBeGreaterThan(1)
   })
 })
 

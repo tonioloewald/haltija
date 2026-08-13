@@ -46,6 +46,14 @@ export function formatTestResult(result) {
 
       lines.push(`  ${step.index + 1} ${[stepStatus, desc, dur, err].filter(Boolean).join(' ')}`)
 
+      // A step can PASS and still have something to say — currently a deprecated action spelling.
+      // Every loop here filtered on failure, so the notice reached nobody: a suite using an old
+      // name ran clean and its author found out when the alias was deleted. The whole point of
+      // deprecating rather than breaking is that the warning arrives while there is time to act.
+      if (step.warning) {
+        lines.push(`      ! ${step.warning}`)
+      }
+
       // Failure context detail
       if (!step.passed && step.context) {
         const detail = formatFailureContext(step.context)

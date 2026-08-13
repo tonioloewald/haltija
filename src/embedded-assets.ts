@@ -3248,7 +3248,7 @@ hj test-validate tests/login.json   # Validate format
 hj test-suite tests/a.json tests/b.json  # Run multiple
 \`\`\`
 
-Test steps: \`navigate\`, \`click\`, \`type\`, \`check\`, \`key\`, \`select\`, \`cut\`, \`copy\`, \`paste\`, \`wait\`, \`assert\`, \`eval\`, \`verify\`
+Test steps: \`navigate\`, \`click\`, \`type\`, \`check\`, \`key\`, \`select-text\`, \`cut\`, \`copy\`, \`paste\`, \`drag\`, \`wait\`, \`assert\`, \`eval\`, \`verify\`, \`tabs-open\`, \`tabs-close\`, \`tabs-focus\`
 
 The \`type\` action uses realistic per-character keystroke simulation by default.
 Add \`"paste": true\` for fast paste-style input (still framework-compatible).
@@ -7469,25 +7469,21 @@ export const COMPONENT_JS: string = `(() => {
             let inputDesc = "";
             if (isCleared) {
               inputDesc = \`Clear \${inputLabel}\`;
-            } else if (inputType === "range") {
-              inputAction = "set";
-              inputDesc = \`Set \${inputLabel} to \${inputValue}\`;
-            } else if (inputType === "select-one" || inputType === "select-multiple") {
-              inputAction = "select";
-              inputDesc = \`Select "\${inputValue}" in \${inputLabel}\`;
+            } else if (inputType === "range" || inputType === "select-one" || inputType === "select-multiple" || inputType === "date" || inputType === "time" || inputType === "color") {
+              inputAction = "eval";
+              inputDesc = \`Set \${inputLabel} to "\${inputValue}"\`;
             } else if (inputType === "checkbox" || inputType === "radio") {
               inputAction = "check";
               inputDesc = \`Check \${inputLabel}\`;
-            } else if (inputType === "date" || inputType === "time" || inputType === "color") {
-              inputAction = "set";
-              inputDesc = \`Set \${inputLabel} to \${inputValue}\`;
             } else {
               inputDesc = \`Type "\${inputValue}" in \${inputLabel}\`;
             }
             steps.push(withFallback({
               action: inputAction,
               selector,
-              ...inputAction === "type" || inputAction === "set" ? { text: inputValue } : { value: inputValue },
+              ...inputAction === "eval" ? {
+                code: \`const el = document.querySelector(\${JSON.stringify(selector)});\` + \` el.value = \${JSON.stringify(inputValue)};\` + \` el.dispatchEvent(new Event('input', { bubbles: true }));\` + \` el.dispatchEvent(new Event('change', { bubbles: true }));\`
+              } : inputAction === "type" ? { text: inputValue } : { value: inputValue },
               description: inputDesc,
               ...delay && delay > 50 ? { delay } : {}
             }, event.target));

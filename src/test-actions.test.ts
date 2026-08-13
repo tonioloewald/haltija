@@ -168,3 +168,50 @@ describe('deprecated action aliases', () => {
     expect(dangling).toEqual([])
   })
 })
+
+describe('the recorder cannot emit an illegal or deprecated action', () => {
+  /**
+   * The fourth vocabulary, and the one no guard was watching.
+   *
+   * `eventsToTest()` in component.ts is a PRODUCER of steps, and it emitted `set` — which is not a
+   * step action at all, so recorded suites died with "Unsupported step action: set" — and `select`
+   * for dropdowns, which resolves to `select-text` and dispatches a text-selection event at the
+   * <select>: the step PASSES having chosen nothing. Both predate this release; what this release
+   * nearly shipped was a CHANGELOG line and a code comment claiming they were fixed when only one
+   * of the two emitters had been touched.
+   *
+   * `no alias may shadow a live action` could not see this: it compares the alias table to the
+   * action list and never looks at a producer. Checking one direction of a triangle is not checking
+   * the triangle.
+   */
+  const COMPONENT_SRC = readFileSync(join(import.meta.dir, 'component.ts'), 'utf-8')
+
+  /** Action literals assigned or pushed inside the recorder's event→step conversion. */
+  function recorderActions(): string[] {
+    const start = COMPONENT_SRC.indexOf('private eventsToTest(')
+    expect(start).toBeGreaterThan(-1)
+    // The conversion runs to the end of the function; bound generously and rely on the literal
+    // shapes below rather than trying to brace-match a large function.
+    const body = COMPONENT_SRC.slice(start, start + 40_000)
+    const out = new Set<string>()
+    for (const m of body.matchAll(/\baction:\s*'([a-z-]+)'/g)) out.add(m[1])
+    for (const m of body.matchAll(/\binputAction\s*=\s*'([a-z-]+)'/g)) out.add(m[1])
+    return [...out]
+  }
+
+  it('finds the recorder emitters — not a vacuous check', () => {
+    const found = recorderActions()
+    expect(found.length).toBeGreaterThan(3)
+    expect(found).toContain('click')
+  })
+
+  it('every action the recorder emits is a legal action', () => {
+    const illegal = recorderActions().filter((a) => !isTestStepAction(a))
+    expect(illegal).toEqual([])
+  })
+
+  it('the recorder never emits a DEPRECATED spelling — a new recording must not be born stale', () => {
+    const deprecated = recorderActions().filter((a) => a in DEPRECATED_ACTION_ALIASES)
+    expect(deprecated).toEqual([])
+  })
+})

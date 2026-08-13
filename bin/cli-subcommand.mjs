@@ -1065,6 +1065,40 @@ function exitOnTestFailure(json, subcommand) {
   }
 }
 
+/**
+ * One endpoint's section out of API.md, or the whole document when no name is given.
+ *
+ * Matches the `### \`METHOD /path\`` headings the generator emits, on the path's last segment, so
+ * `hj api screenshot` and `hj api map` both work. An unknown name returns the full document with a
+ * note on stderr rather than nothing — a lookup that silently prints emptiness is worse than one
+ * that over-delivers, and the caller has already paid for the fetch.
+ */
+export function filterApiSection(markdown, args) {
+  const wanted = (args || []).find((a) => !a.startsWith('-'))
+  if (!wanted) return markdown
+  const lines = markdown.split('\n')
+  const needle = wanted.replace(/^\/+/, '').toLowerCase()
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^### `[A-Z]+ (\/\S*)`/.exec(lines[i])
+    if (!m) continue
+    const seg = m[1].replace(/^\//, '').toLowerCase()
+    if (seg === needle || seg.split('/').pop() === needle) { start = i; break }
+  }
+  if (start === -1) {
+    process.stderr.write(
+      dim(`[hj] no API section named "${wanted}" — printing the full reference. ` +
+        `Section headings look like \`### \`POST /screenshot\`\`.`) + '\n',
+    )
+    return markdown
+  }
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{2,3} /.test(lines[i])) { end = i; break }
+  }
+  return lines.slice(start, end).join('\n').trimEnd()
+}
+
 export async function runSubcommand(subcommand, subArgs, port = '8700', options = {}) {
   const baseUrl = `http://localhost:${port}`
   const jsonOutput = subArgs.includes('--json')
@@ -1184,7 +1218,7 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
     if (isGet) {
       const url = new URL(path, baseUrl)
       url.searchParams.set('window', targetWindowId)
-      return doRequest(url.toString(), 'GET', undefined, { subcommand, jsonOutput })
+      return doRequest(url.toString(), 'GET', undefined, { subcommand, jsonOutput, args: filteredArgs })
     } else {
       if (!body) body = {}
       body.window = targetWindowId
@@ -1192,11 +1226,11 @@ export async function runSubcommand(subcommand, subArgs, port = '8700', options 
   }
 
   const url = `${baseUrl}${path}`
-  return doRequest(url, isGet ? 'GET' : 'POST', body, { subcommand, jsonOutput })
+  return doRequest(url, isGet ? 'GET' : 'POST', body, { subcommand, jsonOutput, args: filteredArgs })
 }
 
 async function doRequest(url, method, body, context = {}) {
-  const { subcommand, jsonOutput } = context
+  const { subcommand, jsonOutput, args: cmdArgs } = context
   try {
     const headers = {}
     if (process.env.HALTIJA_TOKEN) headers['X-Haltija-Token'] = process.env.HALTIJA_TOKEN
@@ -1369,7 +1403,14 @@ async function doRequest(url, method, body, context = {}) {
       }
     } else {
       const text = await resp.text()
-      console.log(text)
+      // `hj api <endpoint>` is a LOOKUP, not a dump.
+      //
+      // SKILL.md defers detail to `hj api screenshot` / `hj api map` to keep the always-loaded
+      // prompt small. That only pays off if the pointer works: positionals were dropped for GET
+      // subcommands, so every form returned the whole 64KB file — ~3KB saved from the prompt and
+      // ~16k tokens spent the first time anyone followed the advice. Filtering client-side needs no
+      // server change and no new endpoint.
+      console.log(subcommand === 'api' ? filterApiSection(text, cmdArgs) : text)
     }
 
     // Show hint for this command (if available and successful).

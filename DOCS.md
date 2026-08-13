@@ -295,7 +295,7 @@ hj test-validate tests/login.json   # Validate format
 hj test-suite tests/a.json tests/b.json  # Run multiple
 ```
 
-Test steps: `navigate`, `click`, `type`, `check`, `key`, `select`, `cut`, `copy`, `paste`, `wait`, `assert`, `eval`, `verify`
+Test steps: `navigate`, `click`, `type`, `check`, `key`, `select-text`, `cut`, `copy`, `paste`, `drag`, `wait`, `assert`, `eval`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`
 
 The `type` action uses realistic per-character keystroke simulation by default.
 Add `"paste": true` for fast paste-style input (still framework-compatible).

@@ -27,7 +27,7 @@ that's on your PATH. `hj docs` is the quick start, `hj api` the full reference,
 - **In CI, `--ci` is the default engine (Electron/Chromium) and needs no Playwright.** Haltija's
   own `--headless` mode drives *Playwright* Chromium and requires the `playwright` package — pick
   it only for the browser-specific/multi-engine case above, not just because it says "for CI".
-  See [CI integration](../../../docs/CI-INTEGRATION.md) → "Which engine?".
+  See [CI integration](../../../../docs/CI-INTEGRATION.md) → "Which engine?".
 
 ## Which server am I driving?
 
@@ -411,17 +411,18 @@ seeded data) so the render set can run as a quick gate.
 <!-- Do not edit by hand — see src/test-actions.ts -->
 `navigate` — url; `click` — selector or ref; `type` — selector/ref, text, clear, paste, humanlike; `key` — key, selector, modifiers; `wait` — duration, selector, forWindow, url; `assert` — assertion — exists, visible, hidden, text, value, attribute, url; `eval` — code.
 
-Also available (see [CI integration](../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select-text`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
+Also available (see [CI integration](../../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select-text`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
 <!-- END:step-actions -->
+
+  **`select` is deprecated — use `select-text`.** It still runs, and a step that uses it now comes
+  back with a `warning` naming the replacement (shown in the test report, and on `step.warning` in
+  `--json`). `select` is being freed to mean what everyone expects — pick an option from a
+  `<select>` — which haltija cannot do yet; until then, set one with an `eval` step.
 
   **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, which
   is a superset — `/drag` was documented there for releases while the runner had no `drag` case, so
   a reasonable-looking suite failed with `Unsupported step action: drag`. `hj test validate` rejects
   an unknown action (with a "did you mean") before the suite runs.
-- **A `wait` must be given something to wait for**: `duration`/`ms`, `selector` (or `forElement`),
-  `forWindow: true`, or `url`. A `wait` with none of them used to be reported as a **passing** step
-  — so a guard that had never waited for anything looked green, and every assertion after it raced
-  the page. It is now an error.
 - **Assertion types:** `exists`, `visible`, `hidden`, `text`, `value`, `attribute`, `url`.
 - **Selectors — prefer user-centric:** `button:has-text("Submit")`, `a:has-text("Settings")`,
   `input[type='email']`, `[data-testid='user-menu']`. Avoid brittle structural selectors.

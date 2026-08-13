@@ -5831,25 +5831,30 @@ export class DevChannel extends HTMLElement {
 
           if (isCleared) {
             inputDesc = `Clear ${inputLabel}`
-          } else if (inputType === 'range') {
-            inputAction = 'set'
-            inputDesc = `Set ${inputLabel} to ${inputValue}`
           } else if (
+            inputType === 'range' ||
             inputType === 'select-one' ||
-            inputType === 'select-multiple'
-          ) {
-            inputAction = 'select'
-            inputDesc = `Select "${inputValue}" in ${inputLabel}`
-          } else if (inputType === 'checkbox' || inputType === 'radio') {
-            inputAction = 'check'
-            inputDesc = `Check ${inputLabel}`
-          } else if (
+            inputType === 'select-multiple' ||
             inputType === 'date' ||
             inputType === 'time' ||
             inputType === 'color'
           ) {
-            inputAction = 'set'
-            inputDesc = `Set ${inputLabel} to ${inputValue}`
+            // NO LEGAL ACTION SETS THESE, so the recorder emits an `eval` that actually works.
+            //
+            // It used to emit `set` — which is not a step action at all, so the suite failed with
+            // "Unsupported step action: set" — and, for dropdowns, `select`, which now resolves to
+            // `select-text` and dispatches a text-selection event at the <select>: the step PASSES
+            // while choosing nothing. A recorder that emits a silently-wrong step is worse than one
+            // that emits an obviously-broken one.
+            //
+            // The real gap is a first-class option-pick action; `select` is being freed for exactly
+            // that (see DEPRECATED_ACTION_ALIASES). Until it exists, an explicit eval is the honest
+            // recording: it says what it does and it runs.
+            inputAction = 'eval'
+            inputDesc = `Set ${inputLabel} to "${inputValue}"`
+          } else if (inputType === 'checkbox' || inputType === 'radio') {
+            inputAction = 'check'
+            inputDesc = `Check ${inputLabel}`
           } else {
             inputDesc = `Type "${inputValue}" in ${inputLabel}`
           }
@@ -5859,9 +5864,17 @@ export class DevChannel extends HTMLElement {
               {
                 action: inputAction,
                 selector,
-                ...(inputAction === 'type' || inputAction === 'set'
-                  ? { text: inputValue }
-                  : { value: inputValue }),
+                ...(inputAction === 'eval'
+                  ? {
+                      code:
+                        `const el = document.querySelector(${JSON.stringify(selector)});` +
+                        ` el.value = ${JSON.stringify(inputValue)};` +
+                        ` el.dispatchEvent(new Event('input', { bubbles: true }));` +
+                        ` el.dispatchEvent(new Event('change', { bubbles: true }));`,
+                    }
+                  : inputAction === 'type'
+                    ? { text: inputValue }
+                    : { value: inputValue }),
                 description: inputDesc,
                 ...(delay && delay > 50 ? { delay } : {}),
               },
