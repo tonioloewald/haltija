@@ -196,36 +196,15 @@ any `<canvas>` is embedded as **real pixels** inside it — for a 3D app that's 
 Use `--no-fallback` if you need the hard error instead — or `--schematic` to *prefer* the schematic
 even when real capture is available (cheaper, deterministic, and it carries the contrast audit).
 
-**Check `displaySurface` on a browser screen-share capture.** When `source: "getDisplayMedia"` (the
-🖥-button path), the result reports what the user actually shared:
+**A screen-share capture may not be this tab.** On the 🖥 path the user picks what to share and the
+grant lasts the session, so a wrong pick returns the wrong surface on *every* later capture. Results
+carry `displaySurface` (`browser`/`window`/`monitor`, or `null` meaning **unchecked, not fine**) and
+a `warning` for the wrong ones. Seeing that warning, don't reason about layout from the image —
+re-pick with 🖥 twice. Full table: `hj api screenshot`.
 
-| `displaySurface` | meaning |
-|---|---|
-| `"browser"` | a tab — the expected case, no warning |
-| `"window"` | a WINDOW, not this tab — carries a `warning`; the pixels are that window |
-| `"monitor"` | a WHOLE MONITOR — carries a `warning`; may include other applications, won't follow the page |
-| `null` | this browser doesn't report it. **Not a pass** — it means unchecked |
-
-The 🖥 button only *defaults* the picker to the current tab; the user can pick anything, and the
-grant then lasts for the session. So a `monitor` grant means every subsequent `hj screenshot`
-returns the wrong surface, confidently, until it's re-picked (click 🖥 twice). If you see one of
-these warnings, don't reason about layout from that image.
-
-Still open, deliberately: haltija cannot yet confirm a `browser` grant is **this** tab rather than
-another one. Doing so needs `setCaptureHandleConfig()`, which mutates document-level state on the
-page the widget is injected into — an injected tool shouldn't quietly change its host's
-configuration. So `browser` means "a tab", not "your tab".
-
-Nodes can carry **`smallTarget`** — an interactive control below WCAG 2.5.8's 24×24 CSS px
-minimum (44×44 is the AAA/Apple/Material recommendation), reported as e.g.
-`"16x16 (WCAG 2.5.8 needs 24x24; 44x44 recommended)"` and drawn as an amber bar along the bottom
-edge. Inline links inside a sentence are exempt, per the spec — they are sized by their text, and
-flagging them would fire on every paragraph.
-
-Nodes can carry **`zeroSize: true`** — a control that works but occupies no box (the accessible
-file-input / custom-checkbox pattern: a 0x0 `<input>` operated through its `<label>`). Click the
-label, not the input; the input's coordinates mean nothing. Anything genuinely hidden is left out
-altogether, so `zeroSize` always means *operable but invisible* — never *not there*.
+Map nodes can carry **`smallTarget`** (an interactive control below the WCAG 24×24 minimum) and
+**`zeroSize: true`** (operable but occupying no box — the accessible file-input pattern; click its
+`<label>`, not the input). Both are spelled out in `hj api map`.
 
 `hj map --image` instead **saves a rasterized schematic PNG and prints only its path** — one labeled
 box per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is
@@ -285,36 +264,14 @@ An ordinary `<a target="_blank">` (or a featureless `window.open(url, '_blank')`
 could never complete.
 
 **`hj map --image` writes a LEGEND beside the image.** stdout stays a bare path; stderr names the
-sibling `*.legend.json`, which maps every `@ref` on the picture to what it is — tag, text, role,
-href, value, state, and any findings. The image says *where* and *which*; the legend says *what*.
+sibling `*.legend.json`, mapping every `@ref` on the picture to what it is. The image says *where*
+and *which*; the legend says *what* — so a 16×16 icon button draws just its ref, and you look it up.
 
-That split is what lets the renderer stop cramming. A 16×16 icon button can never hold
-`@42 button Delete account`, so below the touch-target threshold it draws the ref and nothing else,
-and you look the ref up. Read the number off the picture, find it in the legend.
-
-Three things to know:
-
-- **`--image` replaces the JSON on stdout; it doesn't add to it.** Before 1.12.0 it printed the
-  whole map *plus* the image metadata and path, so it was strictly more expensive than plain
-  `hj map` (measured: 5,910 chars vs 5,447) — the flag whose purpose is to be cheaper could never
-  pay off. It now prints one line, and the size/format/cost summary goes to **stderr**, so stdout
-  stays a bare path you can hand straight to a file read.
-- It must be a bitmap to be worth it. An image of text costs a vision encoder far fewer tokens than
-  the same text tokenized — but that's true of the **rendered pixels**, not of SVG markup (which is
-  just text tokens, and worse than the JSON).
-- **The win is density-dependent, so check before spending it — and use the right numbers.** Vision
-  cost scales with **pixels**: roughly `(width × height) / 750` for Claude. There is **no fixed
-  floor** — a 491×480 schematic is ~314 tokens, and `--max-width 200` makes it ~52. (~1600 is the
-  practical *ceiling*, because larger images are downscaled before tokenisation. Earlier versions of
-  this file said "~1000–1600 regardless of content", which stated the ceiling as a floor and
-  overstated the small cases by up to 25×, in the direction that talks you out of the cheaper
-  option.)
-  On the JSON side, `cost.approxJsonTokens` measures the **compact** JSON; anything that
-  pretty-prints it — including `hj map` — emits roughly 1.8× more, so treat it as a lower bound.
-  The response carries `cost.approxImageTokens` for the schematic actually produced, and `hj map
-  --image` prints both on stderr. Prefer the measured pair over any rule of thumb, including this
-  one. The schematic is also worth rendering for a human: it's deterministic, so a diff between two
-  runs is a regression you can see.
+`--image` **replaces** the JSON on stdout, it doesn't add to it. Vision cost scales with **pixels**
+(~`w×h/750` for Claude) with no fixed floor — a 491×480 schematic is ~314 tokens, `--max-width 200`
+makes it ~52. Don't guess: the response carries `cost.approxJsonTokens` and `cost.approxImageTokens`
+for this page, and `hj map --image` prints both on stderr. Prefer that measured pair to any rule of
+thumb, including this one.
 
 **Seeing a `<canvas>` (3D scenes, render-to-texture UI).** Use `--canvas <selector>` to read the
 canvas's own pixels instead of capturing the screen:

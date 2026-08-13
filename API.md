@@ -437,6 +437,18 @@ trusting the map as wiring rather than as a guess.
 Cheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport
 or animation timing, and structure (nesting) is carried for free.
 
+A node may carry **`smallTarget`** — an interactive control below WCAG 2.5.8's 24x24 CSS px minimum
+(44x44 is the AAA / Apple / Material recommendation), reported as e.g.
+`"16x16 (WCAG 2.5.8 needs 24x24; 44x44 recommended)"` and drawn as an amber bar along the bottom
+edge of the schematic. Inline links inside a sentence are exempt, per the spec — they are sized by
+their text, and flagging them would fire on every paragraph.
+
+With `image` and `file` (both default true), the response carries **`legendPath`**: a sibling
+`*.legend.json` written beside the image, holding a flat `ref -> facts` index of the ref-bearing
+nodes. The image says WHERE and WHICH, the legend says WHAT — which is what makes it safe to stop
+cramming captions into boxes too small to hold them. Read the number off the picture, look it up
+there.
+
 A node may carry **`zeroSize: true`** — a real, operable control that occupies no box. The standard
 accessible pattern for file inputs and custom checkboxes is a 0x0 `<input>` driven by a `<label>`,
 so its coordinates are meaningless and clicking it directly may do nothing: click the associated
@@ -1736,7 +1748,27 @@ When file=true (default from CLI), saves to <tmpdir>/haltija-screenshots/ and re
 Artifacts older than 24h (and beyond the most recent 200) are pruned automatically.
 When file=false, returns base64 data URL in response JSON.
 
-Response: { success, path?, image?, width, height, source, canvas?, warning? }
+**`displaySurface` — what the user ACTUALLY shared.** On the `source: "getDisplayMedia"` path (the
+🖥-button grant), the picker only *defaults* to the current tab; the user can pick anything, and the
+grant lasts for the session. So a wrong pick means every later capture returns the wrong surface,
+confidently, until it is re-picked (click 🖥 twice).
+
+| `displaySurface` | meaning |
+|---|---|
+| `"browser"` | a tab — the expected case, no warning |
+| `"window"` | a WINDOW, not this tab — carries a `warning`; the pixels are that window |
+| `"monitor"` | a WHOLE MONITOR — carries a `warning`; may include other apps, won't follow the page |
+| `null` | this browser does not report it. **Not a pass** — it means unchecked |
+
+If a warning is present, do not reason about layout from that image. Note `"browser"` means "a tab",
+not necessarily *your* tab: confirming that needs `setCaptureHandleConfig()`, which mutates
+document-level state on the page the widget is injected into, and an injected tool should not
+quietly change its host's configuration.
+
+The Electron desktop app uses native `capturePage` instead and needs no grant, so none of this
+applies there.
+
+Response: { success, path?, image?, width, height, source, displaySurface?, canvas?, warning? }
 
 **Parameters:**
 

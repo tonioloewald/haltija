@@ -29,8 +29,12 @@ const SKILL_PATH = join(ROOT, 'plugins/haltija-skill/skills/haltija/SKILL.md')
  * History — keep appending, and only in one direction:
  *   2026-08-13  31_600  set at first measurement (31,304) with minimal headroom, when the step
  *                       action list became generated and core-gated.
+ *   2026-08-13  28_600  after moving displaySurface / smallTarget / legendPath prose into the
+ *                       schema (so it generates into API.md) and cutting the three largest caveat
+ *                       blocks to rule-plus-pointer. The rule survives in the prompt; the incident
+ *                       lives in CHANGELOG.md and code comments, where it already did.
  */
-const SKILL_BUDGET_BYTES = 31_600
+const SKILL_BUDGET_BYTES = 28_600
 
 /** Rough tokens; 4 bytes/token is close enough for English prose to reason about. */
 const approxTokens = (bytes: number) => Math.round(bytes / 4)
