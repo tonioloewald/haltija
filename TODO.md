@@ -164,6 +164,87 @@ Marked `(unverified)` where the review reported but did not independently confir
   spelling and re-read the paragraphs beside new markers; a deferral pointer is load-bearing —
   prefer a runnable command over a relative path, since the prompt ships where the reference does not.
 
+## "The test passed but the app was wonky" — a third verdict worth having
+
+**The gap this names.** A human tester reports things no assertion covers: *it worked, but the
+button flashed twice; there was a red error in the console; something stayed selected; focus went
+nowhere.* Automated suites throw all of that away, because the only channels are PASS and FAIL and
+none of it is a failure. The result is a green suite over an app that is visibly off — and the tester
+who would have mentioned it has been replaced by something that cannot.
+
+Haltija is unusually well placed here: it already watches console, network, mutations and semantic
+events, and it drives the app itself, so it knows exactly *when* each thing happened relative to
+each step. Nothing else in the stack has that alignment.
+
+**Three channels, and keeping them distinct is the whole design:**
+
+| channel | means | fails the run? |
+| --- | --- | --- |
+| `error` | the assertion did not hold | **yes** |
+| `warning` | *haltija* has something to say about how you drove it (deprecated action, a drag that cannot work) | no |
+| **`observations`** *(new)* | the *app* did something a human would have mentioned | **no** |
+
+Folding observations into `warning` would be wrong: one is about the tool, the other about the
+product under test, and a consumer wants to act on them very differently. Failing on them would be
+worse — the moment a hygiene finding can break a build, it gets suppressed and the channel dies.
+
+**Candidates, cheapest first.** Each is an after-step probe, and each is something a tester says out
+loud:
+
+- [ ] **Stray text selection.** `getSelection().toString()` non-empty after a step that should not
+  select. *Measured: haltija's own synthetic click and drag leave NO selection* — synthetic events
+  don't drive native text selection, the same reason `drag` can't move an `<input type=range>` — so
+  anything found here is the app's own doing and worth reporting rather than tool noise.
+- [ ] **Console errors / unhandled rejections during the step.** We already capture console; nothing
+  correlates it to the step that caused it. The highest-value one: a suite passes while the app is
+  throwing.
+- [ ] **A 4xx/5xx response during a passing step.** Same shape — captured, uncorrelated.
+- [ ] **Focus black hole.** `document.activeElement` is `<body>` after interacting with a focusable
+  control. Keyboard users hit this constantly and no assertion notices.
+- [ ] **An `aria-live` region announced during a passing step.** Often an error toast. The test
+  asserts the happy path held while the app told a screen-reader user it failed.
+- [ ] **The element moved between mousedown and mouseup** — the click landed somewhere else, and
+  passed because the assertion was about the outcome, not the route.
+- [ ] **A step much slower than its peers**, so "it worked but felt awful" has a number.
+
+**Reporting.** Never in the exit code. Print them under the run summary and put them in the JSON, so
+CI can *display* wonkiness without gating on it — and a lane that wants to gate can opt in with a
+flag, the same way `--strict` promotes advisory warnings today.
+
+**Prior art to check before building:** Playwright has no equivalent (it has traces, which record
+everything and interpret nothing); Lighthouse scores a page, not a *flow*. If that survives a proper
+look, this is a genuinely new thing rather than a reimplementation — worth saying carefully rather
+than claiming.
+
+## Next release — the queue, in the order I would do it
+
+**Blocked on a release being possible** (each changes startup or packaging and wants exercising):
+
+- [ ] **#32(a) — open BOTH transports by default.** The asymmetry is the bug: a shared server's
+  capabilities should not depend on which directory started it. Means shipping certs or generating
+  them on first run; changes startup for every existing install. (b) is done; (c) — explain a failed
+  connection in the page console — is now cheap because `/status` exposes transports.
+- [ ] **`apps/mcp` packaging.** Not in `files`, so npm users have no `apps/mcp/` for `--setup-mcp`
+  to find. Two defensible answers: ship `apps/mcp/build/`, or detect the absence and say so rather
+  than writing a config that points at nothing.
+
+**Open majors carried forward:**
+
+- [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including
+  the one it was filed against; the reporter's own control disproved the regression framing. Stays
+  open as a record. If it recurs: `hj doctor` now reports rAF, and re-injection can revive a killed
+  widget, so those two facts will split the cause.
+- [ ] **#1 / #2** — awaiting the reporter's judgement on whether declared-origin routing (declaration,
+  not inference) closes them. Commented and retitled; do not close unilaterally.
+- [ ] **#16** — native tosiAgent bridge, HOLD pending tosijs.
+- [ ] **Option selection** (`select-option`, or a step form of `/select`). 3/3 agents reach for
+  `select` for this; haltija cannot do it at all. Sequencing: the `select` alias must be DELETED
+  before the word is reused — `no alias may shadow a live action` enforces it. Note `select` already
+  has a third meaning (`POST /select` is interactive element picking).
+- [ ] **1.13: adopt tosijs-floorplan** as the schematic renderer, delete ours, become a producer.
+- [ ] **`map` may be the wrong name** — it lost to `form` and `tree` in two framings. n=3 and n=1 on
+  the flagship command; gather more samples before renaming anything.
+
 ### Next up (1.13)
 
 - Adopt **tosijs-floorplan** as the schematic renderer (see `UPSTREAM.md`), which subsumes #20.2/#20.5.
