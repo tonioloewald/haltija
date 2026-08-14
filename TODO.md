@@ -128,9 +128,12 @@ Marked `(unverified)` where the review reported but did not independently confir
 - [ ] `apps/mcp/build/endpoints.json` is **7 months stale** — the committed MCP server has been
   serving tool definitions missing `/map`, `/find`, `/form`, `/wait`, `/network*`, `/video/*`.
   Nothing in the build runs `tsc` inside `apps/mcp`. A docs-drift-style check would catch it.
-- [ ] `apps/mcp` is not in `package.json` `files`, yet `bin/mcp-setup.mjs` points at
-  `apps/mcp/build/index.js` inside the package (twice under the old name `tosijs-dev`). npm users
-  running `--setup-mcp` get a config pointing at a file that isn't there.
+- [ ] **`apps/mcp` is not in `package.json` `files`** — so npm users have no `apps/mcp/` at all,
+  yet `bin/mcp-setup.mjs` points there. The stale `tosijs-dev` package name in those paths is fixed;
+  the packaging question is NOT, because it is a real decision with two defensible answers: ship
+  `apps/mcp/build/` (a few KB, and `--setup-mcp` starts working for npm users) or make the setup
+  detect the missing file and say so instead of writing a config that points at nothing. Wants a
+  release to validate either way, so it is deliberately left for when releases resume.
 - [ ] No ceiling on `src/api-schema.ts` description prose while SKILL.md has one — "trim the prompt"
   has a documented outflow and no meter on the inflow.
 

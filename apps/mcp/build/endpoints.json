@@ -1,933 +1,2122 @@
 [
-    {
-        "path": "/tree",
-        "method": "POST",
-        "summary": "Get DOM tree structure",
-        "description": "Returns hierarchical view of page elements with flags for interactivity, visibility, data bindings, shadow DOM, etc. Great for understanding page structure.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Root element selector"
-                },
-                "depth": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Max depth (-1 = unlimited, default 3)"
-                },
-                "includeText": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Include text content (default true)"
-                },
-                "visibleOnly": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Only visible elements (default false)"
-                },
-                "pierceShadow": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Pierce shadow DOM (default false)"
-                },
-                "compact": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Minimal output (default false)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
+  {
+    "path": "/tree",
+    "method": "POST",
+    "summary": "Get DOM tree structure",
+    "description": "Returns hierarchical view of page elements. Best for understanding page structure before interacting.\n\nResponse structure:\n  { tag, id?, classes?, attrs?, text?, value?, checked?, children?, flags?: { interactive, hidden, hasAria, ... } }\n\nFlags help identify interactive elements (buttons, inputs) and hidden content.\nForm inputs include live value/checked state (not just HTML attribute).\n\nUse ancestors:true to see parent elements when inspecting deep elements.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Root element selector"
+        },
+        "depth": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max depth (-1 = unlimited). Default: unlimited"
+        },
+        "includeText": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include text content (default true)"
+        },
+        "visibleOnly": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only visible elements (default false)"
+        },
+        "interactiveOnly": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only interactive elements and their ancestors (default false)"
+        },
+        "pierceShadow": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Pierce shadow DOM (default true)"
+        },
+        "pierceFrames": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Pierce same-origin iframes (default true)"
+        },
+        "compact": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Minimal output (default false)"
+        },
+        "ancestors": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include ancestor path from root (default false)"
+        },
+        "includeBox": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include each node's bounding box { x, y, w, h, visible } (default false)"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "'actionable' returns a page action summary (url, title, headings, buttons, links, inputs, selects) instead of the DOM tree"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
         }
-    },
-    {
-        "path": "/query",
-        "method": "POST",
-        "summary": "Query DOM elements by selector",
-        "description": "Find elements matching a CSS selector. Returns basic element info.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector"
-                },
-                "all": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Return all matches (default false = first only)"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/inspect",
-        "method": "POST",
-        "summary": "Deep inspection of an element",
-        "description": "Get detailed info: geometry, computed styles, ARIA attributes, visibility, scroll position, and more.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/inspectAll",
-        "method": "POST",
-        "summary": "Inspect multiple elements",
-        "description": "Deep inspection of all elements matching selector.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector"
-                },
-                "limit": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Max elements (default 10)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/click",
-        "method": "POST",
-        "summary": "Click an element",
-        "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector of element to click"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/type",
-        "method": "POST",
-        "summary": "Type text into an element",
-        "description": "Focus element and type text. Supports human-like typing with variable delays and occasional typos that get corrected.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector of input/textarea"
-                },
-                "text": {
-                    "type": "string",
-                    "description": "Text to type"
-                },
-                "humanlike": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Human-like delays (default true)"
-                },
-                "typoRate": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Typo probability 0-1 (default 0.03)"
-                },
-                "minDelay": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Min ms between keys (default 50)"
-                },
-                "maxDelay": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Max ms between keys (default 150)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector",
-                "text"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/drag",
-        "method": "POST",
-        "summary": "Drag from an element",
-        "description": "Simulates drag: mousedown on element, mousemove by delta, mouseup. Good for sliders, resizing, reordering.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector of drag handle"
-                },
-                "deltaX": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Horizontal distance in pixels"
-                },
-                "deltaY": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Vertical distance in pixels"
-                },
-                "duration": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Drag duration in ms (default 300)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/highlight",
-        "method": "POST",
-        "summary": "Visually highlight an element",
-        "description": "Draw attention to an element with colored border and optional label. Great for showing users what you found.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector"
-                },
-                "label": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Label text to show"
-                },
-                "color": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "CSS color (default #6366f1)"
-                },
-                "duration": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Auto-hide after ms (omit for manual)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "selector"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/unhighlight",
-        "method": "POST",
-        "summary": "Remove highlight",
-        "description": "Remove any active highlight overlay.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/scroll",
-        "method": "POST",
-        "summary": "Scroll to element or position",
-        "description": "Smooth scroll with natural easing. Can scroll to a selector, coordinates, or relative amount.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "CSS selector to scroll into view"
-                },
-                "x": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Absolute X position in pixels"
-                },
-                "y": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Absolute Y position in pixels"
-                },
-                "deltaX": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Relative horizontal scroll in pixels"
-                },
-                "deltaY": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Relative vertical scroll in pixels"
-                },
-                "duration": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Animation duration in ms (default 500)"
-                },
-                "easing": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Easing function: ease-out (default), ease-in-out, linear"
-                },
-                "block": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Vertical alignment: center (default), start, end, nearest"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/navigate",
-        "method": "POST",
-        "summary": "Navigate to a URL",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "URL to navigate to"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "url"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/refresh",
-        "method": "POST",
-        "summary": "Refresh the page",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hard": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Bypass cache (default false)"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/location",
-        "method": "GET",
-        "summary": "Get current URL and title",
-        "description": "Returns the current page URL and document title."
-    },
-    {
-        "path": "/mutations/watch",
-        "method": "POST",
-        "summary": "Start watching DOM mutations",
-        "description": "Begin capturing DOM changes (element adds/removes, attribute changes). Uses presets for filtering.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "root": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Root selector to watch (default body)"
-                },
-                "childList": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Watch child additions/removals (default true)"
-                },
-                "attributes": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Watch attribute changes (default true)"
-                },
-                "characterData": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Watch text content changes (default false)"
-                },
-                "subtree": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Watch all descendants (default true)"
-                },
-                "debounce": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Debounce ms (default 100)"
-                },
-                "preset": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none"
-                },
-                "filters": {
-                    "description": "Custom filter configuration",
-                    "type": [
-                        null,
-                        "null"
-                    ]
-                },
-                "pierceShadow": {
-                    "type": [
-                        "boolean",
-                        "null"
-                    ],
-                    "description": "Watch inside shadow DOM (default false)"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/mutations/unwatch",
-        "method": "POST",
-        "summary": "Stop watching mutations",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/mutations/status",
-        "method": "GET",
-        "summary": "Get mutation watch status"
-    },
-    {
-        "path": "/events/watch",
-        "method": "POST",
-        "summary": "Start watching semantic events",
-        "description": "Begin capturing aggregated events (clicks, typing, navigation). Retrieve with GET /events. Events are semantic: \"user typed hello\" not 5 keydown events.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "preset": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Verbosity: minimal, interactive, detailed, debug"
-                },
-                "categories": {
-                    "type": [
-                        "array",
-                        "null"
-                    ],
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Specific categories to watch"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/events/unwatch",
-        "method": "POST",
-        "summary": "Stop watching events",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/events",
-        "method": "GET",
-        "summary": "Get captured semantic events",
-        "description": "Returns buffered events since watch started. Events are aggregated and meaningful."
-    },
-    {
-        "path": "/events/stats",
-        "method": "GET",
-        "summary": "Get event aggregation statistics",
-        "description": "Shows noise reduction metrics: raw DOM events vs semantic events emitted."
-    },
-    {
-        "path": "/console",
-        "method": "GET",
-        "summary": "Get console output",
-        "description": "Returns captured console.log/warn/error/info from the page."
-    },
-    {
-        "path": "/eval",
-        "method": "POST",
-        "summary": "Execute JavaScript",
-        "description": "Run arbitrary JavaScript in the browser context. Returns the result.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "JavaScript code to execute"
-                },
-                "window": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Target window ID"
-                }
-            },
-            "required": [
-                "code"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/screenshot",
-        "method": "POST",
-        "summary": "Capture a screenshot",
-        "description": "Capture the page or a specific element as base64 PNG.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Element to capture (omit for full page)"
-                },
-                "scale": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Scale factor (default 1)"
-                },
-                "maxWidth": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Max width in pixels"
-                },
-                "maxHeight": {
-                    "type": [
-                        "number",
-                        "null"
-                    ],
-                    "description": "Max height in pixels"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/select/start",
-        "method": "POST",
-        "summary": "Start interactive selection",
-        "description": "User drags to select a region. Call /select/result to get elements in selection.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/select/cancel",
-        "method": "POST",
-        "summary": "Cancel selection mode",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/select/status",
-        "method": "GET",
-        "summary": "Check if selection is active"
-    },
-    {
-        "path": "/select/result",
-        "method": "GET",
-        "summary": "Get selection result",
-        "description": "After user completes selection, returns the region and elements within."
-    },
-    {
-        "path": "/select/clear",
-        "method": "POST",
-        "summary": "Clear selection result",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/windows",
-        "method": "GET",
-        "summary": "List connected windows",
-        "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles."
-    },
-    {
-        "path": "/tabs/open",
-        "method": "POST",
-        "summary": "Open a new tab",
-        "description": "Desktop app only. Opens a new tab.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "URL to open"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/tabs/close",
-        "method": "POST",
-        "summary": "Close a tab",
-        "description": "Desktop app only. Closes specified tab.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "window": {
-                    "type": "string",
-                    "description": "Window ID to close"
-                }
-            },
-            "required": [
-                "window"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/tabs/focus",
-        "method": "POST",
-        "summary": "Focus a tab",
-        "description": "Desktop app only. Brings tab to front.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "window": {
-                    "type": "string",
-                    "description": "Window ID to focus"
-                }
-            },
-            "required": [
-                "window"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/recording/start",
-        "method": "POST",
-        "summary": "Start recording user actions",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/recording/stop",
-        "method": "POST",
-        "summary": "Stop recording",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/recording/generate",
-        "method": "POST",
-        "summary": "Generate test from recording",
-        "description": "Converts recorded semantic events into a JSON test file.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "Test name"
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/recordings",
-        "method": "GET",
-        "summary": "List saved recordings"
-    },
-    {
-        "path": "/test/run",
-        "method": "POST",
-        "summary": "Run a JSON test",
-        "description": "Execute a test defined in Haltija JSON format.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "test": {
-                    "description": "Test object with steps"
-                }
-            },
-            "required": [
-                "test"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/test/validate",
-        "method": "POST",
-        "summary": "Validate test without running",
-        "description": "Check that all selectors exist and test is well-formed.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "test": {
-                    "description": "Test object to validate"
-                }
-            },
-            "required": [
-                "test"
-            ],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/snapshot",
-        "method": "POST",
-        "summary": "Capture page snapshot",
-        "description": "Capture current page state including DOM tree, console, and viewport for debugging.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "trigger": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "What triggered the snapshot (e.g., \"manual\", \"test-failure\")"
-                },
-                "context": {
-                    "description": "Additional context about the snapshot",
-                    "type": [
-                        null,
-                        "null"
-                    ]
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        }
-    },
-    {
-        "path": "/status",
-        "method": "GET",
-        "summary": "Server status",
-        "description": "Returns server info and connected browser count."
-    },
-    {
-        "path": "/version",
-        "method": "GET",
-        "summary": "Get server version"
-    },
-    {
-        "path": "/docs",
-        "method": "GET",
-        "summary": "Quick start guide",
-        "description": "Human-readable getting started docs for AI agents."
-    },
-    {
-        "path": "/api",
-        "method": "GET",
-        "summary": "Full API reference",
-        "description": "Complete API documentation."
+      },
+      "required": [],
+      "additionalProperties": false
     }
+  },
+  {
+    "path": "/query",
+    "method": "POST",
+    "summary": "Query DOM elements by selector",
+    "description": "Quick element lookup. Returns basic info: tagName, id, className, textContent, attributes.\n\nUse this to check if an element exists before clicking/typing. For detailed info, use /inspect instead.\n\nResponse: { tagName, id, className, textContent, attributes: {...} }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector"
+        },
+        "all": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return all matches (default false = first only)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/inspect",
+    "method": "POST",
+    "summary": "Deep inspection of an element",
+    "description": "Get everything about ONE element: geometry, computed styles, ARIA attributes, scroll position, visibility state.\n\nResponse includes:\n  - box: { x, y, width, height, visible }\n  - text: { innerText, value, placeholder }\n  - properties: { disabled, checked, hidden, role, ariaLabel, ... }\n  - styles: { display, visibility, opacity, ... } (curated subset)\n  - allStyles: { ...all computed styles } (only if fullStyles=true)\n  - matchedRules: [ { selector, source, specificity, properties } ] (only if matchedRules=true)\n  - hierarchy: { parent, children count, depth }\n\nUse before clicking to verify element is visible and enabled.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector"
+        },
+        "fullStyles": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include all computed styles (default: false)"
+        },
+        "matchedRules": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include matched CSS rules with specificity (default: false)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/inspectAll",
+    "method": "POST",
+    "summary": "Inspect multiple elements",
+    "description": "Deep inspection of ALL elements matching selector (up to limit).\n\nSame detailed info as /inspect, but for multiple elements. Great for:\n  - Finding all buttons/links on a page\n  - Checking which form fields are required\n  - Listing all interactive elements\n\nResponse: array of inspection objects",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output - returns single element as array"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector"
+        },
+        "limit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max elements (default 10)"
+        },
+        "fullStyles": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include all computed styles (default: false)"
+        },
+        "matchedRules": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include matched CSS rules with specificity (default: false)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/find",
+    "method": "POST",
+    "summary": "Find elements by text content",
+    "description": "Search for elements containing specific text. Saves writing querySelector + filter patterns.\n\nReturns first match by default, or all matches with all:true.\n\nResponse: { found: true, selector: \"...\", element: {...} } or { found: true, elements: [...] }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text to search for (substring match)"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Limit to specific tag (button, a, div, etc)"
+        },
+        "exact": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Require exact text match (default false = substring)"
+        },
+        "all": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return all matches (default false = first only)"
+        },
+        "visible": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only visible elements (default true)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/form",
+    "method": "POST",
+    "summary": "Extract all form values as structured JSON",
+    "description": "Get all form field values without needing to know the component's API.\n\nIntrospects forms and returns structured data:\n- Input values (text, email, password, etc.)\n- Checkbox/radio states\n- Select values (single and multiple)\n- Textarea content\n- Custom form elements with value property\n\nResponse: { fields: { name: value, ... }, form: { action, method, id } }\n\nWorks with standard forms and most framework components (React, Vue, etc).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Form selector (default: first form on page)"
+        },
+        "includeDisabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include disabled fields (default false)"
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Include hidden fields (default false)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/click",
+    "method": "POST",
+    "summary": "Click an element",
+    "description": "Scrolls element into view, then performs full click sequence: mouseenter, mouseover, mousedown, mouseup, click.\n\nThree ways to target elements:\n- ref: Ref ID from /tree output (e.g., 1, 42) - fastest, survives DOM changes\n- selector: CSS selector (traditional)\n- text + tag: Find by text content (more reliable for dynamic UIs)\n\nOptions:\n- autoWait: Wait for element to appear before clicking (default false). Eliminates need for separate /wait call.\n- diff: Return what changed after the click (added/removed elements, attribute changes)\n\nAutomatically fails if element is not found or is disabled. Check response.success to verify.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector of element to click"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Text content to find (alternative to selector)"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Tag name when using text (default: any clickable element)"
+        },
+        "autoWait": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for element to appear before clicking (default false)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max wait time in ms when autoWait is true (default 5000)"
+        },
+        "diff": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return DOM diff showing what changed after click (default false)"
+        },
+        "diffDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing \"after\" state (default 100)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/type",
+    "method": "POST",
+    "summary": "Type text into an element",
+    "description": "Focus element and type text character by character with realistic event lifecycle.\n\nTarget element via ref (from /tree output) or selector.\n\nSimulates real user behavior:\n1. Focus via mouse click (default) or keyboard Tab\n2. Full keystroke events: keydown → beforeinput → input → keyup\n3. Fires change event on completion\n\nHandles native inputs, textareas, contenteditable, and framework-wrapped inputs (React, MUI, etc).\n\nOptions:\n- autoWait: Wait for element to appear before typing (default false). Eliminates need for separate /wait call.\n- humanlike: Add realistic delays and occasional typos (default true)\n- focusMode: How to focus the element before typing\n  - \"mouse\" (default): Full mouse lifecycle (mouseenter → click → focus)\n  - \"keyboard\": Tab key navigation (for accessibility testing)\n  - \"direct\": Just .focus() (fast, for simple tests)\n- clear: Clear existing content before typing (default false)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector of input/textarea/contenteditable"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text to type"
+        },
+        "autoWait": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for element to appear before typing (default false)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max wait time in ms when autoWait is true (default 5000)"
+        },
+        "humanlike": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Human-like delays and typos (default true)"
+        },
+        "focusMode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "mouse",
+            "keyboard",
+            "direct",
+            null
+          ],
+          "description": "How to focus: mouse (default), keyboard, or direct"
+        },
+        "clear": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Clear existing content before typing (default false)"
+        },
+        "blur": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Blur element after typing to trigger change event (default true)"
+        },
+        "typoRate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Typo probability 0-1 (default 0.03)"
+        },
+        "minDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Min ms between keys (default 50)"
+        },
+        "maxDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max ms between keys (default 150)"
+        },
+        "diff": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return DOM diff showing what changed after typing (default false)"
+        },
+        "diffDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing \"after\" state (default 100)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/key",
+    "method": "POST",
+    "summary": "Send keyboard input",
+    "description": "Send key press with full event lifecycle: keydown → keypress → beforeinput → input → keyup.\n\nTarget element defaults to document.activeElement. Use ref or selector to focus a specific element first.\n\nSupports modifiers (ctrlKey, shiftKey, altKey, metaKey) and repeat count for holding keys.\n\nCommon keys: Enter, Escape, Tab, ArrowUp/Down/Left/Right, Backspace, Delete, Home, End, PageUp/PageDown, F1-F12, or any printable character.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Key to press (e.g., \"Enter\", \"Escape\", \"a\", \"ArrowDown\")"
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Element to focus first (default: activeElement)"
+        },
+        "ctrlKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Ctrl/Control"
+        },
+        "shiftKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Shift"
+        },
+        "altKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Alt/Option"
+        },
+        "metaKey": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Hold Meta/Command"
+        },
+        "repeat": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Repeat count for key hold (default 1)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/drag",
+    "method": "POST",
+    "summary": "Drag from an element",
+    "description": "Simulates drag gesture: mousedown on element, mousemove by delta, mouseup.\n\nGood for: sliders, resize handles, drag-and-drop reordering, range inputs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector of drag handle"
+        },
+        "deltaX": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Horizontal distance in pixels"
+        },
+        "deltaY": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Vertical distance in pixels"
+        },
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Drag duration in ms (default 300)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/highlight",
+    "method": "POST",
+    "summary": "Visually highlight an element",
+    "description": "Draw attention to an element with colored border and optional label.\n\nGreat for showing users what you found or pointing out issues. Use /unhighlight to remove.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Label text to show"
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS color (default #6366f1)"
+        },
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Auto-hide after ms (omit for manual)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/unhighlight",
+    "method": "POST",
+    "summary": "Remove highlight",
+    "description": "Remove any active highlight overlay created by /highlight.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/scroll",
+    "method": "POST",
+    "summary": "Scroll to element or position",
+    "description": "Smooth scroll with natural easing. Multiple modes:\n\n- ref/selector: Scroll element into view (most common)\n- x/y: Scroll to absolute position\n- deltaX/deltaY: Scroll relative to current position\n\nAt least one of ref, selector, x, y, deltaX, or deltaY must be provided.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector to scroll into view"
+        },
+        "x": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Absolute X position in pixels"
+        },
+        "y": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Absolute Y position in pixels"
+        },
+        "deltaX": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Relative horizontal scroll in pixels"
+        },
+        "deltaY": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Relative vertical scroll in pixels"
+        },
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Animation duration in ms (default 500)"
+        },
+        "easing": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Easing function: ease-out (default), ease-in-out, linear"
+        },
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Vertical alignment: center (default), start, end, nearest"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/wait",
+    "method": "POST",
+    "summary": "Wait for time, element, or condition",
+    "description": "Flexible wait for async UI scenarios. Multiple modes:\n\n- ms: Wait for a fixed time (simple delay)\n- forElement: Poll until element appears (or disappears with hidden:true)\n- Both: Wait for element, then add extra ms delay\n\nAll modes support timeout (default 5000ms). Returns immediately if condition already met.\n\nPassing NEITHER `ms` nor `forElement`/`selector` is an error (HTTP 400), not a no-op success —\na wait that reports success without waiting makes every assertion after it race the page.\n\nResponse: { success: true, waited: ms, found?: boolean }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds to wait"
+        },
+        "forElement": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector to wait for"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Alias for forElement — accepted so the CLI, the test-runner wait step and this endpoint all take the same field"
+        },
+        "hidden": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for element to disappear (default false)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max wait time in ms (default 5000)"
+        },
+        "pollInterval": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Polling interval in ms (default 100)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/navigate",
+    "method": "POST",
+    "summary": "Navigate to a URL",
+    "description": "Navigate the browser to a new URL. Waits for page load to complete.\n\nUse /location after to verify navigation succeeded.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL to navigate to"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/refresh",
+    "method": "POST",
+    "summary": "Refresh the page",
+    "description": "Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "soft": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Use cached resources if available (default false = hard refresh that busts all caches)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/location",
+    "method": "GET",
+    "summary": "Get current URL and title",
+    "description": "Returns current page info.\n\nResponse: { url, title, pathname, search, hash }\n\nUse after /navigate to verify you're on the expected page."
+  },
+  {
+    "path": "/mutations/watch",
+    "method": "POST",
+    "summary": "Start watching DOM mutations",
+    "description": "Begin capturing DOM changes: elements added/removed, attributes changed, text modified.\n\nPresets filter out framework noise:\n- smart (default): Auto-detects React, Tailwind, etc.\n- minimal: Only element add/remove\n- none: Everything (noisy)\n\nGet captured mutations via /mutations/status.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Root selector to watch (default body)"
+        },
+        "childList": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Watch child additions/removals (default true)"
+        },
+        "attributes": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Watch attribute changes (default true)"
+        },
+        "characterData": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Watch text content changes (default false)"
+        },
+        "subtree": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Watch all descendants (default true)"
+        },
+        "debounce": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Debounce ms (default 100)"
+        },
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Filter preset: smart, xinjs, b8rjs, tailwind, react, minimal, none"
+        },
+        "filters": {
+          "description": "Custom filter configuration"
+        },
+        "pierceShadow": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Watch inside shadow DOM (default false)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/mutations/unwatch",
+    "method": "POST",
+    "summary": "Stop watching mutations",
+    "description": "Stop capturing DOM mutations. Call this when done to free resources.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/mutations/status",
+    "method": "GET",
+    "summary": "Get mutation watch status",
+    "description": "Check if mutation watching is active and get captured mutations.\n\nResponse: { watching: boolean, mutations: [...], summary: { added, removed, changed } }"
+  },
+  {
+    "path": "/network",
+    "method": "GET",
+    "summary": "Get captured network requests",
+    "description": "Returns buffered network entries in compact format.\n\nEach entry: { m: method, s: status, url: trimmed_url, t: time_ms, sz: human_size, type: resource_type }\nStatus -1 means failed (timeout, CORS, canceled). Summary line always included.\n\nUse preset parameter to override the watch preset for this query."
+  },
+  {
+    "path": "/network/watch",
+    "method": "POST",
+    "summary": "Start capturing network traffic",
+    "description": "Begin monitoring HTTP requests and responses via Chrome DevTools Protocol.\nRequires the Haltija Desktop app (uses Electron's CDP access).\n\nPresets control what's captured:\n- errors: only 4xx, 5xx, timeouts, CORS failures\n- minimal: errors + XHR/fetch requests (no images, scripts, CSS)\n- standard: all requests except analytics/tracking noise (default)\n- verbose: everything including preflights and tracking\n\nOutput is token-optimized: ~10 tokens per request vs 200+ for raw HAR.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Filter preset: errors, minimal, standard, verbose"
+        },
+        "includePatterns": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "URL regex patterns to always include"
+        },
+        "excludePatterns": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "URL regex patterns to exclude"
+        },
+        "maxBuffer": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max entries to buffer (default 200)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/network/unwatch",
+    "method": "POST",
+    "summary": "Stop capturing network traffic",
+    "description": "Stop monitoring network requests. Clears the capture buffer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/network/stats",
+    "method": "GET",
+    "summary": "Network traffic summary",
+    "description": "Returns: total requests, failures, pending, average latency, total bytes, and a one-line summary string."
+  },
+  {
+    "path": "/events/watch",
+    "method": "POST",
+    "summary": "Start watching semantic events",
+    "description": "Begin capturing high-level user actions. Events are aggregated and meaningful:\n- \"user typed 'hello@example.com'\" not 18 keydown events\n- \"user clicked Submit\" not mousedown/mouseup/click\n\nPresets control verbosity:\n- minimal: clicks, submits, navigation only\n- interactive: + hovers on buttons, form changes (recommended)\n- detailed: + all element interactions\n- debug: everything\n\nCategories: interaction, navigation, input, hover, scroll, mutation, focus, console",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Verbosity: minimal, interactive, detailed, debug"
+        },
+        "categories": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Specific categories to watch"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/events/unwatch",
+    "method": "POST",
+    "summary": "Stop watching events",
+    "description": "Stop capturing semantic events. Events buffer is cleared.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/events",
+    "method": "GET",
+    "summary": "Get captured semantic events",
+    "description": "Returns buffered events since watch started.\n\nResponse: { events: [{ type, timestamp, category, target?, payload }], since, count }\n\nEvent types: interaction:click, input:typed, navigation:navigate, hover:dwell, scroll:stop, etc."
+  },
+  {
+    "path": "/events/stats",
+    "method": "GET",
+    "summary": "Get event aggregation statistics",
+    "description": "Shows noise reduction metrics.\n\nResponse: { rawEvents, semanticEvents, reductionPercent, byCategory: {...} }\n\nTypically see 90%+ reduction (e.g., 2000 raw events → 80 semantic events)."
+  },
+  {
+    "path": "/console",
+    "method": "GET",
+    "summary": "Get console output",
+    "description": "Returns captured console.log/warn/error/info/debug from the page — AND uncaught\nexceptions and unhandled promise rejections (as level 'error'), which never route through\nconsole.error. Error objects keep their message and stack (a plain console.error(err) used to\nserialize to {}).\n\nResponse: { entries: [{ level, args, timestamp, stack? }] }\n\nGreat for debugging — check for errors after actions fail. Note: capture starts when the widget is\ninjected, so errors thrown BEFORE injection are missed for bookmarklet/dev-server injection; the\ndesktop app injects at document-start and catches them."
+  },
+  {
+    "path": "/eval",
+    "method": "POST",
+    "summary": "Execute JavaScript",
+    "description": "Run arbitrary JavaScript in the browser context. Returns the result.\n\nThe code runs in the page's context with access to window, document, etc.\nReturn values are JSON-serialized.\n\nAsync code is supported: a returned Promise is awaited, and top-level `await`\nworks. Multi-statement code needs an explicit `return` to produce a value.\n\n  document.title                        -> the title\n  await fetch('/api').then(r => r.json()) -> the parsed body\n  const r = await fetch('/api'); return r.status -> the status code",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "JavaScript code to execute"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/fetch",
+    "method": "POST",
+    "summary": "Fetch a URL from within the tab context",
+    "description": "Fetch a URL from within the browser tab's context. Essential for accessing blob: URLs\nwhich are only valid in the tab that created them.\n\nReturns the content as base64 with MIME type. Works with:\n- blob: URLs (e.g., blob:https://example.com/abc-123)\n- data: URLs (returned as-is)\n- Regular http/https URLs (fetched from tab's origin)\n\nResponse: { success: true, data: { mimeType, base64, size, url } }\n\nUse this when you see a blob URL in the DOM and need to access its content.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL to fetch (blob:, data:, http:, https:)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/call",
+    "method": "POST",
+    "summary": "Call a method or get a property on an element",
+    "description": "Call a method or access a property on an element by selector. Convenience wrapper around /eval.\n\nThis avoids writing querySelector boilerplate. Two modes:\n- With args (even empty []): Calls element.method(...args)\n- Without args: Returns element.property value\n\nReturn value is JSON-serialized. Promises are awaited.\n\nResponse: { success: true, data: <return value> }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output (e.g., 1, 42) - preferred for efficiency"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CSS selector of the element"
+        },
+        "method": {
+          "type": "string",
+          "description": "Method name to call or property name to get"
+        },
+        "args": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {},
+          "description": "Arguments to pass (omit to get property value)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/screenshot",
+    "method": "POST",
+    "summary": "Capture a screenshot",
+    "description": "Capture the page or a specific element as PNG/WebP/JPEG.\n\nWorks automatically in the Haltija Desktop app. In browser widget mode, captures viewport only.\n\n**`canvas` — capture a <canvas> directly (best for 3D / render-to-texture).** Pass a selector and\nhaltija reads the canvas's own pixels via toDataURL instead of capturing the screen. That means:\nexact pixels at native resolution, **no screen-share grant**, no Electron requirement, and it works\neven when the canvas is scrolled out of view or the tab isn't frontmost. Ideal for a WebGL scene\n(Babylon/three.js) or a UI rendered into a texture.\n\nCaveat it handles for you: a WebGL context clears its drawing buffer after compositing unless\ncreated with `{ preserveDrawingBuffer: true }`, so a naive toDataURL can silently return a BLANK\nimage. Haltija samples the result and returns a `warning` explaining that (rather than handing you\nan empty picture). A canvas tainted by cross-origin content returns a clear error, not a crash.\n\nWhen file=true (default from CLI), saves to <tmpdir>/haltija-screenshots/ and returns the file path.\nArtifacts older than 24h (and beyond the most recent 200) are pruned automatically.\nWhen file=false, returns base64 data URL in response JSON.\n\n**`displaySurface` — what the user ACTUALLY shared.** On the `source: \"getDisplayMedia\"` path (the\n🖥-button grant), the picker only *defaults* to the current tab; the user can pick anything, and the\ngrant lasts for the session. So a wrong pick means every later capture returns the wrong surface,\nconfidently, until it is re-picked (click 🖥 twice).\n\n| `displaySurface` | meaning |\n|---|---|\n| `\"browser\"` | a tab — the expected case, no warning |\n| `\"window\"` | a WINDOW, not this tab — carries a `warning`; the pixels are that window |\n| `\"monitor\"` | a WHOLE MONITOR — carries a `warning`; may include other apps, won't follow the page |\n| `null` | this browser does not report it. **Not a pass** — it means unchecked |\n\nIf a warning is present, do not reason about layout from that image. Note `\"browser\"` means \"a tab\",\nnot necessarily *your* tab: confirming that needs `setCaptureHandleConfig()`, which mutates\ndocument-level state on the page the widget is injected into, and an injected tool should not\nquietly change its host's configuration.\n\nThe Electron desktop app uses native `capturePage` instead and needs no grant, so none of this\napplies there.\n\nResponse: { success, path?, image?, width, height, source, displaySurface?, canvas?, warning? }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ref ID from /tree output - capture specific element"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Element to capture (omit for full page)"
+        },
+        "canvas": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Selector for a <canvas> — read its pixels directly (WebGL/2D). Exact pixels, no screen-share grant, works off-screen. PIERCES SHADOW DOM: accepts `host >>> canvas`, a plain selector (light DOM then shadow roots), a host element, or an EMPTY string to capture the largest canvas on the page. Best for 3D scenes and render-to-texture UI."
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Image format: png (default), webp, or jpeg"
+        },
+        "quality": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png."
+        },
+        "scale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Scale factor (default 1)"
+        },
+        "maxWidth": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max width in pixels"
+        },
+        "maxHeight": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max height in pixels"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        },
+        "chyron": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Burn page title, URL, timestamp into image (default true, set false for clean screenshot)"
+        },
+        "delay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Wait ms before capturing (e.g. 1000 to let page settle after navigation)"
+        },
+        "file": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Save to disk and return file path instead of data URL (default true — pass false for base64)"
+        },
+        "schematic": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Return a schematic of the page INSTEAD of pixels, even when real capture is available. Cheaper, deterministic, and carries the contrast audit; canvases are still embedded as real pixels."
+        },
+        "fallback": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When no pixel capture is available, return a labelled SCHEMATIC of the page instead of failing (default true; canvases are embedded as real pixels since they need no permission). Pass false to hard-fail instead."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/select",
+    "method": "POST",
+    "summary": "Interactive element selection",
+    "description": "Let user point at elements on the page instead of writing selectors.\n\nActions:\n- start: Begin selection mode (user can draw a rectangle)\n- result: Get elements from completed selection\n- cancel: Exit selection mode without capturing\n- clear: Clear stored selection result\n- status: Check if selection is active\n\nWorkflow: start → (user draws region) → result → use returned selectors",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "start",
+            "result",
+            "cancel",
+            "clear",
+            "status",
+            null
+          ],
+          "description": "Selection action to perform (default: result)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/select/start",
+    "method": "POST",
+    "summary": "[Deprecated] Use /select with action:\"start\"",
+    "description": "Deprecated: Use POST /select {\"action\":\"start\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/select/cancel",
+    "method": "POST",
+    "summary": "[Deprecated] Use /select with action:\"cancel\"",
+    "description": "Deprecated: Use POST /select {\"action\":\"cancel\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/select/status",
+    "method": "GET",
+    "summary": "[Deprecated] Use /select with action:\"status\"",
+    "description": "Deprecated: Use POST /select {\"action\":\"status\"} instead."
+  },
+  {
+    "path": "/select/result",
+    "method": "GET",
+    "summary": "[Deprecated] Use /select with action:\"result\"",
+    "description": "Deprecated: Use POST /select {\"action\":\"result\"} instead."
+  },
+  {
+    "path": "/select/clear",
+    "method": "POST",
+    "summary": "[Deprecated] Use /select with action:\"clear\"",
+    "description": "Deprecated: Use POST /select {\"action\":\"clear\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/windows",
+    "method": "GET",
+    "summary": "List connected windows",
+    "description": "Returns all connected browser windows/tabs with IDs, URLs, and titles.\n\nResponse: { windows: [{ id, url, title, focused, active, hidden, windowType }], tabs, count, ready, hint }\n\nThe array is **`windows`**, not `tabs` — it includes popups (`windowType: \"popup\"`) and\niframes (`\"iframe\"`), not only tabs. Because the CLI command is `hj tabs`, `d['tabs']` is the\nnatural first guess and used to KeyError, so **`tabs` is also sent as an alias** of the same\narray. Prefer `windows`; `tabs` exists so the obvious guess works.\n\nOnly real tabs can be the target of an UNTARGETED command — a popup or iframe never becomes\n`focused`, so a page opening a popup cannot silently re-route your commands.\n\n`active` and `hidden` are exact inverses, and BOTH are sent on purpose: /status historically\nemitted only `hidden` and /windows only `active`, so code moving between the two silently\ninverted its own meaning. Read either; never infer one endpoint's polarity from the other.\n\nUse window IDs in other endpoints (e.g., /click, /tree) to target specific tabs.\n\n**`ready` is the signal to gate a test lane on, not \"is the server up\".** A server can be running\nwith zero connected tabs — it answers /status 200 but there is nothing to drive, and a lane that\nadopts it fails later on a confusing timeout. `ready` is true when at least one top-level tab is\nconnected. (Hidden tabs count as ready — they're reachable, just possibly stale; see the hidden-tab\nwarning.) `hj doctor` checks this and exits non-zero, so a lane can fail fast on the real cause."
+  },
+  {
+    "path": "/map",
+    "method": "POST",
+    "summary": "Affordance map — what can be interacted with, and what it is wired to",
+    "description": "Returns a map of the page's affordances. Two tiers, and the difference matters:\n\n**Native (`source: \"tosi-agent\"`) — EXPERIMENTAL.** haltija detects this tier by duck-typing one\nmethod and consumes a shape tosijs has not committed to (no version/capability marker yet — see\ntosijs#23). When the shape isn't what haltija expects it returns a `warning` and `agentSurfaceVersion`\nrather than passing a blank map off as a success, but treat the tier as best-effort. When the page\nexposes an agent surface at\n`globalThis.tosiAgent` (a tosijs app calling `enableAgentInterface()`), the map is the app's OWN\nwiring records. That carries what the DOM cannot: which state path each control is bound to and in\nwhich **direction** — `⟷` two-way (user-writable), `⟵` bound-to-DOM (display only), absent\n(static) — plus the handler path each event calls, and the list of callable actions.\n\nWith that you can act through paths instead of synthesized input:\n`hj eval \"tosiAgent.write('app.filter', 'milk')\"` or `tosiAgent.call('app.addItem')`.\n\n**Fallback (`source: \"dom\"`)** — any other page, reconstructed from tags/roles/labels/state, each\nnode carrying a haltija `ref` for `hj click <ref>`. Deliberately approximate: it has NO binding\nprovenance, because that information does not exist in the DOM. Always check `source` before\ntrusting the map as wiring rather than as a guess.\n\nCheaper and more stable than a screenshot for deciding what to do next: no fonts, themes, viewport\nor animation timing, and structure (nesting) is carried for free.\n\nA node may carry **`smallTarget`** — an interactive control below WCAG 2.5.8's 24x24 CSS px minimum\n(44x44 is the AAA / Apple / Material recommendation), reported as e.g.\n`\"16x16 (WCAG 2.5.8 needs 24x24; 44x44 recommended)\"` and drawn as an amber bar along the bottom\nedge of the schematic. Inline links inside a sentence are exempt, per the spec — they are sized by\ntheir text, and flagging them would fire on every paragraph.\n\nWith `image` and `file` (both default true), the response carries **`legendPath`**: a sibling\n`*.legend.json` written beside the image, holding a flat `ref -> facts` index of the ref-bearing\nnodes. The image says WHERE and WHICH, the legend says WHAT — which is what makes it safe to stop\ncramming captions into boxes too small to hold them. Read the number off the picture, look it up\nthere.\n\nA node may carry **`zeroSize: true`** — a real, operable control that occupies no box. The standard\naccessible pattern for file inputs and custom checkboxes is a 0x0 `<input>` driven by a `<label>`,\nso its coordinates are meaningless and clicking it directly may do nothing: click the associated\n`<label>` instead. Genuinely hidden elements (`display:none`, hidden ancestor) are excluded\nentirely, so `zeroSize` always means *operable but invisible*, never *not there*.\n\n**Where the walk STOPS — an element with no children may not be empty.** A childless node in\n`nodes` reads exactly like a genuinely empty element, and the two are worth telling apart:\n\n- **Open shadow roots ARE traversed** (since 1.12.0) — shadow content appears under its host. But a\n  **closed** shadow root (`attachShadow({mode:'closed'})`) is invisible to any script, so its host\n  is reported childless and nothing can change that.\n- **Iframes are NOT traversed here** — an `<iframe>` has no element children, so it is always a\n  leaf in the map. `/tree` pierces same-origin frames (`pierceFrames`, default true). Where the\n  frame has its own widget it also registers as a separate window: see `/windows` for a\n  `windowType: \"iframe\"` entry and target it with `window`.\n- **Opaque content** — `<canvas>`, `<video>`, images. There is nothing inside to report.\n- **`maxNodes` truncation** (default 400) sets `truncated: true` alongside `nodes` (so on the\n  map itself — top level for JSON, under `map` with `--image`); subtrees past the cap are simply\n  absent. Check that flag before reading a short map as a small page.\n\nSo: when a node looks empty and you expected content, reach for `hj tree --shadow --frames` (which\npierces more) or `hj map --image` (which shows you the box that is there).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "global": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Global to probe for the agent surface (default 'tosiAgent')"
+        },
+        "maxNodes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Cap on DOM-fallback nodes (default 400)"
+        },
+        "image": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Also render the map as a schematic PNG (rasterized). NOTE: response.nodes is a TREE (recurse into .children — a <ul> holds its <li>s, a custom element holds its shadow content) while response.legend is a FLAT ref->facts index of only the ref-bearing nodes, so the two legitimately contain different sets. Vision cost scales with PIXELS, roughly (w*h)/750 for Claude — there is NO fixed floor, so a small or size-capped schematic can be very cheap (a 491x480 one is ~314 tokens; with maxWidth 200, ~52). ~1600 is the practical ceiling, since larger images are downscaled before tokenisation. response.cost reports approxJsonTokens and approxImageTokens for THIS page — compare those rather than assuming."
+        },
+        "scale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Device-pixel scale for the schematic image (default 1). Raise it to make the captions legible to a vision model on a dense page."
+        },
+        "layout": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Schematic layout: 'auto' (default), 'geometric' (boxes at true page coordinates) or 'structural' (nested stacked boxes). 'auto' picks geometric when most nodes carry bounds — which they do for a DOM map, but never for the tosi-agent tier, which describes wiring and has no geometry. The response reports which was used in `layout` and the evidence in `boundsCoverage`."
+        },
+        "fullPage": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Draw the WHOLE document rather than just the viewport (default false). The schematic is laid out at real page coordinates, so a long page becomes a tall thin strip — 1126x22304 is a 1:20 ratio that no downscaling makes readable. Ask for it only when you need the parts that are off screen."
+        },
+        "maxWidth": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max width in pixels for the schematic image (aspect ratio preserved)"
+        },
+        "maxHeight": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max height in pixels for the schematic image (aspect ratio preserved)"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Schematic image format: png (default), webp, or jpeg"
+        },
+        "quality": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Quality for lossy formats (webp/jpeg). Either scale works: 0-1 (canvas-native) or 0-100 (percentage); anything above 1 is read as a percentage and clamped. Ignored for png."
+        },
+        "file": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "With image: save the PNG under <tmpdir>/haltija-schematics and return its path in `path` (default true). Schematics older than 24h (and beyond the most recent 200) are pruned automatically. Pass false for a base64 data URL — note that is ~700KB of stdout and earns no vision-token discount unless something turns it back into an image."
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/tabs/open",
+    "method": "POST",
+    "summary": "Open a new tab",
+    "description": "Opens a new tab with optional URL. If url is omitted, opens a blank tab.\n\n**In the Haltija desktop app** the new tab gets the widget auto-injected, so it's immediately\ncontrollable. **Anywhere else** (widget injected into a normal browser via bookmarklet/dev-server)\nthere is no tab API, so this falls back to `window.open()` — the new tab is a plain browser tab\nwith NO widget unless its own page injects one. In that case the response has `fallback: true`\nplus a `reason`, and a top-level `warning`: the tab will NOT appear in `hj tabs` and hj commands\ncannot reach it (they go to the focused widget tab). To control it, inject the widget on that page\n(e.g. HALTIJA_DEV / haltijaDev) or use the desktop app.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL to open"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/tabs/close",
+    "method": "POST",
+    "summary": "Close a tab",
+    "description": "Desktop app only. Closes the specified tab by window ID.\n\nGet window IDs from /windows endpoint.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": "string",
+          "description": "Window ID to close"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/tabs/focus",
+    "method": "POST",
+    "summary": "Focus a tab (route untargeted commands to it)",
+    "description": "Make the given tab the target of untargeted commands. This is a server-side\nrouting change, not a browser action: because it never dispatches to the target tab it cannot time\nout, even when that tab is hidden.\n\n**In the Haltija desktop app it also physically raises the tab**, best-effort: the request goes to a\ntab that is awake, which asks the app's main process to bring the target forward — so a sleeping tab\ngets raised without having to run anything itself. Outside the desktop app a background browser tab\ncannot be raised remotely, so focus is routing-only there. After this, commands without a `window`/`--window` go to this tab until you\nfocus another or physically switch tabs in the browser. To pin a single command instead, use\n`--window <id>`. If the tab is hidden the response includes a warning (a backgrounded tab's results\ncan be stale). Returns `{ success, focused, active, title }`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": "string",
+          "description": "Window ID to focus"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/recording",
+    "method": "POST",
+    "summary": "Record user actions and generate tests",
+    "description": "Record user interactions and convert them to runnable tests.\n\n**Cross-page recording**: Recordings now survive page navigations! The server tracks\nthe recording session by window ID, so you can record a multi-page flow (e.g., login → dashboard).\n\nActions:\n- start: Begin capturing user interactions (survives page navigations)\n- stop: Stop capturing, returns all recorded events including from previous pages\n- status: Check if recording is active and get event count\n- generate: Convert recording to JSON test format\n- list: List all saved recordings (with index numbers for replay)\n- replay: Replay a saved recording by index or ID\n\nWorkflow: start → (user interacts, navigates pages) → stop → list → replay",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop",
+            "status",
+            "generate",
+            "list",
+            "replay"
+          ],
+          "description": "Recording action to perform"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Test name (for generate action)"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Recording ID or index number (for replay action)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/recording/start",
+    "method": "POST",
+    "summary": "[Deprecated] Use /recording with action:\"start\"",
+    "description": "Deprecated: Use POST /recording {\"action\":\"start\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Recording/test name"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/recording/stop",
+    "method": "POST",
+    "summary": "[Deprecated] Use /recording with action:\"stop\"",
+    "description": "Deprecated: Use POST /recording {\"action\":\"stop\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/recording/generate",
+    "method": "POST",
+    "summary": "[Deprecated] Use /recording with action:\"generate\"",
+    "description": "Deprecated: Use POST /recording {\"action\":\"generate\"} instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Test name"
+        },
+        "events": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {},
+          "description": "Semantic events to convert. Omit to use the server-side event buffer (see `since`)."
+        },
+        "since": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "When reading from the event buffer, only events after this timestamp"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Starting URL for the generated test (defaults to the first navigation event)"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Test description"
+        },
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags to attach to the generated test"
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Author recorded in the test ('human' by default)"
+        },
+        "addAssertions": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Infer assertions from the events (default true)"
+        },
+        "suggestAssertions": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Append suggested assertions at the end (default false)"
+        },
+        "minDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Drop inter-step delays shorter than this many ms"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/recordings",
+    "method": "GET",
+    "summary": "[Deprecated] Use /recording with action:\"list\"",
+    "description": "Deprecated: Use POST /recording {\"action\":\"list\"} instead."
+  },
+  {
+    "path": "/test/run",
+    "method": "POST",
+    "summary": "Run a JSON test",
+    "description": "Execute a test defined in Haltija JSON format.\n\nTest structure:\n{\n  \"version\": 1,\n  \"name\": \"Login flow\",\n  \"url\": \"http://localhost:3000/login\",\n  \"steps\": [\n    { \"action\": \"type\", \"selector\": \"#email\", \"text\": \"user@example.com\" },\n    { \"action\": \"type\", \"selector\": \"#password\", \"text\": \"secret123\" },\n    { \"action\": \"click\", \"selector\": \"button[type=submit]\" },\n    { \"action\": \"assert\", \"assertion\": { \"type\": \"url\", \"pattern\": \"/dashboard\" } }\n  ]\n}\n\nStep actions: navigate, click, type, check, key, select-text, cut, copy, paste, drag, wait, assert, eval, verify, tabs-open, tabs-close, tabs-focus\n\nOutput formats:\n- json: Structured result with step-by-step details\n- github: Annotations for GitHub Actions + markdown summary\n- human: Colored terminal output",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "test": {
+          "description": "Test object with steps"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "json",
+            "github",
+            "human",
+            null
+          ],
+          "description": "Output format: json (structured), github (annotations + summary), human (readable)"
+        },
+        "stepDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between steps (default 100)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds timeout per step (default 5000)"
+        },
+        "stopOnFailure": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Stop on first failure (default true)"
+        },
+        "patience": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Total failures allowed before giving up (0 = use stopOnFailure, default 0)"
+        },
+        "patienceStreak": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Consecutive failures to bail immediately (default 2)"
+        },
+        "timeoutBonusMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ms added/removed from timeout on success/failure, capped at initial (default 1000)"
+        }
+      },
+      "required": [
+        "test"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/test/suite",
+    "method": "POST",
+    "summary": "Run multiple tests",
+    "description": "Execute a suite of tests, optionally stopping on first failure.\n\nInput: { tests: [test1, test2, ...], format?, stopOnFailure? }\n\nResponse includes per-test results and overall summary.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tests": {
+          "type": "array",
+          "items": {},
+          "description": "Array of test objects"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "json",
+            "github",
+            "human",
+            null
+          ],
+          "description": "Output format: json (structured), github (annotations + summary), human (readable)"
+        },
+        "testDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between tests (default 500)"
+        },
+        "stepDelay": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds between steps (default 100)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds timeout per step (default 5000)"
+        },
+        "stopOnFailure": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Stop on first failure (default false for suites)"
+        },
+        "patience": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Total failures allowed per test before giving up (0 = use stopOnFailure, default 0)"
+        },
+        "patienceStreak": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Consecutive failures to bail immediately (default 2)"
+        },
+        "timeoutBonusMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Ms added/removed from timeout on success/failure, capped at initial (default 1000)"
+        }
+      },
+      "required": [
+        "tests"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/test/validate",
+    "method": "POST",
+    "summary": "Validate test without running",
+    "description": "Check that a test is well-formed and all selectors exist on the current page.\n\nUse this to pre-check tests before running. Returns validation errors without executing steps.\n\nResponse: { valid: boolean, errors?: [{ step?, message }] }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "test": {
+          "description": "Test object to validate"
+        }
+      },
+      "required": [
+        "test"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/snapshot",
+    "method": "POST",
+    "summary": "Capture page snapshot",
+    "description": "Capture current page state for debugging.\n\nIncludes: DOM tree, console logs, viewport size, scroll position, URL, timestamp.\n\nResponse: { snapshot: { url, title, viewport, dom, console, timestamp } }\n\nGreat for debugging test failures - call this when something goes wrong.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What triggered the snapshot (e.g., \"manual\", \"test-failure\")"
+        },
+        "context": {
+          "description": "Additional context about the snapshot"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/start",
+    "method": "POST",
+    "summary": "Start video recording",
+    "description": "Start recording the browser tab as WebM video. Requires the Haltija Desktop app.\n\nThe recording saves to <tmpdir>/haltija-videos/ when stopped. Max duration is capped to prevent runaway recordings.\nRecordings older than 24h (and beyond the most recent 20) are pruned automatically — a lower cap\nthan the other artifacts because video files are orders of magnitude larger. Copy anything you\nwant to keep out of that directory.\n\nResponse: { success, recordingId }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "maxDuration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Max recording duration in seconds (default 60, max 300)"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/stop",
+    "method": "POST",
+    "summary": "Stop video recording",
+    "description": "Stop recording and save the video file.\n\nResponse: { success, path, duration, size }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/video/status",
+    "method": "GET",
+    "summary": "Check video recording status",
+    "description": "Check if video recording is active.\n\nResponse: { recording, recordingId?, duration?, window? }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/dialog/configure",
+    "method": "POST",
+    "summary": "Configure native dialog auto-response policy",
+    "description": "Set how native browser dialogs (alert, confirm, prompt) are handled.\n\nBy default, Haltija intercepts all native dialogs and auto-responds:\n- alert: dismissed immediately\n- confirm: accepted (returns true)\n- prompt: dismissed (returns null)\n\nConfigure the policy **before** triggering actions that cause dialogs.\nEach dialog is logged and reported via the dialog/opened push event.\n\nResponse: { policy: { alert, confirm, prompt, beforeunload } }",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "alert": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"dismiss\" (only option for alerts)"
+        },
+        "confirm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"accept\" or \"dismiss\""
+        },
+        "prompt": {
+          "description": "\"dismiss\" or { \"response\": \"text\" } to auto-fill"
+        },
+        "beforeunload": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"allow\" or \"block\" — controls page unload"
+        },
+        "window": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Target window ID"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/dialog/history",
+    "method": "GET",
+    "summary": "Get recent dialog history",
+    "description": "Returns a list of recently intercepted native dialogs.\n\nEach entry includes: type (alert/confirm/prompt), message, response given, timestamp.\nBuffer holds the last 50 dialogs.\n\nResponse: { history: [{ type, message, defaultValue?, response, timestamp }] }"
+  },
+  {
+    "path": "/status",
+    "method": "GET",
+    "summary": "Server status",
+    "description": "Returns server info and connected browser count.\n\nResponse: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }\n\nUse to verify the server is running — but gate a test lane on **`ready`**, not on the 200. A\nserver can be up with zero connected tabs: /status answers fine and there is still nothing to\ndrive, so a lane that adopts it fails later on a timeout that points at the caller's own code.\n`ready` is true when at least one top-level tab is connected. `hj doctor` checks this (plus\nambiguous targeting) and exits non-zero, which is the one-command preflight for a lane."
+  },
+  {
+    "path": "/stats",
+    "method": "GET",
+    "summary": "Efficiency and usage statistics",
+    "description": "Returns metrics showing Haltija's efficiency vs raw DOM events.\n\nResponse includes:\n- session: { startTime, uptimeMs, uptimeFormatted }\n- events: { raw, semantic, reductionPercent, byCategory }\n- dom: { processed, inTree, inActionable, reductionPercent }\n- refs: { assigned, resolved, stale, hitRate }\n- endpoints: { [name]: { calls, success, errors, avgMs } }\n\nUse this to verify efficiency claims (99%+ event reduction, etc.) and debug performance."
+  },
+  {
+    "path": "/version",
+    "method": "GET",
+    "summary": "[Deprecated] Use /status instead",
+    "description": "Deprecated: Version is included in /status response."
+  },
+  {
+    "path": "/docs",
+    "method": "GET",
+    "summary": "[Deprecated] Use /api instead",
+    "description": "Deprecated: Use /api for complete API documentation."
+  },
+  {
+    "path": "/api",
+    "method": "GET",
+    "summary": "Full API reference",
+    "description": "Complete API documentation with all endpoints.\n\nReturns structured JSON with all endpoints, their parameters, and examples."
+  }
 ]

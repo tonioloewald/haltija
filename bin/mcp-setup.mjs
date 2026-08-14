@@ -62,7 +62,7 @@ function findMcpServerPath() {
   try {
     const result = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' })
     if (result.status === 0) {
-      const globalPath = join(result.stdout.trim(), 'tosijs-dev/apps/mcp/build/index.js')
+      const globalPath = join(result.stdout.trim(), 'haltija/apps/mcp/build/index.js')
       if (existsSync(globalPath)) {
         return globalPath
       }
@@ -70,7 +70,7 @@ function findMcpServerPath() {
   } catch {}
 
   // Check node_modules in current directory
-  const nodeModulesPath = join(process.cwd(), 'node_modules/tosijs-dev/apps/mcp/build/index.js')
+  const nodeModulesPath = join(process.cwd(), 'node_modules/haltija/apps/mcp/build/index.js')
   if (existsSync(nodeModulesPath)) {
     return nodeModulesPath
   }

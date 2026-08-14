@@ -149,6 +149,11 @@ const mcpEndpoints = ALL_ENDPOINTS
     inputSchema: getInputSchema(ep),
   }))
 writeFileSync('apps/mcp/src/endpoints.json', JSON.stringify(mcpEndpoints, null, 2))
+// ...and the COMMITTED copy the MCP server actually imports. `apps/mcp/build/endpoints.json` had
+// drifted SEVEN MONTHS behind — 43 entries against 63 — so the shipped MCP server offered no /map,
+// /find, /wait, /key or /call. Nothing in the build or release loop ran tsc inside apps/mcp, and
+// docs-drift could not see it because it only checks what the build writes. Now the build writes it.
+writeFileSync('apps/mcp/build/endpoints.json', readFileSync('apps/mcp/src/endpoints.json', 'utf-8'))
 
 // Generate CLI hints from schema (path -> hint)
 const cliHints: Record<string, string> = {}
