@@ -11,6 +11,11 @@
  */
 
 import { s, type Infer, type Base } from 'tosijs-schema'
+import { TEST_STEP_ACTIONS } from './test-actions'
+
+/** The step vocabulary, for endpoint prose. A FOURTH hand-copy of this list lived here and
+ * had drifted to 8 of 17 — propagating to API.md, the MCP endpoint defs and embedded-assets. */
+const STEP_ACTIONS_FOR_SCHEMA = TEST_STEP_ACTIONS.join(', ')
 
 // ============================================
 // Endpoint Definition Type
@@ -1997,7 +2002,7 @@ Test structure:
   ]
 }
 
-Step actions: navigate, click, type, key, wait, assert, eval, verify
+Step actions: ${STEP_ACTIONS_FOR_SCHEMA}
 
 Output formats:
 - json: Structured result with step-by-step details

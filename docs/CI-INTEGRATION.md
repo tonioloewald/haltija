@@ -247,9 +247,6 @@ Tests are JSON files with steps:
 }
 ```
 
-### Step Types
-
-| Action | Example | What It Does |
 ### Test step actions
 
 <!-- GENERATED:step-actions -->

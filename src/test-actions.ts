@@ -274,6 +274,24 @@ export function staticStepIssue(step: Record<string, unknown>): string | null {
       `Note that an HTTP endpoint existing (see \`hj api\`) does not by itself make it a step.`
     )
   }
+  if (action === 'assert') {
+    // The runner reads `step.assertion`; a FLAT `{action:'assert', type:'exists', selector:…}` has
+    // none, so the assertion never runs. Our own CLAUDE.md documented the flat shape, which is how
+    // plausible it looks — and an assertion that does not run is a guard that cannot fail, the same
+    // shape as the `wait` case below.
+    const assertion = step.assertion as { type?: unknown } | undefined
+    if (!assertion || typeof assertion !== 'object') {
+      const stray = ['type', 'selector', 'value', 'pattern'].filter((k) => step[k] !== undefined)
+      return (
+        'assert step has no `assertion` object' +
+        (stray.length ? ` — found ${stray.map((k) => `\`${k}\``).join(', ')} at the top level, which the runner ignores` : '') +
+        '. Use `{"action":"assert","assertion":{"type":"exists","selector":"…"}}`.'
+      )
+    }
+    if (!assertion.type) {
+      return 'assert step has an `assertion` with no `type` — nothing will be checked.'
+    }
+  }
   if (action === 'wait') {
     const hasTarget =
       step.duration != null ||

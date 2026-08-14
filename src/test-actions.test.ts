@@ -257,3 +257,24 @@ describe('every step action is exercised by a fixture', () => {
     expect(actionsInFixtures().has('select')).toBe(true)
   })
 })
+
+describe('assert steps must actually assert something', () => {
+  /**
+   * The runner reads `step.assertion`. A FLAT `{action:'assert', type:'exists', …}` has none, so the
+   * assertion never runs — a guard that cannot fail, which is the `wait` defect in another costume.
+   * Our own CLAUDE.md documented the flat shape, which is how plausible it looks.
+   */
+  it('rejects the flat shape and names the stray keys', () => {
+    const issue = staticStepIssue({ action: 'assert', type: 'exists', selector: '.x' })
+    expect(issue).toContain('no `assertion` object')
+    expect(issue).toContain('`type`')
+  })
+
+  it('rejects an assertion with no type', () => {
+    expect(staticStepIssue({ action: 'assert', assertion: { selector: '.x' } })).toContain('no `type`')
+  })
+
+  it('accepts the shape the runner actually reads', () => {
+    expect(staticStepIssue({ action: 'assert', assertion: { type: 'exists', selector: '.x' } })).toBeNull()
+  })
+})

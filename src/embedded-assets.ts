@@ -2447,7 +2447,7 @@ Test structure:
   ]
 }
 
-Step actions: navigate, click, type, key, wait, assert, eval, verify
+Step actions: navigate, click, type, check, key, select-text, cut, copy, paste, drag, wait, assert, eval, verify, tabs-open, tabs-close, tabs-focus
 
 Output formats:
 - json: Structured result with step-by-step details
