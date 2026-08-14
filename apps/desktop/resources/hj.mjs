@@ -2615,6 +2615,20 @@ async function runWhere(port, portSource, jsonOutput) {
     console.log(serverAuthRefused ? `${bold2("server:")} ${yellow2("running, but not readable by this shell")} ${dim3(`— ${serverError}`)}` : `${bold2("server:")} ${dim3(`unreachable — ${serverError}`)}`);
     return;
   }
+  const t = serverInfo.transports;
+  if (t) {
+    const parts = [];
+    if (t.http)
+      parts.push(t.http.listening ? green2(`http ${t.http.port} ✓`) : dim3(`http ${t.http.port} ✗`));
+    if (t.https) {
+      const label = t.https.port ? `https ${t.https.port}` : "https";
+      parts.push(t.https.listening ? green2(`${label} ✓`) : `${yellow2(`${label} ✗`)} ${dim3(`(${t.https.reason})`)}`);
+    }
+    console.log(`${bold2("transports:")} ${parts.join("   ")}`);
+    if (t.https && !t.https.listening && !serverInfo.isPrivate) {
+      console.log(dim3("  an HTTPS page cannot import an HTTP channel (mixed content), so any page served over " + "https has no haltija here — including pages belonging to other projects sharing this channel."));
+    }
+  }
   const desc = [
     `haltija ${serverInfo.serverVersion}`,
     instanceName ? `name=${instanceName}` : null,

@@ -55,6 +55,10 @@ if you declared origins and no connected tab matches, `hj` says so loudly rather
 driving someone else's page (and fails outright under `--strict`). `HALTIJA_ORIGINS=…` overrides for
 one-off shells and CI.
 
+**A shared channel can be half-open.** `hj where` prints a `transports:` line — which of HTTP/HTTPS
+is listening, and why not. An HTTP-only instance leaves every **https** page with nothing to import
+(mixed content blocks the fallback), including other projects'. It looks healthy throughout.
+
 **Both diagnostics report what routing will actually do.** `hj where` and `hj doctor` each print an
 `origins:` line — what you declared, where the declaration was found, and which connected window it
 resolves to (or that none matches yet, so commands still follow focus). A `.haltija.json` that
@@ -64,11 +68,10 @@ was added to fix — so `hj doctor` now **fails** on it (exit 1) and names the f
 
 **Waiting.** `hj wait 500` delays; `hj wait ".modal" --timeout 5000` polls until the element is
 visible and **exits non-zero on timeout** — so a CI lane stops on the real cause. `--hidden` waits
-for it to disappear. Passing neither a delay nor a selector is an error, not a no-op: a wait that
-returns success without waiting makes every assertion after it race the page.
+for it to disappear. Passing neither a delay nor a selector is an error, not a no-op.
 
-**When a command seems to hit the wrong page, run `hj where` first.** It tells you the port,
-*why* that port was chosen, and what's alive there. Override with `--port <n>` or `--name <foo>`.
+**When a command seems to hit the wrong page, run `hj where` first.** It reports the port, why it
+was chosen, the transports, and what's alive there. Override with `--port <n>` or `--name <foo>`.
 When several haltijas are running (e.g. a project server **and** the desktop app), **`hj servers`** (alias **`hj ls`**)
 lists them all — port, name, version, tabs, which is the desktop app — with `▸` on the one you'd
 drive. The desktop app is reachable as `hj --name desktop`. **`hj shutdown`** (alias `hj quit`) stops

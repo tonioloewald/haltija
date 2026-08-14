@@ -1358,7 +1358,34 @@ async function handleRest(req: Request): Promise<Response> {
       agents: agents.size,
       mcp: {
         configured: mcpStatus.configured,
-      }
+      },
+      // WHICH TRANSPORTS ARE ACTUALLY OPEN, and why one is not (issue #32).
+      //
+      // The channel is shared across local projects, so the cost of one project's transport choice
+      // is paid by a DIFFERENT project: an instance that came up HTTP-only because its install had
+      // no certs leaves an HTTPS page with nothing to import (mixed content blocks the fallback),
+      // and everything still LOOKS healthy — `hj where` said "haltija 1.12.2, 1 tab", the dev
+      // server logged "ready", and commands routed to the other project's page. Diagnosing it took
+      // reading server.js and lsof, because a half-open channel and a fully-open one were
+      // indistinguishable from outside. Now they are not.
+      // Private instances are isolated by construction, so a missing HTTPS transport there denies
+      // nobody else — the cross-project consequence in #32 is a SHARED-channel property. Reported so
+      // the CLI can say the true thing rather than the alarming one.
+      isPrivate: IS_PRIVATE,
+      transports: {
+        http: { port: PORT, listening: USE_HTTP },
+        https: {
+          port: HTTPS_PORT || null,
+          listening: httpsServer !== null,
+          reason: httpsServer !== null
+            ? undefined
+            : !WANT_HTTPS
+              ? `not requested (mode=${MODE})`
+              : !certsAvailable
+                ? `no certs at ${certsDir}`
+                : `port ${HTTPS_PORT} is held by another process`,
+        },
+      },
     }, { headers })
   }
 

@@ -196,6 +196,33 @@ async function runWhere(port, portSource, jsonOutput) {
     )
     return
   }
+  // TRANSPORTS, present and absent (issue #32). The channel is shared, so an instance that came up
+  // HTTP-only silently denies HTTPS pages in OTHER projects — and nothing said so. A half-open
+  // channel used to look identical to a full one from here.
+  const t = serverInfo.transports
+  if (t) {
+    const parts = []
+    if (t.http) parts.push(t.http.listening ? green(`http ${t.http.port} ✓`) : dim(`http ${t.http.port} ✗`))
+    if (t.https) {
+      // No port when there is nothing listening and none was assigned — `https 0` is noise.
+      const label = t.https.port ? `https ${t.https.port}` : 'https'
+      parts.push(
+        t.https.listening
+          ? green(`${label} ✓`)
+          : `${yellow(`${label} ✗`)} ${dim(`(${t.https.reason})`)}`,
+      )
+    }
+    console.log(`${bold('transports:')} ${parts.join('   ')}`)
+    // Only for a SHARED channel. A private instance denies nobody else — saying otherwise would be
+    // the alarming answer rather than the true one.
+    if (t.https && !t.https.listening && !serverInfo.isPrivate) {
+      console.log(
+        dim('  an HTTPS page cannot import an HTTP channel (mixed content), so any page served over ' +
+          'https has no haltija here — including pages belonging to other projects sharing this channel.'),
+      )
+    }
+  }
+
   const desc = [
     `haltija ${serverInfo.serverVersion}`,
     instanceName ? `name=${instanceName}` : null,
