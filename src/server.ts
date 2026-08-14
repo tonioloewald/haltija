@@ -2572,7 +2572,8 @@ Run 'hj --help' for all commands.`
       let context: Record<string, any> | undefined
       // Advisory, never fatal: a deprecated spelling still runs. Surfaced on the step result so a
       // suite author sees it in the report rather than discovering it when the alias is removed.
-      const stepWarning = resolved.deprecatedFrom
+      let dragWarning: string | undefined
+      const deprecationWarning = resolved.deprecatedFrom
         ? deprecationNotice(resolved.deprecatedFrom, resolved.action)
         : undefined
       
@@ -3287,6 +3288,9 @@ Run 'hj --help' for all commands.`
               error = result.error || 'Drag failed'
             } else {
               context = { from: result.from, to: result.to }
+              // A drag onto a native control dispatches and moves nothing; say so rather than
+              // reporting a clean pass (see performDrag).
+              if (result.warning) dragWarning = result.warning
             }
             break
           }
@@ -3325,7 +3329,7 @@ Run 'hj --help' for all commands.`
         purpose: step.purpose,
         context,
         snapshotId: stepSnapshotId,
-        warning: stepWarning,
+        warning: deprecationWarning ?? dragWarning,
         // Track fallback selector usage
         usedFallback: context?.usedFallback,
         matchedSelector: context?.matchedSelector,

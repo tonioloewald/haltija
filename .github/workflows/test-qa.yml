@@ -88,6 +88,24 @@ jobs:
             exit 1
           fi
 
+      # Ten of seventeen step actions had ZERO executable coverage in any lane, including the
+      # deprecated-alias branch and the select-text dispatch. The failure mode is a SILENT SUCCESS
+      # — dispatchSyntheticEvent falls through to `new CustomEvent(name)` and answers true — so
+      # every test in this suite asserts an OBSERVABLE EFFECT, not just that the step passed.
+      # Uses /test/suite (a suite file), not /test/run.
+      - name: Run step-action coverage suite
+        run: |
+          RESULT=$(curl -s -X POST http://localhost:8700/test/suite \
+            -H "Content-Type: application/json" \
+            -d @tests/step-actions.json)
+          echo "$RESULT" | jq '.results[] | {test, passed}' 2>/dev/null || echo "$RESULT"
+          FAILED=$(echo "$RESULT" | jq '[.results[] | select(.passed != true)] | length' 2>/dev/null || echo "null")
+          if [ "$FAILED" != "0" ]; then
+            echo "::error::Step-action coverage suite failed"
+            echo "$RESULT" | jq '.results[] | select(.passed != true)' 2>/dev/null || true
+            exit 1
+          fi
+
       - name: Run homepage tests
         run: |
           RESULT=$(curl -s -X POST http://localhost:8700/test/run \

@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { TEST_STEP_ACTIONS, staticStepIssue, isTestStepAction, resolveStepAction, deprecationNotice, DEPRECATED_ACTION_ALIASES } from './test-actions'
 
@@ -213,5 +213,47 @@ describe('the recorder cannot emit an illegal or deprecated action', () => {
   it('the recorder never emits a DEPRECATED spelling — a new recording must not be born stale', () => {
     const deprecated = recorderActions().filter((a) => a in DEPRECATED_ACTION_ALIASES)
     expect(deprecated).toEqual([])
+  })
+})
+
+describe('every step action is exercised by a fixture', () => {
+  /**
+   * Ten of seventeen actions had ZERO executable coverage in any lane — including, at the time it
+   * was written, the alias-resolution branch and the `select-text` dispatch that had just shipped.
+   * Nothing was red; the lanes simply never ran those paths, and the failure mode is a SILENT
+   * SUCCESS (`dispatchSyntheticEvent` falls through to `new CustomEvent(name)` and answers true).
+   *
+   * This is a cheap static check that a fixture MENTIONS each action. It cannot prove the action
+   * works — `tests/step-actions.json` does that, by asserting an observable effect per action — but
+   * it does stop a new action shipping with no fixture at all, which is how the last gap opened.
+   */
+  const FIXTURES = join(import.meta.dir, '..', 'tests')
+
+  function actionsInFixtures(): Set<string> {
+    const seen = new Set<string>()
+    const collect = (o: any) => {
+      for (const s of o?.steps || []) if (s?.action) seen.add(s.action)
+      for (const t of o?.tests || []) collect(t)
+    }
+    for (const f of readdirSync(FIXTURES).filter((f) => f.endsWith('.json'))) {
+      try { collect(JSON.parse(readFileSync(join(FIXTURES, f), 'utf-8'))) } catch { /* not a suite */ }
+    }
+    return seen
+  }
+
+  it('finds fixtures to read — not a vacuous check', () => {
+    expect(actionsInFixtures().size).toBeGreaterThan(8)
+  })
+
+  it('no action is left with no fixture at all', () => {
+    const seen = actionsInFixtures()
+    const uncovered = TEST_STEP_ACTIONS.filter((a) => !seen.has(a))
+    // tabs-* need a multi-tab desktop app; they are covered by src/e2e.playwright.ts instead.
+    const EXEMPT = new Set(['tabs-open', 'tabs-close', 'tabs-focus'])
+    expect(uncovered.filter((a) => !EXEMPT.has(a))).toEqual([])
+  })
+
+  it('the DEPRECATED spelling is exercised too — that branch had none', () => {
+    expect(actionsInFixtures().has('select')).toBe(true)
   })
 })

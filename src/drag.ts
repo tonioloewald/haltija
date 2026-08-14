@@ -36,6 +36,8 @@ export interface DragResult {
   error?: string
   from?: { x: number; y: number }
   to?: { x: number; y: number }
+  /** Set when the drag dispatched but the target cannot be driven by synthetic events. */
+  warning?: string
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -95,6 +97,28 @@ export async function performDrag(
   const startX = box.x + box.width / 2
   const startY = box.y + box.height / 2
 
+  // NATIVE FORM CONTROLS CANNOT BE DRAGGED BY SYNTHETIC EVENTS, and until now we reported success
+  // anyway. Measured: dragging a `<input type=range>` 60px leaves value at 0, while an identical
+  // drag on a custom div thumb moves it 0 -> 60px. The browser drives native controls from TRUSTED
+  // input only; a custom implementation listens for `mousemove` on `document` and therefore works,
+  // which is why MUI sliders, resize handles and drag-reorder lists (the cases this feature exists
+  // for) are fine.
+  //
+  // Reporting success on a drag that moved nothing is the silent-wrong-action shape this product
+  // keeps finding in itself, so the result carries a warning naming the cause and the way round it.
+  // `/inspect` returns `tagName`, not `tag` — checked against the live response rather than assumed,
+  // after the first version of this guard read a field that does not exist and never fired.
+  const tag = String(inspectResponse.data.tagName || '').toLowerCase()
+  const type = String(inspectResponse.data.attributes?.type || '').toLowerCase()
+  const untouchable =
+    tag === 'input' && (type === 'range' || type === 'file' || type === 'color')
+  const warning = untouchable
+    ? `\`${tag}[type=${type}]\` is a NATIVE control: browsers only move it for trusted input, so ` +
+      `this drag dispatched but almost certainly changed nothing. Set its value with an \`eval\` ` +
+      `step instead (assign \`value\`, then dispatch \`input\` and \`change\`). Custom sliders and ` +
+      `handles — which listen for mousemove on document — are unaffected.`
+    : undefined
+
   // mouseenter, mouseover, mousemove to start
   for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
     await request(
@@ -148,5 +172,6 @@ export async function performDrag(
     success: true,
     from: { x: startX, y: startY },
     to: { x: startX + deltaX, y: startY + deltaY },
+    ...(warning ? { warning } : {}),
   }
 }

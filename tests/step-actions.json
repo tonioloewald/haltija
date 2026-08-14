@@ -1,0 +1,198 @@
+{
+  "name": "Every step action actually dispatches",
+  "description": "Ten of seventeen step actions had ZERO executable coverage in any lane — including the deprecated-alias branch and the renamed select-text dispatch, both added in 1.12.3. The failure mode is a SILENT SUCCESS: dispatchSyntheticEvent falls through to `new CustomEvent(name)` and answers true, so a broken action reports ok. Each test below therefore asserts an OBSERVABLE EFFECT, never just that the step passed. Self-contained: it builds the DOM it needs with eval, so it does not depend on the test page's markup.",
+  "tests": [
+    {
+      "name": "check toggles a checkbox",
+      "steps": [
+        {
+          "action": "navigate",
+          "url": "http://localhost:8700/",
+          "description": "a page with the widget"
+        },
+        {
+          "action": "eval",
+          "code": "document.querySelectorAll('#hj-fixture').forEach(n => n.remove()); const d = document.createElement('div'); d.id = 'hj-fixture'; d.innerHTML = '<input id=hj-cb type=checkbox><input id=hj-text value=\"seed\"><p id=hj-note>selectable text</p><input id=hj-range type=range min=0 max=100 value=0 style=\"width:200px\"><select id=hj-sel><option value=a>A</option><option value=b>B</option></select><button id=hj-btn>btn</button>'; document.body.appendChild(d); window.__hjKeys = []; document.getElementById('hj-text').addEventListener('keydown', e => window.__hjKeys.push(e.key)); return 'built'",
+          "description": "build the fixture"
+        },
+        {
+          "action": "check",
+          "selector": "#hj-cb",
+          "description": "toggle the checkbox"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "document.getElementById('hj-cb').checked === true",
+            "expected": true
+          },
+          "description": "it is actually checked — not merely 'the step passed'"
+        }
+      ]
+    },
+    {
+      "name": "key reaches the element",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "#hj-text",
+          "description": "focus the input"
+        },
+        {
+          "action": "key",
+          "key": "Enter",
+          "selector": "#hj-text",
+          "description": "press Enter"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "window.__hjKeys.includes('Enter')",
+            "expected": true
+          },
+          "description": "a real keydown arrived"
+        }
+      ]
+    },
+    {
+      "name": "select-text dispatches at the element, and the legacy `select` spelling still works",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "window.__hjSelects = 0; document.getElementById('hj-note').addEventListener('select', () => window.__hjSelects++); document.addEventListener('select', () => window.__hjSelects++, true); return 'armed'",
+          "description": "count select events"
+        },
+        {
+          "action": "select-text",
+          "selector": "#hj-note",
+          "description": "canonical spelling"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "window.__hjSelects > 0",
+            "expected": true
+          },
+          "description": "the event fired"
+        },
+        {
+          "action": "select",
+          "selector": "#hj-note",
+          "description": "DEPRECATED spelling — must still run (this branch had no coverage at all)"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "window.__hjSelects > 1",
+            "expected": true
+          },
+          "description": "the alias dispatched too, so old suites keep working"
+        }
+      ]
+    },
+    {
+      "name": "clipboard events dispatch",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "window.__hjClip = []; for (const t of ['cut','copy','paste']) document.getElementById('hj-text').addEventListener(t, e => window.__hjClip.push(e.type)); return 'armed'",
+          "description": "count clipboard events"
+        },
+        {
+          "action": "copy",
+          "selector": "#hj-text",
+          "description": "copy"
+        },
+        {
+          "action": "cut",
+          "selector": "#hj-text",
+          "description": "cut"
+        },
+        {
+          "action": "paste",
+          "selector": "#hj-text",
+          "description": "paste"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "['cut','copy','paste'].every(t => window.__hjClip.includes(t))",
+            "expected": true
+          },
+          "description": "all three arrived at the element"
+        }
+      ]
+    },
+    {
+      "name": "drag moves a custom slider, and warns on a native one",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "document.querySelectorAll('#hj-drag').forEach(n=>n.remove());const w=document.createElement('div');w.id='hj-drag';w.innerHTML='<div id=hj-track style=\"position:relative;width:200px;height:30px;background:#eee\"><div id=hj-thumb style=\"position:absolute;left:0;width:30px;height:30px;background:#39f\"></div></div>';document.body.appendChild(w);let dg=false,sx=0,b=0;const t=document.getElementById('hj-thumb');t.addEventListener('mousedown',e=>{dg=true;sx=e.clientX;b=parseInt(t.style.left)||0});document.addEventListener('mousemove',e=>{if(!dg)return;t.style.left=Math.max(0,b+(e.clientX-sx))+'px'});document.addEventListener('mouseup',()=>{dg=false});return 'built'",
+          "description": "a custom slider — the shape drag exists for (MUI sliders, resize handles, reorder lists)"
+        },
+        {
+          "action": "drag",
+          "selector": "#hj-thumb",
+          "deltaX": 60,
+          "deltaY": 0,
+          "description": "drag it right"
+        },
+        {
+          "action": "assert",
+          "assertion": {
+            "type": "eval",
+            "code": "parseInt(document.getElementById('hj-thumb').style.left) > 30",
+            "expected": true
+          },
+          "description": "it actually moved — a synthetic drag DOES drive a custom implementation"
+        }
+      ]
+    },
+    {
+      "name": "verify polls until an expression matches",
+      "steps": [
+        {
+          "action": "eval",
+          "code": "window.__hjLate = 0; setTimeout(() => { window.__hjLate = 7 }, 600); return 'scheduled'",
+          "description": "a value that arrives late"
+        },
+        {
+          "action": "verify",
+          "eval": "window.__hjLate",
+          "expect": {
+            "equals": 7
+          },
+          "description": "polls rather than reading once — a single read here would see 0"
+        }
+      ]
+    },
+    {
+      "name": "wait forms that must NOT silently pass",
+      "steps": [
+        {
+          "action": "wait",
+          "duration": 50,
+          "description": "fixed delay"
+        },
+        {
+          "action": "wait",
+          "selector": "#hj-btn",
+          "timeout": 5000,
+          "description": "selector form"
+        },
+        {
+          "action": "wait",
+          "forElement": "#hj-btn",
+          "timeout": 5000,
+          "description": "forElement alias — used to match nothing and pass"
+        }
+      ]
+    }
+  ]
+}
