@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.12.4
+
+Backlog work done while releases were paused. **Includes everything in 1.12.3**, which was tagged
+but never published — installing 1.12.4 gets both.
+
+### Three bugs found by closing a coverage hole
+
+**Ten of seventeen step actions had no executable coverage in any lane** — including the
+deprecated-alias branch and the `select-text` dispatch that shipped in 1.12.3. Nothing was red; the
+lanes simply never ran those paths, and the failure mode there is a *silent success*. There is now a
+blocking suite that asserts an **observable effect** per action (a checkbox actually checked, a
+keydown that actually arrived), and it found:
+
+- **`hj drag` does nothing to a native `<input type=range>` and reported success.** Measured: a 60px
+  drag leaves a native range at 0 while moving a custom div thumb 0 → 60px. Browsers drive native
+  controls from *trusted* input only; a custom implementation listens for `mousemove` on `document`,
+  which is why MUI sliders, resize handles and reorder lists are unaffected. `/drag` now returns a
+  warning naming the cause and the way round it.
+- **`hj test validate` accepted an `assert` step with no `assertion` object** — the shape our own
+  `CLAUDE.md` documented. Such a step never checks anything: a guard that cannot fail.
+- **`tests/haltija.test.ts` reported 11 passes for work it never did.** With no server it early-returned
+  from each test body, and bun records that as PASSED. Now 0 pass / 11 skip.
+
+### The MCP server has been shipping 43 of 63 endpoints since January
+
+`apps/mcp/build/endpoints.json` — what the committed MCP server imports at runtime — had drifted
+seven months behind. Anyone on the MCP path had no `/map`, `/find`, `/wait`, `/key`, `/call`,
+`/form`, `/fetch`, `/select`, `/recording`, `/test/suite`, or the `/network`, `/video` and `/dialog`
+families. Twenty endpoints.
+
+`docs-drift` could not catch it, and that is the lesson: the gate asserts a build leaves the tree
+clean, and **nothing in the build wrote that file**. A drift gate only covers what the build
+produces. Now it writes it, with a test asserting the runtime copy matches the generated one.
+
+Also fixed: `hj --setup-mcp` pointed at `node_modules/tosijs-dev/…` in two of three lookups, a
+package name that changed long ago. (`apps/mcp` is still not in the npm `files` list — that is a
+packaging decision, deliberately left rather than guessed at.)
+
+### `hj where` says which transports are open — and why one is not ([#32](https://github.com/tonioloewald/haltija/issues/32))
+
+```
+transports: http 8700 ✓   https 8701 ✗ (no certs in <path>)
+```
+
+The channel is shared across projects, so **one project's transport choice is paid for by another**:
+an instance that came up HTTP-only leaves every `https` page with nothing to import, because mixed
+content blocks the fallback. The reporter's doc site had no haltija at all while `hj where` said
+"haltija 1.12.2, 1 tab" and everything looked healthy. A half-open channel and a full one were
+indistinguishable from outside; now the reason is named (`not requested`, `no certs at <path>`, or
+`port N is held`). A `--private` instance reports transports but not the cross-project warning — it
+is isolated by construction and denies nobody.
+
+Opening both transports by default (the other half of that issue) needs a release to exercise and is
+queued rather than rushed.
+
+### Also
+
+- Four stale copies folded in, including a **fourth** hand-maintained step list in `api-schema.ts`
+  that had drifted to 8 of 17 and propagated to `API.md` and the MCP definitions.
+- `CLAUDE.md`'s test-JSON example used the flat `assert` shape the runner ignores.
+
 ## 1.12.3
 
 Documentation-drift machinery, a measured rename, and the six blockers a nine-lens review raised

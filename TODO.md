@@ -65,6 +65,16 @@ So the rename list collapses from four to one.
   are fine and need no defending prose.
 
 
+## 1.12.4 — TAGGED, awaiting publish
+
+`v1.12.4` is tagged with all lanes green. **Publish is one command: `npm publish`** (a plain publish
+sets `latest` itself). It supersedes `v1.12.3`, which was tagged but never published — installing
+1.12.4 delivers both, and npm simply skipping a version is normal.
+
+**#1 and #2 do NOT need this release.** Their fix — declared-origin routing — shipped in **1.11.1**
+and has been on npm for weeks. They are waiting on the reporter's judgement about whether routing by
+declaration rather than inference counts as fixed. No release changes that.
+
 ## Follow-ups from the 1.12.3 nine-lens review (60 findings, 6 blockers fixed)
 
 Blockers are fixed and verified. These are the routed remainder — filed so nothing evaporates.
