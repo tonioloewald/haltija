@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.12.5
+
+**Installing this delivers 1.12.3 and 1.12.4 as well** — both were tagged but never published, so
+npm went straight from 1.12.2 to here. Their entries below still describe what they contained.
+
+### Embedding on an HTTPS dev server no longer fails silently ([#33](https://github.com/tonioloewald/haltija/issues/33))
+
+An `https://` page cannot load an `http://` script: the browser blocks it as **mixed content** and
+reports nothing that names the cause. You get no widget, `hj where` says `0 tabs`, and the natural
+conclusion is that your own setup is wrong. The reporter worked it out from `--help` and source.
+
+This is not an edge case — the tosijs-ui doc-system dev server is HTTPS by default (`bun run tls`),
+so the default project setup hits it on the first attempt.
+
+A static `src` cannot branch on the page's scheme, so the canonical embed snippet is now a
+three-line loader that picks the matching transport, with the plain tag kept below as the equivalent
+for HTTP pages. Serving an HTTPS page also needs `bunx haltija --server --both` and accepting the
+self-signed cert once at `https://localhost:8701`.
+
+Same root cause as [#32](https://github.com/tonioloewald/haltija/issues/32) from the other end:
+there, a shared HTTP-only server silently denied another project's HTTPS pages; here, an HTTPS page
+silently cannot reach an HTTP server. **Opening both transports by default would remove the class
+rather than documenting it**, which is why that remains the top of the queue rather than something
+more prose can fix.
+
 ## 1.12.4
 
 Backlog work done while releases were paused. **Includes everything in 1.12.3**, which was tagged

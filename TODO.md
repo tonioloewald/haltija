@@ -65,11 +65,14 @@ So the rename list collapses from four to one.
   are fine and need no defending prose.
 
 
-## 1.12.4 — TAGGED, awaiting publish
+## 1.12.5 — TAGGED, awaiting publish
 
-`v1.12.4` is tagged with all lanes green. **Publish is one command: `npm publish`** (a plain publish
-sets `latest` itself). It supersedes `v1.12.3`, which was tagged but never published — installing
-1.12.4 delivers both, and npm simply skipping a version is normal.
+`v1.12.5` is tagged with all lanes green. **Publish is one command: `npm publish`** (a plain publish
+sets `latest` itself). It supersedes `v1.12.3` and `v1.12.4`, both tagged and never published —
+installing 1.12.5 delivers all three, and npm skipping versions is normal.
+
+It also carries the **#33** fix (scheme-aware embed snippet), which is why it was worth re-cutting
+rather than publishing 1.12.4 and letting the newest report trail the release by one.
 
 **#1 and #2 do NOT need this release.** Their fix — declared-origin routing — shipped in **1.11.1**
 and has been on npm for weeks. They are waiting on the reporter's judgement about whether routing by
