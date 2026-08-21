@@ -554,6 +554,13 @@ Every server registers itself in `~/.haltija/servers/<name>.json` as `{ name, po
 
 The cwd step picks the live server whose recorded `cwd` is the *nearest ancestor* of the shell's cwd, so plain `hj` run anywhere inside a project reaches that project's server with no flags and no env vars. Servers started at `/` or in `$HOME` are excluded from matching — they're ancestors of everything and would recapture every project. When `hj` falls back to 8700 while other servers are alive, it warns on stderr rather than silently driving the wrong browser.
 
+**Routing is by DECLARATION, never inference — decided, not accidental** (closes #1/#2). Guessing
+which origin belongs to which checkout is the silent-wrong-answer class: a wrong guess drives another
+project's browser without saying so, which is indistinguishable from a flaky page and is the exact
+symptom those issues were opened about. Declaring costs the user a file; inferring costs them a
+misroute they cannot see. Revisit only with evidence — a real case where declaring was impractical
+or reliably forgotten AND inference would have been right.
+
 Before this existed, every `hj` in every project resolved to 8700 and drove whatever tab was focused there. If you touch the resolution ladder, keep that failure mode in mind: **a misroute is silent and looks like a flaky test, not an error.**
 
 The desktop app's **public** server registers under the reserved name **`desktop`**, but **cwd-less**
