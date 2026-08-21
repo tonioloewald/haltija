@@ -64,8 +64,8 @@ function differsBeyondPatch(a, b) {
   return pa.major !== pb.major || pa.minor !== pb.minor;
 }
 export {
-  parseVersion,
-  isOlderThan,
+  compareVersions,
   differsBeyondPatch,
-  compareVersions
+  isOlderThan,
+  parseVersion
 };

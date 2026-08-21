@@ -75,7 +75,25 @@ inject('ws://localhost:8700/ws/browser')                       // visible widget
 inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible
 ```
 
-Or via a script tag (auto-injecting IIFE bundle served by the running server):
+Or via a script tag (auto-injecting IIFE bundle served by the running server).
+
+**Use this form.** An `https://` page cannot load an `http://` script — the browser
+blocks it as mixed content and says nothing useful — so the snippet picks the matching
+transport. Serving an https page needs `bunx haltija --server --both` and accepting the
+self-signed cert once at https://localhost:8701.
+
+```html
+<script>
+  const secure = location.protocol === 'https:'
+  const origin = secure ? 'https://localhost:8701' : 'http://localhost:8700'
+  const ws = secure ? 'wss://localhost:8701' : 'ws://localhost:8700'
+  const s = document.createElement('script')
+  s.src = `${origin}/component.js?autoInject=true&serverUrl=${ws}/ws/browser`
+  document.head.appendChild(s)
+</script>
+```
+
+On an http-only page a plain tag is equivalent:
 
 ```html
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>

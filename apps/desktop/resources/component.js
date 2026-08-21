@@ -40,9 +40,9 @@
   // src/component.ts
   var exports_component = {};
   __export(exports_component, {
-    inject: () => inject,
+    DevChannel: () => DevChannel,
     VERSION: () => VERSION2,
-    DevChannel: () => DevChannel
+    inject: () => inject
   });
 
   // src/version.ts

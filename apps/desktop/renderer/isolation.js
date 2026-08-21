@@ -26,10 +26,10 @@ function resolveServerUrl(inputs) {
   return injected || persisted || SHARED_PUBLIC_URL;
 }
 export {
-  resolveServerUrl,
-  resolvePublicUrl,
-  resolveInternalPort,
-  isPrivateInstance,
+  SHARED_INTERNAL_PORT,
   SHARED_PUBLIC_URL,
-  SHARED_INTERNAL_PORT
+  isPrivateInstance,
+  resolveInternalPort,
+  resolvePublicUrl,
+  resolveServerUrl
 };

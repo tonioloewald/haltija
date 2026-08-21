@@ -30,10 +30,10 @@ function summarizeWindow(w) {
   };
 }
 export {
-  visibilityKnown,
-  summarizeWindow,
-  isVisibleTab,
-  isVisible,
+  isDrivable,
   isTopLevelTab,
-  isDrivable
+  isVisible,
+  isVisibleTab,
+  summarizeWindow,
+  visibilityKnown
 };

@@ -120,9 +120,9 @@ function cliNameForEndpoint(path) {
   return isKnownCommand(name) ? name : null;
 }
 export {
-  isKnownCommand,
-  cliNameForEndpoint,
-  ROUTED_COMMANDS,
+  LOCAL_COMMANDS,
   LOCAL_COMMAND_HELP,
-  LOCAL_COMMANDS
+  ROUTED_COMMANDS,
+  cliNameForEndpoint,
+  isKnownCommand
 };

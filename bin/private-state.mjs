@@ -24,6 +24,6 @@ function pidIsAlive(pid) {
   }
 }
 export {
-  stalePrivateEntries,
-  pidIsAlive
+  pidIsAlive,
+  stalePrivateEntries
 };

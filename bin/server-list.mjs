@@ -38,9 +38,9 @@ function isAmbiguousTarget(portSourceKind, resolvedPort, liveInstances) {
   return { ambiguous: portSourceKind === "default" && others.length > 0, others };
 }
 export {
-  sortRows,
-  labelFor,
-  isAmbiguousTarget,
+  collectCandidates,
   describeServer,
-  collectCandidates
+  isAmbiguousTarget,
+  labelFor,
+  sortRows
 };

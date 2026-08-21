@@ -40,12 +40,12 @@ var __export = (target, all) => {
 // src/desktop-isolation.ts
 var exports_desktop_isolation = {};
 __export(exports_desktop_isolation, {
-  resolveServerUrl: () => resolveServerUrl,
-  resolvePublicUrl: () => resolvePublicUrl,
-  resolveInternalPort: () => resolveInternalPort,
-  isPrivateInstance: () => isPrivateInstance,
+  SHARED_INTERNAL_PORT: () => SHARED_INTERNAL_PORT,
   SHARED_PUBLIC_URL: () => SHARED_PUBLIC_URL,
-  SHARED_INTERNAL_PORT: () => SHARED_INTERNAL_PORT
+  isPrivateInstance: () => isPrivateInstance,
+  resolveInternalPort: () => resolveInternalPort,
+  resolvePublicUrl: () => resolvePublicUrl,
+  resolveServerUrl: () => resolveServerUrl
 });
 module.exports = __toCommonJS(exports_desktop_isolation);
 var SHARED_PUBLIC_URL = "http://localhost:8700";

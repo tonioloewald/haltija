@@ -86,8 +86,8 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
   };
 }
 export {
-  routeByDeclaredOrigin,
-  normalizeOrigin,
+  ORIGINS_FILE,
   findProjectOrigins,
-  ORIGINS_FILE
+  normalizeOrigin,
+  routeByDeclaredOrigin
 };

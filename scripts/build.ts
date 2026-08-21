@@ -751,7 +751,31 @@ function generateLlmsTxt(): string {
   lines.push("inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible")
   lines.push('```')
   lines.push('')
-  lines.push('Or via a script tag (auto-injecting IIFE bundle served by the running server):')
+  lines.push('Or via a script tag (auto-injecting IIFE bundle served by the running server).')
+  lines.push('')
+  // SCHEME-AWARE, because the http-only snippet fails SILENTLY on an https dev server (issue #33):
+  // the browser blocks it as mixed content, with no console error naming the cause, so you get no
+  // widget, `hj where` reports 0 tabs, and you assume your own setup is wrong. It is not an edge
+  // case — the tosijs-ui doc-system dev server is https by default, so the default project setup
+  // hits it on the first attempt. A static `src` cannot branch on the page's scheme, so the
+  // canonical form is a three-line loader.
+  lines.push('**Use this form.** An `https://` page cannot load an `http://` script — the browser')
+  lines.push('blocks it as mixed content and says nothing useful — so the snippet picks the matching')
+  lines.push('transport. Serving an https page needs `bunx haltija --server --both` and accepting the')
+  lines.push('self-signed cert once at https://localhost:8701.')
+  lines.push('')
+  lines.push('```html')
+  lines.push('<script>')
+  lines.push('  const secure = location.protocol === \'https:\'')
+  lines.push('  const origin = secure ? \'https://localhost:8701\' : \'http://localhost:8700\'')
+  lines.push('  const ws = secure ? \'wss://localhost:8701\' : \'ws://localhost:8700\'')
+  lines.push('  const s = document.createElement(\'script\')')
+  lines.push('  s.src = `${origin}/component.js?autoInject=true&serverUrl=${ws}/ws/browser`')
+  lines.push('  document.head.appendChild(s)')
+  lines.push('</script>')
+  lines.push('```')
+  lines.push('')
+  lines.push('On an http-only page a plain tag is equivalent:')
   lines.push('')
   lines.push('```html')
   lines.push('<script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>')
