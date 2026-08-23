@@ -389,7 +389,18 @@ Three ways Haltija runs, in priority order of where we invest:
    directly beats a bespoke harness for almost everything. Keep those tabs working since
    they may still prove useful, but don't invest until/unless they become a burden.
    **DMG building is not part of the standard beta loop** — build on demand only (see
-   `AGENTS.md` → "Building a standalone DMG").
+   `AGENTS.md` → "Building a standalone DMG"). **As of 2026-08-23 we are done publishing DMGs**;
+   the one plausible reason to return is building out the coding harness for locally-hosted LLMs,
+   and even that is marginal.
+
+   **`electron-builder` is therefore NOT a dependency** — the `build:*` scripts invoke
+   `npx --yes electron-builder@26` on demand. It was pulling **271 transitive packages** into
+   `apps/desktop` (285 → 14 without it) and supplied five of one week's security advisories
+   including a critical `tar` one, all for a capability we do not exercise. Keeping it pinned
+   bought a recurring sweep item and *false* assurance — nothing tests it, so a bump was
+   unverifiable either way. On demand, it is always current and costs nothing until someone
+   actually builds. The `build` config block in `apps/desktop/package.json` stays; only the
+   dependency went.
 
 ## Desktop App (Electron)
 
