@@ -1624,6 +1624,85 @@ Response: { valid: boolean, errors?: [{ step?, message }] }
 
 ## Escape Hatches
 
+### `POST /session/attach`
+
+**Mirror a tmux session into the channel (opt-in, read-only)**
+
+Point the session mirror at a running tmux session, so a page — including one on a
+remote device over a tunnel — can watch the agent work.
+
+**Opt-in on purpose.** Nothing is mirrored until you attach: the mirror carries EVERYTHING the agent
+prints, including anything it echoes from a file it just read. There is no default target and no
+config flag that turns this on.
+
+**Read-only on purpose.** There is no write endpoint. `tmux send-keys` would let a page answer a
+permission prompt — indistinguishable from the operator typing it — which is a materially larger
+grant than watching. That half is a separate decision.
+
+Attaching to a name that does not exist FAILS and lists what does, rather than reporting success for
+a mirror that would show nothing.
+
+Requires the agent to be running inside tmux (`tmux new -s agent`, then start it there). tmux can
+attach to a session that is already running, so you do not have to restart your agent.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `target` | string | tmux session name, exactly as `tmux list-sessions` reports it *(required)* |
+
+**Examples:**
+
+- **attach**: Mirror the "agent" session
+  ```json
+  {"target":"agent"}
+  ```
+
+---
+
+### `POST /session/read`
+
+**Read the mirrored terminal session**
+
+Returns the rendered contents of the mirrored tmux pane as plain text.
+
+Already rendered — `capture-pane -p` resolves the escape sequences, so this is displayable text
+rather than a terminal stream. A page can put it in a `<pre>` without a terminal emulator, which
+is what makes it usable on a headset.
+
+Returns an error naming the target if the session has gone away, rather than empty text — an empty
+mirror reads as "the agent is idle", which would be the wrong conclusion.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `lines` | number,null | How many lines of scrollback to include (default 200, max 10000) |
+
+**Examples:**
+
+- **read**: Current pane contents
+  ```json
+  {}
+  ```
+
+---
+
+### `POST /session/detach`
+
+**Stop mirroring the terminal session**
+
+Detach the mirror. Reads then report "no session attached" until you attach again.
+
+**Examples:**
+
+- **detach**: Stop mirroring
+  ```json
+  {}
+  ```
+
+---
+
 ### `GET /console`
 
 **Get console output**

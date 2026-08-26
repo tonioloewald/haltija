@@ -2509,7 +2509,76 @@ By default, auto-submits. Use submit: false to paste only.`,
 // All Endpoints Registry
 // ============================================
 
+/**
+ * Mirror an agent's terminal session into the channel — the READ half of #37.
+ *
+ * A page (over the tosijs-ui tunnel, on a VR headset) can watch the agent work. Read-only and
+ * opt-in by construction; see src/tmux-session.ts for why both of those are security properties
+ * rather than conveniences.
+ */
+export const sessionAttach = endpoint({
+  path: '/session/attach',
+  method: 'POST',
+  summary: 'Mirror a tmux session into the channel (opt-in, read-only)',
+  description: `Point the session mirror at a running tmux session, so a page — including one on a
+remote device over a tunnel — can watch the agent work.
+
+**Opt-in on purpose.** Nothing is mirrored until you attach: the mirror carries EVERYTHING the agent
+prints, including anything it echoes from a file it just read. There is no default target and no
+config flag that turns this on.
+
+**Read-only on purpose.** There is no write endpoint. \`tmux send-keys\` would let a page answer a
+permission prompt — indistinguishable from the operator typing it — which is a materially larger
+grant than watching. That half is a separate decision.
+
+Attaching to a name that does not exist FAILS and lists what does, rather than reporting success for
+a mirror that would show nothing.
+
+Requires the agent to be running inside tmux (\`tmux new -s agent\`, then start it there). tmux can
+attach to a session that is already running, so you do not have to restart your agent.`,
+  category: 'debug',
+  input: s.object({
+    target: s.string.describe('tmux session name, exactly as `tmux list-sessions` reports it'),
+  }),
+  examples: [{ name: 'attach', input: { target: 'agent' }, description: 'Mirror the "agent" session' }],
+  hints: 'see: session-read, session-detach',
+})
+
+export const sessionRead = endpoint({
+  path: '/session/read',
+  method: 'POST',
+  summary: 'Read the mirrored terminal session',
+  description: `Returns the rendered contents of the mirrored tmux pane as plain text.
+
+Already rendered — \`capture-pane -p\` resolves the escape sequences, so this is displayable text
+rather than a terminal stream. A page can put it in a \`<pre>\` without a terminal emulator, which
+is what makes it usable on a headset.
+
+Returns an error naming the target if the session has gone away, rather than empty text — an empty
+mirror reads as "the agent is idle", which would be the wrong conclusion.`,
+  category: 'debug',
+  input: s.object({
+    lines: s.number.describe('How many lines of scrollback to include (default 200, max 10000)').optional,
+  }),
+  examples: [{ name: 'read', input: {}, description: 'Current pane contents' }],
+  hints: '--lines N, --follow | see: session-attach',
+})
+
+export const sessionDetach = endpoint({
+  path: '/session/detach',
+  method: 'POST',
+  summary: 'Stop mirroring the terminal session',
+  description: 'Detach the mirror. Reads then report "no session attached" until you attach again.',
+  category: 'debug',
+  input: s.object({}),
+  examples: [{ name: 'detach', input: {}, description: 'Stop mirroring' }],
+  hints: 'see: session-attach',
+})
+
 export const endpoints = {
+  sessionAttach,
+  sessionRead,
+  sessionDetach,
   // DOM
   tree,
   query,
@@ -2624,8 +2693,9 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  updated: '2026-07-31T00:00:00.000Z',
-  checksum: '232788f0',
+  // Bumped for the session-mirror endpoints (#37): /session/attach, /session/read, /session/detach.
+  updated: '2026-08-26T00:00:00.000Z',
+  checksum: 'ba542e66',
 }
 
 /**

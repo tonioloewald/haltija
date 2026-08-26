@@ -1,5 +1,56 @@
 [
   {
+    "path": "/session/attach",
+    "method": "POST",
+    "summary": "Mirror a tmux session into the channel (opt-in, read-only)",
+    "description": "Point the session mirror at a running tmux session, so a page — including one on a\nremote device over a tunnel — can watch the agent work.\n\n**Opt-in on purpose.** Nothing is mirrored until you attach: the mirror carries EVERYTHING the agent\nprints, including anything it echoes from a file it just read. There is no default target and no\nconfig flag that turns this on.\n\n**Read-only on purpose.** There is no write endpoint. `tmux send-keys` would let a page answer a\npermission prompt — indistinguishable from the operator typing it — which is a materially larger\ngrant than watching. That half is a separate decision.\n\nAttaching to a name that does not exist FAILS and lists what does, rather than reporting success for\na mirror that would show nothing.\n\nRequires the agent to be running inside tmux (`tmux new -s agent`, then start it there). tmux can\nattach to a session that is already running, so you do not have to restart your agent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "tmux session name, exactly as `tmux list-sessions` reports it"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/session/read",
+    "method": "POST",
+    "summary": "Read the mirrored terminal session",
+    "description": "Returns the rendered contents of the mirrored tmux pane as plain text.\n\nAlready rendered — `capture-pane -p` resolves the escape sequences, so this is displayable text\nrather than a terminal stream. A page can put it in a `<pre>` without a terminal emulator, which\nis what makes it usable on a headset.\n\nReturns an error naming the target if the session has gone away, rather than empty text — an empty\nmirror reads as \"the agent is idle\", which would be the wrong conclusion.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "How many lines of scrollback to include (default 200, max 10000)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/session/detach",
+    "method": "POST",
+    "summary": "Stop mirroring the terminal session",
+    "description": "Detach the mirror. Reads then report \"no session attached\" until you attach again.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
     "path": "/tree",
     "method": "POST",
     "summary": "Get DOM tree structure",

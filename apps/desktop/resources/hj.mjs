@@ -1,7 +1,103 @@
 #!/usr/bin/env bun
 // haltija-cli:do-not-edit v1.12.5
 import { createRequire } from "node:module";
+var __defProp = Object.defineProperty;
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: __exportSetter.bind(all, name)
+    });
+};
+var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
+
+// bin/tmux-session.mjs
+var exports_tmux_session = {};
+__export(exports_tmux_session, {
+  attachSession: () => attachSession,
+  detachSession: () => detachSession,
+  listSessions: () => listSessions,
+  newTailOnly: () => newTailOnly,
+  readSession: () => readSession,
+  sessionState: () => sessionState
+});
+function sessionState() {
+  return { ...state };
+}
+async function listSessions(run) {
+  const res = await run(["list-sessions", "-F", "#{session_name}"]);
+  if (!res.ok)
+    return [];
+  return res.stdout.split(`
+`).map((l) => l.trim()).filter(Boolean);
+}
+async function attachSession(run, target) {
+  const available = await listSessions(run);
+  if (!available.length) {
+    return {
+      ok: false,
+      error: "no tmux sessions are running. Start your agent inside one — `tmux new -s agent` then run " + "it there — or attach to an existing session by name.",
+      available: []
+    };
+  }
+  if (!available.includes(target)) {
+    return {
+      ok: false,
+      error: `no tmux session named "${target}"`,
+      available
+    };
+  }
+  state.target = target;
+  state.attachedAt = Date.now();
+  return { ok: true, target, available };
+}
+function detachSession() {
+  state.target = null;
+  state.attachedAt = null;
+}
+async function readSession(run, lines = 200) {
+  if (!state.target) {
+    return {
+      ok: false,
+      error: "no session attached. `hj session attach <tmux-session>` first — mirroring is opt-in because " + "it exposes everything the agent prints."
+    };
+  }
+  const safeLines = Math.max(1, Math.min(1e4, Math.floor(lines) || 200));
+  const res = await run(["capture-pane", "-t", state.target, "-p", "-S", `-${safeLines}`]);
+  if (!res.ok) {
+    return {
+      ok: false,
+      target: state.target,
+      error: `could not read tmux session "${state.target}": ${res.stderr.trim() || "unknown error"}`
+    };
+  }
+  return { ok: true, target: state.target, text: res.stdout.replace(/\s+$/, "") };
+}
+function newTailOnly(previous, current) {
+  if (!previous)
+    return current;
+  if (current.startsWith(previous))
+    return current.slice(previous.length);
+  const lastLine = previous.trimEnd().split(`
+`).pop() || "";
+  if (lastLine) {
+    const idx = current.lastIndexOf(lastLine);
+    if (idx !== -1)
+      return current.slice(idx + lastLine.length);
+  }
+  return current;
+}
+var state;
+var init_tmux_session = __esm(() => {
+  state = { target: null, attachedAt: null };
+});
 
 // bin/cli-subcommand.mjs
 import { spawn } from "child_process";
@@ -837,6 +933,9 @@ var ROUTED_COMMANDS = [
   "test-run",
   "test-validate",
   "test-suite",
+  "session-attach",
+  "session-read",
+  "session-detach",
   "send",
   "send-message",
   "send-selection",
@@ -897,6 +996,9 @@ var ALL = new Set([...ROUTED_COMMANDS, ...LOCAL_COMMANDS]);
 
 // bin/hints.mjs
 var COMMAND_HINTS = {
+  "session-attach": "see: session-read, session-detach",
+  "session-read": "--lines N, --follow | see: session-attach",
+  "session-detach": "see: session-attach",
   tree: "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   query: '@ref or "selector", --all | see: tree, inspect',
   inspect: '@ref or "selector", --styles, --rules | see: tree (for ancestors), query',
@@ -923,6 +1025,9 @@ var COMMAND_HINTS = {
   status: "--json | see: windows, stats, console"
 };
 var COMMAND_SUMMARIES = {
+  "session-attach": "Mirror a tmux session into the channel (opt-in, read-only)",
+  "session-read": "Read the mirrored terminal session",
+  "session-detach": "Stop mirroring the terminal session",
   tree: "Get DOM tree structure",
   query: "Query DOM elements by selector",
   inspect: "Deep inspection of an element",
@@ -1046,6 +1151,9 @@ var COMPOUND_PATHS = {
   "test-run": "/test/run",
   "test-suite": "/test/suite",
   "test-validate": "/test/validate",
+  "session-attach": "/session/attach",
+  "session-read": "/session/read",
+  "session-detach": "/session/detach",
   "send-message": "/send/message",
   "send-selection": "/send/selection",
   "send-recording": "/send/recording",
@@ -1105,6 +1213,18 @@ function takeFlags(args, spec) {
   return { flags, positional };
 }
 var ARG_MAPS = {
+  "session-attach": (args) => ({ target: args.find((a) => !a.startsWith("-")) }),
+  "session-read": (args) => {
+    const body = {};
+    for (let i = 0;i < args.length; i++) {
+      if (args[i] === "--lines") {
+        body.lines = Number(args[++i]);
+        continue;
+      }
+    }
+    return body;
+  },
+  "session-detach": () => ({}),
   click: (args) => parseClickArgs(args),
   type: (args) => {
     const { flags, positional } = takeFlags(args, { "--clear": "bool", "--humanlike": "bool" });
@@ -1847,6 +1967,7 @@ var KNOWN_FLAGS = {
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page", "--layout"],
+  "session-read": ["--lines", "--follow"],
   "events-watch": ["--preset"],
   "mutations-watch": ["--preset"],
   "network-watch": ["--preset"],
@@ -2982,10 +3103,47 @@ var NOUN_DEFAULTS = {
   select: "select-status",
   tabs: "windows",
   video: "video-status",
-  send: "send"
+  send: "send",
+  session: "session-read"
 };
 if (args.length === 1 && !isSubcommand(args[0]) && Object.hasOwn(NOUN_DEFAULTS, args[0])) {
   args[0] = NOUN_DEFAULTS[args[0]];
+}
+if ((args[0] === "session-read" || args[0] === "session" && args[1] === "read") && args.includes("--follow")) {
+  const { newTailOnly: newTailOnly2 } = await Promise.resolve().then(() => (init_tmux_session(), exports_tmux_session));
+  const linesIdx = args.indexOf("--lines");
+  const lines = linesIdx !== -1 ? Number(args[linesIdx + 1]) : 200;
+  let seen = "";
+  let firstPass = true;
+  process.stderr.write(`[hj] following the mirrored session — Ctrl-C to stop
+`);
+  for (;; ) {
+    let json;
+    try {
+      const resp = await fetch(`http://localhost:${port}/session/read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...process.env.HALTIJA_TOKEN ? { "X-Haltija-Token": process.env.HALTIJA_TOKEN } : {} },
+        body: JSON.stringify({ lines })
+      });
+      json = await resp.json();
+    } catch (err) {
+      console.error(`hj: ${err.message}`);
+      process.exit(1);
+    }
+    if (!json.success) {
+      console.error(`hj: ${json.error}`);
+      process.exit(1);
+    }
+    const text = json.text || "";
+    const fresh = firstPass ? text : newTailOnly2(seen, text);
+    if (fresh)
+      process.stdout.write(fresh.endsWith(`
+`) ? fresh : fresh + `
+`);
+    seen = text;
+    firstPass = false;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 var subcommand = args[0];
 var subArgs = args.slice(1);
@@ -3070,7 +3228,7 @@ if (!windowTarget && !DIAGNOSTIC.has(subcommand) && isSubcommand(subcommand)) {
           subArgs = [...subArgs, "--window", routed.windowId];
         } else if (routed.kind === "no-match" && tabs.length) {
           const saw = routed.sawOrigins.length ? routed.sawOrigins.join(", ") : "(none with a readable origin)";
-          const msg = `declared origins ${declared.origins.join(", ")} (from ${declared.source}) match no connected tab. ` + `Connected: ${saw}.`;
+          const msg = `declared origins ${declared.origins.join(", ")} (from ${declared.source}) match no connected tab. Connected: ${saw}.`;
           if (STRICT) {
             console.error(`hj: ERROR (strict) — ${msg}`);
             console.error(`hj: open one of your declared origins, fix .haltija.json, or pass --window <id> to choose explicitly.`);

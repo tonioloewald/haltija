@@ -24,7 +24,7 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 - **Multiple tabs**: `GET /windows`, `POST /tabs/open`, `POST /tabs/close`, `POST /tabs/focus`
 - **Record & replay**: `POST /recording`, `POST /recording/start`, `POST /recording/stop`, `POST /recording/generate`, `GET /recordings`
 - **Run tests**: `POST /test/run`, `POST /test/suite`, `POST /test/validate`
-- **Debug & eval**: `GET /console`, `POST /eval`, `POST /fetch`, `POST /screenshot`, `POST /snapshot`, `POST /video/start`, `POST /video/stop`, `GET /video/status`
+- **Debug & eval**: `POST /session/attach`, `POST /session/read`, `POST /session/detach`, `GET /console`, `POST /eval`, `POST /fetch`, `POST /screenshot`, `POST /snapshot`, `POST /video/start`, `POST /video/stop`, `GET /video/status`
 - **Dialogs**: `POST /dialog/configure`, `GET /dialog/history`
 - **Network traffic**: `GET /network`, `POST /network/watch`, `POST /network/unwatch`, `GET /network/stats`
 

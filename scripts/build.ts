@@ -65,6 +65,14 @@ writeFileSync(
 // 0e-bis. Compile src/private-state.ts for the launcher — deciding which private-run leftovers are
 // safe to delete must never delete a LIVE peer's state, which is a property worth unit-testing
 // rather than hiding in a loop inside bin/tosijs-dev.mjs.
+// Session mirror helpers for the CLI's --follow loop (issue #37).
+await $`bun build ./src/tmux-session.ts --outfile=bin/tmux-session.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/tmux-session.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/tmux-session.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/tmux-session.mjs', 'utf-8'),
+)
+
 await $`bun build ./src/private-state.ts --outfile=bin/private-state.mjs --target=node --format=esm`
 writeFileSync(
   'bin/private-state.mjs',

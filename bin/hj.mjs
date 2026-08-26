@@ -776,9 +776,50 @@ const NOUN_DEFAULTS = {
   'tabs': 'windows',        // show tab list
   'video': 'video-status',
   'send': 'send',           // already a command
+  'session': 'session-read',// bare `hj session` shows the mirror
 }
 if (args.length === 1 && !isSubcommand(args[0]) && Object.hasOwn(NOUN_DEFAULTS, args[0])) {
   args[0] = NOUN_DEFAULTS[args[0]]
+}
+
+// `hj session read --follow` — poll the mirror and print only what is new.
+//
+// Client-side rather than a streaming endpoint: the page in the headset polls the same endpoint, so
+// a second transport would be a second thing to keep working. newTailOnly() is shared with the
+// server module and unit-tested, including the case where the pane has scrolled past what we saw.
+if ((args[0] === 'session-read' || (args[0] === 'session' && args[1] === 'read')) && args.includes('--follow')) {
+  const { newTailOnly } = await import('./tmux-session.mjs')
+  const linesIdx = args.indexOf('--lines')
+  const lines = linesIdx !== -1 ? Number(args[linesIdx + 1]) : 200
+  let seen = ''
+  let firstPass = true
+  process.stderr.write(`[hj] following the mirrored session — Ctrl-C to stop\n`)
+  for (;;) {
+    let json
+    try {
+      const resp = await fetch(`http://localhost:${port}/session/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(process.env.HALTIJA_TOKEN ? { 'X-Haltija-Token': process.env.HALTIJA_TOKEN } : {}) },
+        body: JSON.stringify({ lines }),
+      })
+      json = await resp.json()
+    } catch (err) {
+      console.error(`hj: ${err.message}`)
+      process.exit(1)
+    }
+    if (!json.success) {
+      // Do not spin silently on a session that has gone away — say it once and stop, so a dead
+      // mirror cannot look like an idle agent.
+      console.error(`hj: ${json.error}`)
+      process.exit(1)
+    }
+    const text = json.text || ''
+    const fresh = firstPass ? text : newTailOnly(seen, text)
+    if (fresh) process.stdout.write(fresh.endsWith('\n') ? fresh : fresh + '\n')
+    seen = text
+    firstPass = false
+    await new Promise((r) => setTimeout(r, 1000))
+  }
 }
 
 const subcommand = args[0]

@@ -11,6 +11,7 @@
 
 import { writeFile } from 'fs/promises'
 import { performDrag } from './drag'
+import { attachSession, readSession, detachSession, type RunTmux } from './tmux-session'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
 
@@ -1768,3 +1769,50 @@ export function errorResponse(
 ): Response {
   return jsonResponse({ success: false, error }, headers, status)
 }
+
+/**
+ * Session mirror — the READ half of #37. See src/tmux-session.ts for why it is read-only.
+ *
+ * tmux is invoked with an ARGUMENT ARRAY, never a shell string, so a session name containing shell
+ * metacharacters is inert. The name is also validated against `tmux list-sessions` before use, but
+ * argv-not-shell is what makes the injection class impossible rather than merely unlikely.
+ */
+const runTmux: RunTmux = async (args) => {
+  try {
+    const proc = Bun.spawn(['tmux', ...args], { stdout: 'pipe', stderr: 'pipe' })
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    return { ok: code === 0, stdout, stderr }
+  } catch (err) {
+    // tmux not installed is the common case, and it deserves a real remedy rather than ENOENT.
+    return { ok: false, stdout: '', stderr: `could not run tmux: ${(err as Error).message}` }
+  }
+}
+
+registerHandler(api.sessionAttach, async (body, ctx) => {
+  const result = await attachSession(runTmux, String(body.target || ''))
+  return Response.json(
+    result.ok
+      ? { success: true, target: result.target, available: result.available }
+      : { success: false, error: result.error, available: result.available },
+    { status: result.ok ? 200 : 400, headers: ctx.headers },
+  )
+})
+
+registerHandler(api.sessionRead, async (body, ctx) => {
+  const result = await readSession(runTmux, body.lines ?? 200)
+  return Response.json(
+    result.ok
+      ? { success: true, target: result.target, text: result.text }
+      : { success: false, error: result.error, target: result.target },
+    { status: result.ok ? 200 : 400, headers: ctx.headers },
+  )
+})
+
+registerHandler(api.sessionDetach, async (_body, ctx) => {
+  detachSession()
+  return Response.json({ success: true, attached: false }, { headers: ctx.headers })
+})

@@ -118,6 +118,8 @@ describe('docs coverage: every hj command is documented', () => {
       'send-message', 'send-selection', 'send-recording',
       'tabs-open', 'tabs-close', 'tabs-focus',
       'test-run', 'test-validate', 'test-suite',
+      // Reached as `hj session attach|read|detach`, same shape as tabs-*/test-*.
+      'session-attach', 'session-read', 'session-detach',
       'inspectAll', 'ls', 'quit', 'version', 'api', 'docs', 'stats', 'recordings',
     ])
     const missing = [...KNOWN, ...LOCAL]

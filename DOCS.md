@@ -122,6 +122,9 @@ and every node carries `colors` + a `contrastFail` verdict so it is machine-chec
 
 ### Debug & Eval
 
+- `hj session-attach [target]` - Mirror a tmux session into the channel (opt-in, read-only)
+- `hj session-read [lines]` - Read the mirrored terminal session
+- `hj session-detach` - Stop mirroring the terminal session
 - `hj console` - Get console output
 - `hj eval [code, window]` - Execute JavaScript
 - `hj fetch [url, window]` - Fetch a URL from within the tab context

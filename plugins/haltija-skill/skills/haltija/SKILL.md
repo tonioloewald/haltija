@@ -128,6 +128,8 @@ hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
 hj evaluate "document.title"   # Run JS in the page (async OK — see below)
 hj screenshot          # Capture the page — PNG default; --format webp|jpeg (smaller), --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
+hj session-attach <tmux>   # Mirror the agent's terminal in (read-only, opt-in; `session-detach` stops)
+hj session-read --follow   #   a page — even on a headset over a tunnel — can watch the agent work
 ```
 
 **Output convention for read commands.** `hj eval`, `hj call`, `hj fetch`,
@@ -331,18 +333,15 @@ hj --window w2 eval "document.title"    # leading form
 hj eval "document.title" --window w2    # trailing form — both work
 ```
 
-**Heed the stderr warnings — they exist because the tool must not hand you a plausible-but-wrong
-answer.** Two can appear on an untargeted command:
+**Heed the stderr warnings** — they exist so the tool never hands you a plausible-but-wrong answer.
+Two can appear on an untargeted command:
 
-- **Hidden tab.** The tab that answered reports it is hidden (backgrounded, minimized, or the
-  display is asleep). Browsers freeze `requestAnimationFrame` and throttle timers there, so
-  anything mounted by rAF/IntersectionObserver may never have run — an empty selector means "not
-  mounted yet," **not** "broken." Bring the tab to the front or target a visible one with
-  `--window <id>` before concluding anything is wrong.
-- **Focus ambiguity.** The command wasn't pinned and this server has tabs from more than one
-  origin, so *focus* — not your working directory — chose which tab answered. If you meant a
-  different page (another project's tab on a shared server), re-run pinned with `--window <id>`
-  from the list the warning prints.
+- **Hidden tab.** The tab that answered is backgrounded, minimized, or the display is asleep, so
+  rAF-mounted content may never have run — an empty selector means "not mounted yet," **not**
+  "broken." Front the tab, or pin a visible one with `--window <id>`.
+- **Focus ambiguity.** Nothing pinned the command and this server has tabs from several origins,
+  so *focus* chose which answered — not your working directory. Re-run with `--window <id>` from
+  the list the warning prints.
 
 ## Watching what the page does
 

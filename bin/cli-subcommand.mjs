@@ -102,6 +102,9 @@ export const COMPOUND_PATHS = {
   'test-run': '/test/run',
   'test-suite': '/test/suite',
   'test-validate': '/test/validate',
+  'session-attach': '/session/attach',
+  'session-read': '/session/read',
+  'session-detach': '/session/detach',
   'send-message': '/send/message',
   'send-selection': '/send/selection',
   'send-recording': '/send/recording',
@@ -192,6 +195,16 @@ export function takeFlags(args, spec) {
 }
 
 export const ARG_MAPS = {
+  // `hj session attach <name>` / `hj session read --lines N`. Compound form handled in hj.mjs.
+  'session-attach': (args) => ({ target: args.find((a) => !a.startsWith('-')) }),
+  'session-read': (args) => {
+    const body = {}
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--lines') { body.lines = Number(args[++i]); continue }
+    }
+    return body
+  },
+  'session-detach': () => ({}),
   click: (args) => parseClickArgs(args),
   type: (args) => {
     // Flags first, so an advertised `--clear` stops being typed as literal text.
@@ -925,6 +938,7 @@ export const KNOWN_FLAGS = {
   // not cosmetic: BOTH `normalizeEqualsFlags` and `warnUnknownFlags` are gated on an entry
   // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
   map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page', '--layout'],
+  'session-read': ['--lines', '--follow'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],
