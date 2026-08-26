@@ -1,6 +1,7 @@
 {
-  "session-attach": "see: session-read, session-detach",
+  "session-attach": "--allow-input | see: session-read, session-write, session-detach",
   "session-read": "--lines N, --follow | see: session-attach",
+  "session-write": "--no-submit | see: session-attach",
   "session-detach": "see: session-attach",
   "tree": "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   "query": "@ref or \"selector\", --all | see: tree, inspect",

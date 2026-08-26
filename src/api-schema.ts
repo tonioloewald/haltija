@@ -2539,9 +2539,13 @@ attach to a session that is already running, so you do not have to restart your 
   category: 'debug',
   input: s.object({
     target: s.string.describe('tmux session name, exactly as `tmux list-sessions` reports it'),
+    allowInput: s.boolean.describe('ALSO permit typing into the session (default false). A separate grant from reading: typing can answer a permission prompt.').optional,
   }),
-  examples: [{ name: 'attach', input: { target: 'agent' }, description: 'Mirror the "agent" session' }],
-  hints: 'see: session-read, session-detach',
+  examples: [
+    { name: 'attach', input: { target: 'agent' }, description: 'Mirror the "agent" session, read-only' },
+    { name: 'attach with input', input: { target: 'agent', allowInput: true }, description: 'Mirror it and permit typing' },
+  ],
+  hints: '--allow-input | see: session-read, session-write, session-detach',
 })
 
 export const sessionRead = endpoint({
@@ -2564,6 +2568,34 @@ mirror reads as "the agent is idle", which would be the wrong conclusion.`,
   hints: '--lines N, --follow | see: session-attach',
 })
 
+export const sessionWrite = endpoint({
+  path: '/session/write',
+  method: 'POST',
+  summary: 'Type into the mirrored session (requires the input grant)',
+  description: `Sends text to the mirrored tmux session exactly as a local user at the keyboard would.
+
+The agent receives it on stdin as a normal turn — there is no queue, no message API and no await
+primitive, because typing into the agent's own console is already all three.
+
+**Requires \`allowInput\` at attach time.** Reading and writing are different risks: reading leaks
+what the agent prints, writing decides what the agent DOES — including answering a permission prompt,
+where this is indistinguishable from the operator typing. A mirror attached for watching cannot be
+typed into.
+
+\`submit\` defaults to true (hits Enter), matching /send/message. Pass false to paste without
+submitting — useful when a human at the real keyboard should read it before it goes in.
+
+Sent as one \`send-keys\` call, not per character: two writers on one pty interleave badly, and
+line-at-a-time is correct for this.`,
+  category: 'debug',
+  input: s.object({
+    text: s.string.describe('What to type'),
+    submit: s.boolean.describe('Press Enter afterwards (default true)').optional,
+  }),
+  examples: [{ name: 'write', input: { text: 'the login button is off-centre in VR' }, description: 'Say something to the agent' }],
+  hints: '--no-submit | see: session-attach',
+})
+
 export const sessionDetach = endpoint({
   path: '/session/detach',
   method: 'POST',
@@ -2578,6 +2610,7 @@ export const sessionDetach = endpoint({
 export const endpoints = {
   sessionAttach,
   sessionRead,
+  sessionWrite,
   sessionDetach,
   // DOM
   tree,
@@ -2693,9 +2726,9 @@ export const ALL_ENDPOINTS = Object.values(endpoints)
 // This ensures schema changes are intentional and documented.
 
 export const SCHEMA_FINGERPRINT = {
-  // Bumped for the session-mirror endpoints (#37): /session/attach, /session/read, /session/detach.
+  // Bumped for the session mirror (#37): /session/attach|read|write|detach, plus attach's allowInput.
   updated: '2026-08-26T00:00:00.000Z',
-  checksum: 'ba542e66',
+  checksum: '84832b72',
 }
 
 /**

@@ -31,7 +31,7 @@ export const ROUTED_COMMANDS = [
   'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   // Session mirror (#37) — read-only by design; there is deliberately no session-write.
-  'session-attach', 'session-read', 'session-detach',
+  'session-attach', 'session-read', 'session-write', 'session-detach',
   'send', 'send-message', 'send-selection', 'send-recording',
   'status', 'version', 'docs', 'api', 'stats', 'where',
 ] as const

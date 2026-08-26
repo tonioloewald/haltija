@@ -104,6 +104,7 @@ export const COMPOUND_PATHS = {
   'test-validate': '/test/validate',
   'session-attach': '/session/attach',
   'session-read': '/session/read',
+  'session-write': '/session/write',
   'session-detach': '/session/detach',
   'send-message': '/send/message',
   'send-selection': '/send/selection',
@@ -196,7 +197,14 @@ export function takeFlags(args, spec) {
 
 export const ARG_MAPS = {
   // `hj session attach <name>` / `hj session read --lines N`. Compound form handled in hj.mjs.
-  'session-attach': (args) => ({ target: args.find((a) => !a.startsWith('-')) }),
+  'session-attach': (args) => ({
+    target: args.find((a) => !a.startsWith('-')),
+    allowInput: args.includes('--allow-input') || undefined,
+  }),
+  'session-write': (args) => {
+    const text = args.filter((a) => !a.startsWith('-')).join(' ')
+    return { text, submit: args.includes('--no-submit') ? false : undefined }
+  },
   'session-read': (args) => {
     const body = {}
     for (let i = 0; i < args.length; i++) {
@@ -939,6 +947,8 @@ export const KNOWN_FLAGS = {
   // existing, so `hj map --scale=3` parsed to `{}` and warned about nothing.
   map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page', '--layout'],
   'session-read': ['--lines', '--follow'],
+  'session-attach': ['--allow-input'],
+  'session-write': ['--no-submit'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],
@@ -988,6 +998,7 @@ export function normalizeEqualsFlags(args, known) {
 export const FREE_TEXT_COMMANDS = new Set([
   'type', 'highlight', 'call', 'eval', 'find', 'snapshot',
   'send', 'send-message', 'send-selection', 'send-recording',
+  'session-write',
 ])
 
 

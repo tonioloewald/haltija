@@ -2566,12 +2566,17 @@ attach to a session that is already running, so you do not have to restart your 
 | Name | Type | Description |
 |------|------|-------------|
 | \`target\` | string | tmux session name, exactly as \`tmux list-sessions\` reports it *(required)* |
+| \`allowInput\` | boolean,null | ALSO permit typing into the session (default false). A separate grant from reading: typing can answer a permission prompt. |
 
 **Examples:**
 
-- **attach**: Mirror the "agent" session
+- **attach**: Mirror the "agent" session, read-only
   \`\`\`json
   {"target":"agent"}
+  \`\`\`
+- **attach with input**: Mirror it and permit typing
+  \`\`\`json
+  {"target":"agent","allowInput":true}
   \`\`\`
 
 ---
@@ -2600,6 +2605,42 @@ mirror reads as "the agent is idle", which would be the wrong conclusion.
 - **read**: Current pane contents
   \`\`\`json
   {}
+  \`\`\`
+
+---
+
+### \`POST /session/write\`
+
+**Type into the mirrored session (requires the input grant)**
+
+Sends text to the mirrored tmux session exactly as a local user at the keyboard would.
+
+The agent receives it on stdin as a normal turn — there is no queue, no message API and no await
+primitive, because typing into the agent's own console is already all three.
+
+**Requires \`allowInput\` at attach time.** Reading and writing are different risks: reading leaks
+what the agent prints, writing decides what the agent DOES — including answering a permission prompt,
+where this is indistinguishable from the operator typing. A mirror attached for watching cannot be
+typed into.
+
+\`submit\` defaults to true (hits Enter), matching /send/message. Pass false to paste without
+submitting — useful when a human at the real keyboard should read it before it goes in.
+
+Sent as one \`send-keys\` call, not per character: two writers on one pty interleave badly, and
+line-at-a-time is correct for this.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| \`text\` | string | What to type *(required)* |
+| \`submit\` | boolean,null | Press Enter afterwards (default true) |
+
+**Examples:**
+
+- **write**: Say something to the agent
+  \`\`\`json
+  {"text":"the login button is off-centre in VR"}
   \`\`\`
 
 ---
@@ -3154,8 +3195,9 @@ and every node carries \`colors\` + a \`contrastFail\` verdict so it is machine-
 
 ### Debug & Eval
 
-- \`hj session-attach [target]\` - Mirror a tmux session into the channel (opt-in, read-only)
+- \`hj session-attach [target, allowInput]\` - Mirror a tmux session into the channel (opt-in, read-only)
 - \`hj session-read [lines]\` - Read the mirrored terminal session
+- \`hj session-write [text, submit]\` - Type into the mirrored session (requires the input grant)
 - \`hj session-detach\` - Stop mirroring the terminal session
 - \`hj console\` - Get console output
 - \`hj eval [code, window]\` - Execute JavaScript
@@ -3365,7 +3407,7 @@ like a user, run JavaScript, and watch aggregated semantic events — instead of
 - **Multiple tabs**: \`GET /windows\`, \`POST /tabs/open\`, \`POST /tabs/close\`, \`POST /tabs/focus\`
 - **Record & replay**: \`POST /recording\`, \`POST /recording/start\`, \`POST /recording/stop\`, \`POST /recording/generate\`, \`GET /recordings\`
 - **Run tests**: \`POST /test/run\`, \`POST /test/suite\`, \`POST /test/validate\`
-- **Debug & eval**: \`POST /session/attach\`, \`POST /session/read\`, \`POST /session/detach\`, \`GET /console\`, \`POST /eval\`, \`POST /fetch\`, \`POST /screenshot\`, \`POST /snapshot\`, \`POST /video/start\`, \`POST /video/stop\`, \`GET /video/status\`
+- **Debug & eval**: \`POST /session/attach\`, \`POST /session/read\`, \`POST /session/write\`, \`POST /session/detach\`, \`GET /console\`, \`POST /eval\`, \`POST /fetch\`, \`POST /screenshot\`, \`POST /snapshot\`, \`POST /video/start\`, \`POST /video/stop\`, \`GET /video/status\`
 - **Dialogs**: \`POST /dialog/configure\`, \`GET /dialog/history\`
 - **Network traffic**: \`GET /network\`, \`POST /network/watch\`, \`POST /network/unwatch\`, \`GET /network/stats\`
 

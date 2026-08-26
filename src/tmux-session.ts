@@ -32,9 +32,19 @@ export interface SessionState {
   /** The tmux target being mirrored, or null when nothing is attached. */
   target: string | null
   attachedAt: number | null
+  /**
+   * Whether remote input is permitted — a SEPARATE grant from reading.
+   *
+   * Typing into the agent's console is the same power a local user has at the keyboard, including
+   * the power to answer a permission prompt. That is acceptable when the operator chose it and not
+   * otherwise, so it is off unless `attach --allow-input` asked for it. Read and write are
+   * separately grantable because they are different risks: reading leaks what the agent prints,
+   * writing decides what the agent does.
+   */
+  allowInput: boolean
 }
 
-const state: SessionState = { target: null, attachedAt: null }
+const state: SessionState = { target: null, attachedAt: null, allowInput: false }
 
 export function sessionState(): SessionState {
   return { ...state }
@@ -62,6 +72,8 @@ export interface AttachResult {
   target?: string
   error?: string
   available?: string[]
+  /** Whether this attach also granted remote input. */
+  allowInput?: boolean
   /** Advisory: attached, but this server is unauthenticated. */
   warning?: string
 }
@@ -99,6 +111,7 @@ export async function attachSession(
   run: RunTmux,
   target: string,
   hasToken = false,
+  allowInput = false,
 ): Promise<AttachResult> {
   const available = await listSessions(run)
   if (!available.length) {
@@ -121,12 +134,14 @@ export async function attachSession(
   }
   state.target = target
   state.attachedAt = Date.now()
-  return { ok: true, target, available, warning: tokenAdvisory(hasToken) }
+  state.allowInput = allowInput
+  return { ok: true, target, available, allowInput, warning: tokenAdvisory(hasToken) }
 }
 
 export function detachSession(): void {
   state.target = null
   state.attachedAt = null
+  state.allowInput = false
 }
 
 export interface ReadResult {
@@ -177,4 +192,59 @@ export function newTailOnly(previous: string, current: string): string {
     if (idx !== -1) return current.slice(idx + lastLine.length)
   }
   return current
+}
+
+export interface WriteResult {
+  ok: boolean
+  target?: string
+  error?: string
+}
+
+/**
+ * Type into the mirrored session, exactly as a local user at the keyboard would.
+ *
+ * This is `tmux send-keys`, so the agent receives it on stdin as a normal turn — no queue, no
+ * message API, no await primitive. The human's sentence simply becomes the agent's next input,
+ * which is why the whole "page → agent messaging" design collapses to this.
+ *
+ * **Requires the input grant.** Reading and writing are separate risks: reading leaks what the
+ * agent prints, writing decides what the agent DOES — including answering a permission prompt,
+ * where `send-keys "yes" Enter` is indistinguishable from the operator typing it. So a mirror
+ * attached for watching can never be typed into; the operator has to have asked for input.
+ *
+ * `submit` defaults to true, matching `/send/message` ("auto-submits the message (hits enter);
+ * use submit: false to paste only") — a person typing into a console presses Enter, and an
+ * inconsistent default between two send-text APIs is its own trap.
+ *
+ * Sent as ONE send-keys call rather than per character: two writers on one pty (the real keyboard
+ * and the remote page) interleave badly mid-keystroke, and line-at-a-time is both safer and correct
+ * for this use.
+ */
+export async function writeSession(
+  run: RunTmux,
+  text: string,
+  submit = true,
+): Promise<WriteResult> {
+  if (!state.target) {
+    return { ok: false, error: 'no session attached. `hj session attach <tmux-session>` first.' }
+  }
+  if (!state.allowInput) {
+    return {
+      ok: false,
+      target: state.target,
+      error:
+        'this session was attached for READING only. Typing into the agent\'s console can answer a ' +
+        'permission prompt, so it is a separate grant: re-attach with ' +
+        '`hj session attach ' + state.target + ' --allow-input`.',
+    }
+  }
+  if (!text) return { ok: false, target: state.target, error: 'nothing to send' }
+
+  // `--` stops tmux parsing a leading dash in the payload as an option, and the text is a single
+  // argv element, so nothing in it reaches a shell.
+  const args = ['send-keys', '-t', state.target, '--', text]
+  const res = await run(submit ? [...args, 'Enter'] : args)
+  return res.ok
+    ? { ok: true, target: state.target }
+    : { ok: false, target: state.target, error: res.stderr.trim() || 'send-keys failed' }
 }

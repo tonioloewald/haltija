@@ -11,7 +11,7 @@
 
 import { writeFile } from 'fs/promises'
 import { performDrag } from './drag'
-import { attachSession, readSession, detachSession, type RunTmux } from './tmux-session'
+import { attachSession, readSession, writeSession, detachSession, type RunTmux } from './tmux-session'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
 
@@ -1794,10 +1794,10 @@ const runTmux: RunTmux = async (args) => {
 
 registerHandler(api.sessionAttach, async (body, ctx) => {
   // The token advisory is the server's to make — only it knows whether one is required.
-  const result = await attachSession(runTmux, String(body.target || ''), !!process.env.HALTIJA_TOKEN)
+  const result = await attachSession(runTmux, String(body.target || ''), !!process.env.HALTIJA_TOKEN, body.allowInput === true)
   return Response.json(
     result.ok
-      ? { success: true, target: result.target, available: result.available, warning: result.warning }
+      ? { success: true, target: result.target, available: result.available, allowInput: result.allowInput, warning: result.warning }
       : { success: false, error: result.error, available: result.available },
     { status: result.ok ? 200 : 400, headers: ctx.headers },
   )
@@ -1816,4 +1816,14 @@ registerHandler(api.sessionRead, async (body, ctx) => {
 registerHandler(api.sessionDetach, async (_body, ctx) => {
   detachSession()
   return Response.json({ success: true, attached: false }, { headers: ctx.headers })
+})
+
+registerHandler(api.sessionWrite, async (body, ctx) => {
+  const result = await writeSession(runTmux, String(body.text ?? ''), body.submit !== false)
+  return Response.json(
+    result.ok
+      ? { success: true, target: result.target }
+      : { success: false, error: result.error, target: result.target },
+    { status: result.ok ? 200 : 400, headers: ctx.headers },
+  )
 })

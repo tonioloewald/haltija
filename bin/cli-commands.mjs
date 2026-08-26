@@ -57,6 +57,7 @@ var ROUTED_COMMANDS = [
   "test-suite",
   "session-attach",
   "session-read",
+  "session-write",
   "session-detach",
   "send",
   "send-message",

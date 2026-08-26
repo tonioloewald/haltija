@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 import {
-  listSessions, attachSession, detachSession, readSession, sessionState, newTailOnly,
+  listSessions, attachSession, detachSession, readSession, writeSession, sessionState, newTailOnly,
   type RunTmux,
 } from './tmux-session'
 
@@ -23,6 +23,9 @@ function fakeTmux(sessions: string[], paneText = 'agent output') {
         ? { ok: true, stdout: paneText, stderr: '' }
         : { ok: false, stdout: '', stderr: `can't find session: ${t}` }
     }
+    if (args[0] === 'send-keys') return { ok: true, stdout: '', stderr: '' }
+    // Anything else is unhandled ON PURPOSE: an unexpected verb should fail loudly here rather
+    // than be silently tolerated, since `calls` is what the read-only guarantee is asserted against.
     return { ok: false, stdout: '', stderr: 'unexpected' }
   }
   return { run, calls }
@@ -157,5 +160,68 @@ describe('mirroring an unauthenticated server warns', () => {
     const r = await attachSession(run, 'agent', false)
     expect(r.ok).toBe(true)
     expect(r.target).toBe('agent')
+  })
+})
+
+describe('write is a SEPARATE grant from read', () => {
+  /**
+   * Reading leaks what the agent prints; writing decides what the agent DOES — including answering
+   * a permission prompt, where `send-keys "yes" Enter` is indistinguishable from the operator
+   * typing it. So a mirror attached for watching must never be typable, no matter who asks.
+   */
+  it('refuses to write into a read-only attach, and names the remedy', async () => {
+    const { run } = fakeTmux(['agent'])
+    await attachSession(run, 'agent')            // no allowInput
+    const r = await writeSession(run, 'hello')
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('READING only')
+    expect(r.error).toContain('--allow-input')
+  })
+
+  it('writes when input was granted', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    const r = await writeSession(run, 'the login button is off-centre')
+    expect(r.ok).toBe(true)
+    const sent = calls.find((c) => c[0] === 'send-keys')!
+    expect(sent).toContain('the login button is off-centre')
+    expect(sent[sent.length - 1]).toBe('Enter')
+  })
+
+  it('submit:false pastes without pressing Enter', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'draft text', false)
+    const sent = calls.find((c) => c[0] === 'send-keys')!
+    expect(sent).not.toContain('Enter')
+  })
+
+  it('detach revokes the input grant — re-attaching must ask again', async () => {
+    const { run } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    detachSession()
+    await attachSession(run, 'agent')            // read-only this time
+    expect((await writeSession(run, 'x')).ok).toBe(false)
+  })
+
+  it('sends ONE send-keys call, not one per character', async () => {
+    // Two writers on one pty interleave badly mid-keystroke; line-at-a-time is correct here.
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'abcdef')
+    expect(calls.filter((c) => c[0] === 'send-keys').length).toBe(1)
+  })
+
+  it('passes `--` so a leading dash is payload, not a tmux option', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, '--version')
+    const sent = calls.find((c) => c[0] === 'send-keys')!
+    expect(sent[sent.indexOf('--') + 1]).toBe('--version')
+  })
+
+  it('refuses with nothing attached at all', async () => {
+    const { run } = fakeTmux(['agent'])
+    expect((await writeSession(run, 'x')).ok).toBe(false)
   })
 })

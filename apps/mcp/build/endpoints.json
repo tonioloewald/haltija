@@ -10,6 +10,13 @@
         "target": {
           "type": "string",
           "description": "tmux session name, exactly as `tmux list-sessions` reports it"
+        },
+        "allowInput": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "ALSO permit typing into the session (default false). A separate grant from reading: typing can answer a permission prompt."
         }
       },
       "required": [
@@ -35,6 +42,32 @@
         }
       },
       "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "path": "/session/write",
+    "method": "POST",
+    "summary": "Type into the mirrored session (requires the input grant)",
+    "description": "Sends text to the mirrored tmux session exactly as a local user at the keyboard would.\n\nThe agent receives it on stdin as a normal turn — there is no queue, no message API and no await\nprimitive, because typing into the agent's own console is already all three.\n\n**Requires `allowInput` at attach time.** Reading and writing are different risks: reading leaks\nwhat the agent prints, writing decides what the agent DOES — including answering a permission prompt,\nwhere this is indistinguishable from the operator typing. A mirror attached for watching cannot be\ntyped into.\n\n`submit` defaults to true (hits Enter), matching /send/message. Pass false to paste without\nsubmitting — useful when a human at the real keyboard should read it before it goes in.\n\nSent as one `send-keys` call, not per character: two writers on one pty interleave badly, and\nline-at-a-time is correct for this.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "What to type"
+        },
+        "submit": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Press Enter afterwards (default true)"
+        }
+      },
+      "required": [
+        "text"
+      ],
       "additionalProperties": false
     }
   },

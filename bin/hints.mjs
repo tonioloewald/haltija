@@ -1,7 +1,8 @@
 /** ⚠️  AUTO-GENERATED FROM src/api-schema.ts — DO NOT EDIT. Run: bun run build */
 export const COMMAND_HINTS = {
-  "session-attach": "see: session-read, session-detach",
+  "session-attach": "--allow-input | see: session-read, session-write, session-detach",
   "session-read": "--lines N, --follow | see: session-attach",
+  "session-write": "--no-submit | see: session-attach",
   "session-detach": "see: session-attach",
   "tree": "-d 3 (shallow), -i (interactive only), --visible, --compact | see: inspect, query, click",
   "query": "@ref or \"selector\", --all | see: tree, inspect",
@@ -32,6 +33,7 @@ export const COMMAND_HINTS = {
 export const COMMAND_SUMMARIES = {
   "session-attach": "Mirror a tmux session into the channel (opt-in, read-only)",
   "session-read": "Read the mirrored terminal session",
+  "session-write": "Type into the mirrored session (requires the input grant)",
   "session-detach": "Stop mirroring the terminal session",
   "tree": "Get DOM tree structure",
   "query": "Query DOM elements by selector",
