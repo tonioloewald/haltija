@@ -177,6 +177,44 @@ Marked `(unverified)` where the review reported but did not independently confir
   spelling and re-read the paragraphs beside new markers; a deferral pointer is load-bearing —
   prefer a runnable command over a relative path, since the prompt ships where the reference does not.
 
+## Session mirror: drive the agent from inside a VR headset (#37)
+
+tosijs-ui shipped `haltijaDev: 'tunnel'` (tosijs-ui#104), which bridges the haltija channel
+same-origin over an SSH tunnel — an agent can already drive a page on a headset or phone, verified
+end to end. That solves the agent's half. **The human's half is missing**, and in a headset it is
+the harder one: you cannot see a terminal, cannot type comfortably, and cannot take the headset off,
+because the bug is usually *about* being in it — viewport, pose, input, stereo layout.
+
+The ask settled on a **mirror, not a mailbox**: a live parallel pipe onto the agent's own session,
+so the person in the headset sees the agent *working* rather than only its replies.
+
+**Substrate: tmux, validated on 3.7c** — not a pty wrapper, for two reasons that decide it:
+`capture-pane -p` returns **already-rendered text** (so the page view is a `<pre>`, not xterm.js),
+and tmux can attach to a session **already running** (nobody restarts their agent to gain a mirror).
+Probed: attach ✓, `send-keys` ✓, `capture-pane -p` clean of ANSI ✓, `pipe-pane` streams ✓.
+
+Shape: `hj session attach [--tmux <target> | -- <cmd>]`, `hj session read [--follow]`,
+`hj session write <text>`.
+
+- [ ] **`read` first — it is safe and it is most of the value.** Mirroring carries no injection risk,
+  and seeing the agent work is the thing you cannot do today. Lets the page-side UI land against
+  something real.
+- [ ] **`write` needs a decision first, and it is not the one the issue makes.** The proposal argues
+  a channel to an agent the user already supervises "grants nothing new" — true of a mailbox, NOT of
+  input injection. **A page that can `send-keys` can answer a permission prompt**; `send-keys "yes"
+  Enter` is indistinguishable from the operator typing it. Candidate answers: write without the
+  newline (a human at the real keyboard commits it), token-gate `write` separately from `read`, or
+  refuse while a prompt is on screen (a heuristic guarding a security boundary — weakest option).
+  **`read` and `write` should be separately grantable whichever default is chosen.**
+- [ ] Opt-in with its own name, never `haltijaDev: true` — a mirror carries **everything the agent
+  prints**, including anything it echoes from a file it just read.
+- [ ] Remote input line-at-a-time, not character-at-a-time (two writers on one pty interleave badly).
+
+**Why it matters beyond the headset:** a page that can talk to the agent already running is a
+self-hosted remote control — device → your tunnel → your machine → your model endpoint. For teams
+running models in-region under GDPR, who therefore cannot use vendor-hosted remote-control features,
+that is the difference between having remote agent interaction and not having it.
+
 ## "The test passed but the app was wonky" — a third verdict worth having
 
 **The gap this names.** A human tester reports things no assertion covers: *it worked, but the
