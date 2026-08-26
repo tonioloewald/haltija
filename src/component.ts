@@ -51,6 +51,7 @@ import type {
 
 // Component version - imported from shared version file
 import { VERSION as _VERSION } from './version'
+import { httpBaseFromWsUrl } from './ws-url'
 export const VERSION = _VERSION
 
 // Product name and element tag
@@ -5145,7 +5146,7 @@ export class DevChannel extends HTMLElement {
           </div>
         </div>
         <div class="body"${this.isElectron ? ' style="display:none"' : ''}>
-            <a href="javascript:(function(){fetch('${this.serverUrl.replace('ws:', 'http:').replace('wss:', 'https:').replace('/ws/browser', '')}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();"
+            <a href="javascript:(function(){fetch('${httpBaseFromWsUrl(this.serverUrl)}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('${PRODUCT_NAME}: Cannot reach server'))})();"
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">🧝 bookmark</a>
@@ -5545,8 +5546,7 @@ export class DevChannel extends HTMLElement {
   private async startRecordingViaServer() {
     try {
       const config = (window as any).__haltija_config__
-      const serverUrl = config?.serverUrl?.replace('ws:', 'http:').replace('/ws/browser', '') 
-        || 'http://localhost:8700'
+      const serverUrl = httpBaseFromWsUrl(config?.serverUrl)
       
       const response = await fetch(`${serverUrl}/recording`, {
         method: 'POST',
@@ -5581,8 +5581,7 @@ export class DevChannel extends HTMLElement {
   private async stopRecordingViaServer() {
     try {
       const config = (window as any).__haltija_config__
-      const serverUrl = config?.serverUrl?.replace('ws:', 'http:').replace('/ws/browser', '') 
-        || 'http://localhost:8700'
+      const serverUrl = httpBaseFromWsUrl(config?.serverUrl)
       
       const response = await fetch(`${serverUrl}/recording`, {
         method: 'POST',

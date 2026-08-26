@@ -3440,6 +3440,13 @@ export const COMPONENT_JS: string = `(() => {
   // src/version.ts
   var VERSION = "1.12.5";
 
+  // src/ws-url.ts
+  function httpBaseFromWsUrl(wsUrl2, fallback = "http://localhost:8700") {
+    if (!wsUrl2)
+      return fallback;
+    return wsUrl2.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace("/ws/browser", "");
+  }
+
   // src/text-selector.ts
   var TEXT_PSEUDO_RE = /:(?:text-is|has-text|text)\\(/;
   function parseTextSelector(selector) {
@@ -6986,7 +6993,7 @@ export const COMPONENT_JS: string = `(() => {
           </div>
         </div>
         <div class="body"\${this.isElectron ? ' style="display:none"' : ""}>
-            <a href="javascript:(function(){fetch('\${this.serverUrl.replace("ws:", "http:").replace("wss:", "https:").replace("/ws/browser", "")}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('\${PRODUCT_NAME}: Cannot reach server'))})();"
+            <a href="javascript:(function(){fetch('\${httpBaseFromWsUrl(this.serverUrl)}/inject.js').then(r=>r.text()).then(eval).catch(e=>alert('\${PRODUCT_NAME}: Cannot reach server'))})();"
                style="color: #6366f1; text-decoration: none;"
                title="Drag to bookmarks bar"
                class="bookmark-link">\\uD83E\\uDDDD bookmark</a>
@@ -7294,7 +7301,7 @@ export const COMPONENT_JS: string = `(() => {
     async startRecordingViaServer() {
       try {
         const config = window.__haltija_config__;
-        const serverUrl2 = config?.serverUrl?.replace("ws:", "http:").replace("/ws/browser", "") || "http://localhost:8700";
+        const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(\`\${serverUrl2}/recording\`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -7322,7 +7329,7 @@ export const COMPONENT_JS: string = `(() => {
     async stopRecordingViaServer() {
       try {
         const config = window.__haltija_config__;
-        const serverUrl2 = config?.serverUrl?.replace("ws:", "http:").replace("/ws/browser", "") || "http://localhost:8700";
+        const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(\`\${serverUrl2}/recording\`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
