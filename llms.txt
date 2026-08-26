@@ -85,8 +85,9 @@ self-signed cert once at https://localhost:8701.
 ```html
 <script>
   const secure = location.protocol === 'https:'
-  const origin = secure ? 'https://localhost:8701' : 'http://localhost:8700'
-  const ws = secure ? 'wss://localhost:8701' : 'ws://localhost:8700'
+  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too
+  const origin = secure ? `https://${host}:8701` : `http://${host}:8700`
+  const ws = secure ? `wss://${host}:8701` : `ws://${host}:8700`
   const s = document.createElement('script')
   s.src = `${origin}/component.js?autoInject=true&serverUrl=${ws}/ws/browser`
   document.head.appendChild(s)

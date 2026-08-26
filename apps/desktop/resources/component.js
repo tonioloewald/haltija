@@ -1365,6 +1365,10 @@
       ...buildDomAffordances(opts.maxNodes)
     };
   }
+  function serverHeaders(extra = {}) {
+    const token = window.__haltija_config__?.token;
+    return token ? { ...extra, "X-Haltija-Token": String(token) } : { ...extra };
+  }
   function isOwnWidget(el) {
     if (el.tagName === TAG_NAME.toUpperCase())
       return true;
@@ -3912,7 +3916,7 @@
         const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(`${serverUrl2}/recording`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ action: "start", window: this.windowId })
         });
         const result = await response.json();
@@ -3940,7 +3944,7 @@
         const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(`${serverUrl2}/recording`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ action: "stop", window: this.windowId })
         });
         const result = await response.json();
@@ -4252,7 +4256,7 @@
         const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
         const response = await fetch(`${serverUrl2}/recording/${this.lastRecordingId}/send`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ description, agentId })
         });
         const result = await response.json();
@@ -4692,7 +4696,7 @@
       const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
       let agents = [];
       try {
-        const response = await fetch(`${serverUrl2}/terminal/agents`);
+        const response = await fetch(`${serverUrl2}/terminal/agents`, { headers: serverHeaders() });
         const data = await response.json();
         agents = data.agents || [];
       } catch (err) {
@@ -4862,7 +4866,7 @@ ${elementSummary}${moreText}`;
       try {
         const response = await fetch(`${serverUrl2}/selection/send`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             agentId,
             message: messageText,

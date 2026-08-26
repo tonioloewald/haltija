@@ -1983,6 +1983,23 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
  * A tool that reports itself as part of the page under test is exactly the observer effect this
  * whole product exists to avoid, so the exclusion is now deliberate and stated in one place.
  */
+/**
+ * Headers for a widget → server request, carrying the shared secret when one is configured.
+ *
+ * The widget had EIGHT fetch call sites and sent the token on none of them, so on a `--token`
+ * server every page-side feature — recording, sending a selection, listing agents — got a 401.
+ * That did not matter much while the channel was localhost-only. It matters completely over a
+ * tunnel, where requiring a token is the whole security story: "use --token" and "the page can talk
+ * to the server" were mutually exclusive, and nothing said so.
+ *
+ * The token reaches us the same way it reaches the socket — `__haltija_config__.token`, set by
+ * whatever injected the widget.
+ */
+function serverHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = (window as any).__haltija_config__?.token
+  return token ? { ...extra, 'X-Haltija-Token': String(token) } : { ...extra }
+}
+
 function isOwnWidget(el: Element): boolean {
   if (el.tagName === TAG_NAME.toUpperCase()) return true
   try {
@@ -5550,7 +5567,7 @@ export class DevChannel extends HTMLElement {
       
       const response = await fetch(`${serverUrl}/recording`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: serverHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'start', window: this.windowId })
       })
       
@@ -5585,7 +5602,7 @@ export class DevChannel extends HTMLElement {
       
       const response = await fetch(`${serverUrl}/recording`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: serverHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'stop', window: this.windowId })
       })
       
@@ -6050,7 +6067,7 @@ export class DevChannel extends HTMLElement {
       const serverUrl = this.serverUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws/browser', '')
       const response = await fetch(`${serverUrl}/recording/${this.lastRecordingId}/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: serverHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ description, agentId }),
       })
       
@@ -6640,7 +6657,7 @@ export class DevChannel extends HTMLElement {
     let agents: Array<{ id: string; name: string; status: string; isLastActive: boolean }> = []
     
     try {
-      const response = await fetch(`${serverUrl}/terminal/agents`)
+      const response = await fetch(`${serverUrl}/terminal/agents`, { headers: serverHeaders() })
       const data = await response.json()
       agents = data.agents || []
     } catch (err) {
@@ -6843,7 +6860,7 @@ export class DevChannel extends HTMLElement {
     try {
       const response = await fetch(`${serverUrl}/selection/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: serverHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           agentId,
           message: messageText,

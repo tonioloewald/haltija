@@ -11,6 +11,8 @@
  */
 import { describe, it, expect } from 'bun:test'
 import { httpBaseFromWsUrl } from './ws-url'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 describe('httpBaseFromWsUrl', () => {
   it('wss becomes https — the case that was broken', () => {
@@ -40,5 +42,33 @@ describe('httpBaseFromWsUrl', () => {
 
   it('a same-origin tunnel URL survives intact — the case #38 was found while building', () => {
     expect(httpBaseFromWsUrl('wss://headset.local:8443/ws/browser')).toBe('https://headset.local:8443')
+  })
+})
+
+describe('served scripts point at the host the client used, not localhost', () => {
+  /**
+   * `localhost` inside a script the SERVER hands a browser means the BROWSER's machine. A page
+   * opened from another device on the LAN — a fixed IP, a Bonjour `.local` name — was told to
+   * connect to its own localhost, where nothing is listening. Silent failure: no widget, `hj where`
+   * reports 0 tabs, and the natural conclusion is that your own setup is wrong.
+   *
+   * Source-level, because exercising it needs a second machine.
+   */
+  const SERVER = readFileSync(join(import.meta.dir, 'server.ts'), 'utf-8')
+
+  it('/inject.js and /dev.js derive the host from the request', () => {
+    const hits = [...SERVER.matchAll(/const reachedHost = new URL\(req\.url\)\.hostname/g)]
+    expect(hits.length).toBe(2)
+  })
+
+  it('neither hands the page a hardcoded localhost websocket', () => {
+    const bad = [...SERVER.matchAll(/const wsUrl = `\$\{wsProtocol\}:\/\/localhost:/g)]
+    expect(bad).toEqual([])
+  })
+
+  it('the generated embed snippet uses location.hostname', () => {
+    const llms = readFileSync(join(import.meta.dir, '..', 'llms.txt'), 'utf-8')
+    expect(llms).toContain('const host = location.hostname')
+    expect(llms).not.toContain("'http://localhost:8700'")
   })
 })

@@ -774,9 +774,14 @@ function generateLlmsTxt(): string {
   lines.push('')
   lines.push('```html')
   lines.push('<script>')
+  // `location.hostname`, not `localhost`. In a served page `localhost` means the BROWSER's machine,
+  // so a page opened from another device — a LAN IP, a Bonjour `.local` name — was told to connect
+  // to its own machine, where nothing is listening. It fails silently. The page's own host is right
+  // whenever haltija runs alongside the dev server, which is the usual case.
   lines.push('  const secure = location.protocol === \'https:\'')
-  lines.push('  const origin = secure ? \'https://localhost:8701\' : \'http://localhost:8700\'')
-  lines.push('  const ws = secure ? \'wss://localhost:8701\' : \'ws://localhost:8700\'')
+  lines.push('  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too')
+  lines.push('  const origin = secure ? `https://${host}:8701` : `http://${host}:8700`')
+  lines.push('  const ws = secure ? `wss://${host}:8701` : `ws://${host}:8700`')
   lines.push('  const s = document.createElement(\'script\')')
   lines.push('  s.src = `${origin}/component.js?autoInject=true&serverUrl=${ws}/ws/browser`')
   lines.push('  document.head.appendChild(s)')

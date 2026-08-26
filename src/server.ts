@@ -1043,8 +1043,20 @@ async function handleRest(req: Request): Promise<Response> {
     const protocol = isSecure ? 'https' : 'http'
     const wsProtocol = isSecure ? 'wss' : 'ws'
     const port = isSecure ? HTTPS_PORT : PORT
-    const serverUrl = `${protocol}://localhost:${port}`
-    const wsUrl = `${wsProtocol}://localhost:${port}/ws/browser`
+    // POINT THE PAGE BACK AT WHATEVER HOST IT USED TO REACH US, not at "localhost".
+    //
+    // These scripts are handed to a browser, and `localhost` there means the BROWSER's machine. A
+    // page loaded from another device on the LAN — `http://macbook.local:8700/inject.js`, or a
+    // fixed IP — was told to connect to its OWN localhost, where nothing is listening. It fails
+    // silently: no widget, `hj where` reports 0 tabs, and the natural conclusion is that your setup
+    // is wrong. Same shape as the mixed-content trap in #33, one layer down.
+    //
+    // The Host header is exactly "how the client reached us", so it is the right answer for LAN
+    // hostnames, Bonjour `.local` names, fixed IPs and tunnels alike — and it degrades to
+    // `localhost` when that is genuinely what was used.
+    const reachedHost = new URL(req.url).hostname || 'localhost'
+    const serverUrl = `${protocol}://${reachedHost}:${port}`
+    const wsUrl = `${wsProtocol}://${reachedHost}:${port}/ws/browser`
     
     const code = injectorCode
       .replace('__SERVER_URL__', serverUrl)
@@ -1088,8 +1100,11 @@ async function handleRest(req: Request): Promise<Response> {
     const protocol = isSecure ? 'https' : 'http'
     const wsProtocol = isSecure ? 'wss' : 'ws'
     const port = isSecure ? HTTPS_PORT : PORT
-    const serverUrl = `${protocol}://localhost:${port}`
-    const wsUrl = `${wsProtocol}://localhost:${port}/ws/browser`
+    // Same reasoning as /inject.js above: `localhost` in a served script means the BROWSER's
+    // machine, so a page reached over the LAN or Bonjour must be pointed back at the host it used.
+    const reachedHost = new URL(req.url).hostname || 'localhost'
+    const serverUrl = `${protocol}://${reachedHost}:${port}`
+    const wsUrl = `${wsProtocol}://${reachedHost}:${port}/ws/browser`
     
     const devCode = `
 // ${PRODUCT_NAME}: Browser control for AI agents

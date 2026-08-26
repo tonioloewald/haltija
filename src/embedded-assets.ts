@@ -3468,8 +3468,9 @@ self-signed cert once at https://localhost:8701.
 \`\`\`html
 <script>
   const secure = location.protocol === 'https:'
-  const origin = secure ? 'https://localhost:8701' : 'http://localhost:8700'
-  const ws = secure ? 'wss://localhost:8701' : 'ws://localhost:8700'
+  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too
+  const origin = secure ? \`https://\${host}:8701\` : \`http://\${host}:8700\`
+  const ws = secure ? \`wss://\${host}:8701\` : \`ws://\${host}:8700\`
   const s = document.createElement('script')
   s.src = \`\${origin}/component.js?autoInject=true&serverUrl=\${ws}/ws/browser\`
   document.head.appendChild(s)
@@ -4880,6 +4881,10 @@ export const COMPONENT_JS: string = `(() => {
       hint: \`No agent surface found at globalThis.\${globalName}. This map is reconstructed from the DOM, \` + \`so it has no binding provenance (what a control is wired to). A tosijs app can expose the \` + \`real wiring via enableAgentInterface().\`,
       ...buildDomAffordances(opts.maxNodes)
     };
+  }
+  function serverHeaders(extra = {}) {
+    const token = window.__haltija_config__?.token;
+    return token ? { ...extra, "X-Haltija-Token": String(token) } : { ...extra };
   }
   function isOwnWidget(el) {
     if (el.tagName === TAG_NAME.toUpperCase())
@@ -7428,7 +7433,7 @@ export const COMPONENT_JS: string = `(() => {
         const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(\`\${serverUrl2}/recording\`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ action: "start", window: this.windowId })
         });
         const result = await response.json();
@@ -7456,7 +7461,7 @@ export const COMPONENT_JS: string = `(() => {
         const serverUrl2 = httpBaseFromWsUrl(config?.serverUrl);
         const response = await fetch(\`\${serverUrl2}/recording\`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ action: "stop", window: this.windowId })
         });
         const result = await response.json();
@@ -7768,7 +7773,7 @@ export const COMPONENT_JS: string = `(() => {
         const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
         const response = await fetch(\`\${serverUrl2}/recording/\${this.lastRecordingId}/send\`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ description, agentId })
         });
         const result = await response.json();
@@ -8208,7 +8213,7 @@ export const COMPONENT_JS: string = `(() => {
       const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
       let agents = [];
       try {
-        const response = await fetch(\`\${serverUrl2}/terminal/agents\`);
+        const response = await fetch(\`\${serverUrl2}/terminal/agents\`, { headers: serverHeaders() });
         const data = await response.json();
         agents = data.agents || [];
       } catch (err) {
@@ -8378,7 +8383,7 @@ export const COMPONENT_JS: string = `(() => {
       try {
         const response = await fetch(\`\${serverUrl2}/selection/send\`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: serverHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             agentId,
             message: messageText,
