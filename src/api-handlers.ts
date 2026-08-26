@@ -1793,10 +1793,11 @@ const runTmux: RunTmux = async (args) => {
 }
 
 registerHandler(api.sessionAttach, async (body, ctx) => {
-  const result = await attachSession(runTmux, String(body.target || ''))
+  // The token advisory is the server's to make — only it knows whether one is required.
+  const result = await attachSession(runTmux, String(body.target || ''), !!process.env.HALTIJA_TOKEN)
   return Response.json(
     result.ok
-      ? { success: true, target: result.target, available: result.available }
+      ? { success: true, target: result.target, available: result.available, warning: result.warning }
       : { success: false, error: result.error, available: result.available },
     { status: result.ok ? 200 : 400, headers: ctx.headers },
   )

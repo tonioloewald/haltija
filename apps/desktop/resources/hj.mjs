@@ -26,7 +26,8 @@ __export(exports_tmux_session, {
   listSessions: () => listSessions,
   newTailOnly: () => newTailOnly,
   readSession: () => readSession,
-  sessionState: () => sessionState
+  sessionState: () => sessionState,
+  tokenAdvisory: () => tokenAdvisory
 });
 function sessionState() {
   return { ...state };
@@ -38,7 +39,12 @@ async function listSessions(run) {
   return res.stdout.split(`
 `).map((l) => l.trim()).filter(Boolean);
 }
-async function attachSession(run, target) {
+function tokenAdvisory(hasToken) {
+  if (hasToken)
+    return;
+  return "this server has no token, so anything that can reach its port can now read the agent's " + "terminal — not just drive the browser. Fine on a laptop; NOT fine over a tunnel. Start the " + "server with `--token <secret>` (and set HALTIJA_TOKEN for clients) if the port is reachable " + "from anywhere else.";
+}
+async function attachSession(run, target, hasToken = false) {
   const available = await listSessions(run);
   if (!available.length) {
     return {
@@ -56,7 +62,7 @@ async function attachSession(run, target) {
   }
   state.target = target;
   state.attachedAt = Date.now();
-  return { ok: true, target, available };
+  return { ok: true, target, available, warning: tokenAdvisory(hasToken) };
 }
 function detachSession() {
   state.target = null;

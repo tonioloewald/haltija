@@ -131,3 +131,31 @@ describe('newTailOnly — --follow must not re-send the scrollback', () => {
     expect(newTailOnly('xxx\n', 'totally different\n')).toBe('totally different\n')
   })
 })
+
+describe('mirroring an unauthenticated server warns', () => {
+  /**
+   * Before the mirror, reaching this server let you drive a browser. With it, reaching this server
+   * also lets you read everything the agent prints. That escalation lands exactly where the feature
+   * is most useful — a tunnel — so attaching says so when no token is set.
+   */
+  it('warns when there is no token, and names the remedy', async () => {
+    const { run } = fakeTmux(['agent'])
+    const r = await attachSession(run, 'agent', false)
+    expect(r.ok).toBe(true)
+    expect(r.warning).toContain('no token')
+    expect(r.warning).toContain('--token')
+    expect(r.warning).toContain('tunnel')
+  })
+
+  it('is silent when a token is required', async () => {
+    const { run } = fakeTmux(['agent'])
+    expect((await attachSession(run, 'agent', true)).warning).toBeUndefined()
+  })
+
+  it('warns rather than refuses — a feature that blocks the common case gets worked around', async () => {
+    const { run } = fakeTmux(['agent'])
+    const r = await attachSession(run, 'agent', false)
+    expect(r.ok).toBe(true)
+    expect(r.target).toBe('agent')
+  })
+})

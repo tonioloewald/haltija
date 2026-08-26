@@ -62,6 +62,30 @@ export interface AttachResult {
   target?: string
   error?: string
   available?: string[]
+  /** Advisory: attached, but this server is unauthenticated. */
+  warning?: string
+}
+
+/**
+ * Mirroring raises the stakes on an unauthenticated server, so say so when attaching.
+ *
+ * Before the mirror, reaching this server let you drive a browser. With it, reaching this server
+ * also lets you read everything the agent prints — source it has opened, output it has echoed,
+ * anything in its scrollback. That is a genuine escalation, and it lands exactly where the feature
+ * is most useful: a tunnel, which by definition is reachable from somewhere other than this machine.
+ *
+ * A warning rather than a refusal: on a laptop with no tunnel this is fine, and a feature that
+ * refuses to work in the common case gets worked around rather than heeded. But it must be SAID,
+ * because the person attaching is the only one who knows whether the port is exposed.
+ */
+export function tokenAdvisory(hasToken: boolean): string | undefined {
+  if (hasToken) return undefined
+  return (
+    'this server has no token, so anything that can reach its port can now read the agent\'s ' +
+    'terminal — not just drive the browser. Fine on a laptop; NOT fine over a tunnel. Start the ' +
+    'server with `--token <secret>` (and set HALTIJA_TOKEN for clients) if the port is reachable ' +
+    'from anywhere else.'
+  )
 }
 
 /**
@@ -71,7 +95,11 @@ export interface AttachResult {
  * success — "attached" and "attached to something that exists" are different claims, and this
  * product has spent a lot of effort on not conflating those.
  */
-export async function attachSession(run: RunTmux, target: string): Promise<AttachResult> {
+export async function attachSession(
+  run: RunTmux,
+  target: string,
+  hasToken = false,
+): Promise<AttachResult> {
   const available = await listSessions(run)
   if (!available.length) {
     return {
@@ -93,7 +121,7 @@ export async function attachSession(run: RunTmux, target: string): Promise<Attac
   }
   state.target = target
   state.attachedAt = Date.now()
-  return { ok: true, target, available }
+  return { ok: true, target, available, warning: tokenAdvisory(hasToken) }
 }
 
 export function detachSession(): void {
