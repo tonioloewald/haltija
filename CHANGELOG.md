@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.12.6
+
+Security updates, three silent-failure fixes in the path from "server tells page how to reach me",
+and a new way to watch — and talk to — the agent driving your browser.
+
+### Security
+
+- **Electron 40.6.1 → 43.4.1.** 40.6.1 sat inside the range for **two context-isolation bypasses**,
+  and context isolation is haltija's security boundary — the desktop app strips CSP and injects into
+  arbitrary pages. One bump clears eight advisories.
+- **`apps/mcp` re-locked** off a cross-client data leak in `@modelcontextprotocol/sdk` 1.25.2
+  (→ 1.30.0), plus `hono`, `@hono/node-server` and `fast-uri`.
+- **`electron-builder` is no longer a dependency.** It was pulling **271 transitive packages** into
+  `apps/desktop` — 285 before, 14 after — and supplied five advisories including a critical `tar`
+  one, all for DMG packaging nothing exercises. The `build:*` scripts invoke it on demand instead.
+
+### Three ways the page could not reach the server, all silent
+
+Each of these ended with no widget, `hj where` reporting `0 tabs`, and the reasonable conclusion
+that your own setup was wrong.
+
+- **Access over LAN or Bonjour never worked.** `/inject.js` and `/dev.js` handed the browser URLs
+  built as `localhost:<port>` — and `localhost` in a served script means the *browser's* machine. A
+  page opened from another device was told to connect to itself. Both now derive the host from the
+  request, which is exactly "how the client reached us", so LAN hostnames, `.local` names, fixed IPs
+  and tunnels all work. The generated embed snippet had the same bug and now uses
+  `location.hostname`.
+- **Server-side recording was broken for every `wss://` configuration**, including ordinary HTTPS
+  localhost. `"wss://host/…".replace("ws:", "http:")` is a no-op — the substring is `wss:` — so the
+  derived URL stayed `wss://`, which `fetch` cannot use. Three places derived an HTTP base from a WS
+  URL and two were wrong; there is one function now.
+- **The widget never sent its token.** Eight `fetch` call sites, zero `X-Haltija-Token`, so on a
+  `--token` server every page-side feature returned 401. That made "require a token" and "the page
+  can talk to the server" mutually exclusive — which matters most over a tunnel, exactly where a
+  token matters most.
+
+### `hj session` — watch the agent, and talk back
+
+```bash
+hj session attach <tmux-session>   # opt in (read-only)
+hj session read --follow           # watch it work
+hj session write "this is wrong"   # needs --allow-input at attach
+```
+
+Mirrors an agent running in tmux into the browser channel, so a **page** — including one on a VR
+headset over a tunnel — can watch the agent work and say something to it. `capture-pane` returns
+already-rendered text, so the page view is a `<pre>` rather than a terminal emulator, and tmux can
+attach to a session that is **already running**.
+
+Writing uses `send-keys`, so your sentence arrives on the agent's stdin as a normal turn — no queue,
+no message API, no polling primitive.
+
+**Reading and writing are separate grants**, because they are different risks: reading leaks what the
+agent *prints*, writing decides what the agent *does* — including answering a permission prompt,
+where this is indistinguishable from the operator typing. A mirror attached for watching refuses
+writes; detaching revokes the grant. Attaching an **unauthenticated** server warns, because a mirror
+turns "can reach this port" into "can read everything the agent prints".
+
 ## 1.12.5
 
 **Installing this delivers 1.12.3 and 1.12.4 as well** — both were tagged but never published, so

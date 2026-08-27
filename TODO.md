@@ -65,18 +65,24 @@ So the rename list collapses from four to one.
   are fine and need no defending prose.
 
 
-## 1.12.5 — TAGGED, awaiting publish
+## 1.12.6 — TAGGED, awaiting publish
 
-`v1.12.5` is tagged with all lanes green. **Publish is one command: `npm publish`** (a plain publish
-sets `latest` itself). It supersedes `v1.12.3` and `v1.12.4`, both tagged and never published —
-installing 1.12.5 delivers all three, and npm skipping versions is normal.
+`v1.12.6` is tagged with all lanes green. **Publish: `npm publish`** — that is the whole command.
 
-It also carries the **#33** fix (scheme-aware embed snippet), which is why it was worth re-cutting
-rather than publishing 1.12.4 and letting the newest report trail the release by one.
+**A PATCH, deliberately.** Nothing here breaks: no path removed, no surface renamed, and every
+behaviour that changed was already broken (LAN access, wss recording, tokened page calls). New
+capability ships as a patch per this repo's rule; minors are for when the nine-lens gate has run.
 
-**#1 and #2 do NOT need this release.** Their fix — declared-origin routing — shipped in **1.11.1**
-and has been on npm for weeks. They are waiting on the reporter's judgement about whether routing by
-declaration rather than inference counts as fixed. No release changes that.
+Contents: Electron 40 → 43 and the MCP re-lock (both security), electron-builder dropped entirely
+(271 transitive packages, five advisories, for packaging nothing exercises), three silent
+"page cannot reach the server" failures, and `hj session` — mirror an agent's tmux terminal into the
+browser channel, read plus an opt-in write.
+
+**Deferred, and worth doing before anything builds on it:** a nine-lens review of the session
+surface. It is the most security-sensitive thing haltija has shipped — it reads an agent's terminal
+and, with a grant, types into it — and the grant model was designed and argued for by the same
+person who implemented it. Shipping first was a deliberate call to stop churning version numbers,
+not a judgement that review is unnecessary.
 
 ## Follow-ups from the 1.12.3 nine-lens review (60 findings, 6 blockers fixed)
 
