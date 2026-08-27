@@ -1792,7 +1792,40 @@ const runTmux: RunTmux = async (args) => {
   }
 }
 
+
+/**
+ * `/session/*` requires a token to be CONFIGURED — refusing, not warning.
+ *
+ * The previous design warned and continued, on the reasoning that a feature which blocks the common
+ * case gets worked around. An adversarial review showed the reasoning was inverted for this
+ * endpoint: with no token, an anonymous caller performs the opt-in ITSELF —
+ * `POST /session/attach {"target":"agent","allowInput":true}` then `POST /session/write` — and lands
+ * arbitrary text on the stdin of an agent holding the developer's shell privileges. Reproduced end
+ * to end from a foreign Origin. "Opt-in by construction" described the STATE and was never an
+ * authorization boundary: the attacker did the opting in.
+ *
+ * The server binds beyond loopback and answers `Access-Control-Allow-Origin: *`, so "it is only
+ * localhost" is not true by default. Given the asset — a terminal running a privileged agent — the
+ * right default is to refuse. This endpoint family is opt-in and niche, so requiring `--token` costs
+ * a flag rather than a workflow.
+ */
+function requireToken(ctx: { headers: HeadersInit }): Response | null {
+  if (process.env.HALTIJA_TOKEN) return null
+  return Response.json(
+    {
+      success: false,
+      error:
+        'the session mirror requires a token. It exposes an agent\'s terminal — and, with ' +
+        '--allow-input, lets a caller type into it — so it will not run on an unauthenticated ' +
+        'server. Restart with `haltija --token <secret>` and set HALTIJA_TOKEN for clients.',
+    },
+    { status: 403, headers: ctx.headers },
+  )
+}
+
 registerHandler(api.sessionAttach, async (body, ctx) => {
+  const denied = requireToken(ctx)
+  if (denied) return denied
   // The token advisory is the server's to make — only it knows whether one is required.
   const result = await attachSession(runTmux, String(body.target || ''), !!process.env.HALTIJA_TOKEN, body.allowInput === true)
   return Response.json(
@@ -1804,6 +1837,8 @@ registerHandler(api.sessionAttach, async (body, ctx) => {
 })
 
 registerHandler(api.sessionRead, async (body, ctx) => {
+  const denied = requireToken(ctx)
+  if (denied) return denied
   const result = await readSession(runTmux, body.lines ?? 200)
   return Response.json(
     result.ok
@@ -1814,11 +1849,15 @@ registerHandler(api.sessionRead, async (body, ctx) => {
 })
 
 registerHandler(api.sessionDetach, async (_body, ctx) => {
+  const denied = requireToken(ctx)
+  if (denied) return denied
   detachSession()
   return Response.json({ success: true, attached: false }, { headers: ctx.headers })
 })
 
 registerHandler(api.sessionWrite, async (body, ctx) => {
+  const denied = requireToken(ctx)
+  if (denied) return denied
   const result = await writeSession(runTmux, String(body.text ?? ''), body.submit !== false)
   return Response.json(
     result.ok

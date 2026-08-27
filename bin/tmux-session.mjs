@@ -82,13 +82,19 @@ async function writeSession(run, text, submit = true) {
     return {
       ok: false,
       target: state.target,
-      error: "this session was attached for READING only. Typing into the agent's console can answer a " + "permission prompt, so it is a separate grant: re-attach with " + "`hj session attach " + state.target + " --allow-input`."
+      error: "this session was attached for reading only; writing is a separate grant made at attach time."
     };
   }
   if (!text)
     return { ok: false, target: state.target, error: "nothing to send" };
-  const args = ["send-keys", "-t", state.target, "--", text];
-  const res = await run(submit ? [...args, "Enter"] : args);
+  const args = ["send-keys", "-t", state.target, "-l", "--", text];
+  const res = await run(args);
+  if (res.ok && submit) {
+    const nl = await run(["send-keys", "-t", state.target, "Enter"]);
+    if (!nl.ok) {
+      return { ok: false, target: state.target, error: nl.stderr.trim() || "send-keys Enter failed" };
+    }
+  }
   return res.ok ? { ok: true, target: state.target } : { ok: false, target: state.target, error: res.stderr.trim() || "send-keys failed" };
 }
 export {

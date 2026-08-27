@@ -169,13 +169,13 @@ describe('write is a SEPARATE grant from read', () => {
    * a permission prompt, where `send-keys "yes" Enter` is indistinguishable from the operator
    * typing it. So a mirror attached for watching must never be typable, no matter who asks.
    */
-  it('refuses to write into a read-only attach, and names the remedy', async () => {
+  it('refuses to write into a read-only attach', async () => {
     const { run } = fakeTmux(['agent'])
     await attachSession(run, 'agent')            // no allowInput
     const r = await writeSession(run, 'hello')
     expect(r.ok).toBe(false)
-    expect(r.error).toContain('READING only')
-    expect(r.error).toContain('--allow-input')
+    expect(r.error).toContain('reading only')
+    // It must NOT name the flag that would grant it — see 'a refusal must not teach escalation'.
   })
 
   it('writes when input was granted', async () => {
@@ -183,9 +183,10 @@ describe('write is a SEPARATE grant from read', () => {
     await attachSession(run, 'agent', false, true)
     const r = await writeSession(run, 'the login button is off-centre')
     expect(r.ok).toBe(true)
-    const sent = calls.find((c) => c[0] === 'send-keys')!
-    expect(sent).toContain('the login button is off-centre')
-    expect(sent[sent.length - 1]).toBe('Enter')
+    const sends = calls.filter((c) => c[0] === 'send-keys')
+    expect(sends[0]).toContain('the login button is off-centre')
+    // Enter is a SEPARATE call: under -l the word "Enter" would be typed, not pressed.
+    expect(sends[1]).toContain('Enter')
   })
 
   it('submit:false pastes without pressing Enter', async () => {
@@ -204,12 +205,15 @@ describe('write is a SEPARATE grant from read', () => {
     expect((await writeSession(run, 'x')).ok).toBe(false)
   })
 
-  it('sends ONE send-keys call, not one per character', async () => {
+  it('sends the text in ONE call, not one per character', async () => {
     // Two writers on one pty interleave badly mid-keystroke; line-at-a-time is correct here.
+    // Two send-keys total when submitting: the literal text, then the Enter key.
     const { run, calls } = fakeTmux(['agent'])
     await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'abcdef')
+    await writeSession(run, 'abcdef', false)
     expect(calls.filter((c) => c[0] === 'send-keys').length).toBe(1)
+    await writeSession(run, 'abcdef', true)
+    expect(calls.filter((c) => c[0] === 'send-keys').length).toBe(3)
   })
 
   it('passes `--` so a leading dash is payload, not a tmux option', async () => {
@@ -223,5 +227,57 @@ describe('write is a SEPARATE grant from read', () => {
   it('refuses with nothing attached at all', async () => {
     const { run } = fakeTmux(['agent'])
     expect((await writeSession(run, 'x')).ok).toBe(false)
+  })
+})
+
+describe('send-keys sends TEXT, not key names', () => {
+  /**
+   * Without `-l`, tmux interprets the payload as KEY NAMES. Reproduced against real tmux: sending
+   * the three characters `C-c` with a `sleep` running KILLED it, and the word `enter` presses Enter
+   * — which silently destroys the documented `submit:false` promise that a human reviews the text
+   * before it is committed.
+   *
+   * The grant is meant to be "type this sentence", not "synthesize arbitrary key sequences". Those
+   * are very different powers: two Ctrl-Cs drop a coding agent to a raw shell.
+   */
+  it('passes -l so the payload is literal', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'C-c', false)
+    const sent = calls.find((c) => c[0] === 'send-keys')!
+    expect(sent).toContain('-l')
+    expect(sent[sent.indexOf('--') + 1]).toBe('C-c')
+  })
+
+  it('sends Enter as a SEPARATE call without -l, or it would be typed rather than pressed', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'hello', true)
+    const sends = calls.filter((c) => c[0] === 'send-keys')
+    expect(sends.length).toBe(2)
+    expect(sends[0]).toContain('-l')          // the text, literal
+    expect(sends[1]).toContain('Enter')       // the key, interpreted
+    expect(sends[1]).not.toContain('-l')
+  })
+
+  it('submit:false really does not submit — the promise that failed before', async () => {
+    const { run, calls } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'enter', false)   // the word "enter" used to PRESS Enter
+    const sends = calls.filter((c) => c[0] === 'send-keys')
+    expect(sends.length).toBe(1)
+    expect(sends[0]).toContain('-l')
+  })
+})
+
+describe('a refusal must not teach escalation', () => {
+  it('does not echo the target or the flag that would grant the write', async () => {
+    // The earlier wording handed a just-refused caller the exact request that would succeed.
+    const { run } = fakeTmux(['secret-session-name'])
+    await attachSession(run, 'secret-session-name')
+    const r = await writeSession(run, 'x')
+    expect(r.ok).toBe(false)
+    expect(r.error).not.toContain('--allow-input')
+    expect(r.error).not.toContain('secret-session-name')
   })
 })

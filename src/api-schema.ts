@@ -2527,9 +2527,13 @@ remote device over a tunnel — can watch the agent work.
 prints, including anything it echoes from a file it just read. There is no default target and no
 config flag that turns this on.
 
-**Read-only on purpose.** There is no write endpoint. \`tmux send-keys\` would let a page answer a
-permission prompt — indistinguishable from the operator typing it — which is a materially larger
-grant than watching. That half is a separate decision.
+**Writing is a SEPARATE grant.** Attaching without \`allowInput\` gives a read-only mirror that
+/session/write will refuse. Typing into an agent's console can answer a permission prompt —
+indistinguishable from the operator doing it — so it is never implied by the ability to watch.
+
+**Requires a token.** This endpoint family refuses to run unless the server was started with
+\`--token\`: it exposes a terminal running an agent with your privileges, and the server binds beyond
+loopback by default.
 
 Attaching to a name that does not exist FAILS and lists what does, rather than reporting success for
 a mirror that would show nothing.

@@ -128,8 +128,8 @@ hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
 hj evaluate "document.title"   # Run JS in the page (async OK — see below)
 hj screenshot          # Capture the page — PNG default; --format webp|jpeg (smaller), --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
-hj session-attach <tmux>   # Mirror an agent's tmux terminal in (opt-in; --allow-input to type)
-hj session-read --follow   #   a page — even on a headset over a tunnel — watches the agent work,
+hj session-attach <tmux>   # Mirror an agent's tmux terminal in (needs --token; --allow-input to type)
+hj session-read --follow   #   a page — even on a headset over a tunnel — watches it work,
 hj session-write "..."     #   and can talk back (separate grant). `session-detach` stops.
 ```
 

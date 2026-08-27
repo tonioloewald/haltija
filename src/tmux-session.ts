@@ -233,17 +233,34 @@ export async function writeSession(
       ok: false,
       target: state.target,
       error:
-        'this session was attached for READING only. Typing into the agent\'s console can answer a ' +
-        'permission prompt, so it is a separate grant: re-attach with ' +
-        '`hj session attach ' + state.target + ' --allow-input`.',
+        // Deliberately does NOT echo the target or spell out the escalation. The earlier wording
+        // returned both, so a caller who had just been refused was handed the exact request that
+        // would succeed. An error message is not the place to teach privilege escalation.
+        'this session was attached for reading only; writing is a separate grant made at attach time.',
     }
   }
   if (!text) return { ok: false, target: state.target, error: 'nothing to send' }
 
-  // `--` stops tmux parsing a leading dash in the payload as an option, and the text is a single
-  // argv element, so nothing in it reaches a shell.
-  const args = ['send-keys', '-t', state.target, '--', text]
-  const res = await run(submit ? [...args, 'Enter'] : args)
+  // `-l` is LOAD-BEARING: without it tmux interprets the payload as KEY NAMES, not text. Verified —
+  // sending the three characters `C-c` with a `sleep` running killed it, and the string `enter`
+  // presses Enter, which silently destroys the documented `submit:false` guarantee that a human
+  // reviews the text before it is committed. With `-l` the same payloads arrive as literal
+  // characters. The write grant is supposed to be "type this sentence", not "synthesize arbitrary
+  // key sequences", and those are very different powers: two Ctrl-Cs drop a coding agent to a raw
+  // shell.
+  //
+  // `--` additionally stops tmux parsing a leading dash as an option, and the text is a single argv
+  // element, so nothing in it reaches a shell.
+  const args = ['send-keys', '-t', state.target, '-l', '--', text]
+  // Enter goes as its own send-keys call WITHOUT -l, because under -l the word "Enter" would be
+  // typed rather than pressed. Two calls, so the payload can never be interpreted as a key.
+  const res = await run(args)
+  if (res.ok && submit) {
+    const nl = await run(['send-keys', '-t', state.target, 'Enter'])
+    if (!nl.ok) {
+      return { ok: false, target: state.target, error: nl.stderr.trim() || 'send-keys Enter failed' }
+    }
+  }
   return res.ok
     ? { ok: true, target: state.target }
     : { ok: false, target: state.target, error: res.stderr.trim() || 'send-keys failed' }
