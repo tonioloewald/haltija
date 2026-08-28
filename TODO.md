@@ -67,6 +67,22 @@ So the rename list collapses from four to one.
 
 ## 1.12.6 — TAGGED, awaiting publish
 
+**STANDING POLICY WHILE UNPUBLISHED: keep MOVING the `v1.12.6` tag, do not mint new versions.**
+Nothing is on npm (`latest` is 1.12.5), so there is no released artifact to preserve and a forced
+tag move costs nobody anything. Minting 1.12.7, 1.12.8 … for work nobody can install is exactly the
+version churn we are trying to stop. When a fix lands on `main`:
+
+```
+git tag -f -a v1.12.6 -m "1.12.6" HEAD && git push --force origin v1.12.6
+```
+
+`package.json` already reads 1.12.6, so no bump is involved. This ends the moment it is published —
+after that, a moved tag would rewrite a released artifact and every subsequent fix is a new patch.
+
+There is a second reason beyond tidiness: a tag left on a commit with a known hole is a runnable
+vulnerable checkout. The tag was briefly pointing at the pre-security-fix release commit; moving it
+removed that.
+
 `v1.12.6` is tagged with all lanes green. **Publish: `npm publish`** — that is the whole command.
 
 **A PATCH, deliberately.** Nothing here breaks: no path removed, no surface renamed, and every
@@ -78,7 +94,13 @@ Contents: Electron 40 → 43 and the MCP re-lock (both security), electron-build
 "page cannot reach the server" failures, and `hj session` — mirror an agent's tmux terminal into the
 browser channel, read plus an opt-in write.
 
-**Deferred, and worth doing before anything builds on it:** a nine-lens review of the session
+**The session-surface review HAPPENED** (adversarial, security-focused) and found the feature
+exploitable by an anonymous caller — attach with `allowInput` then write, landing text on a
+privileged agent's stdin; plus `send-keys` without `-l` synthesising keys rather than typing text
+(`C-c` killed a running process). Both fixed and reproduced before and after. `/session/*` now
+refuses without a token. See #40 for the broader posture finding it surfaced, which is NOT fixed.
+
+**Superseded note (kept for the record):** a nine-lens review of the session
 surface. It is the most security-sensitive thing haltija has shipped — it reads an agent's terminal
 and, with a grant, types into it — and the grant model was designed and argued for by the same
 person who implemented it. Shipping first was a deliberate call to stop churning version numbers,
