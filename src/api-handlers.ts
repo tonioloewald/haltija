@@ -1830,7 +1830,7 @@ registerHandler(api.sessionAttach, async (body, ctx) => {
   const result = await attachSession(runTmux, String(body.target || ''), !!process.env.HALTIJA_TOKEN, body.allowInput === true)
   return Response.json(
     result.ok
-      ? { success: true, target: result.target, available: result.available, allowInput: result.allowInput, warning: result.warning }
+      ? { success: true, target: result.target, available: result.available, allowInput: result.allowInput, writeKey: result.writeKey, warning: result.warning }
       : { success: false, error: result.error, available: result.available },
     { status: result.ok ? 200 : 400, headers: ctx.headers },
   )
@@ -1858,7 +1858,7 @@ registerHandler(api.sessionDetach, async (_body, ctx) => {
 registerHandler(api.sessionWrite, async (body, ctx) => {
   const denied = requireToken(ctx)
   if (denied) return denied
-  const result = await writeSession(runTmux, String(body.text ?? ''), body.submit !== false)
+  const result = await writeSession(runTmux, String(body.text ?? ''), body.submit !== false, String(body.writeKey ?? ''))
   return Response.json(
     result.ok
       ? { success: true, target: result.target }

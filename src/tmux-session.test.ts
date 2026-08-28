@@ -180,8 +180,8 @@ describe('write is a SEPARATE grant from read', () => {
 
   it('writes when input was granted', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    const r = await writeSession(run, 'the login button is off-centre')
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    const r = await writeSession(run, 'the login button is off-centre', true, writeKey)
     expect(r.ok).toBe(true)
     const sends = calls.filter((c) => c[0] === 'send-keys')
     expect(sends[0]).toContain('the login button is off-centre')
@@ -191,8 +191,8 @@ describe('write is a SEPARATE grant from read', () => {
 
   it('submit:false pastes without pressing Enter', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'draft text', false)
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'draft text', false, writeKey)
     const sent = calls.find((c) => c[0] === 'send-keys')!
     expect(sent).not.toContain('Enter')
   })
@@ -209,17 +209,17 @@ describe('write is a SEPARATE grant from read', () => {
     // Two writers on one pty interleave badly mid-keystroke; line-at-a-time is correct here.
     // Two send-keys total when submitting: the literal text, then the Enter key.
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'abcdef', false)
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'abcdef', false, writeKey)
     expect(calls.filter((c) => c[0] === 'send-keys').length).toBe(1)
-    await writeSession(run, 'abcdef', true)
+    await writeSession(run, 'abcdef', true, writeKey)
     expect(calls.filter((c) => c[0] === 'send-keys').length).toBe(3)
   })
 
   it('passes `--` so a leading dash is payload, not a tmux option', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, '--version')
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, '--version', true, writeKey)
     const sent = calls.find((c) => c[0] === 'send-keys')!
     expect(sent[sent.indexOf('--') + 1]).toBe('--version')
   })
@@ -242,8 +242,8 @@ describe('send-keys sends TEXT, not key names', () => {
    */
   it('passes -l so the payload is literal', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'C-c', false)
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'C-c', false, writeKey)
     const sent = calls.find((c) => c[0] === 'send-keys')!
     expect(sent).toContain('-l')
     expect(sent[sent.indexOf('--') + 1]).toBe('C-c')
@@ -251,8 +251,8 @@ describe('send-keys sends TEXT, not key names', () => {
 
   it('sends Enter as a SEPARATE call without -l, or it would be typed rather than pressed', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'hello', true)
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'hello', true, writeKey)
     const sends = calls.filter((c) => c[0] === 'send-keys')
     expect(sends.length).toBe(2)
     expect(sends[0]).toContain('-l')          // the text, literal
@@ -262,8 +262,8 @@ describe('send-keys sends TEXT, not key names', () => {
 
   it('submit:false really does not submit — the promise that failed before', async () => {
     const { run, calls } = fakeTmux(['agent'])
-    await attachSession(run, 'agent', false, true)
-    await writeSession(run, 'enter', false)   // the word "enter" used to PRESS Enter
+    const { writeKey } = await attachSession(run, 'agent', false, true)
+    await writeSession(run, 'enter', false, writeKey)   // the word "enter" used to PRESS Enter
     const sends = calls.filter((c) => c[0] === 'send-keys')
     expect(sends.length).toBe(1)
     expect(sends[0]).toContain('-l')
@@ -279,5 +279,75 @@ describe('a refusal must not teach escalation', () => {
     expect(r.ok).toBe(false)
     expect(r.error).not.toContain('--allow-input')
     expect(r.error).not.toContain('secret-session-name')
+  })
+})
+
+describe('write is a CAPABILITY, not a mode — reach must not equal authority', () => {
+  /**
+   * Before this, holding the ability to REACH /session/write was the same as holding permission to
+   * type into the agent: any second caller could ride a grant it never requested. The handle is
+   * minted when input is granted and returned once, to the caller that attached.
+   */
+  it('attach mints a key only when input is granted', async () => {
+    const { run } = fakeTmux(['agent'])
+    expect((await attachSession(run, 'agent', false, false)).writeKey).toBeUndefined()
+    detachSession()
+    const withInput = await attachSession(run, 'agent', false, true)
+    expect(typeof withInput.writeKey).toBe('string')
+    expect(withInput.writeKey!.length).toBeGreaterThanOrEqual(32)
+  })
+
+  it('refuses a write with no key, even though input IS granted', async () => {
+    const { run } = fakeTmux(['agent'])
+    await attachSession(run, 'agent', false, true)
+    const r = await writeSession(run, 'hello', true, '')
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('write key')
+  })
+
+  it('refuses a wrong key', async () => {
+    const { run } = fakeTmux(['agent'])
+    const a = await attachSession(run, 'agent', false, true)
+    expect((await writeSession(run, 'x', true, 'f'.repeat(a.writeKey!.length))).ok).toBe(false)
+  })
+
+  it('accepts the key it issued', async () => {
+    const { run } = fakeTmux(['agent'])
+    const a = await attachSession(run, 'agent', false, true)
+    expect((await writeSession(run, 'hello', true, a.writeKey!)).ok).toBe(true)
+  })
+
+  it('re-minting on every attach kills the old key', async () => {
+    // Otherwise a handle from an earlier grant would survive a re-attach the operator meant as a reset.
+    const { run } = fakeTmux(['agent'])
+    const first = await attachSession(run, 'agent', false, true)
+    const second = await attachSession(run, 'agent', false, true)
+    expect(second.writeKey).not.toBe(first.writeKey)
+    expect((await writeSession(run, 'x', true, first.writeKey!)).ok).toBe(false)
+    expect((await writeSession(run, 'x', true, second.writeKey!)).ok).toBe(true)
+  })
+
+  it('a read-only re-attach positively revokes an earlier write capability', async () => {
+    const { run } = fakeTmux(['agent'])
+    const granted = await attachSession(run, 'agent', false, true)
+    await attachSession(run, 'agent')            // read-only
+    expect((await writeSession(run, 'x', true, granted.writeKey!)).ok).toBe(false)
+  })
+
+  it('detach clears the key', async () => {
+    const { run } = fakeTmux(['agent'])
+    const a = await attachSession(run, 'agent', false, true)
+    detachSession()
+    expect((await writeSession(run, 'x', true, a.writeKey!)).ok).toBe(false)
+  })
+
+  it('keys differ between grants — not a constant', async () => {
+    const { run } = fakeTmux(['agent'])
+    const keys = new Set<string>()
+    for (let i = 0; i < 5; i++) {
+      detachSession()
+      keys.add((await attachSession(run, 'agent', false, true)).writeKey!)
+    }
+    expect(keys.size).toBe(5)
   })
 })

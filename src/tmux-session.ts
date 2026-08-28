@@ -33,6 +33,20 @@ export interface SessionState {
   target: string | null
   attachedAt: number | null
   /**
+   * The write capability handle, minted once when input is granted.
+   *
+   * Returned to the caller that attached and required on every write. Without it, "can reach the
+   * port" equalled "can write to the agent's stdin" — so any second caller could ride a grant it
+   * did not request. With it, reach stops equalling authority: an attacker who reaches /session/*
+   * (even holding the token) cannot write to a mirror someone else attached, because the handle was
+   * only ever returned in the attaching response.
+   *
+   * Not a session cookie or a login — just an unguessable value that proves you are the party that
+   * asked for input. Cleared on detach and re-minted on every attach, so a stale handle is dead.
+   */
+  writeKey: string | null
+
+  /**
    * Whether remote input is permitted — a SEPARATE grant from reading.
    *
    * Typing into the agent's console is the same power a local user has at the keyboard, including
@@ -44,7 +58,7 @@ export interface SessionState {
   allowInput: boolean
 }
 
-const state: SessionState = { target: null, attachedAt: null, allowInput: false }
+const state: SessionState = { target: null, attachedAt: null, allowInput: false, writeKey: null }
 
 export function sessionState(): SessionState {
   return { ...state }
@@ -74,6 +88,8 @@ export interface AttachResult {
   available?: string[]
   /** Whether this attach also granted remote input. */
   allowInput?: boolean
+  /** Present only when input was granted: the handle /session/write requires. Returned ONCE. */
+  writeKey?: string
   /** Advisory: attached, but this server is unauthenticated. */
   warning?: string
 }
@@ -135,13 +151,17 @@ export async function attachSession(
   state.target = target
   state.attachedAt = Date.now()
   state.allowInput = allowInput
-  return { ok: true, target, available, allowInput, warning: tokenAdvisory(hasToken) }
+  // Re-minted on EVERY attach, so a handle from a previous grant is dead even if the same target is
+  // re-attached — and so a read-only re-attach positively revokes an earlier write capability.
+  state.writeKey = allowInput ? mintKey() : null
+  return { ok: true, target, available, allowInput, writeKey: state.writeKey ?? undefined, warning: tokenAdvisory(hasToken) }
 }
 
 export function detachSession(): void {
   state.target = null
   state.attachedAt = null
   state.allowInput = false
+  state.writeKey = null
 }
 
 export interface ReadResult {
@@ -220,15 +240,31 @@ export interface WriteResult {
  * and the remote page) interleave badly mid-keystroke, and line-at-a-time is both safer and correct
  * for this use.
  */
+/** Unguessable handle proving the caller is the party that asked for input. */
+function mintKey(): string {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** Constant-time-ish compare, so a wrong handle cannot be probed byte by byte. */
+function keyMatches(provided: string, expected: string): boolean {
+  if (provided.length !== expected.length) return false
+  let diff = 0
+  for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i)
+  return diff === 0
+}
+
 export async function writeSession(
   run: RunTmux,
   text: string,
   submit = true,
+  writeKey = '',
 ): Promise<WriteResult> {
   if (!state.target) {
     return { ok: false, error: 'no session attached. `hj session attach <tmux-session>` first.' }
   }
-  if (!state.allowInput) {
+  if (!state.allowInput || !state.writeKey) {
     return {
       ok: false,
       target: state.target,
@@ -237,6 +273,17 @@ export async function writeSession(
         // returned both, so a caller who had just been refused was handed the exact request that
         // would succeed. An error message is not the place to teach privilege escalation.
         'this session was attached for reading only; writing is a separate grant made at attach time.',
+    }
+  }
+  // The grant belongs to whoever asked for it. Reaching this endpoint is not the same as holding
+  // the capability, which is the distinction that was missing.
+  if (!keyMatches(writeKey, state.writeKey)) {
+    return {
+      ok: false,
+      target: state.target,
+      error:
+        'missing or invalid write key. The handle is returned once, to the caller that attached ' +
+        'with input permitted; pass it as `writeKey`.',
     }
   }
   if (!text) return { ok: false, target: state.target, error: 'nothing to send' }

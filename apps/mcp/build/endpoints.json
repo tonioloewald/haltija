@@ -49,7 +49,7 @@
     "path": "/session/write",
     "method": "POST",
     "summary": "Type into the mirrored session (requires the input grant)",
-    "description": "Sends text to the mirrored tmux session exactly as a local user at the keyboard would.\n\nThe agent receives it on stdin as a normal turn — there is no queue, no message API and no await\nprimitive, because typing into the agent's own console is already all three.\n\n**Requires `allowInput` at attach time.** Reading and writing are different risks: reading leaks\nwhat the agent prints, writing decides what the agent DOES — including answering a permission prompt,\nwhere this is indistinguishable from the operator typing. A mirror attached for watching cannot be\ntyped into.\n\n`submit` defaults to true (hits Enter), matching /send/message. Pass false to paste without\nsubmitting — useful when a human at the real keyboard should read it before it goes in.\n\nSent as one `send-keys` call, not per character: two writers on one pty interleave badly, and\nline-at-a-time is correct for this.",
+    "description": "Sends text to the mirrored tmux session exactly as a local user at the keyboard would.\n\nThe agent receives it on stdin as a normal turn — there is no queue, no message API and no await\nprimitive, because typing into the agent's own console is already all three.\n\n**Requires the `writeKey` returned by attach.** The handle is minted when `allowInput` is granted\nand returned once, to the attaching caller. Without it, reaching this endpoint would equal authority\nto type into the agent — so a second caller could ride a grant it never requested.\n\n**Requires `allowInput` at attach time.** Reading and writing are different risks: reading leaks\nwhat the agent prints, writing decides what the agent DOES — including answering a permission prompt,\nwhere this is indistinguishable from the operator typing. A mirror attached for watching cannot be\ntyped into.\n\n`submit` defaults to true (hits Enter), matching /send/message. Pass false to paste without\nsubmitting — useful when a human at the real keyboard should read it before it goes in.\n\nSent as one `send-keys` call, not per character: two writers on one pty interleave badly, and\nline-at-a-time is correct for this.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -63,6 +63,13 @@
             "null"
           ],
           "description": "Press Enter afterwards (default true)"
+        },
+        "writeKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The handle returned by /session/attach when allowInput was granted. Required: reaching this endpoint is not the same as holding the capability."
         }
       },
       "required": [

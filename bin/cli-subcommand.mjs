@@ -202,8 +202,12 @@ export const ARG_MAPS = {
     allowInput: args.includes('--allow-input') || undefined,
   }),
   'session-write': (args) => {
-    const text = args.filter((a) => !a.startsWith('-')).join(' ')
-    return { text, submit: args.includes('--no-submit') ? false : undefined }
+    const keyIdx = args.indexOf('--key')
+    const key = keyIdx !== -1 ? args[keyIdx + 1] : process.env.HALTIJA_SESSION_KEY
+    const text = args
+      .filter((a, i) => !a.startsWith('-') && i !== keyIdx + 1)
+      .join(' ')
+    return { text, submit: args.includes('--no-submit') ? false : undefined, writeKey: key }
   },
   'session-read': (args) => {
     const body = {}
@@ -948,7 +952,7 @@ export const KNOWN_FLAGS = {
   map: ['--global', '--max-nodes', '--image', '--png', '--data-url', '--scale', '--maxWidth', '--max-width', '--maxHeight', '--max-height', '--format', '--quality', '--full-page', '--layout'],
   'session-read': ['--lines', '--follow'],
   'session-attach': ['--allow-input'],
-  'session-write': ['--no-submit'],
+  'session-write': ['--no-submit', '--key'],
   'events-watch': ['--preset'],
   'mutations-watch': ['--preset'],
   'network-watch': ['--preset'],

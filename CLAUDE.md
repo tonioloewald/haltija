@@ -471,6 +471,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_NAME` | Register/look up the server under this name in `~/.haltija/servers/` | — |
 | `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
+| `HALTIJA_SESSION_KEY` | Write capability handle for `hj session write`, returned once by `session attach --allow-input` (or pass `--key`) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
 | `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |

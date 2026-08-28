@@ -124,7 +124,7 @@ and every node carries `colors` + a `contrastFail` verdict so it is machine-chec
 
 - `hj session-attach [target, allowInput]` - Mirror a tmux session into the channel (opt-in, read-only)
 - `hj session-read [lines]` - Read the mirrored terminal session
-- `hj session-write [text, submit]` - Type into the mirrored session (requires the input grant)
+- `hj session-write [text, submit, writeKey]` - Type into the mirrored session (requires the input grant)
 - `hj session-detach` - Stop mirroring the terminal session
 - `hj console` - Get console output
 - `hj eval [code, window]` - Execute JavaScript

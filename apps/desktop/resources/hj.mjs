@@ -64,12 +64,14 @@ async function attachSession(run, target, hasToken = false, allowInput = false) 
   state.target = target;
   state.attachedAt = Date.now();
   state.allowInput = allowInput;
-  return { ok: true, target, available, allowInput, warning: tokenAdvisory(hasToken) };
+  state.writeKey = allowInput ? mintKey() : null;
+  return { ok: true, target, available, allowInput, writeKey: state.writeKey ?? undefined, warning: tokenAdvisory(hasToken) };
 }
 function detachSession() {
   state.target = null;
   state.attachedAt = null;
   state.allowInput = false;
+  state.writeKey = null;
 }
 async function readSession(run, lines = 200) {
   if (!state.target) {
@@ -103,15 +105,35 @@ function newTailOnly(previous, current) {
   }
   return current;
 }
-async function writeSession(run, text, submit = true) {
+function mintKey() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+function keyMatches(provided, expected) {
+  if (provided.length !== expected.length)
+    return false;
+  let diff = 0;
+  for (let i = 0;i < provided.length; i++)
+    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+async function writeSession(run, text, submit = true, writeKey = "") {
   if (!state.target) {
     return { ok: false, error: "no session attached. `hj session attach <tmux-session>` first." };
   }
-  if (!state.allowInput) {
+  if (!state.allowInput || !state.writeKey) {
     return {
       ok: false,
       target: state.target,
       error: "this session was attached for reading only; writing is a separate grant made at attach time."
+    };
+  }
+  if (!keyMatches(writeKey, state.writeKey)) {
+    return {
+      ok: false,
+      target: state.target,
+      error: "missing or invalid write key. The handle is returned once, to the caller that attached " + "with input permitted; pass it as `writeKey`."
     };
   }
   if (!text)
@@ -128,7 +150,7 @@ async function writeSession(run, text, submit = true) {
 }
 var state;
 var init_tmux_session = __esm(() => {
-  state = { target: null, attachedAt: null, allowInput: false };
+  state = { target: null, attachedAt: null, allowInput: false, writeKey: null };
 });
 
 // bin/cli-subcommand.mjs
@@ -1254,8 +1276,10 @@ var ARG_MAPS = {
     allowInput: args.includes("--allow-input") || undefined
   }),
   "session-write": (args) => {
-    const text = args.filter((a) => !a.startsWith("-")).join(" ");
-    return { text, submit: args.includes("--no-submit") ? false : undefined };
+    const keyIdx = args.indexOf("--key");
+    const key = keyIdx !== -1 ? args[keyIdx + 1] : process.env.HALTIJA_SESSION_KEY;
+    const text = args.filter((a, i) => !a.startsWith("-") && i !== keyIdx + 1).join(" ");
+    return { text, submit: args.includes("--no-submit") ? false : undefined, writeKey: key };
   },
   "session-read": (args) => {
     const body = {};
@@ -2012,7 +2036,7 @@ var KNOWN_FLAGS = {
   map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page", "--layout"],
   "session-read": ["--lines", "--follow"],
   "session-attach": ["--allow-input"],
-  "session-write": ["--no-submit"],
+  "session-write": ["--no-submit", "--key"],
   "events-watch": ["--preset"],
   "mutations-watch": ["--preset"],
   "network-watch": ["--preset"],

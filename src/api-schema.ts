@@ -2581,6 +2581,10 @@ export const sessionWrite = endpoint({
 The agent receives it on stdin as a normal turn — there is no queue, no message API and no await
 primitive, because typing into the agent's own console is already all three.
 
+**Requires the \`writeKey\` returned by attach.** The handle is minted when \`allowInput\` is granted
+and returned once, to the attaching caller. Without it, reaching this endpoint would equal authority
+to type into the agent — so a second caller could ride a grant it never requested.
+
 **Requires \`allowInput\` at attach time.** Reading and writing are different risks: reading leaks
 what the agent prints, writing decides what the agent DOES — including answering a permission prompt,
 where this is indistinguishable from the operator typing. A mirror attached for watching cannot be
@@ -2595,6 +2599,7 @@ line-at-a-time is correct for this.`,
   input: s.object({
     text: s.string.describe('What to type'),
     submit: s.boolean.describe('Press Enter afterwards (default true)').optional,
+    writeKey: s.string.describe('The handle returned by /session/attach when allowInput was granted. Required: reaching this endpoint is not the same as holding the capability.').optional,
   }),
   examples: [{ name: 'write', input: { text: 'the login button is off-centre in VR' }, description: 'Say something to the agent' }],
   hints: '--no-submit | see: session-attach',
