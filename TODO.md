@@ -146,7 +146,7 @@ Marked `(unverified)` where the review reported but did not independently confir
 
 - [ ] `TestActionDoc.example` is mandatory and read by NOTHING, while CI-INTEGRATION lost its
   Example column. Render it or delete the field — do not keep a mandatory field with no consumer.
-- [ ] `stepActionsInline` is exported and never called; `coreOnly` is never passed; the
+- [x] `stepActionsInline` is exported and never called; `coreOnly` is never passed; the
   `filter(a => TEST_ACTIONS[a].core)` expression appears four times. Factor it, drop the
   `as TestActionDoc` casts (the `satisfies` clause makes them unnecessary and they mask real errors).
 - [ ] `isTestStepAction('select')` returns true while narrowing to `TestStepAction`, so
@@ -155,10 +155,10 @@ Marked `(unverified)` where the review reported but did not independently confir
   or CI-INTEGRATION's block could freeze with a green docs-drift. Make a named target with no
   marker a build failure. Also: `stepActionsCompact`'s regex would leak `duration (ms, default 100)`
   into the prompt. *(unverified)*
-- [ ] `prompt-budget.test.ts` iterates a hardcoded six-name literal instead of deriving the non-core
+- [x] `prompt-budget.test.ts` iterates a hardcoded six-name literal instead of deriving the non-core
   set, so it would not notice a new non-core action; and the headroom assertion should fail with
   "lower SKILL_BUDGET_BYTES to N" rather than a bare number. *(unverified)*
-- [ ] `tools/naming-probe.mjs` runs probes strictly sequentially; flatten to a bounded pool. The
+- [x] `tools/naming-probe.mjs` runs probes strictly sequentially; flatten to a bounded pool. The
   `proc.stdin?.end()` is dead — `stdio: ['ignore', …]` makes it null. *(unverified)*
 - [ ] **CLAUDE.md Build Artifacts needs item 15:** the build now rewrites `<!-- GENERATED:… -->`
   regions INSIDE three hand-written docs. Every existing rule enumerates whole files, so those

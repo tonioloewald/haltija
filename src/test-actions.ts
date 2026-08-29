@@ -180,6 +180,22 @@ export const DEPRECATED_ACTION_ALIASES: Record<string, string> = {
 
 export const TEST_STEP_ACTIONS = Object.keys(TEST_ACTIONS) as Array<keyof typeof TEST_ACTIONS>
 
+/** One accessor, so `TEST_ACTIONS[a] as TestActionDoc` stops appearing six times. */
+function docFor(action: TestStepAction): TestActionDoc {
+  return TEST_ACTIONS[action]
+}
+
+/**
+ * The actions in a tier.
+ *
+ * The `filter(a => TEST_ACTIONS[a].core)` expression appeared four times, each with its own cast.
+ * A cast repeated is a cast nobody rechecks — and these ones would have hidden a real type error if
+ * an entry ever lost a field, which the `satisfies` clause is there to catch.
+ */
+function actionsInTier(coreOnly: boolean): TestStepAction[] {
+  return coreOnly ? TEST_STEP_ACTIONS.filter((a) => docFor(a).core) : TEST_STEP_ACTIONS
+}
+
 /**
  * Canonical action for whatever the author wrote, plus the old name if one was used.
  *
@@ -201,10 +217,29 @@ export type TestStepAction = keyof typeof TEST_ACTIONS
 
 const ACTION_SET: ReadonlySet<string> = new Set(TEST_STEP_ACTIONS as readonly string[])
 
+/**
+ * A CANONICAL action — one that `TEST_ACTIONS` actually has an entry for.
+ *
+ * The narrowing has to be honest: the previous version also returned true for aliases while
+ * claiming `action is TestStepAction`, so `TEST_ACTIONS[a]` type-checked and was `undefined` at
+ * runtime. Verified — `isTestStepAction('select')` was true and `TEST_ACTIONS['select']` was
+ * undefined. Today's only caller resolves the alias first, so nothing was broken; a type that lies
+ * is a trap set for the next caller.
+ */
 export function isTestStepAction(action: unknown): action is TestStepAction {
-  if (typeof action !== 'string') return false
-  // Aliases count as legal: a suite written before the rename must not start failing validation.
-  return ACTION_SET.has(action) || action in DEPRECATED_ACTION_ALIASES
+  return typeof action === 'string' && ACTION_SET.has(action)
+}
+
+/**
+ * Legal to WRITE in a suite — canonical or a deprecated alias.
+ *
+ * This is what validation wants: a file written before a rename must not start failing. It does not
+ * narrow to `TestStepAction`, because an alias has no entry to look up.
+ */
+export function isKnownStepAction(action: unknown): boolean {
+  return (
+    typeof action === 'string' && (ACTION_SET.has(action) || action in DEPRECATED_ACTION_ALIASES)
+  )
 }
 
 /**
@@ -214,22 +249,23 @@ export function isTestStepAction(action: unknown): action is TestStepAction {
  * the core rows plus a pointer, the reference gets everything.
  */
 export function stepActionsTable(opts: { coreOnly?: boolean } = {}): string {
-  const actions = opts.coreOnly
-    ? TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
-    : TEST_STEP_ACTIONS
-  const rows = actions.map((a) => {
-    const d = TEST_ACTIONS[a] as TestActionDoc
-    return `| \`${a}\` | ${d.fields ?? '—'} | ${d.summary} |`
+  const rows = actionsInTier(!!opts.coreOnly).map((a) => {
+    const d = docFor(a)
+    // The example is rendered HERE and only here: it is mandatory on every entry, and a mandatory
+    // field with no consumer is a field that rots. It stays out of the compact prompt line, which
+    // is budget-constrained — the reference is where an example earns its bytes.
+    return `| \`${a}\` | ${d.fields ?? '—'} | ${d.summary} | \`${d.example}\` |`
   })
-  return ['| action | fields | what it does |', '| --- | --- | --- |', ...rows].join('\n')
+  return [
+    '| action | fields | what it does | example |',
+    '| --- | --- | --- | --- |',
+    ...rows,
+  ].join('\n')
 }
 
 /** The generated compact list, for places where a table is too heavy. */
 export function stepActionsInline(opts: { coreOnly?: boolean } = {}): string {
-  const actions = opts.coreOnly
-    ? TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
-    : TEST_STEP_ACTIONS
-  return actions.map((a) => `\`${a}\``).join(', ')
+  return actionsInTier(!!opts.coreOnly).map((a) => `\`${a}\``).join(', ')
 }
 
 /**
@@ -240,9 +276,9 @@ export function stepActionsInline(opts: { coreOnly?: boolean } = {}): string {
  * `wait` needs a target, and which fields satisfy it, is not. Budget spent where it buys something.
  */
 export function stepActionsCompact(): string {
-  return TEST_STEP_ACTIONS.filter((a) => (TEST_ACTIONS[a] as TestActionDoc).core)
+  return actionsInTier(true)
     .map((a) => {
-      const d = TEST_ACTIONS[a] as TestActionDoc
+      const d = docFor(a)
       const fields = (d.fields ?? '').replace(/`/g, '').replace(/ \(ms\)| \(alias [^)]+\)/g, '')
       return `\`${a}\`${fields ? ` — ${fields}` : ''}`
     })
@@ -251,7 +287,7 @@ export function stepActionsCompact(): string {
 
 /** Actions deliberately kept OUT of the main prompt — named so the reference can point at them. */
 export function nonCoreActionsInline(): string {
-  return TEST_STEP_ACTIONS.filter((a) => !(TEST_ACTIONS[a] as TestActionDoc).core)
+  return TEST_STEP_ACTIONS.filter((a) => !docFor(a).core)
     .map((a) => `\`${a}\``)
     .join(', ')
 }
@@ -265,6 +301,7 @@ export function nonCoreActionsInline(): string {
  */
 export function staticStepIssue(step: Record<string, unknown>): string | null {
   const action = resolveStepAction(step.action).action
+  // `action` is already alias-resolved above, so the CANONICAL check is the right one here.
   if (!isTestStepAction(action)) {
     const near = typeof action === 'string' ? nearest(action) : null
     return (

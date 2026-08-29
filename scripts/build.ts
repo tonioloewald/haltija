@@ -361,7 +361,7 @@ function generateApiMd(): string {
  * Idempotent, so `docs-drift.yml` (which asserts a build leaves the tree clean) fails on staleness.
  * Silent if a marker is absent: a doc that has not opted in is not broken, it just isn't generated.
  */
-function writeGeneratedBlocks(file: string, blocks: Record<string, string>): void {
+function writeGeneratedBlocks(file: string, blocks: Record<string, string>, source = 'src/test-actions.ts'): void {
   if (!existsSync(file)) return
   let body = readFileSync(file, 'utf-8')
   let touched = false
@@ -370,8 +370,18 @@ function writeGeneratedBlocks(file: string, blocks: Record<string, string>): voi
       `(<!-- GENERATED:${name} -->)[\\s\\S]*?(<!-- END:${name} -->)`,
       'g',
     )
-    if (!re.test(body)) continue
-    body = body.replace(re, `$1\n<!-- Do not edit by hand — see src/test-actions.ts -->\n${content}\n$2`)
+    if (!re.test(body)) {
+      // FAIL, do not skip. This used to `continue`, so deleting a marker (or renaming a block)
+      // silently froze that document at whatever it last contained — with a GREEN docs-drift, since
+      // the gate only asserts a build leaves the tree clean and a block nobody writes is clean.
+      // Naming a target is a claim that the target exists.
+      throw new Error(
+        `writeGeneratedBlocks: ${file} has no <!-- GENERATED:${name} --> … <!-- END:${name} --> ` +
+          `block. Either add the markers or stop passing "${name}" for this file — a named target ` +
+          `that silently does nothing is how a generated doc goes stale while CI stays green.`,
+      )
+    }
+    body = body.replace(re, `$1\n<!-- Do not edit by hand — see ${source} -->\n${content}\n$2`)
     touched = true
   }
   if (touched) writeFileSync(file, body)

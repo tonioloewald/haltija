@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'bun:test'
 import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { TEST_STEP_ACTIONS, staticStepIssue, isTestStepAction, resolveStepAction, deprecationNotice, DEPRECATED_ACTION_ALIASES } from './test-actions'
+import { TEST_STEP_ACTIONS, TEST_ACTIONS, staticStepIssue, isTestStepAction, isKnownStepAction, resolveStepAction, deprecationNotice, DEPRECATED_ACTION_ALIASES } from './test-actions'
 
 const SERVER_SRC = readFileSync(join(import.meta.dir, 'server.ts'), 'utf-8')
 
@@ -276,5 +276,34 @@ describe('assert steps must actually assert something', () => {
 
   it('accepts the shape the runner actually reads', () => {
     expect(staticStepIssue({ action: 'assert', assertion: { type: 'exists', selector: '.x' } })).toBeNull()
+  })
+})
+
+describe('the type predicate does not lie', () => {
+  /**
+   * `isTestStepAction('select')` used to return true while narrowing to `TestStepAction`, so
+   * `TEST_ACTIONS[a]` type-checked and was `undefined` at runtime. Nothing was broken — the only
+   * caller resolves aliases first — but a type that lies is a trap set for the next caller.
+   */
+  it('isTestStepAction is CANONICAL only', () => {
+    expect(isTestStepAction('drag')).toBe(true)
+    expect(isTestStepAction('select')).toBe(false)   // an alias, not an entry
+    expect(isTestStepAction('nonsense')).toBe(false)
+  })
+
+  it('narrowing to TestStepAction guarantees a real entry', () => {
+    for (const a of ['drag', 'select', 'select-text', 'nope']) {
+      if (isTestStepAction(a)) expect(TEST_ACTIONS[a]).toBeDefined()
+    }
+  })
+
+  it('isKnownStepAction accepts aliases, which is what validation needs', () => {
+    expect(isKnownStepAction('select')).toBe(true)
+    expect(isKnownStepAction('select-text')).toBe(true)
+    expect(isKnownStepAction('nope')).toBe(false)
+  })
+
+  it('an old suite using the alias still validates', () => {
+    expect(staticStepIssue({ action: 'select', selector: '#note' })).toBeNull()
   })
 })

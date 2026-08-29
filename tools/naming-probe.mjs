@@ -56,9 +56,10 @@ function ask(prompt) {
     // from inside the repo (near-verbatim from CLAUDE.md) and "asserts a condition is true" from
     // a neutral directory — a flipped verdict, and the flipped one is the trap.
     //
-    // stdin must be closed, not merely ignored: `claude -p` waits 3s for piped input otherwise.
+    // `stdio: 'ignore'` for stdin gives the child /dev/null, which reads as EOF immediately — that
+    // is what stops `claude -p` waiting 3s for piped input. An earlier `proc.stdin?.end()` here was
+    // DEAD CODE: with 'ignore', `proc.stdin` is null, so it never ran and never could.
     const proc = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'], cwd: NEUTRAL_CWD })
-    try { proc.stdin?.end() } catch {}
     let out = ''
     proc.stdout.on('data', (d) => (out += d))
     proc.on('close', () => resolve(out.trim()))

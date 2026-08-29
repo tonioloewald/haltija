@@ -19,6 +19,7 @@
 import { describe, it, expect } from 'bun:test'
 import { readFileSync, existsSync } from 'fs'
 import { join, dirname, resolve } from 'path'
+import { TEST_STEP_ACTIONS, TEST_ACTIONS } from './test-actions'
 
 const ROOT = join(import.meta.dir, '..')
 const SKILL_PATH = join(ROOT, 'plugins/haltija-skill/skills/haltija/SKILL.md')
@@ -120,8 +121,11 @@ describe('reference docs carry what the main prompt does not', () => {
     const ci = join(ROOT, 'docs/CI-INTEGRATION.md')
     expect(existsSync(ci)).toBe(true)
     const body = readFileSync(ci, 'utf-8')
-    for (const action of ['drag', 'verify', 'tabs-open', 'tabs-close', 'tabs-focus', 'check']) {
-      expect(body).toContain(`\`${action}\``)
-    }
+    // DERIVED, not a hardcoded six. The literal omitted select-text/cut/copy/paste and would not
+    // have noticed a NEW non-core action — which is exactly the case this assertion exists for.
+    const nonCore = TEST_STEP_ACTIONS.filter((a) => !TEST_ACTIONS[a].core)
+    expect(nonCore.length).toBeGreaterThan(5)
+    const missing = nonCore.filter((a) => !body.includes(`\`${a}\``))
+    expect(missing).toEqual([])
   })
 })
