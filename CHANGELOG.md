@@ -3,7 +3,8 @@
 ## 1.12.6
 
 Security updates, three silent-failure fixes in the path from "server tells page how to reach me",
-and a new way to watch — and talk to — the agent driving your browser.
+a new way to watch — and talk to — the agent driving your browser, and both halves of the
+shared-browser trade: instances that never died, and tabs that answer while asleep.
 
 ### Security
 
@@ -35,6 +36,34 @@ that your own setup was wrong.
   `--token` server every page-side feature returned 401. That made "require a token" and "the page
   can talk to the server" mutually exclusive — which matters most over a tunnel, exactly where a
   token matters most.
+
+### Two halves of the shared-browser trade (#39, #41)
+
+Moving to shared tabs and servers stopped per-run Electron instances proliferating and stopped a
+launch killing a peer's channel. It also swapped in two problems, reported together.
+
+- **A `--private` instance now has a lifetime bound.** It exits after 8h with no client activity,
+  saying why on the way out — an instance that vanishes silently is indistinguishable from a crash.
+  The only previous bound was spawner-pid polling, which cannot help when teardown never *runs*: a
+  SIGKILLed session, a sleeping laptop, a crashed harness. #39 found one twelve days old at 5.7 GB
+  and ~150% CPU on a machine at load average 212, with the slowdown blamed on unrelated code.
+  Shared servers stay unbounded — their stickiness is the feature. `HALTIJA_IDLE_TIMEOUT_HOURS`
+  overrides in both directions; `0` disables.
+
+  Polling does **not** count as activity. The desktop app's own renderer hits `/status` every five
+  seconds forever, so under the obvious implementation a `--private --app` instance would have
+  refreshed its idle clock from its own UI and never expired — leaving exactly the configuration
+  #39 reported as the one case still immune.
+
+- **A tab can report `visible` and not be painting, and now says so.** `visibilityState` means "is
+  this tab selected", not "is it being composited"; they diverge for occluded windows, offscreen
+  windows and a sleeping display. In that gap the tab answers confidently about content that never
+  rendered, and a screenshot shows a stale frame the compositor is holding. Every result now carries
+  `paintAgeMs`, and a stale one attaches a warning naming the cause. `hj doctor` reads the same
+  number rather than keeping its own opinion.
+
+  Not fixed: getting a foreground window cheaply, which is what #41 actually asks for. That needs a
+  shape decision and is tracked in `TODO.md`.
 
 ### `hj session` — watch the agent, and talk back
 
