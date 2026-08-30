@@ -307,6 +307,23 @@ than claiming.
   to find. Two defensible answers: ship `apps/mcp/build/`, or detect the absence and say so rather
   than writing a config that points at nothing.
 
+**#41 — the foreground path (needs a product decision).** The diagnosis half shipped: every result
+carries `paintAgeMs` and a stale one warns, so a tab that reports `visible` while not compositing
+can no longer answer confidently about content that never rendered. What is NOT built is the thing
+actually asked for — a cheap way to *get* a foreground window for verification. Notes for whoever
+picks it up:
+
+- `--private --app` already provides a foregrounded, unthrottled instance. The gaps are **reuse**
+  (hand back an idle one rather than spawn another — this is the half that made the old per-run
+  Electron model proliferate), **discoverability**, and a **hold-still flag** that suppresses dev
+  live-reload for the duration, since a reload between an agent's setup step and its screenshot
+  resets the state being verified.
+- Shape is undecided: a lease (`hj window --lease 30m`) vs. a persistent `hj window` that agents
+  attach to. The reporter explicitly flagged uncertainty here and invited redirection.
+- **#39 was the prerequisite**, and it is now done. Making dedicated instances cheap to reach for
+  while they had no lifetime bound would have multiplied the twelve-day 5.7 GB leak, not fixed it.
+  A lease is only safe to design now that an abandoned instance dies on its own.
+
 **Open majors carried forward:**
 
 - [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including
