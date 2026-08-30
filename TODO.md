@@ -177,6 +177,10 @@ Marked `(unverified)` where the review reported but did not independently confir
   already holds the notes. A Release is a view over a tag, so this is backfillable at any time and
   nothing decays while it waits. Do it in one batch whenever convenient:
   `gh release create v1.12.N --notes-from-tag` (or paste the CHANGELOG section).
+- [ ] **Use `Fixes #N` trailers, not a bare `(#30)`.** Separate point that was bundled into the
+  Releases item above and nearly lost when it was demoted: a bare `(#30)` in a subject line links
+  but does **not** auto-close, so issues stay open after the fix ships and reporters get no signal.
+  This is also part of why the 1.12.x reporters heard nothing.
 
 ### To `tosijs-coding-practices` (7 entries)
 
