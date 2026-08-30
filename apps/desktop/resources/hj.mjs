@@ -2691,6 +2691,9 @@ function isDrivable(windows) {
   return windows.some(isTopLevelTab2);
 }
 
+// bin/tab-liveness.mjs
+var PAINT_STALE_MS = 3000;
+
 // bin/hj.mjs
 import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
@@ -2930,14 +2933,17 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
         });
         if (r.ok) {
           const j = await r.json();
-          if (j && j.success && j.data && typeof j.data.fired === "boolean")
+          if (typeof j?.paintAgeMs === "number" && Number.isFinite(j.paintAgeMs)) {
+            raf = { fired: j.paintAgeMs < PAINT_STALE_MS, ms: j.paintAgeMs, measured: true };
+          } else if (j && j.success && j.data && typeof j.data.fired === "boolean") {
             raf = j.data;
+          }
         }
       } catch {}
       if (raf === null) {
         unchecked.push(`could not run the requestAnimationFrame probe — whether this tab actually paints is ` + `UNKNOWN. If elements seem missing, suspect a non-compositing tab before the page.`);
       } else if (!raf.fired) {
-        problems.push(`requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though ` + `it reports visibilityState "visible". Anything rAF-driven (React's scheduler, tosijs ` + `queueRender, animations, virtual scrollers) will never render, so a missing element ` + `is NOT evidence of an application bug. Bring a window to the front, or wake the ` + `display, and re-run.`);
+        problems.push((raf.measured ? `this tab HAS NOT PAINTED A FRAME IN ${(raf.ms / 1000).toFixed(1)}s — it is not compositing, even though ` : `requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though `) + `it reports visibilityState "visible". Anything rAF-driven (React's scheduler, tosijs ` + `queueRender, animations, virtual scrollers) will never render, so a missing element ` + `is NOT evidence of an application bug. Bring a window to the front, or wake the ` + `display, and re-run.`);
       }
     }
     const origins = describeOrigins(tabs);

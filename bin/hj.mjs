@@ -15,6 +15,7 @@ import { extractWindowTarget } from './arg-utils.mjs'
 import { findProjectOrigins, routeByDeclaredOrigin, ORIGINS_FILE } from './project-origins.mjs'
 import { collectCandidates, describeServer, sortRows, labelFor, isAmbiguousTarget } from './server-list.mjs'
 import { isDrivable, isVisible, visibilityKnown } from './window-state.mjs'
+import { PAINT_STALE_MS } from './tab-liveness.mjs'
 import { LOCAL_COMMANDS, LOCAL_COMMAND_HELP } from './cli-commands.mjs'
 import { HJ_VERSION } from './version.mjs'
 import { differsBeyondPatch } from './semver.mjs'
@@ -416,7 +417,16 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
         })
         if (r.ok) {
           const j = await r.json()
-          if (j && j.success && j.data && typeof j.data.fired === 'boolean') raf = j.data
+          // Prefer the widget's OWN measurement when it sends one. It answers the same question
+          // this probe does — is the tab compositing — but it is the signal the server already
+          // attaches to every result, so doctor and the result warnings cannot disagree about a
+          // borderline tab. The probe stays as the fallback for a widget older than 1.12.6, which
+          // reports no paintAgeMs at all; without it, an old widget would silently go unchecked.
+          if (typeof j?.paintAgeMs === 'number' && Number.isFinite(j.paintAgeMs)) {
+            raf = { fired: j.paintAgeMs < PAINT_STALE_MS, ms: j.paintAgeMs, measured: true }
+          } else if (j && j.success && j.data && typeof j.data.fired === 'boolean') {
+            raf = j.data
+          }
         }
       } catch {
         // Fall through to the unchecked branch — never a pass.
@@ -428,7 +438,9 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
         )
       } else if (!raf.fired) {
         problems.push(
-          `requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though ` +
+          (raf.measured
+            ? `this tab HAS NOT PAINTED A FRAME IN ${(raf.ms / 1000).toFixed(1)}s — it is not compositing, even though `
+            : `requestAnimationFrame DID NOT FIRE within 2s — this tab is not compositing, even though `) +
             `it reports visibilityState "visible". Anything rAF-driven (React's scheduler, tosijs ` +
             `queueRender, animations, virtual scrollers) will never render, so a missing element ` +
             `is NOT evidence of an application bug. Bring a window to the front, or wake the ` +

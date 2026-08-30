@@ -144,14 +144,14 @@ Marked `(unverified)` where the review reported but did not independently confir
 
 ### Tooling and types
 
-- [ ] `TestActionDoc.example` is mandatory and read by NOTHING, while CI-INTEGRATION lost its
+- [x] `TestActionDoc.example` is mandatory and read by NOTHING, while CI-INTEGRATION lost its
   Example column. Render it or delete the field — do not keep a mandatory field with no consumer.
 - [x] `stepActionsInline` is exported and never called; `coreOnly` is never passed; the
   `filter(a => TEST_ACTIONS[a].core)` expression appears four times. Factor it, drop the
   `as TestActionDoc` casts (the `satisfies` clause makes them unnecessary and they mask real errors).
-- [ ] `isTestStepAction('select')` returns true while narrowing to `TestStepAction`, so
+- [x] `isTestStepAction('select')` returns true while narrowing to `TestStepAction`, so
   `TEST_ACTIONS[a]` can be `undefined` with no type error. Split canonical vs known. *(latent)*
-- [ ] `writeGeneratedBlocks` **fails open** — a missing marker is skipped silently, so CLAUDE.md's
+- [x] `writeGeneratedBlocks` **fails open** — a missing marker is skipped silently, so CLAUDE.md's
   or CI-INTEGRATION's block could freeze with a green docs-drift. Make a named target with no
   marker a build failure. Also: `stepActionsCompact`'s regex would leak `duration (ms, default 100)`
   into the prompt. *(unverified)*
@@ -160,7 +160,7 @@ Marked `(unverified)` where the review reported but did not independently confir
   "lower SKILL_BUDGET_BYTES to N" rather than a bare number. *(unverified)*
 - [x] `tools/naming-probe.mjs` runs probes strictly sequentially; flatten to a bounded pool. The
   `proc.stdin?.end()` is dead — `stdio: ['ignore', …]` makes it null. *(unverified)*
-- [ ] **CLAUDE.md Build Artifacts needs item 15:** the build now rewrites `<!-- GENERATED:… -->`
+- [x] **CLAUDE.md Build Artifacts needs item 15:** the build now rewrites `<!-- GENERATED:… -->`
   regions INSIDE three hand-written docs. Every existing rule enumerates whole files, so those
   files' reputation says "hand-written" and an edit gets silently reverted.
 

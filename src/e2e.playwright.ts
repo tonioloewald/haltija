@@ -13,6 +13,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { dirname, join as pathJoin } from 'path'
 import { fileURLToPath } from 'url'
 import { startTestServer, type TestServer } from './playwright-server'
+import { execFileSync } from 'child_process'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -3217,6 +3218,21 @@ test.describe('text selectors prefer the element a human could act on', () => {
   })
 })
 
+function runDoctor(): string {
+  // --port pins the target so this never auto-launches anything, and doctor exits non-zero when it
+  // finds a problem — which is the point, so the non-zero case must still yield its JSON.
+  const port = new URL(SERVER_URL).port
+  try {
+    return execFileSync('node', [pathJoin(__dirname, '../bin/hj.mjs'), 'doctor', '--json', '--port', port], {
+      encoding: 'utf-8',
+      env: { ...process.env, HALTIJA_NO_LAUNCH: '1' },
+    })
+  } catch (err: any) {
+    if (typeof err?.stdout === 'string' && err.stdout.trim()) return err.stdout
+    throw err
+  }
+}
+
 test.describe('a tab that says "visible" but is not painting (issue #41)', () => {
   /**
    * `active` comes from `visibilityState`, which reports whether a tab is SELECTED — not whether
@@ -3244,6 +3260,14 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     // One frame per second, so a compositing tab is always well under the 3s threshold.
     expect(json.paintAgeMs).toBeLessThan(3000)
     expect(json.warning ?? '').not.toContain('HAS NOT PAINTED')
+
+    // `hj doctor` must reach the SAME verdict from the SAME measurement. It used to answer this
+    // question with its own inline rAF probe; two thresholds for one question is the drift this
+    // repo keeps paying for, so doctor now prefers the widget's paintAgeMs and keeps the probe
+    // only as a fallback for pre-1.12.6 widgets.
+    const doc = JSON.parse(runDoctor())
+    expect(JSON.stringify(doc.problems ?? [])).not.toContain('PAINTED')
+    expect(JSON.stringify(doc.problems ?? [])).not.toContain('DID NOT FIRE')
   })
 
   test('a tab whose rAF callbacks never run is caught, and the result says so', async ({ page }) => {
@@ -3294,5 +3318,9 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     expect(json.paintAgeMs).toBeGreaterThanOrEqual(3000)
     expect(json.warning).toContain('HAS NOT PAINTED')
     expect(json.warning).toContain('requestAnimationFrame')
+
+    // And doctor agrees, from the same number rather than a second opinion.
+    const doc = JSON.parse(runDoctor())
+    expect(JSON.stringify(doc.problems ?? [])).toContain('HAS NOT PAINTED')
   })
 })

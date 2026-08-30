@@ -145,6 +145,16 @@ writeFileSync(
     readFileSync('bin/window-state.mjs', 'utf-8'),
 )
 
+// 0i. Compile the paint-liveness vocabulary for the CLI. `hj doctor` probes rAF and the server
+// warns on a stale `paintAgeMs`; both are answering "is this tab compositing?", and two hand-
+// written thresholds for one question is the drift this repo keeps paying for.
+await $`bun build ./src/tab-liveness.ts --outfile=bin/tab-liveness.mjs --target=node --format=esm`
+writeFileSync(
+  'bin/tab-liveness.mjs',
+  `/** ⚠️  AUTO-GENERATED FROM src/tab-liveness.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('bin/tab-liveness.mjs', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS
