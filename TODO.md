@@ -172,21 +172,11 @@ Marked `(unverified)` where the review reported but did not independently confir
 
 ### Issue hygiene
 
-- [ ] **No GitHub Release was cut for v1.12.0 / v1.12.1 / v1.12.2** — `gh release list` stops at
-  v1.11.0, so those CHANGELOG entries exist only in-repo. That is why reporters got no notification.
-  Use `Fixes #N` in commits; a bare `(#30)` does not auto-close.
-- [ ] **Dispose of #1 and #2** — both narrowed to one ask (a reliable origin→project map) which
-  shipped as declared-origin routing in 1.11.1. Their last human comment predates the fix. Say
-  whether declaration-rather-than-inference counts, and update `UPSTREAM.md`'s stale "Still open".
-- [ ] **Disposition #12** (~90% delivered across 1.8.0/1.9.0/1.12.x) — close it and move the native
-  fast path to #16, or retitle to the residue.
-- [ ] File a haltija issue for **option selection** (`select-option`, or a step form of `/select`),
-  citing the 3/3 probe distribution as demand evidence and the sequencing constraint. Until it
-  ships, add POSITIVE guidance to the `select-text` row — "to choose an `<option>`, set `value` via
-  `eval` and dispatch `change`" — so a negation is not the whole answer.
-- [ ] **`select` has a THIRD meaning already**: `POST /select` is interactive element picking and
-  `hj select-start/result/cancel/clear` exist. The shadow invariant only guards the STEP namespace.
-  Record this beside the "free `select`" plan before acting on it.
+- [ ] **GitHub Releases not cut for v1.12.0–v1.12.4** *(cosmetic; not a blocker — never treat it
+  as one)*. Re-checked 2026-08-30: **every tag exists locally AND on origin**, and `CHANGELOG.md`
+  already holds the notes. A Release is a view over a tag, so this is backfillable at any time and
+  nothing decays while it waits. Do it in one batch whenever convenient:
+  `gh release create v1.12.N --notes-from-tag` (or paste the CHANGELOG section).
 
 ### To `tosijs-coding-practices` (7 entries)
 
