@@ -29,6 +29,22 @@ export interface DevResponse {
   error?: string
   timestamp: number
   /**
+   * How long ago the answering tab last painted a frame, in milliseconds, measured by the widget
+   * at the instant it answered.
+   *
+   * `active` (from `visibilityState`) answers "is this tab selected", which is NOT the same as
+   * "is this tab being composited" — they diverge for an occluded window, an offscreen window and
+   * a sleeping display. A tab in that state reports itself perfectly visible while painting
+   * nothing, so anything rAF-driven never runs and a missing element stops being evidence of
+   * anything (issue #28 — an agent reproduced four phantom "routes not mounting" bugs that way).
+   *
+   * This is the measured signal for that case. It rides on the response rather than on a periodic
+   * report because the useful question is "was the tab awake for THIS command", and because a
+   * value computed and sent by the same clock needs no skew correction. Absent when the widget is
+   * older than 1.12.7 or the answer did not come from a browser tab.
+   */
+  paintAgeMs?: number
+  /**
    * Set when the result is real but may be MISLEADING — currently: it came from a tab that
    * reported itself hidden, where rAF/timers are throttled so rAF-driven content may never have
    * mounted. The command succeeded; the number may still be wrong. See src/tab-liveness.ts.

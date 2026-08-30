@@ -100,13 +100,13 @@ hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRI
   selected", not "is it being composited" — they diverge for occluded windows, offscreen windows
   and a sleeping display. In that state nothing rAF-driven ever renders (React's scheduler, tosijs
   `queueRender`, animations, virtual scrollers) while geometry probes keep returning real numbers,
-  so **a missing element is not evidence of an application bug**. `hj doctor` probes
-  `requestAnimationFrame` directly and fails with `requestAnimationFrame DID NOT FIRE` — believe it
-  and bring a window to the front before you debug the page. If the probe itself can't run, doctor
-  reports it as *unchecked*, which is not a pass.
+  so **a missing element is not evidence of an application bug**, and a screenshot can be a stale
+  frame. Results carry `paintAgeMs`; a stale one warns `HAS NOT PAINTED`, and `hj doctor` probes it
+  (`requestAnimationFrame DID NOT FIRE`; *unchecked* ≠ pass). Believe either and raise the window.
 - Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand.
 - Best of all, don't share: `haltija --private` (with `--app` or `--headless`) gives a lane its own
-  isolated server + browser on an ephemeral port that nothing else can adopt.
+  isolated server + browser on an ephemeral port that nothing else can adopt. It exits after 8h
+  idle so an ended session can't leak one (`HALTIJA_IDLE_TIMEOUT_HOURS`, 0 disables).
 
 `hj` also warns on stderr when its version differs from the server's (`hj --version` prints its
 own). A mismatched `hj` can route or format wrongly — if you see that warning, believe it before
@@ -329,9 +329,12 @@ every connected tab with its `id`, url, and a `hidden` flag. To pin a command to
 `--window <id>` — it works in **either** position:
 
 ```bash
-hj windows                              # list tabs; note the id you want
+hj windows                              # list tabs (id, url, hidden); note the id you want
 hj --window w2 eval "document.title"    # leading form
 hj eval "document.title" --window w2    # trailing form — both work
+hj tabs-open <url>            # open a tab (desktop app; elsewhere it warns it can't be controlled)
+hj tabs-focus <id>            # point untargeted commands at a tab (server-side; never times out)
+hj tabs-close <id>            # close a tab
 ```
 
 **Heed the stderr warnings** — they exist so the tool never hands you a plausible-but-wrong answer.
@@ -357,15 +360,6 @@ hj console                             # console output + uncaught errors and re
 Use these when "did my click actually do anything?" matters: watch, act, then read. `hj click`/`hj
 type` also accept `--diff` to return a semantic before/after diff of that single action.
 
-## Multiple tabs
-
-```bash
-hj windows                    # list tabs (id, url, hidden)
-hj tabs-open <url>            # open a tab (desktop app; elsewhere it warns it can't be controlled)
-hj tabs-focus <id>            # point untargeted commands at a tab (server-side; never times out)
-hj tabs-close <id>            # close a tab
-hj <cmd> --window <id>        # pin ONE command to a tab, either position
-```
 
 ## Recording a flow into a test
 

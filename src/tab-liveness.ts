@@ -46,3 +46,46 @@ export function hiddenTabWarning(win: TabLivenessInfo | null | undefined): strin
     `yet", not "broken"). Bring the tab to the front, or target a visible one with --window <id>.`
   )
 }
+
+/**
+ * How long a tab may go without painting before we stop trusting what it says about rendered
+ * content. The widget asks for a frame once a second, so a compositing tab answers with an age
+ * near zero and never above ~1s. Three seconds is loose enough that ordinary jank cannot trip it
+ * and tight enough to catch a tab that has genuinely stopped.
+ */
+export const PAINT_STALE_MS = 3000
+
+/**
+ * The case `active` cannot see: a tab that reports itself VISIBLE and is not being composited.
+ *
+ * `visibilityState` answers "is this tab selected", not "is this tab painting", and the two
+ * diverge for an occluded window, an offscreen window and a sleeping display. `hj doctor` has
+ * probed for this since #28 — where an agent found four routes "not mounting" on hard navigation,
+ * had a coherent mechanism for it, reproduced it four times, and nearly filed an application bug
+ * that opening a second tab made vanish. But doctor is a pre-flight you run once, if you think to;
+ * the lie shows up on results, which is where the check now also lives.
+ *
+ * Deliberately silent when `paintAgeMs` is undefined: a widget older than this feature reports
+ * nothing, and inventing a warning we have no measurement for is the failure this module exists
+ * to prevent. Also silent when the tab already self-reported hidden — `hiddenTabWarning` says it
+ * better, and two warnings for one condition is noise that trains agents to skim.
+ */
+export function stalePaintWarning(
+  win: TabLivenessInfo | null | undefined,
+  paintAgeMs: number | undefined,
+): string | null {
+  if (typeof paintAgeMs !== 'number' || !Number.isFinite(paintAgeMs)) return null
+  if (paintAgeMs < PAINT_STALE_MS) return null
+  if (win?.active === false) return null // hiddenTabWarning covers this, with a better explanation
+  const which = win?.title ? `"${win.title}"` : (win?.id ?? 'the answering tab')
+  const seconds = (paintAgeMs / 1000).toFixed(1)
+  return (
+    `The tab that answered (${which}) says it is VISIBLE but HAS NOT PAINTED A FRAME IN ` +
+    `${seconds}s — it is not being composited. That happens when a window is occluded by another, ` +
+    `is offscreen, or the display is asleep, and it is not something visibilityState reports. ` +
+    `Anything driven by requestAnimationFrame (React's scheduler, tosijs queueRender, animations, ` +
+    `virtual scrollers) is NOT RUNNING, so a missing element is not evidence of an application ` +
+    `bug and a screenshot may show a stale frame the compositor is still holding. Raise the ` +
+    `window (or wake the display) and re-run before believing this result.`
+  )
+}

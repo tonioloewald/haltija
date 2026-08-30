@@ -484,6 +484,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
 | `HALTIJA_NO_TAB_WARN` | Set to `1` to silence the hidden-tab / focus-ambiguity result warnings | — |
+| `HALTIJA_IDLE_TIMEOUT_HOURS` | Exit after this many hours with no client activity. `0` disables. Defaults to 8h for `--private`, off for shared servers (#39) | — |
 | `HALTIJA_ORIGINS` | Comma-separated origins for per-tab routing; overrides `.haltija.json` | — |
 | `HALTIJA_STRICT` | Set to `1` (or `hj --strict`) to turn advisory warnings into non-zero exits | — |
 | `HALTIJA_PRIVATE` | *Set by haltija.* Marks an isolated instance (ephemeral port, no registry) | — |
@@ -552,6 +553,23 @@ live browser:
     kill famously doesn't); (3) **`hj shutdown`** / `POST /shutdown` on a private-desktop server
     signals its parent Electron to quit, tearing down the whole instance. Verified with real
     Electron: `hj shutdown`, launcher-SIGKILL, and two concurrent runs all tear down cleanly.
+
+    **(4) An idle timeout, because correct teardown cannot be sufficient (issue #39).** All three
+    rules above depend on teardown *running*. It doesn't when a session is SIGKILLed, when a laptop
+    sleeps through it, when the harness crashes, or when the pid a child watches gets recycled. #39
+    found the result: a `--private --app` instance **twelve days old**, 5.7 GB resident, ~150% CPU,
+    on a machine at load average 212 — and the slowdown was blamed on an unrelated code change.
+    So a private server now exits after 8h with no client activity (`HALTIJA_IDLE_TIMEOUT_HOURS`,
+    `0` disables; shared servers are unbounded by default — their stickiness is the feature).
+    Policy lives in `src/idle-timeout.ts`.
+
+    **The subtle part is what counts as activity, and getting it wrong makes the guard vacuous.**
+    The desktop app's own renderer polls `GET /status` every five seconds forever
+    (`apps/desktop/renderer.js` → `checkHaltija`). Under a naive "any REST request resets the
+    timer", a `--private --app` instance would refresh its own clock from its own UI and never
+    expire — i.e. the exact configuration #39 reported would have been the one case still immune,
+    while the feature looked correct. Poll endpoints are therefore excluded by name, and the
+    live four-lane check (idle / polled / driven / matched control) is what proves it fires.
 
   **Consumers** (e.g. a dev-server test lane) should request a private instance and drive *that*
   by the port it reports — never an unscoped `hj windows` check that races whatever else is on the

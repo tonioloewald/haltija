@@ -4560,6 +4560,7 @@ export class DevChannel extends HTMLElement {
       document.addEventListener('visibilitychange', this.visibilityHandler)
     }
 
+    this.startPaintHeartbeat()
     this.connect()
   }
 
@@ -4576,6 +4577,7 @@ export class DevChannel extends HTMLElement {
       document.removeEventListener('visibilitychange', this.visibilityHandler)
       this.visibilityHandler = null
     }
+    this.stopPaintHeartbeat()
   }
 
   attributeChangedCallback(name: string, _old: string, value: string) {
@@ -8759,6 +8761,62 @@ export class DevChannel extends HTMLElement {
     this.render()
   }
 
+  // ==========================================
+  // Paint heartbeat — is this tab actually compositing?
+  // ==========================================
+
+  /**
+   * When a frame last actually rendered, by this tab's own clock.
+   *
+   * Seeded at construction so a tab that has never painted still reports a growing age rather
+   * than a nonsense one. A tab loaded in the background never paints, so this simply stays put
+   * and the age climbs — which is the correct reading.
+   */
+  private lastPaintAt = Date.now()
+  private paintTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * Paint age sampled when each request arrived, keyed by request id — see `handleMessage` for
+   * why arrival and not response. Entries are removed by `respond`; the cap below is the leak
+   * guard for requests that never produce one (dropped, not-for-us, or a handler that throws).
+   */
+  private paintAgeOnArrival = new Map<string, number>()
+
+  /**
+   * Ask for one animation frame per second and record when it lands.
+   *
+   * Why a timer around `requestAnimationFrame` rather than a self-rescheduling rAF loop: a
+   * continuous loop keeps the compositor working for a widget injected into someone else's page,
+   * and we need four frames a minute, not sixty a second. One frame per second is far below any
+   * cost worth caring about and resolves the question just as well.
+   *
+   * There is no observer effect in the direction that matters. A hidden or occluded tab does not
+   * service rAF callbacks at all, so the timestamp goes stale *because* the tab stopped painting
+   * — the measurement is the symptom itself. (The timer is throttled too, which only makes the
+   * staleness more pronounced.)
+   */
+  private startPaintHeartbeat() {
+    if (typeof requestAnimationFrame !== 'function' || typeof setTimeout !== 'function') return
+    const tick = () => {
+      requestAnimationFrame(() => {
+        this.lastPaintAt = Date.now()
+      })
+      this.paintTimer = setTimeout(tick, 1000)
+    }
+    tick()
+  }
+
+  private stopPaintHeartbeat() {
+    if (this.paintTimer !== null) {
+      clearTimeout(this.paintTimer)
+      this.paintTimer = null
+    }
+  }
+
+  /** How long since this tab last painted, at the instant of asking. */
+  private paintAgeMs(): number {
+    return Date.now() - this.lastPaintAt
+  }
+
   private send(channel: string, action: string, payload: any, id?: string) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
 
@@ -8780,6 +8838,9 @@ export class DevChannel extends HTMLElement {
     data?: any,
     error?: string,
   ) {
+    const arrivalPaintAge = this.paintAgeOnArrival.get(requestId)
+    this.paintAgeOnArrival.delete(requestId)
+
     // Check if this is a local (programmatic) request
     const local = this.localPending.get(requestId)
     if (local) {
@@ -8798,6 +8859,10 @@ export class DevChannel extends HTMLElement {
       data,
       error,
       timestamp: Date.now(),
+      // Sampled when the request ARRIVED (see handleMessage), so the caveat describes the tab as
+      // it was for this command — and a command that blocks the main thread cannot make a healthy
+      // tab look asleep. Falls back to now for responses with no recorded arrival.
+      paintAgeMs: arrivalPaintAge ?? this.paintAgeMs(),
     }
     this.ws?.send(JSON.stringify(response))
   }
@@ -8826,6 +8891,24 @@ export class DevChannel extends HTMLElement {
   // ==========================================
 
   private handleMessage(msg: DevMessage) {
+    // Paint age is captured HERE, on arrival, not when we answer.
+    //
+    // The question the caveat answers is "was this tab awake for this command", and measuring at
+    // response time answers a different one. Any command that occupies the main thread — a slow
+    // `eval`, a widget-side `wait`, a `verify` that polls for seconds — blocks rAF while it runs,
+    // so its own duration would masquerade as a non-compositing tab and warn on every slow but
+    // perfectly healthy command.
+    if (msg.id) {
+      // Bounded: not every message produces a `respond` (some aren't for this window, some are
+      // dropped), so without this the map would grow for the life of the page. Map iterates in
+      // insertion order, so the first key is the oldest.
+      if (this.paintAgeOnArrival.size > 200) {
+        const oldest = this.paintAgeOnArrival.keys().next().value
+        if (oldest !== undefined) this.paintAgeOnArrival.delete(oldest)
+      }
+      this.paintAgeOnArrival.set(msg.id, this.paintAgeMs())
+    }
+
     // Always show when receiving commands (no silent snooping)
     if (msg.source === 'agent' || msg.source === 'server') {
       this.show()

@@ -33,7 +33,8 @@ import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type Serve
 import { recordMachineAction } from './machine-log'
 import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
-import { hiddenTabWarning } from './tab-liveness'
+import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
+import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -313,6 +314,48 @@ function raiseTabInDesktopApp(windowId: string): void {
 // Set by the Electron desktop app when it spawns this server. When true the
 // server emits __NEED_WINDOW__ to stdout for the parent process to react.
 const isDesktopApp = process.env.HALTIJA_DESKTOP === '1'
+
+/**
+ * Idle lifetime bound (issue #39) — the backstop for when teardown never runs at all.
+ *
+ * Policy, the "is this activity" rule, and the exit message live in `idle-timeout.ts` so they
+ * can be unit-tested without launching a server. Note especially why this is NOT keyed on "any
+ * REST request": the desktop app polls its own `/status` every 5 seconds, which would refresh
+ * the timer forever for `--private --app` — the exact configuration #39 found twelve days old.
+ */
+let lastActivityAt = Date.now()
+const idlePolicy = resolveIdlePolicy({
+  HALTIJA_IDLE_TIMEOUT_HOURS: process.env.HALTIJA_IDLE_TIMEOUT_HOURS,
+  isPrivate: IS_PRIVATE,
+})
+if (idlePolicy.invalid !== undefined) {
+  console.warn(
+    `${LOG_PREFIX} ⚠️  HALTIJA_IDLE_TIMEOUT_HOURS="${idlePolicy.invalid}" is not a number — ` +
+      `ignoring it and using ${idlePolicy.source}. (Use 0 to disable, or a number of hours.)`,
+  )
+}
+if (idlePolicy.timeoutMs !== null) {
+  // Check once a minute. The bound is measured in hours, so a coarse tick costs nothing and
+  // keeps an idle process genuinely idle; `unref` keeps this timer from being the reason the
+  // event loop stays alive, which would be an absurd way to implement an idle timeout.
+  const idleWatch = setInterval(() => {
+    const idleFor = Date.now() - lastActivityAt
+    if (!isExpired(Date.now(), lastActivityAt, idlePolicy.timeoutMs)) return
+    clearInterval(idleWatch)
+    console.log(`${LOG_PREFIX} ${expiryMessage(idleFor, idlePolicy)}`)
+    if (IS_PRIVATE && isDesktopApp) {
+      // Same reasoning as POST /shutdown: this server is a child of a private Electron app, and
+      // exiting only ourselves would orphan the app, its sibling server and its helpers. Signal
+      // the parent; its 'will-quit' tears down the whole instance. Exiting anyway is the
+      // fallback for a parent that is already gone.
+      try {
+        if (process.ppid > 1) process.kill(process.ppid, 'SIGTERM')
+      } catch {}
+    }
+    setTimeout(() => process.exit(0), 100)
+  }, 60_000)
+  if (typeof idleWatch.unref === 'function') idleWatch.unref()
+}
 
 // Track the currently active browser ID (legacy, for backwards compatibility)
 let activeBrowserId: string | null = null
@@ -735,12 +778,15 @@ async function requestFromBrowser(
     const attachWarning = (res: DevResponse): DevResponse => {
       if (TAB_WARN_DISABLED) return res
       const hidden = hiddenTabWarning(sentTo)
+      // The measured counterpart to `hidden`: a tab can report itself visible and still not be
+      // painting (occluded, offscreen, display asleep). See stalePaintWarning / issue #28.
+      const stale = stalePaintWarning(sentTo, res.paintAgeMs)
       const ambiguous = ambiguousFocusWarning({
         windows: Array.from(windows.values()),
         sentToId: sentTo?.id,
         wasTargeted: !!windowId,
       })
-      const warning = [hidden, ambiguous].filter(Boolean).join('\n\n')
+      const warning = [hidden, stale, ambiguous].filter(Boolean).join('\n\n')
       if (!warning) return res
       // ALWAYS report the condition; only mark whether it's a repeat. De-duplication is a
       // *presentation* concern (don't spam a human with the same block on every command), so the
@@ -1015,7 +1061,11 @@ const apiRouter = createRouter(createHandlerContext)
 async function handleRest(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname
-  
+
+  // Idle lifetime (#39): a client doing work keeps the instance alive. Timer-driven polling from
+  // our own UI deliberately does not — see `countsAsActivity`.
+  if (countsAsActivity(path, req.method)) lastActivityAt = Date.now()
+
   // Window targeting: ?window=<windowId> routes command to specific window
   // If not specified, command goes to all active windows
   const targetWindowId = url.searchParams.get('window') || undefined

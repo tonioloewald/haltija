@@ -3011,6 +3011,7 @@
         };
         document.addEventListener("visibilitychange", this.visibilityHandler);
       }
+      this.startPaintHeartbeat();
       this.connect();
     }
     disconnectedCallback() {
@@ -3026,6 +3027,7 @@
         document.removeEventListener("visibilitychange", this.visibilityHandler);
         this.visibilityHandler = null;
       }
+      this.stopPaintHeartbeat();
     }
     attributeChangedCallback(name, _old, value) {
       if (name === "server") {
@@ -6255,6 +6257,29 @@ ${elementSummary}${moreText}`;
       });
       this.render();
     }
+    lastPaintAt = Date.now();
+    paintTimer = null;
+    paintAgeOnArrival = new Map;
+    startPaintHeartbeat() {
+      if (typeof requestAnimationFrame !== "function" || typeof setTimeout !== "function")
+        return;
+      const tick = () => {
+        requestAnimationFrame(() => {
+          this.lastPaintAt = Date.now();
+        });
+        this.paintTimer = setTimeout(tick, 1000);
+      };
+      tick();
+    }
+    stopPaintHeartbeat() {
+      if (this.paintTimer !== null) {
+        clearTimeout(this.paintTimer);
+        this.paintTimer = null;
+      }
+    }
+    paintAgeMs() {
+      return Date.now() - this.lastPaintAt;
+    }
     send(channel, action2, payload2, id) {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN)
         return;
@@ -6269,6 +6294,8 @@ ${elementSummary}${moreText}`;
       this.ws.send(JSON.stringify(msg2));
     }
     respond(requestId, success, data, error) {
+      const arrivalPaintAge = this.paintAgeOnArrival.get(requestId);
+      this.paintAgeOnArrival.delete(requestId);
       const local = this.localPending.get(requestId);
       if (local) {
         this.localPending.delete(requestId);
@@ -6284,7 +6311,8 @@ ${elementSummary}${moreText}`;
         success,
         data,
         error,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        paintAgeMs: arrivalPaintAge ?? this.paintAgeMs()
       };
       this.ws?.send(JSON.stringify(response));
     }
@@ -6303,6 +6331,14 @@ ${elementSummary}${moreText}`;
       });
     }
     handleMessage(msg2) {
+      if (msg2.id) {
+        if (this.paintAgeOnArrival.size > 200) {
+          const oldest = this.paintAgeOnArrival.keys().next().value;
+          if (oldest !== undefined)
+            this.paintAgeOnArrival.delete(oldest);
+        }
+        this.paintAgeOnArrival.set(msg2.id, this.paintAgeMs());
+      }
       if (msg2.source === "agent" || msg2.source === "server") {
         this.show();
       }

@@ -3216,3 +3216,83 @@ test.describe('text selectors prefer the element a human could act on', () => {
     expect(String(json.error)).toContain('off-canvas')
   })
 })
+
+test.describe('a tab that says "visible" but is not painting (issue #41)', () => {
+  /**
+   * `active` comes from `visibilityState`, which reports whether a tab is SELECTED — not whether
+   * it is being composited. They diverge for an occluded window, an offscreen window and a
+   * sleeping display, and in that gap `hiddenTabWarning` is blind: the tab answers confidently
+   * about content that never rendered. #28 nearly became a filed application bug that way, and
+   * #41 cost a session two retracted diagnoses.
+   *
+   * The widget therefore asks for one animation frame a second and reports how long it has been
+   * since one landed. These tests exist because the failure mode of the whole feature is silence:
+   * if `paintAgeMs` never arrives, `stalePaintWarning` returns null forever and everything looks
+   * fine. So the first test proves the measurement is real, and the second proves it fires.
+   */
+  test('a healthy tab reports a fresh paint age and no warning', async ({ page }) => {
+    await injectDevChannel(page)
+    const res = await fetch(`${SERVER_URL}/eval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: '1 + 1' }),
+    })
+    const json = await res.json()
+    expect(json.success).toBe(true)
+    // The measurement must actually arrive — a missing field would silently disable the warning.
+    expect(typeof json.paintAgeMs).toBe('number')
+    // One frame per second, so a compositing tab is always well under the 3s threshold.
+    expect(json.paintAgeMs).toBeLessThan(3000)
+    expect(json.warning ?? '').not.toContain('HAS NOT PAINTED')
+  })
+
+  test('a tab whose rAF callbacks never run is caught, and the result says so', async ({ page }) => {
+    // A non-compositing tab is precisely one whose requestAnimationFrame callbacks are never
+    // serviced. Neutering rAF BEFORE the widget loads reproduces that exactly, and deterministically
+    // — waiting for a real occlusion in headless Chromium would be untestable.
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Occluded Page</title>
+          <script>window.requestAnimationFrame = function () { return 0 }</script>
+          <script src="${SERVER_URL}/component.js"></script>
+        </head>
+        <body><h1>Occluded Page</h1></body>
+      </html>
+    `)
+    await page.waitForFunction(() => !!(window as any).DevChannel)
+    await page.evaluate(async () => {
+      await customElements.whenDefined('haltija-dev')
+    })
+    await page.evaluate((wsUrl) => {
+      const DC = (window as any).DevChannel
+      const el = DC.elementCreator()()
+      el.setAttribute('server', wsUrl)
+      document.body.appendChild(el)
+    }, WS_URL)
+    await page.waitForSelector('haltija-dev', { state: 'attached' })
+    for (let i = 0; i < 30; i++) {
+      const s = await (await fetch(`${SERVER_URL}/status`)).json()
+      if (s.browsers > 0) break
+      await page.waitForTimeout(200)
+    }
+
+    // Past the 3s staleness threshold with no frame ever landing.
+    await page.waitForTimeout(3500)
+
+    const res = await fetch(`${SERVER_URL}/eval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'document.title' }),
+    })
+    const json = await res.json()
+
+    // The command still SUCCEEDS — that is the whole danger, and why the caveat has to ride along.
+    expect(json.success).toBe(true)
+    expect(json.data).toBe('Occluded Page')
+    expect(json.paintAgeMs).toBeGreaterThanOrEqual(3000)
+    expect(json.warning).toContain('HAS NOT PAINTED')
+    expect(json.warning).toContain('requestAnimationFrame')
+  })
+})
