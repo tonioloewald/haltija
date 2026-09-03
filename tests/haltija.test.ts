@@ -7,10 +7,30 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import { HaltijaTestClient } from '../src/test'
+import { HaltijaTestClient, resolveTestServerUrl } from '../src/test'
 import { existsSync } from 'fs'
 
 const hj = new HaltijaTestClient()
+
+/**
+ * This lane REFUSES the shared default port, and that is the whole point.
+ *
+ * `haltija/test` already knew the hazard and warned about it — see `resolveTestServerUrl` — but a
+ * warning is not a boundary, and this suite walked straight through it. Observed 2026-09-03: a
+ * v1.11.2 server belonging to a different project was live on 8700 with six tabs, `waitForServer`
+ * found it, and the suite ran. It does not merely *read* from whatever answers: it calls
+ * `hj.navigate('http://localhost:8700/test')` and `hj.click(...)`, with no `window` param, so both
+ * land on whichever tab is focused. Our own test suite drove a stranger's browser — the exact harm
+ * `--private` exists to prevent, committed by the project that built `--private`.
+ *
+ * The four "failures" release-doctor reported were that, not a defect in haltija: a gate that
+ * cries wolf gets muted, and a muted gate is worse than no gate.
+ *
+ * So: run only against a server this lane was explicitly pointed at. Isolation is not something to
+ * infer from a 200 response.
+ */
+const target = resolveTestServerUrl()
+const explicitlyTargeted = target.source !== 'default'
 
 /**
  * Probed at MODULE LOAD, not in `beforeAll`, so `describe.skipIf` can see it.
@@ -23,14 +43,24 @@ const hj = new HaltijaTestClient()
  *
  * Skipped now reports as SKIPPED, which is a third state and not a pass.
  */
-const serverAvailable = await hj
-  .waitForServer(3000)
-  .then(() => true)
-  .catch(() => {
-    console.log('Haltija server not available — these integration tests will report as SKIPPED')
-    console.log('Run: bunx haltija --private --headless   (or `bunx haltija -f`)')
-    return false
-  })
+const serverAvailable = !explicitlyTargeted
+  ? (console.log(
+      'No server explicitly targeted — SKIPPING rather than adopting the shared default (8700).\n' +
+        '  These tests navigate and click, so running them against whatever answers on 8700 would\n' +
+        '  drive another project\'s live browser. Point them at an instance you own:\n' +
+        '    bunx haltija --private --headless      # prints its ephemeral port\n' +
+        '    HALTIJA_PORT=<that port> bun test tests/',
+    ),
+    false)
+  : await hj
+      .waitForServer(3000)
+      .then(() => true)
+      .catch(() => {
+        console.log(
+          `No haltija server at ${target.url} (from ${target.source}) — reporting as SKIPPED`,
+        )
+        return false
+      })
 
 describe.skipIf(!serverAvailable)('haltija/test helper', () => {
   test('waitForServer resolves when server is running', async () => {
