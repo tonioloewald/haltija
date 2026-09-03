@@ -8224,7 +8224,7 @@ export const COMPONENT_JS: string = `(() => {
       const serverUrl2 = this.serverUrl.replace("ws://", "http://").replace("wss://", "https://").replace("/ws/browser", "");
       let agents = [];
       try {
-        const response = await fetch(\`\${serverUrl2}/terminal/agents\`, { headers: serverHeaders() });
+        const response = await fetch(\`\${serverUrl2}/agents\`, { headers: serverHeaders() });
         const data = await response.json();
         agents = data.agents || [];
       } catch (err) {

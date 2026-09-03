@@ -639,6 +639,36 @@ When it *can't* kill something harmful (EPERM, no discoverable pid), it complain
 
 Legacy servers don't register themselves, so they're invisible to the registry and can only be found by probing: well-known defaults (8700, 8701), our own port, plus registry ports. It is deliberately **not** a port scan. Set `HALTIJA_NO_RETIRE=1` to disable the sweep entirely.
 
+## Machine control is not on the network (#40)
+
+`/terminal/*` and `/files/*` are **refused with 410**, by a prefix check at the top of
+`handleRest` (`src/machine-control.ts`). They used to serve `spawn('sh','-c')`, an agent started
+with `--permission-mode dontAsk`, and arbitrary filesystem read/write, to any caller on the port.
+
+**Measured, so nobody re-litigates it as theoretical:** a cross-origin POST with a `text/plain`
+body is a CORS-*simple* request, so the browser sends it with **no preflight**; it returned 200 and
+its command wrote a file, with `Origin` present and ignored. That is any web page you visit, not
+just the LAN. `Access-Control-Allow-Private-Network: true` — which we must keep, because the widget
+injected into a public `https://` page needs it to reach localhost — disables the browser's own
+protection against this.
+
+Three rules, each of which was a mistake in an earlier draft of the fix:
+
+1. **Refuse the prefix, never a list of routes.** 21 routes live under those prefixes. "Remove the
+   four dangerous ones" would have left `/files/tree` and `/files/image`. Same reasoning as
+   `docs-drift.yml` naming no file list: a denylist omits the next thing someone adds.
+2. **Keep the allowlist EMPTY.** Anything that genuinely needs a cross-origin caller moves *off*
+   the prefix — `/terminal/agents` became **`/agents`** for the widget's indicator. An exception is
+   a hole that whoever needs the next one will widen.
+3. **Do not gate it with a token instead.** A gate leaves the shell reachable and depends on being
+   correct forever. Removal makes the class stop existing.
+
+The cost is the desktop app's terminal/agent/file tabs (`terminal.html` is a disk-loaded iframe
+with no preload bridge, so it used HTTP to reach its own machine). Restoring them requires a
+non-TCP channel — Unix socket, or shell state moved into Electron main — and is deliberately not
+done. If you are tempted to re-open one of these routes "just for the app", note that a drive-by
+page reaches a desktop-app server exactly as easily.
+
 ## Platform support: POSIX only, on purpose
 
 Haltija targets **macOS and Linux**. Several things shell out to POSIX tools — retiring legacy servers maps port→pid with `lsof`, and `hj` auto-launch uses `open -a`. That's a deliberate choice, not an oversight.

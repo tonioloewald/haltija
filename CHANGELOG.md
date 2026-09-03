@@ -2,6 +2,45 @@
 
 ## 1.12.7 (unreleased)
 
+### Security: shell execution and filesystem access are no longer served over HTTP (#40)
+
+A default `bunx haltija` answered `POST /terminal/command` → `spawn('sh', ['-c', …])`,
+`POST /terminal/agent-prompt` → `claude --permission-mode dontAsk`, and the whole `/files/*`
+surface, to **any caller on the port**.
+
+Verified, not theorised: a cross-origin POST with a `text/plain` body — a CORS-*simple* request, so
+the browser issues **no preflight** — returned 200 and its shell command wrote a file. The `Origin`
+header was present and ignored. So the exposure was not "someone on your LAN"; it was **any web
+page open in your browser** while haltija ran on the default port. We also send
+`Access-Control-Allow-Private-Network: true`, which opts out of the browser mitigation built to
+stop exactly this.
+
+**Removed rather than gated.** A token gate would leave `spawn('sh','-c')` reachable and depend on
+the gate staying correct forever. A development tool has no business offering remote code execution
+on a network port at all, so `/terminal/*` and `/files/*` are refused with **410 and an explanation**.
+
+Two decisions worth recording:
+
+- **The refusal is on the PREFIX, not a list of routes.** There are 21 routes under those two
+  prefixes; removing the four obvious ones would have left `/files/tree` (directory listing) and
+  `/files/image` (arbitrary file read) serving happily. Default-deny means the route nobody has
+  written yet is refused too.
+- **The allowlist is empty.** One route had a legitimate cross-origin caller — the injected widget
+  reads the running-agent list — and the first version carved it out as an exception. It moved to
+  **`/agents`** instead, so the rule is "nothing under these prefixes is served": a sentence that
+  cannot be subtly wrong, and no hole for a future need to widen.
+
+**Browser control is unaffected** — `/tree`, `/click`, `/eval`, `/screenshot`, the widget, the
+bookmarklet and the tunnel path all behave exactly as before. Nothing here was public API: these
+routes appear in no `API.md`, `DOCS.md`, `llms.txt` or `api-schema.ts` entry.
+
+**What it costs:** the desktop app's terminal / agent / file-browser tabs, which reached their own
+machine over HTTP because `terminal.html` is a disk-loaded iframe with no preload bridge. Restoring
+them needs a non-TCP channel (a Unix socket, or moving shell state into Electron main) — tracked on
+#40. Those tabs were already deprioritised, and they became a burden the moment they were the sole
+reason for this surface.
+
+
 - **Our own integration lane was driving other projects' browsers.** `tests/haltija.test.ts`
   adopted whatever answered on the shared default port 8700 and then called `navigate` and `click`
   against it. On a machine running a second project, that is a stranger's browser. It now runs only

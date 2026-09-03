@@ -35,6 +35,7 @@ import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
+import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -1072,6 +1073,14 @@ async function handleRest(req: Request): Promise<Response> {
   
   const headers = jsonHeaders()
 
+  // Machine control is not served over the network (#40). Placed HERE, before the token check and
+  // before any routing, so it cannot be reached by a route registered further down — the point of
+  // a prefix refusal is that it also covers the route nobody has written yet.
+  if (isRefusedMachineControlPath(path)) {
+    const refusal = machineControlRefusal(path)
+    return Response.json(refusal.body, { status: refusal.status, headers })
+  }
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers })
   }
@@ -2000,7 +2009,12 @@ Run 'hj --help' for all commands.`
   }
   
   // List active agents — for browser widget to know where to send recordings
-  if (path === '/terminal/agents' && req.method === 'GET') {
+  // Moved off /terminal/* deliberately (#40). This is the ONE thing under that prefix with a
+  // legitimate cross-origin caller — the injected widget's agent indicator — and carving it out as
+  // an allowlist exception would have left a permanent hole in a default-deny that someone would
+  // eventually widen. Relocating it instead lets the machine-control refusal have NO exceptions,
+  // which is a rule you can state in one sentence and cannot get subtly wrong.
+  if (path === '/agents' && req.method === 'GET') {
     const agents = listAgentSessions()
     return Response.json({ agents }, { headers })
   }

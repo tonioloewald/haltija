@@ -6659,7 +6659,7 @@ export class DevChannel extends HTMLElement {
     let agents: Array<{ id: string; name: string; status: string; isLastActive: boolean }> = []
     
     try {
-      const response = await fetch(`${serverUrl}/terminal/agents`, { headers: serverHeaders() })
+      const response = await fetch(`${serverUrl}/agents`, { headers: serverHeaders() })
       const data = await response.json()
       agents = data.agents || []
     } catch (err) {
