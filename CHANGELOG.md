@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.12.7 (unreleased)
+
+- **Our own integration lane was driving other projects' browsers.** `tests/haltija.test.ts`
+  adopted whatever answered on the shared default port 8700 and then called `navigate` and `click`
+  against it. On a machine running a second project, that is a stranger's browser. It now runs only
+  against a server it was explicitly pointed at (`HALTIJA_PORT` / `HALTIJA_URL`), and skips
+  otherwise with instructions. No library or runtime change — test lane only.
+- Filed #42: the same default ships in `haltija/test` for every adopter, which is a
+  published-API decision rather than housekeeping.
+
 ## 1.12.6
 
 Security updates, three silent-failure fixes in the path from "server tells page how to reach me",
