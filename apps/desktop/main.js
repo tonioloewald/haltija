@@ -1365,6 +1365,10 @@ const env = buildServerEnv(process.env, {
     role: role === 'public' ? 'public' : 'internal',
     isPrivate: IS_PRIVATE,
     portFile,
+    // Without this the server has no nonce, so it refuses its OWN terminal frame — which is
+    // precisely what happened: the edit that added it matched the wrong indentation, str.replace
+    // silently did nothing, and the only symptom was a socket that would not open.
+    wsNonce: WS_NONCE,
   })
   let proc
   if (serverPath && useCompiledBinary) {
