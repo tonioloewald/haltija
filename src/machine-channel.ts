@@ -20,8 +20,15 @@
  * ## The capability is granted, not ambient
  *
  * The reader starts only when the spawning parent sets `HALTIJA_MACHINE_CHANNEL=1`. So a plain
- * `bunx haltija` has **no machine-control surface on any transport** — which is a stronger position
- * than before this whole exercise, when it was on by default and reachable by any web page.
+ * `bunx haltija` has **no machine-control surface on any transport** — a stronger position than before this
+ * exercise, when it was on by default and reachable by any web page.
+ *
+ * Stated precisely, because an earlier absolute version of this sentence was FALSE and review B3
+ * caught it: shell execution and filesystem access are unreachable over HTTP (refused) and over
+ * stdio (the channel is not opened). Separately, `/ws/terminal` discloses the shell's cwd and
+ * touched paths — that is disclosure, not machine control, and it is now restricted to local
+ * origins (`ws-origin.ts`). Do not restore an unqualified "any transport" claim without auditing
+ * every listener; this file is read as ground truth.
  *
  * ## Framing
  *
@@ -113,4 +120,23 @@ export function splitLines(buffer: string): { lines: string[]; rest: string } {
   const parts = buffer.split('\n')
   const rest = parts.pop() ?? ''
   return { lines: parts, rest }
+}
+
+/**
+ * The environment a spawned child should get: ours, minus the machine-channel grant.
+ *
+ * `HALTIJA_MACHINE_CHANNEL=1` is a capability handed to ONE process by its parent. Spreading
+ * `process.env` into a child passes it on, so a `bunx haltija` started from the desktop terminal
+ * would begin consuming its own stdin and treating `HJ_MACHINE_REQ` lines there as authenticated
+ * machine-control requests — on a process whose stdin it does not exclusively own. Silent, and the
+ * grant would keep propagating down the subtree.
+ *
+ * The grant is for one process, not a lineage.
+ */
+export function childEnvWithoutChannel(
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
+  const copy = { ...env }
+  delete copy[MACHINE_CHANNEL_ENV]
+  return copy
 }

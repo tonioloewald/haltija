@@ -2026,17 +2026,40 @@
     function loadBabylon() {
       if (babylonPromise) return babylonPromise
       babylonPromise = (async () => {
-        const load = (src) => new Promise((resolve, reject) => {
+        const load = (src, integrity) => new Promise((resolve, reject) => {
           const el = document.createElement('script')
           el.src = src
+          // PINNED + SUBRESOURCE INTEGRITY, and both parts are load-bearing (review B1).
+          //
+          // The first version of this loaded `cdn.babylonjs.com/babylon.js` — rolling latest, no
+          // pin, no integrity — into THIS frame, which holds a postMessage relay that reaches
+          // spawn('sh','-c') and the whole filesystem surface. The app also strips CSP headers
+          // globally and the iframe has no sandbox. So a CDN compromise, a bad publish, or a
+          // TLS-intercepting proxy meant arbitrary code execution on the developer's machine —
+          // shipped, ironically, in the release that removed a network-reachable RCE.
+          //
+          // SRI is what actually closes it: the browser hashes the bytes and refuses to execute
+          // anything that does not match, so a substituted script cannot run at all. The version
+          // is pinned to an immutable path so the hash stays valid. `crossorigin` is REQUIRED —
+          // without it the response is opaque and integrity cannot be checked, which fails open.
+          el.integrity = integrity
+          el.crossOrigin = 'anonymous'
+          // A CDN that cannot be reached — or whose bytes do not match — must FAIL, loudly. A blank
+          // canvas would look like a broken model file, the expensive kind of wrong answer.
+          el.onerror = () => reject(new Error(`could not load or verify ${src}`))
           el.onload = resolve
-          // A CDN that cannot be reached must FAIL, loudly. Leaving a blank canvas would look like
-          // a broken model file, which is the expensive kind of wrong answer.
-          el.onerror = () => reject(new Error(`could not load ${src}`))
           document.head.appendChild(el)
         })
-        await load('https://cdn.babylonjs.com/babylon.js')
-        await load('https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js')
+        // Bumping the version means recomputing BOTH hashes:
+        //   curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A
+        await load(
+          'https://cdn.babylonjs.com/v9.25.0/babylon.js',
+          'sha384-yRPTjTmy+NBETCVMY3AacVj+YURKT0GTQuE8cHgOzFRR6mFKK/rHjtbYQzW8nZAT',
+        )
+        await load(
+          'https://cdn.babylonjs.com/v9.25.0/loaders/babylonjs.loaders.min.js',
+          'sha384-8ML2CtmfuMgQF0IUjF6ah64MgpcmYQZT5s53i8jRRg4nq56GrFnhyrZOXym4qsAr',
+        )
         if (!window.BABYLON?.SceneLoader) throw new Error('Babylon loaded but SceneLoader is missing')
       })()
       return babylonPromise

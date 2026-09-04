@@ -25,6 +25,11 @@ const { spawn } = require('child_process')
 const http = require('http')
 const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
 const { buildServerEnv } = require('./server-env.js')
+// The wire protocol, generated from src/machine-channel.ts — NOT re-declared here. main.js used to
+// hand-roll the prefixes, the line split and the parse; that copy is where the __NEED_WINDOW__
+// regression came from, and it had no test while the src/ original did.
+const { MACHINE_REQ_PREFIX, MACHINE_RES_PREFIX, formatRequest, parseResponseLine, splitLines } =
+  require('./machine-channel.js')
 // ONE definition of where artifacts live and how long they live. Built from src/artifacts.ts.
 const { artifactDir, pruneKind } = require('./artifacts.js')
 
@@ -1283,8 +1288,6 @@ function checkServerRunning() {
  * A Unix socket was the first choice and does not work — Bun 1.4.0 accepts the connection and
  * never answers (verified three ways against a working Node<->Node control). Don't retry it.
  */
-const MACHINE_REQ_PREFIX = 'HJ_MACHINE_REQ '
-const MACHINE_RES_PREFIX = 'HJ_MACHINE_RES '
 const machinePending = new Map()
 let machineBuffer = ''
 let machineSeq = 0
@@ -1324,7 +1327,7 @@ function machineRequest(path, init = {}) {
     const frame = { id, method: init.method || 'GET', path, headers: init.headers || {} }
     if (init.bodyB64 !== undefined) frame.bodyB64 = init.bodyB64
     try {
-      machineProc.stdin.write(MACHINE_REQ_PREFIX + JSON.stringify(frame) + '\n')
+      machineProc.stdin.write(formatRequest(frame))
     } catch (err) {
       if (machinePending.delete(id)) {
         clearTimeout(timer)
@@ -1386,22 +1389,26 @@ const env = buildServerEnv(process.env, {
       // and buffered, or a large /files/tree answer arrives as fragments and never resolves.
       if (role === 'public') {
         machineBuffer += data.toString()
-        const parts = machineBuffer.split('\n')
-        machineBuffer = parts.pop()
-        for (const line of parts) {
-          if (!line.startsWith(MACHINE_RES_PREFIX)) {
-            if (line.trim()) console.log(`${label} ${line.trim()}`)
-            continue
-          }
-          try {
-            const res = JSON.parse(line.slice(MACHINE_RES_PREFIX.length))
+        const split = splitLines(machineBuffer)
+        machineBuffer = split.rest
+        for (const line of split.lines) {
+          // parseResponseLine returns null for anything that is not ours — log output, the banner,
+          // and the other prefixed messages are all expected here.
+          const res = parseResponseLine(line)
+          if (res) {
             const waiting = machinePending.get(res.id)
             if (waiting) { machinePending.delete(res.id); waiting(res) }
-          } catch {}
-        }
-        if (role === 'public' && machineBuffer.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
-          console.log('[Haltija Desktop] Server requested window, recreating...')
-          createWindow()
+            continue
+          }
+          if (line.trim()) console.log(`${label} ${line.trim()}`)
+          // Tested on the COMPLETE line, never on the residual buffer (review B2). The marker
+          // arrives newline-terminated, so it always lands in `lines` and the buffer is '' — the
+          // old check read `machineBuffer` and was therefore ALWAYS false, making window
+          // recreation dead code and hanging every `hj` command against a windowless app for 8s.
+          if (line.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
+            console.log('[Haltija Desktop] Server requested window, recreating...')
+            createWindow()
+          }
         }
         return
       }

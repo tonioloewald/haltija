@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { spawn } from 'child_process'
+import { childEnvWithoutChannel } from './machine-channel'
 
 // ============================================
 // Types
@@ -419,7 +420,7 @@ export function executeShellInDir(command: string, args: string[] = [], cwd: str
     const child = spawn('sh', ['-c', fullCommand], {
       timeout: 30000,
       cwd,
-      env: { ...process.env },
+      env: childEnvWithoutChannel(),
     })
 
     let stdout = ''

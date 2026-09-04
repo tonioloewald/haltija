@@ -439,7 +439,7 @@ The build script (`scripts/build.ts`) generates:
 7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
 8. `bin/hints.json` - CLI command hints generated from schema endpoints
 9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`). Carries an ownership marker (`HJ_MARKER`, see `src/hj-install.ts`) stamped by the build — **the build fails if it's missing**, because without it a server cannot tell its own `hj` from a file a developer happens to have named `hj`, and will either refuse to repair its own CLI or overwrite someone else's. Also copied to `apps/desktop/resources/hj.mjs`, which the desktop app installs via a ~400-byte shim rather than a compiled binary (see below).
-10. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/tab-liveness.mjs`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed, and they are what npm ships** (`files` includes `bin` and `apps/desktop/*.js`). Never hand-edit them — the next build reverts it. `docs-drift.yml` gates them by asserting `bun run build` leaves the tree clean, which is why it names no file list: a list can only ever omit the next generated file.
+10. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/tab-liveness.mjs`, `apps/desktop/machine-channel.js`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed, and they are what npm ships** (`files` includes `bin` and `apps/desktop/*.js`). Never hand-edit them — the next build reverts it. `docs-drift.yml` gates them by asserting `bun run build` leaves the tree clean, which is why it names no file list: a list can only ever omit the next generated file.
 11. `dist/codemirror.js` - CodeMirror 6 IIFE bundle for terminal file viewer (also copied to `apps/desktop/resources/`)
 12. `API.md` - Auto-generated API reference (do not edit directly)
 13. `DOCS.md` - Auto-generated hj CLI quick-start docs served at `/docs` (do not edit directly)
@@ -666,9 +666,9 @@ Three rules, each of which was a mistake in an earlier draft of the fix:
 
 The cost is the desktop app's terminal/agent/file tabs (`terminal.html` is a disk-loaded iframe
 with no preload bridge, so it used HTTP to reach its own machine). Restoring them requires a
-non-TCP channel — Unix socket, or shell state moved into Electron main — and is deliberately not
-done. If you are tempted to re-open one of these routes "just for the app", note that a drive-by
-page reaches a desktop-app server exactly as easily.
+non-TCP channel. That cost WAS paid — see the stdio channel below, which restored the tabs. If you
+are tempted to re-open one of these routes "just for the app", note that a drive-by page reaches a
+desktop-app server exactly as easily.
 
 ### …and how the desktop tabs got it back: the stdio channel
 

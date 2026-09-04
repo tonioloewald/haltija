@@ -50,8 +50,11 @@ The file viewer pane has its own internal layout:
 
 - **`GET /file?path=src/server.ts`** — returns file contents + metadata (language, size, mtime)
 - **`POST /file`** — write/patch a file `{ path, content }` or `{ path, patch }` for diffs
-- **`GET /files/tree?root=.&depth=3`** — returns directory tree as JSON (respects .gitignore)
-- **`GET /files/touches`** — returns recent touch stream
+- ~~**`GET /files/tree?root=.&depth=3`**~~ — **no longer served over HTTP** (issue #40). Returns
+  **410**. Shell execution and filesystem access were reachable by any caller on the port, including
+  script on any web page, so the whole `/terminal/*` and `/files/*` surface was removed from the
+  network. The desktop app reaches them over the server child's stdio instead.
+- ~~**`GET /files/touches`**~~ — same; **410**.
 
 ### Touch tracking (integrated, not a separate phase)
 

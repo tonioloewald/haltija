@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import {
   MACHINE_RES_PREFIX,
   formatRequest,
@@ -7,6 +7,7 @@ import {
   parseRequestLine,
   parseResponseLine,
   splitLines,
+  childEnvWithoutChannel,
 } from './machine-channel'
 
 describe('machine channel framing (#40)', () => {
@@ -77,5 +78,32 @@ describe('machine channel framing (#40)', () => {
     expect(machineChannelEnabled({ HALTIJA_MACHINE_CHANNEL: '0' })).toBe(false)
     expect(machineChannelEnabled({ HALTIJA_MACHINE_CHANNEL: 'true' })).toBe(false)
     expect(machineChannelEnabled({ HALTIJA_MACHINE_CHANNEL: '1' })).toBe(true)
+  })
+})
+
+describe('the channel grant does not propagate to children (review follow-up)', () => {
+  it('is stripped from a spawned child’s environment', () => {
+    const env = childEnvWithoutChannel({ PATH: '/bin', HALTIJA_MACHINE_CHANNEL: '1' })
+    expect(env.HALTIJA_MACHINE_CHANNEL).toBeUndefined()
+    expect(env.PATH).toBe('/bin') // everything else survives
+  })
+
+  it('does not mutate the environment it was given', () => {
+    const src = { HALTIJA_MACHINE_CHANNEL: '1' }
+    childEnvWithoutChannel(src)
+    expect(src.HALTIJA_MACHINE_CHANNEL).toBe('1')
+  })
+})
+
+/**
+ * The property B2 depended on and got backwards: a newline-terminated marker always lands in
+ * `lines`, never in `rest`. main.js tested the residual buffer, so window recreation was dead code.
+ */
+describe('a complete line never remains in the residue', () => {
+  it('__NEED_WINDOW__ arrives in lines, not in rest', () => {
+    const { lines, rest } = splitLines('some log\n__NEED_WINDOW__\npartial-')
+    expect(lines).toContain('__NEED_WINDOW__')
+    expect(rest).toBe('partial-')
+    expect(rest).not.toContain('__NEED_WINDOW__')
   })
 })

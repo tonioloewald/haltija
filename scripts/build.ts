@@ -155,6 +155,17 @@ writeFileSync(
     readFileSync('bin/tab-liveness.mjs', 'utf-8'),
 )
 
+// 0j. Compile the machine-channel wire protocol for the desktop app. main.js used to re-declare
+// the prefixes and hand-roll the split/parse — and that copy is exactly where the __NEED_WINDOW__
+// regression came from (it tested the residual buffer instead of complete lines). The server's
+// copy is the tested one; the app must not have a second.
+await $`bun build ./src/machine-channel.ts --outfile=apps/desktop/machine-channel.js --target=node --format=cjs`
+writeFileSync(
+  'apps/desktop/machine-channel.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/machine-channel.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/machine-channel.js', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

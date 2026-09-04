@@ -36,6 +36,7 @@ import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-
 import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
+import { isLocalOrigin, requiresLocalOrigin } from './ws-origin'
 import {
   formatResponse,
   machineChannelEnabled,
@@ -4261,6 +4262,14 @@ const serverConfig = {
         if (provided !== REQUIRED_TOKEN) {
           return new Response('Unauthorized', { status: 401 })
         }
+      }
+      // Machine-scope sockets require a LOCAL origin (review B3). /ws/terminal volunteers the
+      // shell's cwd on connect and streams absolute file paths; it accepted cross-origin upgrades,
+      // so any web page could read that. /ws/browser is deliberately exempt — the widget connects
+      // from whatever origin the page it was injected into has, which is the whole product.
+      if (requiresLocalOrigin(url.pathname) && !isLocalOrigin(req.headers.get('Origin'))) {
+        console.warn(`${LOG_PREFIX} refused ${url.pathname} upgrade from origin ${req.headers.get('Origin')}`)
+        return new Response('Forbidden: machine-scope sockets require a local origin', { status: 403 })
       }
       const type = url.pathname.slice('/ws/'.length) // 'browser' | 'agent' | 'terminal'
       const upgraded = server.upgrade(req, { data: { type } })

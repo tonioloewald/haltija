@@ -10,6 +10,7 @@ import { join, dirname } from 'path'
 import { mkdir, writeFile, readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { childEnvWithoutChannel } from './machine-channel'
 
 // Get the directory where this module lives (for finding MCP server)
 const __filename = fileURLToPath(import.meta.url)
@@ -540,7 +541,7 @@ export function runAgentPrompt(
     // Use __dirname to find bin relative to this module (works in bundled dist too)
     const haltijaBin = join(__dirname, '..', 'bin')
     const env = {
-      ...process.env,
+      ...childEnvWithoutChannel(),
       PATH: `${haltijaBin}:${process.env.PATH || ''}`,
     }
     

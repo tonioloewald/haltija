@@ -2,7 +2,44 @@
 
 ## 1.12.9 (unreleased)
 
-_Nothing yet._
+Remediation of a Tier 1 review that returned **BLOCK** on the already-published 1.12.7/1.12.8.
+Full report: `reviews/1.12.9-tier1-v1.12.6-to-v1.12.8.md`.
+
+### Security
+
+- **Babylon.js is pinned and integrity-checked (review B1).** The 3D preview added in 1.12.7 loaded
+  `cdn.babylonjs.com/babylon.js` — rolling latest, no pin, no SRI — into the one frame holding a
+  postMessage relay that reaches `spawn('sh','-c')` and the filesystem. The app strips CSP headers
+  globally and the iframe has no sandbox, so a CDN compromise, a bad publish, or a TLS-intercepting
+  proxy meant arbitrary code execution on the developer's machine. Shipped, ironically, in the
+  release that removed a *network*-reachable RCE. Now pinned to `v9.25.0` with `integrity` +
+  `crossorigin`, so substituted bytes cannot execute at all.
+- **The renderer relay now default-denies its sender.** It validated message *shape* only, so any
+  frame in the renderer could reach shell and filesystem. It now requires `event.source` to be a
+  known terminal iframe. This is what turned "third-party code in a preview pane" into "third-party
+  code with a shell", and it would have handed shell access to any plain `<iframe>` added later.
+- **`/ws/terminal` and `/ws/agent` require a local origin (review B3).** They accepted
+  unauthenticated cross-origin upgrades and volunteer `{shellId, cwd}` on connect, streaming the
+  developer's working directory and absolute file paths to any web page. `/ws/browser` is
+  deliberately unrestricted — the widget connects from whatever origin its page has, which is the
+  product.
+- **The channel grant no longer leaks to child processes.** `HALTIJA_MACHINE_CHANNEL=1` was spread
+  into every command the terminal or an agent spawned, so a nested `bunx haltija` would start
+  treating its own stdin as an authenticated control channel.
+
+### Fixes
+
+- **Window recreation was dead code (review B2).** The 1.12.7 stdout refactor tested
+  `__NEED_WINDOW__` against the *residual line buffer*; the marker always arrives newline-terminated,
+  so the check was always false and the correct one below it unreachable. Every `hj` command against
+  a windowless-but-alive desktop app hung 8s and failed.
+- **Root cause of the above: the wire protocol was implemented twice.** `main.js` hand-rolled the
+  prefixes, the line split and the parse while `src/machine-channel.ts` owned and tested them. It is
+  now a generated twin (`apps/desktop/machine-channel.js`), like `server-env.js`.
+- Docs corrected: `docs/AGENTIC-IDE.md` no longer advertises two routes that now return 410;
+  `CLAUDE.md` no longer contradicts itself about whether the tabs were restored; published versions
+  are no longer marked `(unreleased)`; and the absolute "no machine-control surface on any
+  transport" claim is stated precisely, since an earlier version of it was false.
 
 ## 1.12.8
 
@@ -18,7 +55,7 @@ _Nothing yet._
   right all along — decide the binary name, so there is one authority instead of two to drift.
   Reported by snowfox with the diagnosis and the fix.
 
-## 1.12.7 (unreleased)
+## 1.12.7
 
 ### File preview: 3D models, video, audio and fonts
 
