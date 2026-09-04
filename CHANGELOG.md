@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.12.8 (unreleased)
+
+- **Electron discovery assumed macOS, so Linux re-downloaded Electron every run (#43).** The npx-cache
+  search looked for `Electron.app` — a macOS bundle — behind a `platform() !== 'win32'` guard, so
+  Linux took the branch and matched nothing. A populated cache was never detected: the launcher
+  printed "Electron not cached" on every run and fell back to `npx --yes electron`, putting an
+  npm-registry round-trip on the browser-readiness path. During a registry degradation on
+  2026-09-04 that became a server which never bound its port across three CI lanes.
+
+  The defect was two expressions of "what an Electron dist looks like", only one of them
+  platform-aware. The search now finds dist *directories* and lets `binaryInDist()` — which had it
+  right all along — decide the binary name, so there is one authority instead of two to drift.
+  Reported by snowfox with the diagnosis and the fix.
+
 ## 1.12.7 (unreleased)
 
 ### File preview: 3D models, video, audio and fonts

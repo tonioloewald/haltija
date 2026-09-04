@@ -3572,7 +3572,7 @@ export const COMPONENT_JS: string = `(() => {
   });
 
   // src/version.ts
-  var VERSION = "1.12.7";
+  var VERSION = "1.12.8";
 
   // src/ws-url.ts
   function httpBaseFromWsUrl(wsUrl2, fallback = "http://localhost:8700") {

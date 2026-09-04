@@ -628,15 +628,27 @@ function resolveElectronBinary() {
   } catch {}
 
   // 3. Search npx cache for electron dist directories (no Electron launch)
+  //
+  // Look for the **dist directory itself**, not for a binary by name. This used to search for
+  // `Electron.app` — a macOS bundle — under a `platform() !== 'win32'` guard, so Linux took the
+  // branch and matched nothing: `resolveElectronBinary()` returned null on every run, the launcher
+  // printed "Electron not cached" over a populated cache, and fell back to `npx --yes electron`,
+  // putting an npm-registry round-trip on the browser-readiness path. On 2026-09-04 a registry
+  // degradation turned that into a server that never bound its port across three CI lanes (#43,
+  // from snowfox).
+  //
+  // The bug was TWO expressions of "what an Electron dist looks like", only one of them
+  // platform-aware — `binaryInDist()` above had it right all along. So this no longer re-derives
+  // the answer: it finds candidate dist dirs (a platform-neutral path) and lets `binaryInDist()`
+  // decide, which is the one place that knows. Fixing the pattern per-platform would have left
+  // the same two authorities to drift apart again.
   if (platform() !== 'win32') {
     try {
       const cacheHits = execSyncImported(
-        `find ${homedir()}/.npm/_npx -name "Electron.app" -path "*/electron/dist/*" -type d 2>/dev/null`,
+        `find ${homedir()}/.npm/_npx -type d -name dist -path "*/electron/dist" 2>/dev/null`,
         { encoding: 'utf-8', timeout: 3000 }
       ).trim().split('\n').filter(Boolean)
-      for (const hit of cacheHits) {
-        // hit is .../electron/dist/Electron.app — we want the dist dir
-        const distDir = join(hit, '..')
+      for (const distDir of cacheHits) {
         const bin = binaryInDist(distDir)
         if (bin) { _cachedElectronBinary = bin; return bin }
       }
