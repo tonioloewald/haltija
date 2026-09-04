@@ -348,6 +348,19 @@ one of them dead, which is the drift shape this repo keeps paying for. Delete it
 assignment through it. Noticed while fixing the file panel; left alone because it is unrelated to
 that fix.
 
+**COLLADA (`.dae`) and USDZ preview.** The file browser previews glTF/GLB, OBJ, STL, FBX, PLY,
+SPLAT and BVH because Babylon's loaders bundle registers all of those. It has no loader for `.dae`
+or `.usdz`, so they are deliberately absent from `MODEL_EXT_RE` — listing them would render a
+canvas that fails, and a broken preview reads as a broken file. Two routes if wanted: convert
+server-side (assimp for COLLADA; USD tooling for usdz, which is a zipped USD archive), or pull a
+second library in the same on-demand way Babylon is loaded. Asked for by Tonio, who works in 3D
+daily, so it is worth more than its size suggests.
+
+**Sibling assets in multi-file 3D formats.** OBJ/`.mtl`, glTF/`.bin`, and external textures cannot
+resolve from a blob URL, so those formats load geometry without materials. Currently surfaced
+honestly in the caption. A real fix means intercepting Babylon's file requests and serving siblings
+over the machine channel — very doable, and it would make OBJ previews look right rather than bald.
+
 **Open majors carried forward:**
 
 - [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including

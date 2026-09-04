@@ -2469,6 +2469,10 @@ Run 'hj --help' for all commands.`
       const mimeMap: Record<string, string> = {
         '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
         '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon',
+        // 3D models: the terminal's preview reads the bytes through this route. octet-stream would
+        // work (the loader is told the extension), but naming the type keeps the response honest.
+        '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
+        '.obj': 'model/obj', '.stl': 'model/stl', '.ply': 'model/ply', '.fbx': 'application/octet-stream',
       }
       return new Response(data, { headers: { ...headers, 'Content-Type': mimeMap[ext] || 'application/octet-stream' } })
     } catch (err: any) {

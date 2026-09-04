@@ -708,6 +708,48 @@
       min-width: 50%;
       min-height: 50%;
     }
+    /* 3D model preview (glb/gltf) — canvas fills the pane; Babylon is fetched on demand. */
+    #file-editor .model-preview {
+      position: relative;
+      height: 100%;
+      background: #111;
+    }
+    #file-editor .model-preview canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+      touch-action: none;
+    }
+    #file-editor .model-preview .model-note {
+      position: absolute;
+      left: 10px;
+      bottom: 8px;
+      font-size: 11px;
+      color: #8b949e;
+      pointer-events: none;
+    }
+    #file-editor .media-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 20px;
+      background: #111;
+    }
+    #file-editor .media-preview video { max-width: 100%; max-height: 100%; }
+    #file-editor .media-preview audio { width: 90%; }
+    #file-editor .font-preview { height: 100%; overflow: auto; padding: 20px 24px; background: #111; color: #e6edf3; }
+    #file-editor .font-preview .font-name { font-size: 12px; color: #8b949e; margin-bottom: 14px; }
+    #file-editor .font-preview .font-charset { font-size: 24px; line-height: 1.5; margin-bottom: 20px; word-break: break-all; }
+    #file-editor .font-preview .font-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+    #file-editor .font-preview .font-size-tag { flex: 0 0 34px; font-size: 10px; color: #6e7681; font-family: ui-monospace, monospace; }
+    #file-editor .preview-warn { padding: 24px; color: #e6edf3; font-size: 13px; line-height: 1.6; }
+    #file-editor .preview-warn-btn {
+      margin-top: 14px; padding: 6px 14px; font-size: 12px; cursor: pointer;
+      background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
+    }
+    #file-editor .preview-warn-btn:hover { background: #30363d; }
     /* Markdown preview */
     #file-editor .markdown-preview {
       padding: 20px;
@@ -1923,6 +1965,273 @@
     }
 
     // Load file tree
+    /**
+     * 3D preview for .glb / .gltf.
+     *
+     * Babylon is pulled from the CDN ON DEMAND rather than bundled: it is ~8MB, and a terminal that
+     * mostly shows text should not carry a 3D engine to start up. The browser caches it after the
+     * first model, so the cost lands once and only on people who open one.
+     */
+    /**
+     * What the Babylon loaders bundle actually registers — verified by grepping the CDN build, not
+     * from memory: glTF/GLB, OBJ, STL, FBX, PLY, SPLAT/SPZ and BVH all have plugins.
+     *
+     * Deliberately NOT here: `.dae` (COLLADA) and `.usdz`. Babylon has no loader for either, so
+     * listing them would produce a canvas that fails instead of an honest "not supported" — and a
+     * broken preview reads as a broken file.
+     */
+    const MODEL_EXT_RE = /\.(glb|gltf|obj|stl|fbx|ply|splat|spz|bvh)$/i
+
+    /**
+     * Media the platform can play. We do NOT gatekeep on a codec list: container support depends on
+     * the build, so the honest move is to hand it to <video>/<audio> and report the element's own
+     * error if it cannot decode. Claiming support we do not have is the failure mode worth avoiding.
+     */
+    const VIDEO_EXT_RE = /\.(mp4|m4v|webm|ogv|mov|mkv|avi)$/i
+    const AUDIO_EXT_RE = /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|weba)$/i
+    const MEDIA_MIME = {
+      mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg',
+      mov: 'video/quicktime', mkv: 'video/x-matroska', avi: 'video/x-msvideo',
+      mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
+      m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', opus: 'audio/opus', weba: 'audio/webm',
+    }
+
+    /**
+     * Previews cross the machine channel as base64 in ONE frame, so a large file costs several
+     * copies in memory on both sides and a visible pause.
+     *
+     * This is a WARNING, not a limit. The files are local and the user knows what they opened —
+     * refusing outright would be the tool substituting its judgement for theirs on their own
+     * machine. Above the threshold we say what it will cost and let them decide; below it, nothing
+     * is in the way. (A chunked protocol would remove the pause entirely; worth it only if this
+     * actually becomes annoying.)
+     */
+    const PREVIEW_WARN_BYTES = 64 * 1024 * 1024
+
+    /** Resolves true to proceed. Immediate for ordinary files; asks first for big ones. */
+    function confirmLargePreview(size, what) {
+      if (!size || size <= PREVIEW_WARN_BYTES) return Promise.resolve(true)
+      return new Promise((resolve) => {
+        const mb = (size / 1048576).toFixed(1)
+        fileEditorEl.innerHTML =
+          `<div class="preview-warn">` +
+          `<div>This ${what} is <strong>${mb}MB</strong>. Previewing copies it through the channel ` +
+          `in one piece, so expect a pause and a spike in memory.</div>` +
+          `<button class="preview-warn-btn">Preview anyway</button></div>`
+        fileEditorEl.querySelector('.preview-warn-btn').addEventListener('click', () => resolve(true))
+      })
+    }
+
+    let babylonPromise = null
+    function loadBabylon() {
+      if (babylonPromise) return babylonPromise
+      babylonPromise = (async () => {
+        const load = (src) => new Promise((resolve, reject) => {
+          const el = document.createElement('script')
+          el.src = src
+          el.onload = resolve
+          // A CDN that cannot be reached must FAIL, loudly. Leaving a blank canvas would look like
+          // a broken model file, which is the expensive kind of wrong answer.
+          el.onerror = () => reject(new Error(`could not load ${src}`))
+          document.head.appendChild(el)
+        })
+        await load('https://cdn.babylonjs.com/babylon.js')
+        await load('https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js')
+        if (!window.BABYLON?.SceneLoader) throw new Error('Babylon loaded but SceneLoader is missing')
+      })()
+      return babylonPromise
+    }
+
+    /**
+     * One engine at a time. A WebGL context is a capped resource — Chrome drops the oldest once you
+     * pass ~16 — so previewing a directory of models would silently start killing earlier contexts
+     * unless each one is disposed on the way out.
+     */
+    let modelEngine = null
+    function disposeModelPreview() {
+      if (modelEngine) {
+        try { modelEngine.dispose() } catch {}
+        modelEngine = null
+      }
+      if (modelResizeHandler) {
+        window.removeEventListener('resize', modelResizeHandler)
+        modelResizeHandler = null
+      }
+      if (modelObjectUrl) {
+        URL.revokeObjectURL(modelObjectUrl)
+        modelObjectUrl = null
+      }
+    }
+    let modelResizeHandler = null
+    let modelObjectUrl = null
+
+    async function showModelPreview(filePath) {
+      disposeModelPreview()
+      const ext = '.' + (filePath.toLowerCase().split('.').pop() || 'glb')
+      fileEditorEl.innerHTML = `<div class="model-preview"><div class="model-note">loading 3D preview…</div></div>`
+      const host = fileEditorEl.querySelector('.model-preview')
+
+      try {
+        await loadBabylon()
+      } catch (err) {
+        // Say WHICH thing failed. "Preview unavailable" would send someone looking at their file.
+        host.innerHTML = `<div class="model-note" style="position:static;padding:20px;color:#f87171">` +
+          `3D preview needs Babylon.js from the CDN and it could not be fetched (${err.message}). ` +
+          `The model file itself was not read — this is a network problem, not a bad file.</div>`
+        return
+      }
+
+      // Bytes come over the machine channel (/files/* is refused on the network — #40), so the
+      // loader is handed a blob URL rather than an address it could fetch itself.
+      const res = await hjFetch(`/files/image?path=${encodeURIComponent(filePath)}`)
+      if (!res.ok) {
+        host.innerHTML = `<div class="model-note" style="position:static;padding:20px;color:#f87171">Could not read the model file (HTTP ${res.status}).</div>`
+        return
+      }
+      const bytes = Uint8Array.from(atob(res.b64), (c) => c.charCodeAt(0))
+      modelObjectUrl = URL.createObjectURL(new Blob([bytes]))
+
+      const canvas = document.createElement('canvas')
+      host.innerHTML = ''
+      host.appendChild(canvas)
+      const note = document.createElement('div')
+      note.className = 'model-note'
+      host.appendChild(note)
+
+      const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true })
+      modelEngine = engine
+      const scene = new BABYLON.Scene(engine)
+      scene.clearColor = new BABYLON.Color4(0.07, 0.07, 0.07, 1)
+      new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene)
+
+      try {
+        await BABYLON.SceneLoader.AppendAsync('', modelObjectUrl, scene, null, ext)
+      } catch (err) {
+        disposeModelPreview()
+        // A .gltf referencing sibling .bin/textures cannot resolve them from a blob URL, and that
+        // is the likeliest cause here — worth naming rather than making someone guess.
+        host.innerHTML = `<div class="model-note" style="position:static;padding:20px;color:#f87171">` +
+          `Could not load this model (${err.message || err}).` +
+          (['.gltf', '.obj', '.fbx'].includes(ext)
+            ? ` This format often references sibling files (.bin, .mtl, textures), which cannot be resolved from a blob URL — self-contained files (.glb, or formats with embedded buffers) load fully.`
+            : '') + `</div>`
+        return
+      }
+
+      scene.createDefaultCameraOrLight(true, true, true)
+      if (scene.activeCamera) {
+        scene.activeCamera.attachControl(canvas, true)
+        // Framed on the model rather than the origin, so an off-centre asset is not "missing".
+        scene.activeCamera.useFramingBehavior = true
+      }
+      const mayMissAssets = ['.obj', '.gltf', '.fbx'].includes(ext)
+      note.textContent = `${scene.meshes.length} mesh(es) · drag to orbit, scroll to zoom` +
+        // Geometry can load fine while sibling .mtl/textures silently do not, which looks like a
+        // model that "has no materials" rather than a preview limitation. Say which it is.
+        (mayMissAssets ? ' · sibling files (.mtl/textures) are not resolved here' : '')
+
+      engine.runRenderLoop(() => scene.render())
+      modelResizeHandler = () => engine.resize()
+      window.addEventListener('resize', modelResizeHandler)
+    }
+
+    const FONT_EXT_RE = /\.(ttf|otf|woff2?|ttc)$/i
+    const FONT_SPECIMEN = 'Sphinx of black quartz, judge my vow.'
+
+    let fontFaceHandle = null
+    let fontObjectUrl = null
+    function disposeFontPreview() {
+      if (fontFaceHandle) {
+        try { document.fonts.delete(fontFaceHandle) } catch {}
+        fontFaceHandle = null
+      }
+      if (fontObjectUrl) {
+        URL.revokeObjectURL(fontObjectUrl)
+        fontObjectUrl = null
+      }
+    }
+
+    let fontSeq = 0
+    async function showFontPreview(filePath) {
+      disposeFontPreview()
+      fileEditorEl.innerHTML = `<div class="font-preview"><div class="model-note">loading font…</div></div>`
+      const host = fileEditorEl.querySelector('.font-preview')
+
+      const res = await hjFetch(`/files/image?path=${encodeURIComponent(filePath)}`)
+      if (!res.ok) {
+        host.innerHTML = `<div style="padding:20px;color:#f87171">Could not read the font (HTTP ${res.status}).</div>`
+        return
+      }
+      const bytes = Uint8Array.from(atob(res.b64), (c) => c.charCodeAt(0))
+      fontObjectUrl = URL.createObjectURL(new Blob([bytes]))
+
+      // A unique family per preview: reusing one name would let a previously-loaded font keep
+      // rendering after a failed load, showing the WRONG typeface with no indication.
+      const family = `hj-font-preview-${++fontSeq}`
+      try {
+        fontFaceHandle = new FontFace(family, `url(${fontObjectUrl})`)
+        await fontFaceHandle.load()
+        document.fonts.add(fontFaceHandle)
+      } catch (err) {
+        disposeFontPreview()
+        host.innerHTML = `<div style="padding:20px;color:#f87171">This file could not be parsed as a font (${err?.message || err}). ` +
+          `Variable and colour fonts usually work; bare .ttc collections and damaged files do not.</div>`
+        return
+      }
+
+      const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+      const name = filePath.split('/').pop()
+      const rows = [72, 48, 32, 24, 18, 14, 11]
+        .map((px) => `<div class="font-row"><span class="font-size-tag">${px}</span>` +
+          `<span style="font-family:'${family}';font-size:${px}px">${esc(FONT_SPECIMEN)}</span></div>`)
+        .join('')
+      host.innerHTML =
+        `<div class="font-name">${esc(name)}</div>` +
+        `<div class="font-charset" style="font-family:'${family}'">` +
+        esc('ABCDEFGHIJKLMNOPQRSTUVWXYZ') + '<br>' +
+        esc('abcdefghijklmnopqrstuvwxyz') + '<br>' +
+        esc('0123456789 &amp; @ # $ % ( ) [ ] { } / \\ ? ! . , : ; " \'') +
+        `</div>` + rows
+    }
+
+    let mediaObjectUrl = null
+    function disposeMediaPreview() {
+      if (mediaObjectUrl) {
+        URL.revokeObjectURL(mediaObjectUrl)
+        mediaObjectUrl = null
+      }
+    }
+
+    async function showMediaPreview(filePath, kind) {
+      disposeMediaPreview()
+      const ext = (filePath.toLowerCase().split('.').pop() || '')
+      fileEditorEl.innerHTML = `<div class="media-preview"><div class="model-note">loading…</div></div>`
+      const host = fileEditorEl.querySelector('.media-preview')
+
+      const res = await hjFetch(`/files/image?path=${encodeURIComponent(filePath)}`)
+      if (!res.ok) {
+        host.innerHTML = `<div class="model-note" style="position:static;padding:20px;color:#f87171">Could not read the file (HTTP ${res.status}).</div>`
+        return
+      }
+      const bytes = Uint8Array.from(atob(res.b64), (c) => c.charCodeAt(0))
+      mediaObjectUrl = URL.createObjectURL(new Blob([bytes], { type: MEDIA_MIME[ext] || '' }))
+
+      const el = document.createElement(kind) // 'video' | 'audio'
+      el.src = mediaObjectUrl
+      el.controls = true
+      el.autoplay = false
+      // Report the element's OWN verdict rather than pre-judging by extension: a .mkv or .avi may
+      // or may not decode in this build, and a silent black rectangle looks like a corrupt file.
+      el.addEventListener('error', () => {
+        const code = el.error?.code
+        host.innerHTML = `<div class="model-note" style="position:static;padding:20px;color:#f87171">` +
+          `This browser build cannot decode <code>.${ext}</code>` + (code ? ` (media error ${code})` : '') +
+          `. The file was read fine — it is the codec/container that is unsupported here.</div>`
+      })
+      host.innerHTML = ''
+      host.appendChild(el)
+    }
+
     async function loadFileTree() {
       try {
         const res = await hjFetch(`/files/tree?depth=3${shellId ? '&shellId=' + shellId : ''}`)
@@ -1993,6 +2302,12 @@
 
     // Open a file in the viewer
     async function openFile(filePath) {
+      // Tear down any live preview FIRST, whatever we are about to open. Disposing only when the
+      // next file is the same kind would leak a WebGL context (a capped resource), leave a render
+      // loop running behind a text file, keep a video decoding, or leave a font registered.
+      disposeModelPreview()
+      disposeMediaPreview()
+      disposeFontPreview()
       await loadCM()
 
       // Preserve dirty edits for the current file before switching
@@ -2022,6 +2337,25 @@
 
         // Update breadcrumb
         filePathDisplay.textContent = data.path || filePath
+
+        // Rich previews (3D, media, fonts) are decided BEFORE the size and binary guards below.
+        // Both would otherwise reject them: /files/read calls anything over 1MB `tooLarge`, which
+        // is most real models and every video, and everything here is binary by nature.
+        const target = data.path || filePath
+        const isModel = MODEL_EXT_RE.test(target)
+        const isVideo = VIDEO_EXT_RE.test(target)
+        const isAudio = AUDIO_EXT_RE.test(target)
+        const isFont = FONT_EXT_RE.test(target)
+
+        if (isModel || isVideo || isAudio || isFont) {
+          fileEditBtn.classList.add('hidden')
+          const what = isModel ? 'model' : isFont ? 'font' : isVideo ? 'video' : 'audio file'
+          if (!(await confirmLargePreview(data.size || 0, what))) return
+          if (isModel) await showModelPreview(target)
+          else if (isFont) await showFontPreview(target)
+          else await showMediaPreview(target, isVideo ? 'video' : 'audio')
+          return
+        }
 
         if (data.tooLarge) {
           showFileError(`File too large (${(data.size / 1024 / 1024).toFixed(1)}MB)`)

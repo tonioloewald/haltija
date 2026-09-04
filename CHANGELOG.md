@@ -2,6 +2,37 @@
 
 ## 1.12.7 (unreleased)
 
+### File preview: 3D models, video, audio and fonts
+
+The terminal's file browser previews a lot more than text and images now.
+
+- **3D models** — `.glb`, `.gltf`, `.obj`, `.stl`, `.fbx`, `.ply`, `.splat`/`.spz`, `.bvh`. Babylon.js
+  is fetched from the CDN **on demand**, not bundled: a terminal that mostly shows text should not
+  carry a 3D engine to start up, and the browser caches it after the first model. Orbit/zoom, and
+  the scene is disposed when you open anything else (a WebGL context is a capped resource).
+- **Video and audio** — anything `<video>`/`<audio>` can decode. Deliberately no codec allowlist:
+  container support depends on the build, so the file is handed to the element and **its own**
+  error is reported if it cannot decode. Claiming support we do not have is the failure worth
+  avoiding; a silent black rectangle looks like a corrupt file.
+- **Fonts** — `.ttf`, `.otf`, `.woff`, `.woff2`, `.ttc`: charset plus a pangram at seven sizes. Each
+  preview registers a uniquely-named family, so a failed load can never leave the *previous*
+  typeface on screen pretending to be this one.
+
+Two things that would otherwise have made this quietly useless:
+
+- `/files/read` reports anything over 1MB as `tooLarge`, which is most real models and every video.
+  Rich previews are decided **before** that guard and the binary guard, or a 3.6MB `.glb` would
+  simply say "File too large".
+- Sibling files (`.mtl`, `.bin`, textures) cannot resolve from a blob URL, so OBJ/FBX/glTF may load
+  geometry without materials. The preview says so — on failure *and* in the caption on success —
+  rather than letting a limitation look like a bad asset.
+
+Large files **warn rather than refuse**: over 64MB you get the size, what it will cost, and a
+"Preview anyway" button. These are local files and the user knows what they opened.
+
+Not supported, and left out on purpose: `.dae` (COLLADA) and `.usdz` — Babylon has no loader for
+either, and listing them would produce a canvas that fails instead of an honest "not supported".
+
 ### Desktop app fixes found while testing the above
 
 - **The terminal iframe was always told port 8700.** `window.haltija.port` has never existed —
