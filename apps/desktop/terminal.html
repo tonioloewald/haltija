@@ -884,7 +884,11 @@
           if (machinePending.delete(id)) {
             resolve(makeResponse(504, btoa(JSON.stringify({ success: false, error: `Timed out: ${path}` }))))
           }
-        }, 35000)
+        }, 50000) // > main's 45s, which is > the server's 30s. Each outer deadline strictly
+        // longer than the one it wraps, so a timeout HERE genuinely means this layer lost the
+        // answer. Previously iframe 35s > main 30s = server 30s, so a ~30s command (npm ci, a slow
+        // build) reported "Timed out ... on the machine channel" and DISCARDED the real output —
+        // the plain-fetch path it replaced had no client deadline and always showed it.
         machinePending.set(id, (msg) => {
           clearTimeout(timer)
           resolve(makeResponse(msg.status, msg.bodyB64 || '', msg.headers || {}))

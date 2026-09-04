@@ -27,6 +27,23 @@ Full report: `reviews/1.12.9-tier1-v1.12.6-to-v1.12.8.md`.
   into every command the terminal or an agent spawned, so a nested `bunx haltija` would start
   treating its own stdin as an authenticated control channel.
 
+### `haltija/test` no longer mutates a browser nobody chose (#42)
+
+`resolveTestServerUrl` falls back to `http://localhost:8700` — the *shared* interactive server — and
+the only gate was a stderr warning. This project proved on itself that a warning is not a boundary:
+on 2026-09-03 our own suite adopted another project's server and called `navigate`/`click` against
+its six live tabs. We fixed our lane and left the published library adopting, and **a hazard fixed
+in your own lane but left in the library you ship is not fixed**.
+
+Mutating calls (`navigate`, `click`, `type`, `press`, `refresh`) now **throw** when no
+`HALTIJA_URL`/`HALTIJA_PORT` was set, with a message naming the remedy. Read-only calls (`status`,
+`query`, `eval`) are unaffected — reading from a shared server harms nobody, and a guard that blocks
+harmless calls gets disabled wholesale. `HALTIJA_TEST_ALLOW_SHARED=1` opts back in deliberately.
+
+**This is a behaviour change in a published API.** Anyone whose suite relied on the 8700 fallback
+for mutating calls will now get a loud error instead of silently driving whichever browser answered
+— which is the point.
+
 ### Fixes
 
 - **Window recreation was dead code (review B2).** The 1.12.7 stdout refactor tested
@@ -36,6 +53,17 @@ Full report: `reviews/1.12.9-tier1-v1.12.6-to-v1.12.8.md`.
 - **Root cause of the above: the wire protocol was implemented twice.** `main.js` hand-rolled the
   prefixes, the line split and the parse while `src/machine-channel.ts` owned and tested them. It is
   now a generated twin (`apps/desktop/machine-channel.js`), like `server-env.js`.
+- **Timeout layering was inverted**, so a ~30s command (`npm ci`, a slow build) reported "Timed out
+  on the machine channel" and discarded the server's real output. Each outer deadline is now
+  strictly longer than the one it wraps (server 30s → main 45s → iframe 50s), so a timeout at a
+  layer means that layer genuinely lost the answer.
+- **The desktop guard test only recognised template-literal fetches**, so
+  `fetch(getServerUrl() + '/files/read')` passed green and 410'd at runtime — the exact silent
+  breakage it exists to prevent. It now matches the call and the path independently (verified by
+  mutation), skips comments, and states its remaining line-scoped limit rather than implying none.
+- Bun's Unix-socket defect is now **filed upstream** (oven-sh/bun#41381) and mirrored in
+  `UPSTREAM.md`, per "we file, we don't fix". The stdio channel stays regardless — it is good on its
+  own merits.
 - Docs corrected: `docs/AGENTIC-IDE.md` no longer advertises two routes that now return 410;
   `CLAUDE.md` no longer contradicts itself about whether the tabs were restored; published versions
   are no longer marked `(unreleased)`; and the absolute "no machine-control surface on any

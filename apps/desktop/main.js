@@ -1322,7 +1322,8 @@ function machineRequest(path, init = {}) {
           success: false, error: `Timed out waiting for ${path} on the machine channel.`,
         })).toString('base64') })
       }
-    }, 30000)
+    }, 45000) // > the server's own 30s command timeout, so a slow command returns its real
+    // (possibly truncated) output instead of this layer claiming the channel lost it.
     machinePending.set(id, (res) => { clearTimeout(timer); resolve(res) })
     const frame = { id, method: init.method || 'GET', path, headers: init.headers || {} }
     if (init.bodyB64 !== undefined) frame.bodyB64 = init.bodyB64

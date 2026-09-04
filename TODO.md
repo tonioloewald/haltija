@@ -313,7 +313,7 @@ picks it up:
 **#40 — DONE.** Machine control refused on the network; desktop tabs restored over the server
 child's stdio (`src/machine-channel.ts`). Verified in a real `--private --app` Electron launch:
 every hop, ending in a shell command's side effect on disk, while the same route stays 410 on TCP.
-Do NOT retry a Unix socket — Bun 1.4.0 cannot serve on one (three forms, all silent; Node↔Node
+Do NOT retry a Unix socket — Bun 1.4.0 cannot serve on one (three forms, all silent; Node↔Node Filed upstream as oven-sh/bun#41381 (see `UPSTREAM.md`).
 control works).
 
 **Local LLM backend for the shell — pick an endpoint (LM Studio et al.) and wire it in.**

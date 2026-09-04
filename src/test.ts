@@ -143,6 +143,36 @@ export function resolveTestServerUrl(env: Record<string, string | undefined> = p
   return { url: 'http://localhost:8700', source: 'default' }
 }
 
+
+/**
+ * Should this mutating call be refused? Returns the message, or null to proceed.
+ *
+ * Pure and exported so it can be tested WITHOUT A NETWORK CALL. The first version of these tests
+ * exercised the allow-path by actually calling `navigate()` against the shared default — which on a
+ * developer machine means a real request to whatever server is on 8700. Writing a test for "do not
+ * drive someone else's browser" that drives someone else's browser is not a hypothetical failure;
+ * it is what happened, and it is why the decision lives here rather than only inside a method that
+ * must be reached through the network layer.
+ */
+export function sharedMutationRefusal(
+  action: string,
+  usingSharedDefault: boolean,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  if (!usingSharedDefault) return null
+  if (env.HALTIJA_TEST_ALLOW_SHARED === '1') return null
+  return (
+    `[haltija/test] refusing to ${action} on the shared default http://localhost:8700 — no ` +
+    `HALTIJA_URL or HALTIJA_PORT was set, so this would drive whatever browser happens to be ` +
+    `there, quite possibly a developer's live session on another project. Point the client at ` +
+    `an instance you own:\n` +
+    `  bunx haltija --private --headless   # prints its ephemeral port\n` +
+    `  HALTIJA_PORT=<that port> …\n` +
+    `Read-only calls (status, query, eval) still work against the default. Set ` +
+    `HALTIJA_TEST_ALLOW_SHARED=1 if you genuinely intend to drive the shared browser.`
+  )
+}
+
 export class HaltijaTestClient {
   private client: DevChannelClient
   readonly baseUrl: string
@@ -179,6 +209,30 @@ export class HaltijaTestClient {
         '(`haltija --private --headless` prints one).\n',
     )
   }
+
+
+  /**
+   * Refuse to MUTATE a browser nobody chose (#42, review follow-up).
+   *
+   * The ladder above resolves to `http://localhost:8700` when nothing is set, and 8700 is the
+   * SHARED interactive server. The only gate was a stderr warning — and this project proved on
+   * itself, on 2026-09-03, that a warning is not a boundary: our own suite walked straight through
+   * one and drove another project's six-tab browser, calling `navigate` and `click` with no
+   * `window` param so both landed on whatever tab was focused.
+   *
+   * We fixed our lane and left the published library adopting. A hazard fixed in your own lane but
+   * left in the library you ship is not fixed — the next adopter re-hits the general form, on a
+   * machine where the damage is least expected.
+   *
+   * So: read-only calls still work against the default (they cannot harm anyone), and anything that
+   * CHANGES the browser refuses unless the caller named the target. `HALTIJA_TEST_ALLOW_SHARED=1`
+   * is the deliberate opt-out for someone who really means it.
+   */
+  private refuseMutationOnSharedDefault(action: string): void {
+    const message = sharedMutationRefusal(action, this.usingSharedDefault, process.env)
+    if (message) throw new Error(message)
+  }
+
 
   // --- Lifecycle ---
 
@@ -219,14 +273,17 @@ export class HaltijaTestClient {
   // --- Interactions ---
 
   async click(selector: string, options?: { x?: number; y?: number }) {
+    this.refuseMutationOnSharedDefault('click')
     return this.client.click(selector, options)
   }
 
   async type(selector: string, text: string) {
+    this.refuseMutationOnSharedDefault('type into')
     return this.client.type(selector, text)
   }
 
   async press(key: string, modifiers?: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
+    this.refuseMutationOnSharedDefault('press a key on')
     return this.client.press(key, modifiers)
   }
 
@@ -235,8 +292,14 @@ export class HaltijaTestClient {
 
   // --- Navigation ---
 
-  async navigate(url: string) { return this.client.navigate(url) }
-  async refresh(hard = false) { return this.client.refresh(hard) }
+  async navigate(url: string) {
+    this.refuseMutationOnSharedDefault('navigate')
+    return this.client.navigate(url)
+  }
+  async refresh(hard = false) {
+    this.refuseMutationOnSharedDefault('refresh')
+    return this.client.refresh(hard)
+  }
   async getLocation() { return this.client.getLocation() }
 
   // --- Eval ---

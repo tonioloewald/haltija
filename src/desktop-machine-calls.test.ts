@@ -31,19 +31,55 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('the desktop app never fetches machine control over HTTP', () => {
-  it('has no fetch() to a refused prefix', () => {
+  it('has no fetch() to a refused prefix, however the URL is spelled', () => {
     const offenders: string[] = []
     for (const file of sourceFiles(DESKTOP)) {
       const text = readFileSync(file, 'utf-8')
       text.split('\n').forEach((line, i) => {
-        // Any fetch whose URL template reaches /terminal/ or /files/, however the base is spelled.
-        const m = line.match(/fetch\(`[^`]*?(\/(?:terminal|files)\/[a-z-]*)/)
-        if (m && isRefusedMachineControlPath(m[1].replace(/\/$/, '') || m[1])) {
+        // Match the CALL and the PATH independently, instead of requiring a template literal
+        // immediately after `fetch(`. The previous version only recognised
+        // fetch(`...${x}/files/read`) — so fetch(getServerUrl() + '/files/read') and
+        // fetch("/terminal/command") both passed green and 410'd at runtime, which is precisely
+        // the silent breakage this test exists to prevent. Its comment claimed "however the base
+        // is spelled"; that was true for one spelling of three.
+        // Comments discuss these paths constantly now (the prose explaining WHY they moved names
+        // both `fetch()` and `/terminal/command`), so a line-scoped scan must skip them or the
+        // guard cries wolf and gets deleted — which is how a guard stops guarding.
+        const code = line.trimStart()
+        if (code.startsWith('*') || code.startsWith('//') || code.startsWith('/*')) return
+        const isPlainFetch = /(?<![.\w])fetch\s*\(/.test(line)
+        if (!isPlainFetch) return
+        const m = line.match(/['"`]?(\/(?:terminal|files)\/[a-z-]+)/)
+        if (m && isRefusedMachineControlPath(m[1])) {
           offenders.push(`${file.replace(DESKTOP, 'apps/desktop')}:${i + 1} -> ${m[1]}`)
         }
       })
     }
     expect(offenders).toEqual([])
+  })
+
+  // Known limit, stated rather than implied: the scan is line-scoped, so a URL assembled across
+  // several lines is invisible to it. That is a narrower gap than the one it replaced, and naming
+  // it is what stops the next person trusting it further than it goes.
+  it('recognises non-template call shapes (the gap that shipped a broken Pick folder…)', () => {
+    const samples = [
+      "const r = await fetch(getServerUrl() + '/files/read?path=x')",
+      'const r = await fetch("/terminal/command", { method: "POST" })',
+      'fetch(`${BASE_URL}/files/tree`)',
+    ]
+    for (const line of samples) {
+      const isPlainFetch = /(?<![.\w])fetch\s*\(/.test(line)
+      const m = line.match(/['"`]?(\/(?:terminal|files)\/[a-z-]+)/)
+      expect(isPlainFetch && !!m && isRefusedMachineControlPath(m![1])).toBe(true)
+    }
+  })
+
+  // machineFetch/hjFetch are the sanctioned paths and must NOT be flagged, or the guard becomes
+  // noise and gets deleted.
+  it('does not flag the sanctioned helpers', () => {
+    for (const line of ["await machineFetch(`/terminal/command`, {})", "await hjFetch(`/files/tree`)"]) {
+      expect(/(?<![.\w])fetch\s*\(/.test(line)).toBe(false)
+    }
   })
 
   it('the relocated agent list is reached at /agents, not the refused /terminal/agents', () => {

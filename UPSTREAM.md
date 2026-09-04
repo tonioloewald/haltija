@@ -165,6 +165,26 @@ pure function over plain data rather than entangled with the widget.
 flow both ways instead of diverging. **1.13, not 1.12**: it is an architectural change, and 1.12.0
 is in RC.
 
+## Bun — `Bun.serve({unix})` accepts connections but never responds (1.4.0)
+
+**Filed:** https://github.com/oven-sh/bun/issues/41381 · **Status:** open · **Covers:** haltija at `99858e1`
+
+Bun 1.4.0 (macOS arm64) cannot serve over a Unix domain socket. `Bun.serve({unix})`, `node:http`
+listening on a socket path, and raw `Bun.listen({unix})` all accept the connection and never
+answer (curl exit 28, request fully sent). A Node-server/Node-client control over the same socket
+path on the same machine works, which is what makes it attributable to Bun's listener rather than
+the platform.
+
+**Why it mattered here:** #40 needed machine-scope endpoints on a channel a browser cannot address,
+and a UDS is the natural answer — no origin, no port, no URL `fetch()` can name. We wrote it,
+measured the failure three ways, and **backed it out** rather than ship a socket that is created,
+chmod'd, announced in the log, and answers nothing.
+
+**We are not blocked.** The replacement — JSON-lines RPC over the server child's stdio
+(`src/machine-channel.ts`) — is good on its own merits and should stay even if Bun fixes this: a
+pipe has no address either, and Electron main already owns the child. So an upstream fix is about
+the ecosystem, not about reverting our design.
+
 ## tosijs-schema — `s.any` emits invalid JSON Schema
 
 - **https://github.com/tonioloewald/tosijs-schema/issues/3** — filed 2026-08-08.
