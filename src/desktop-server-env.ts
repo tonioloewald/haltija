@@ -11,6 +11,8 @@
  */
 
 export interface DesktopServerEnvOptions {
+  /** Per-launch nonce for machine-scope WebSocket upgrades from null-origin frames. */
+  wsNonce?: string
   /** Port this child should bind. Ignored for a private run, which binds ephemerally. */
   port: number | string
   /** 'public' is the server agents drive; 'internal' hosts the app's own chrome widget. */
@@ -43,6 +45,13 @@ export function buildServerEnv(
   // accordingly, and the two must agree or requests go nowhere silently.
   if (opts.role === 'public') env.HALTIJA_MACHINE_CHANNEL = '1'
   else delete env.HALTIJA_MACHINE_CHANNEL
+
+  // Per-launch secret so the app's own file:// terminal frame can prove itself on /ws/terminal,
+  // which a hostile page's sandboxed srcdoc frame (also Origin: null) cannot (review M1). Deleted
+  // rather than left inherited, for the same reason as the channel grant: a capability handed to
+  // one process must not ride the environment into others.
+  if (opts.wsNonce) env.HALTIJA_WS_NONCE = opts.wsNonce
+  else delete env.HALTIJA_WS_NONCE
 
   if (opts.isPrivate) {
     // Isolation: bind ephemeral (HALTIJA_PRIVATE forces port 0), touch nothing shared, and report

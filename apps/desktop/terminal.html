@@ -929,7 +929,11 @@
         text: async () => decode(),
       }
     }
-    const WS_URL = `ws://localhost:${PORT}/ws/terminal`
+    // Presented on the machine-scope socket; see src/ws-origin.ts. This frame is file://, so its
+    // Origin is `null` — indistinguishable from a hostile page's sandboxed srcdoc frame without it.
+    const WS_NONCE = params.get('nonce') || ''
+    const WS_URL =
+      `ws://localhost:${PORT}/ws/terminal` + (WS_NONCE ? `?nonce=${encodeURIComponent(WS_NONCE)}` : '')
 
     const messagesEl = document.getElementById('messages')
     const inputEl = document.getElementById('input')

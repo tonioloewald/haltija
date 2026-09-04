@@ -497,6 +497,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_MACHINE_LOG` | Path for the machine-scope action receipt (tests point this at a temp dir) | `~/.haltija/machine-actions.log` |
 | `HALTIJA_REGISTRY_DIR` | Instance registry location (tests must point this at a temp dir) | `~/.haltija/servers` |
 | `HALTIJA_ARTIFACT_DIR` | Where screenshots/schematics/videos are written (tests must point this at a temp dir) | `tmpdir()` |
+| `HALTIJA_WS_NONCE` | *Set by the desktop app.* Per-launch secret admitting its own `file://` terminal frame to `/ws/terminal`; a hostile page's sandboxed frame sends the same origin but cannot obtain it | — |
 | `HALTIJA_TEST_ALLOW_SHARED` | Set to `1` to let `haltija/test` MUTATE the shared default 8700 (navigate/click/type). Off by default: driving a browser nobody named is how a suite hijacks another project's session (#42) | — |
 | `HALTIJA_TEST_QUIET` | Silence `haltija/test`'s shared-default-port warning | — |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |

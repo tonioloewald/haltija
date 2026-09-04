@@ -36,7 +36,7 @@ import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-
 import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
-import { isLocalOrigin, requiresLocalOrigin } from './ws-origin'
+import { mayOpenMachineSocket, requiresLocalOrigin } from './ws-origin'
 import {
   formatResponse,
   machineChannelEnabled,
@@ -322,6 +322,11 @@ function raiseTabInDesktopApp(windowId: string): void {
 // Set by the Electron desktop app when it spawns this server. When true the
 // server emits __NEED_WINDOW__ to stdout for the parent process to react.
 const isDesktopApp = process.env.HALTIJA_DESKTOP === '1'
+
+// Per-launch secret proving a `file://` frame belongs to the app that started this server (review
+// M1). Set by the desktop app; absent for a plain `bunx haltija`, where nothing legitimately opens
+// a machine-scope socket from a null origin anyway.
+const WS_NONCE = process.env.HALTIJA_WS_NONCE || null
 
 /**
  * Idle lifetime bound (issue #39) — the backstop for when teardown never runs at all.
@@ -4267,9 +4272,19 @@ const serverConfig = {
       // shell's cwd on connect and streams absolute file paths; it accepted cross-origin upgrades,
       // so any web page could read that. /ws/browser is deliberately exempt — the widget connects
       // from whatever origin the page it was injected into has, which is the whole product.
-      if (requiresLocalOrigin(url.pathname) && !isLocalOrigin(req.headers.get('Origin'))) {
-        console.warn(`${LOG_PREFIX} refused ${url.pathname} upgrade from origin ${req.headers.get('Origin')}`)
-        return new Response('Forbidden: machine-scope sockets require a local origin', { status: 403 })
+      if (
+        requiresLocalOrigin(url.pathname) &&
+        !mayOpenMachineSocket({
+          origin: req.headers.get('Origin'),
+          nonce: url.searchParams.get('nonce'),
+          expectedNonce: WS_NONCE,
+        })
+      ) {
+        console.warn(`${LOG_PREFIX} refused ${url.pathname} upgrade (origin ${req.headers.get('Origin')})`)
+        return new Response(
+          'Forbidden: machine-scope sockets require a loopback origin, or the launch nonce',
+          { status: 403 },
+        )
       }
       const type = url.pathname.slice('/ws/'.length) // 'browser' | 'agent' | 'terminal'
       const upgraded = server.upgrade(req, { data: { type } })

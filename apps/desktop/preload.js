@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('haltija', {
   // Machine control over the server's stdio (#40). /terminal/* and /files/* are refused on the
   // network listener; this is how the app's own tabs still reach them. Returns {status, bodyB64}.
   machineRequest: (path, init) => ipcRenderer.invoke('machine-request', path, init),
+  // Per-launch secret the terminal frame presents on /ws/terminal (review M1).
+  wsNonce: () => ipcRenderer.invoke('ws-nonce'),
 
   // Screen capture
   capturePage: () => ipcRenderer.invoke('capture-page'),

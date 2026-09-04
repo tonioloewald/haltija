@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { sharedMutationRefusal } from './test'
+import { HaltijaTestClient, sharedMutationRefusal } from './test'
 
 /**
  * `haltija/test` must not drive a browser nobody chose (#42).
@@ -41,6 +41,44 @@ describe('mutating the shared default is refused (#42)', () => {
   it('does not accept a merely truthy opt-in', () => {
     for (const v of ['true', 'yes', '0', '']) {
       expect(sharedMutationRefusal('navigate', true, { HALTIJA_TEST_ALLOW_SHARED: v })).not.toBeNull()
+    }
+  })
+})
+
+/**
+ * The runner path specifically — because it was OUTSIDE the boundary while five hand-written
+ * methods were inside, and `hj.suite('./tests')` is this module's headline example. Guarding by
+ * enumerating methods is what let the documented path be the unguarded one; this test exists so
+ * the guard set cannot fall behind the API surface again.
+ *
+ * `fetch` is stubbed: the assertion is that NOTHING leaves the process, which a network call would
+ * defeat even if it then failed.
+ */
+describe('the test runner is inside the #42 boundary', () => {
+  it('runFile and suite refuse the shared default, without touching the network', async () => {
+    for (const k of ['HALTIJA_URL', 'HALTIJA_PORT', 'DEV_CHANNEL_PORT', 'HALTIJA_TEST_ALLOW_SHARED']) {
+      delete process.env[k]
+    }
+    const original = globalThis.fetch
+    let networkCalls = 0
+    globalThis.fetch = (async () => {
+      networkCalls++
+      return { ok: true, json: async () => ({}) }
+    }) as unknown as typeof fetch
+    try {
+      const hj = new HaltijaTestClient()
+      for (const call of [() => hj.runFile('./x.json'), () => hj.suite('./tests')]) {
+        let threw = false
+        try {
+          await call()
+        } catch (err: any) {
+          threw = /refusing to/.test(err.message)
+        }
+        expect(threw).toBe(true)
+      }
+      expect(networkCalls).toBe(0)
+    } finally {
+      globalThis.fetch = original
     }
   })
 })

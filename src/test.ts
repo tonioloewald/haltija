@@ -287,8 +287,16 @@ export class HaltijaTestClient {
     return this.client.press(key, modifiers)
   }
 
-  async focus(selector: string) { return this.client.focus(selector) }
-  async blur(selector: string) { return this.client.blur(selector) }
+  // Decided explicitly rather than left to omission: focus/blur CHANGE the page (they fire
+  // handlers, move carets, close menus) and are therefore inside the boundary.
+  async focus(selector: string) {
+    this.refuseMutationOnSharedDefault('focus an element on')
+    return this.client.focus(selector)
+  }
+  async blur(selector: string) {
+    this.refuseMutationOnSharedDefault('blur an element on')
+    return this.client.blur(selector)
+  }
 
   // --- Navigation ---
 
@@ -344,6 +352,11 @@ export class HaltijaTestClient {
 
   /** Run a single JSON test file. Throws HaltijaTestError on failure. */
   async runFile(filePath: string, options: RunOptions = {}): Promise<TestRunResult> {
+    // A JSON fixture is mutation by definition — `navigate` is step 1 of essentially every
+    // file — so the runner belongs inside the #42 boundary. It was outside it, which mattered
+    // more than the five methods that were inside: `hj.suite('./tests')` is the module's own
+    // headline example, so the documented path was the unguarded one.
+    this.refuseMutationOnSharedDefault('run a test file against')
     const tests = loadTestFile(resolve(filePath), options.vars)
     const { vars, ...serverOptions } = options
 
@@ -413,6 +426,11 @@ export class HaltijaTestClient {
 
   /** Run all JSON test files in a directory. Throws HaltijaTestError on failure. */
   async suite(dir: string, options: SuiteOptions = {}): Promise<SuiteRunResult> {
+    // A JSON fixture is mutation by definition — `navigate` is step 1 of essentially every
+    // file — so the runner belongs inside the #42 boundary. It was outside it, which mattered
+    // more than the five methods that were inside: `hj.suite('./tests')` is the module's own
+    // headline example, so the documented path was the unguarded one.
+    this.refuseMutationOnSharedDefault('run a suite against')
     const files = expandTestDir(resolve(dir))
     if (files.length === 0) {
       throw new Error(`No .json test files found in ${dir}`)

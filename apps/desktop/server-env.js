@@ -58,6 +58,10 @@ function buildServerEnv(base, opts) {
     env.HALTIJA_MACHINE_CHANNEL = "1";
   else
     delete env.HALTIJA_MACHINE_CHANNEL;
+  if (opts.wsNonce)
+    env.HALTIJA_WS_NONCE = opts.wsNonce;
+  else
+    delete env.HALTIJA_WS_NONCE;
   if (opts.isPrivate) {
     env.HALTIJA_PRIVATE = "1";
     env.HALTIJA_NO_RETIRE = "1";

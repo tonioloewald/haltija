@@ -1288,6 +1288,10 @@ function checkServerRunning() {
  * A Unix socket was the first choice and does not work — Bun 1.4.0 accepts the connection and
  * never answers (verified three ways against a working Node<->Node control). Don't retry it.
  */
+// Minted once per launch and handed to (a) the server via env and (b) the terminal iframe via its
+// URL. Never sent to a page, so a hostile srcdoc frame cannot obtain it (review M1).
+const WS_NONCE = require('crypto').randomBytes(24).toString('hex')
+
 const machinePending = new Map()
 let machineBuffer = ''
 let machineSeq = 0
@@ -1339,6 +1343,8 @@ function machineRequest(path, init = {}) {
     }
   })
 }
+
+ipcMain.handle('ws-nonce', () => WS_NONCE)
 
 ipcMain.handle('machine-request', async (_evt, path, init) => {
   // Only this prefix pair is reachable, so a compromised renderer cannot use the channel as a

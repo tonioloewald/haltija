@@ -240,7 +240,15 @@ export async function createTerminalTab(mode = 'human') {
   // else talked to our own ephemeral server, which is an isolation violation the private mode
   // exists to prevent. It only became visible when /terminal/* moved to the stdio pipe (#40) and
   // the two transports could no longer agree by accident.
-  iframe.src = `terminal.html?port=${resolvePublicPort()}&mode=${mode}${cwdParam}`
+  // The nonce proves this frame belongs to the app when it opens /ws/terminal — a hostile page's
+  // sandboxed srcdoc frame sends the same `Origin: null` but cannot obtain this (review M1).
+  // Resolved before the frame loads; without it the socket is refused and the terminal is inert,
+  // so a failure here is loud rather than subtle.
+  Promise.resolve(window.haltija?.wsNonce?.() ?? '').then((nonce) => {
+    iframe.src =
+      `terminal.html?port=${resolvePublicPort()}&mode=${mode}${cwdParam}` +
+      (nonce ? `&nonce=${encodeURIComponent(nonce)}` : '')
+  })
   iframe.className = 'terminal-frame'
 
   el.webviewContainer.appendChild(iframe)
