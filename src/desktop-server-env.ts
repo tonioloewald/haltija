@@ -37,6 +37,13 @@ export function buildServerEnv(
   // the one agents drive; the internal chrome server stays out of the registry entirely.
   env.HALTIJA_DESKTOP_PUBLIC = opts.role === 'public' ? '1' : '0'
 
+  // Machine control over stdio (#40). PUBLIC role only: the terminal / agent / file tabs talk to
+  // the public server, and the internal chrome server has no such tabs — so granting it the
+  // channel would widen the capability for nothing. Requires stdin to be a pipe; main.js spawns
+  // accordingly, and the two must agree or requests go nowhere silently.
+  if (opts.role === 'public') env.HALTIJA_MACHINE_CHANNEL = '1'
+  else delete env.HALTIJA_MACHINE_CHANNEL
+
   if (opts.isPrivate) {
     // Isolation: bind ephemeral (HALTIJA_PRIVATE forces port 0), touch nothing shared, and report
     // the bound port to this child's OWN port-file — never the caller's, which the app writes once

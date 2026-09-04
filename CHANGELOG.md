@@ -34,11 +34,17 @@ Two decisions worth recording:
 bookmarklet and the tunnel path all behave exactly as before. Nothing here was public API: these
 routes appear in no `API.md`, `DOCS.md`, `llms.txt` or `api-schema.ts` entry.
 
-**What it costs:** the desktop app's terminal / agent / file-browser tabs, which reached their own
-machine over HTTP because `terminal.html` is a disk-loaded iframe with no preload bridge. Restoring
-them needs a non-TCP channel (a Unix socket, or moving shell state into Electron main) — tracked on
-#40. Those tabs were already deprioritised, and they became a burden the moment they were the sole
-reason for this surface.
+**The desktop tabs keep working**, over a channel a browser cannot address: `terminal.html`
+postMessages the renderer, which reaches Electron main over IPC, which talks to the server child
+over its **stdio**. A pipe has no origin, no port and no URL `fetch()` can name.
+
+The channel opens only when the spawning parent sets `HALTIJA_MACHINE_CHANNEL=1` — which the app
+does for its own public server. So a plain `bunx haltija` now has **no machine-control surface on
+any transport at all**, which is a stronger position than before this release, when it was on by
+default and reachable from any web page.
+
+(A Unix socket was the obvious choice and does not work: Bun 1.4.0 accepts the connection and never
+responds, verified three ways against a working Node↔Node control. Noted so nobody retries it.)
 
 
 - **Our own integration lane was driving other projects' browsers.** `tests/haltija.test.ts`

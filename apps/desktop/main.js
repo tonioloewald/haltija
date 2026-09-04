@@ -1270,10 +1270,77 @@ function checkServerRunning() {
  * Stdout/stderr are piped to the desktop app's console with a label, and
  * `__NEED_WINDOW__` from the public server triggers window recreation.
  */
-function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir, portFile }) {
+// Registered at MODULE SCOPE, once. It was originally inside spawnHaltijaServer, which runs twice
+// (public and internal servers) — Electron throws "Attempted to register a second handler" and the
+// app dies at startup. Found by launching the app; no unit test would have caught it.
+/**
+ * Machine control over the public server's stdio (#40).
+ *
+ * /terminal/* and /files/* are refused on the network listener, because a text/plain POST is a
+ * CORS-simple request and any web page could reach them. The desktop app's own tabs still need
+ * them, so they travel down a pipe instead: no port, no origin, nothing fetch() can name.
+ *
+ * A Unix socket was the first choice and does not work — Bun 1.4.0 accepts the connection and
+ * never answers (verified three ways against a working Node<->Node control). Don't retry it.
+ */
+const MACHINE_REQ_PREFIX = 'HJ_MACHINE_REQ '
+const MACHINE_RES_PREFIX = 'HJ_MACHINE_RES '
+const machinePending = new Map()
+let machineBuffer = ''
+let machineSeq = 0
+let machineProc = null
+
+function machineRequest(path, init = {}) {
+  return new Promise((resolve) => {
+    if (!machineProc || !machineProc.stdin || machineProc.stdin.destroyed) {
+      resolve({ status: 503, bodyB64: Buffer.from(JSON.stringify({
+        success: false,
+        error: 'The machine-control channel is not open. It exists only for the desktop app\'s own '
+          + 'server (issue #40); terminal and file features are unavailable in this instance.',
+      })).toString('base64') })
+      return
+    }
+    const id = `m${++machineSeq}`
+    // ALWAYS resolve. A tab awaiting an id that never returns looks frozen, which is far worse to
+    // diagnose than an error, so every request carries its own deadline.
+    const timer = setTimeout(() => {
+      if (machinePending.delete(id)) {
+        resolve({ status: 504, bodyB64: Buffer.from(JSON.stringify({
+          success: false, error: `Timed out waiting for ${path} on the machine channel.`,
+        })).toString('base64') })
+      }
+    }, 30000)
+    machinePending.set(id, (res) => { clearTimeout(timer); resolve(res) })
+    const frame = { id, method: init.method || 'GET', path, headers: init.headers || {} }
+    if (init.bodyB64 !== undefined) frame.bodyB64 = init.bodyB64
+    try {
+      machineProc.stdin.write(MACHINE_REQ_PREFIX + JSON.stringify(frame) + '\n')
+    } catch (err) {
+      if (machinePending.delete(id)) {
+        clearTimeout(timer)
+        resolve({ status: 500, bodyB64: Buffer.from(JSON.stringify({
+          success: false, error: String(err && err.message || err),
+        })).toString('base64') })
+      }
+    }
+  })
+}
+
+ipcMain.handle('machine-request', async (_evt, path, init) => {
+  // Only this prefix pair is reachable, so a compromised renderer cannot use the channel as a
+  // general proxy to the server (e.g. to bypass a token on some unrelated endpoint).
+  if (typeof path !== 'string' || !(path.startsWith('/terminal/') || path.startsWith('/files/'))) {
+    return { status: 400, bodyB64: Buffer.from(JSON.stringify({
+      success: false, error: 'machine-request only carries /terminal/* and /files/* paths',
+    })).toString('base64') }
+  }
+  return machineRequest(path, init || {})
+})
+
+  function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir, portFile }) {
   // Built by src/desktop-server-env.ts, whose contract is unit-tested without launching Electron —
   // getting this wrong is silent (a child that ignores its port, binds the parent's, and dies).
-  const env = buildServerEnv(process.env, {
+const env = buildServerEnv(process.env, {
     port,
     role: role === 'public' ? 'public' : 'internal',
     isPrivate: IS_PRIVATE,
@@ -1282,26 +1349,52 @@ function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, compone
   let proc
   if (serverPath && useCompiledBinary) {
     proc = spawn(serverPath, [], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [role === 'public' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       cwd: componentDir || path.dirname(serverPath),
       env,
     })
   } else if (serverPath) {
     proc = spawn('bun', ['run', serverPath], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [role === 'public' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       env,
     })
   } else {
     proc = spawn('bunx', ['haltija', '--port', port.toString()], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [role === 'public' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       env,
     })
   }
+
+  if (role === 'public') machineProc = proc
 
   const label = `[${role} server]`
 
   proc.stdout.on('data', (data) => {
     try {
+      // Machine-channel responses first, on the RAW chunk. The logging path below trims and
+      // reformats, and a pipe splits frames wherever it likes — so parsing has to be line-based
+      // and buffered, or a large /files/tree answer arrives as fragments and never resolves.
+      if (role === 'public') {
+        machineBuffer += data.toString()
+        const parts = machineBuffer.split('\n')
+        machineBuffer = parts.pop()
+        for (const line of parts) {
+          if (!line.startsWith(MACHINE_RES_PREFIX)) {
+            if (line.trim()) console.log(`${label} ${line.trim()}`)
+            continue
+          }
+          try {
+            const res = JSON.parse(line.slice(MACHINE_RES_PREFIX.length))
+            const waiting = machinePending.get(res.id)
+            if (waiting) { machinePending.delete(res.id); waiting(res) }
+          } catch {}
+        }
+        if (role === 'public' && machineBuffer.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {
+          console.log('[Haltija Desktop] Server requested window, recreating...')
+          createWindow()
+        }
+        return
+      }
       const text = data.toString().trim()
       console.log(`${label} ${text}`)
       if (role === 'public' && text.includes('__NEED_WINDOW__') && BrowserWindow.getAllWindows().length === 0) {

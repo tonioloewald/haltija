@@ -310,24 +310,11 @@ picks it up:
   while they had no lifetime bound would have multiplied the twelve-day 5.7 GB leak, not fixed it.
   A lease is only safe to design now that an abandoned instance dies on its own.
 
-**#40 — restore the desktop terminal / agent / file tabs over a non-network channel.** The
-security fix (refusing `/terminal/*` and `/files/*` on the network) is done and shipped in the
-tree; these tabs are the cost of it. Tonio: *not prioritized, but it is useful.*
-
-- **Do NOT retry the Unix socket.** Measured 2026-09-04: Bun 1.4.0 cannot serve over one.
-  `Bun.serve({unix})`, `node:http.listen(sockPath)` under Bun, and raw `Bun.listen({unix})` all
-  accept the connection and never respond (curl exit 28); a Node↔Node UDS control on the same
-  machine works, so it is Bun's listener, not the platform. Code was written and backed out — a
-  socket that is created, chmod'd and announced while never answering is an instrument that lies.
-- **The viable path is a JSON-lines RPC over the server child's stdio.** Electron main already
-  spawns the server and already parses its stdout (`HALTIJA_PRIVATE_READY`, `__NEED_WINDOW__`), so
-  the channel exists. No ports, no HTTP parser, and a pipe has no address a browser can name.
-- **Keep the property the socket design had:** open the channel only when the spawning parent asks
-  for it, so a plain `bunx haltija` has no machine-control surface on any transport. Capability
-  granted by the parent, never ambient.
-- Remaining hops are already understood: `terminal.html` postMessages to the renderer (it does this
-  for `terminal-cwd`/`agent-status` today), renderer → `ipcRenderer` → main → pipe. The transport
-  half is unit-testable without launching Electron; keep the HTML/renderer glue thin.
+**#40 — DONE.** Machine control refused on the network; desktop tabs restored over the server
+child's stdio (`src/machine-channel.ts`). Verified in a real `--private --app` Electron launch:
+every hop, ending in a shell command's side effect on disk, while the same route stays 410 on TCP.
+Do NOT retry a Unix socket — Bun 1.4.0 cannot serve on one (three forms, all silent; Node↔Node
+control works).
 
 **Open majors carried forward:**
 

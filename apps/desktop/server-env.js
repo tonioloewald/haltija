@@ -54,6 +54,10 @@ function buildServerEnv(base, opts) {
   env.DEV_CHANNEL_PORT = port;
   env.HALTIJA_DESKTOP = "1";
   env.HALTIJA_DESKTOP_PUBLIC = opts.role === "public" ? "1" : "0";
+  if (opts.role === "public")
+    env.HALTIJA_MACHINE_CHANNEL = "1";
+  else
+    delete env.HALTIJA_MACHINE_CHANNEL;
   if (opts.isPrivate) {
     env.HALTIJA_PRIVATE = "1";
     env.HALTIJA_NO_RETIRE = "1";

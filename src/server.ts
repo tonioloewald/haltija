@@ -36,6 +36,12 @@ import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-
 import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
+import {
+  formatResponse,
+  machineChannelEnabled,
+  parseRequestLine,
+  splitLines,
+} from './machine-channel'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -1059,7 +1065,12 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
 const apiRouter = createRouter(createHandlerContext)
 
 // REST API handlers
-async function handleRest(req: Request): Promise<Response> {
+/**
+ * `viaMachineChannel` is true only for requests that arrived on the stdio channel (#40). It is a
+ * PARAMETER, not something read off the request: a value derived from a header would be forgeable
+ * by exactly the callers this distinguishes against, which would reintroduce the hole.
+ */
+async function handleRest(req: Request, viaMachineChannel = false): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname
 
@@ -1076,7 +1087,7 @@ async function handleRest(req: Request): Promise<Response> {
   // Machine control is not served over the network (#40). Placed HERE, before the token check and
   // before any routing, so it cannot be reached by a route registered further down — the point of
   // a prefix refusal is that it also covers the route nobody has written yet.
-  if (isRefusedMachineControlPath(path)) {
+  if (!viaMachineChannel && isRefusedMachineControlPath(path)) {
     const refusal = machineControlRefusal(path)
     return Response.json(refusal.body, { status: refusal.status, headers })
   }
@@ -5104,6 +5115,72 @@ if (REGISTRY_NAME) {
     console.log(`  [hj] Auto-install skipped: ${msg}`)
   }
 })()
+
+/**
+ * Machine-control channel (#40): serve /terminal/* and /files/* to our spawning parent over stdio.
+ *
+ * Reuses `handleRest`, so there is ONE router and one set of handlers; the transports differ only
+ * in who may reach a route, never in what a route does. Started only when the parent asked.
+ */
+async function startMachineChannel(): Promise<void> {
+  if (!machineChannelEnabled(process.env)) return
+  console.log(`${LOG_PREFIX} machine control on stdio (no port, no origin — see issue #40)`)
+  let buffered = ''
+  try {
+    // getReader() rather than `for await`: the ReadableStream type does not declare an async
+    // iterator, and the build type-checks.
+    const reader = Bun.stdin.stream().getReader()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffered += Buffer.from(value).toString('utf-8')
+      const { lines, rest } = splitLines(buffered)
+      buffered = rest
+      for (const line of lines) {
+        const req = parseRequestLine(line)
+        if (!req) continue // log noise and other prefixed messages are expected here
+        // Each request is handled independently and concurrently; one slow `/files/tree` must not
+        // stall the terminal's next keystroke.
+        void (async () => {
+          try {
+            const init: RequestInit = { method: req.method, headers: req.headers }
+            if (req.bodyB64 !== undefined && req.method !== 'GET' && req.method !== 'HEAD') {
+              init.body = Buffer.from(req.bodyB64, 'base64')
+            }
+            // The host is a placeholder: nothing listens on it, and handleRest only reads pathname
+            // and search. It exists because Request requires an absolute URL.
+            const res = await handleRest(new Request(`http://machine.local${req.path}`, init), true)
+            const bytes = Buffer.from(await res.arrayBuffer())
+            process.stdout.write(
+              formatResponse({
+                id: req.id,
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+                bodyB64: bytes.toString('base64'),
+              }),
+            )
+          } catch (err: any) {
+            // Always answer. A caller waiting on an id that never comes back hangs forever, which
+            // presents as a frozen tab rather than an error anyone can act on.
+            process.stdout.write(
+              formatResponse({
+                id: req.id,
+                status: 500,
+                headers: { 'content-type': 'application/json' },
+                bodyB64: Buffer.from(
+                  JSON.stringify({ success: false, error: String(err?.message || err) }),
+                ).toString('base64'),
+              }),
+            )
+          }
+        })()
+      }
+    }
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} machine channel closed: ${String(err?.message || err)}`)
+  }
+}
+void startMachineChannel()
 
 console.log(`
 ================================================================================

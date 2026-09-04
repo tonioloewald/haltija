@@ -65,3 +65,21 @@ describe('buildServerEnv — private (isolated) children', () => {
     expect('HALTIJA_PORT_FILE' in env).toBe(false)
   })
 })
+
+describe('machine-control channel (#40)', () => {
+  // The terminal/agent/file tabs talk to the PUBLIC server, so only it gets the channel. Granting
+  // it to the internal chrome server would widen a machine-control capability for no caller.
+  it('is granted to the public server only', () => {
+    expect(buildServerEnv({}, { port: 8700, role: 'public' }).HALTIJA_MACHINE_CHANNEL).toBe('1')
+    expect(
+      buildServerEnv({}, { port: 8701, role: 'internal' }).HALTIJA_MACHINE_CHANNEL,
+    ).toBeUndefined()
+  })
+
+  // A stale value in the parent environment must not grant the capability to a server we did not
+  // intend to grant it to — the whole point is that it is conferred deliberately by the spawner.
+  it('does not leak in from the parent environment for the internal server', () => {
+    const env = buildServerEnv({ HALTIJA_MACHINE_CHANNEL: '1' }, { port: 8701, role: 'internal' })
+    expect(env.HALTIJA_MACHINE_CHANNEL).toBeUndefined()
+  })
+})

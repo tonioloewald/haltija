@@ -12,6 +12,7 @@ import {
 } from './renderer/tabs.js'
 import { setTabFunctions } from './renderer/webview-events.js'
 import { checkHaltija } from './renderer/status.js'
+import { initMachineRelay } from './renderer/machine-relay.js'
 import { initSettingsListeners, hideSettings, hideNewTabDialog } from './renderer/settings.js'
 import { initAgentStatusBar } from './renderer/agent-status.js'
 import { initVideoCapture } from './renderer/video-capture.js'
@@ -29,6 +30,7 @@ window._tabs = { getActiveTab, getActiveWebview, createTab, activateTab, closeTa
 setTabFunctions({ navigate, createTab, activateTab, closeTab })
 
 console.log('[Haltija Desktop] Initializing with tabs...')
+initMachineRelay()
 checkHaltija()
 createTab()
 

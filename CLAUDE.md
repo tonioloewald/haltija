@@ -484,6 +484,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
 | `HALTIJA_NO_TAB_WARN` | Set to `1` to silence the hidden-tab / focus-ambiguity result warnings | — |
+| `HALTIJA_MACHINE_CHANNEL` | *Set by the desktop app.* `1` opens the stdio machine-control channel on this server (#40). Absent = no `/terminal/*` or `/files/*` on any transport | — |
 | `HALTIJA_IDLE_TIMEOUT_HOURS` | Exit after this many hours with no client activity. `0` disables. Defaults to 8h for `--private`, off for shared servers (#39) | — |
 | `HALTIJA_ORIGINS` | Comma-separated origins for per-tab routing; overrides `.haltija.json` | — |
 | `HALTIJA_STRICT` | Set to `1` (or `hj --strict`) to turn advisory warnings into non-zero exits | — |
@@ -668,6 +669,39 @@ with no preload bridge, so it used HTTP to reach its own machine). Restoring the
 non-TCP channel — Unix socket, or shell state moved into Electron main — and is deliberately not
 done. If you are tempted to re-open one of these routes "just for the app", note that a drive-by
 page reaches a desktop-app server exactly as easily.
+
+### …and how the desktop tabs got it back: the stdio channel
+
+The terminal / agent / file-browser tabs are useful, so the functionality is restored over a
+channel a browser cannot address. **A pipe has no origin, no port, and no URL `fetch()` can name**,
+so the drive-by class is structurally excluded rather than checked for.
+
+```
+terminal.html (iframe, no preload)  --postMessage-->  renderer (has window.haltija)
+  --ipcRenderer.invoke-->  Electron main (owns the child)  --stdin/stdout-->  server child
+  --> handleRest(req, viaMachineChannel=true)
+```
+
+- Framing in `src/machine-channel.ts`: one prefixed JSON line each way, bodies **base64 in both
+  directions unconditionally** (`/files/image` is binary, and "encode only when it looks binary"
+  eventually guesses wrong on a UTF-8 boundary and corrupts a file someone is editing).
+- **`viaMachineChannel` is a PARAMETER of `handleRest`, never read off the request.** A value
+  derived from a header would be forgeable by exactly the callers it distinguishes against.
+- **The capability is granted, not ambient.** The reader starts only when the spawning parent sets
+  `HALTIJA_MACHINE_CHANNEL=1`, which `buildServerEnv` does for the **public** role only. A plain
+  `bunx haltija` therefore has no machine-control surface on *any* transport — stronger than before
+  this work, when it was on by default and reachable from any web page.
+- `ipcMain.handle('machine-request')` is registered at **module scope**. It was inside
+  `spawnHaltijaServer`, which runs twice (public + internal) — Electron throws "second handler" and
+  the app dies at startup. No unit test caught that; launching the app did.
+- Main's IPC handler accepts **only** `/terminal/*` and `/files/*`, so a compromised renderer cannot
+  use the channel as a general proxy to the server.
+- Every layer answers on a deadline. A caller awaiting an id that never returns presents as a
+  **frozen tab**, which is far worse to diagnose than an error.
+
+**Don't retry a Unix socket.** Bun 1.4.0 cannot serve on one: `Bun.serve({unix})`, `node:http`
+listening on a socket path, and raw `Bun.listen({unix})` all accept the connection and never
+respond, while a Node↔Node control over UDS on the same machine works.
 
 ## Platform support: POSIX only, on purpose
 

@@ -813,6 +813,76 @@
     const MODE = params.get('mode') || 'human'
     const INITIAL_CWD = params.get('cwd') || ''
     const BASE_URL = `http://localhost:${PORT}`
+
+    /**
+     * Machine control no longer travels over HTTP (#40).
+     *
+     * /terminal/* and /files/* are refused on the network listener, because a text/plain POST is a
+     * CORS-simple request and any web page open in the browser could otherwise reach
+     * spawn('sh','-c') on this machine. This frame has no preload bridge, so it asks its parent —
+     * which has one — and the request goes out over a pipe to the server: no port, no origin,
+     * nothing fetch() can address.
+     *
+     * Same call shape as fetch() on purpose, so the call sites below read as they always did and
+     * the diff stays reviewable.
+     */
+    const machinePending = new Map()
+    let machineSeq = 0
+    window.addEventListener('message', (event) => {
+      const msg = event.data
+      if (!msg || msg.type !== 'hj-machine-response' || typeof msg.id !== 'string') return
+      const waiting = machinePending.get(msg.id)
+      if (waiting) { machinePending.delete(msg.id); waiting(msg) }
+    })
+    function hjFetch(path, init = {}) {
+      return new Promise((resolve) => {
+        const id = `t${++machineSeq}`
+        // Always settle: a pending id that never returns presents as a frozen pane.
+        const timer = setTimeout(() => {
+          if (machinePending.delete(id)) {
+            resolve(makeResponse(504, btoa(JSON.stringify({ success: false, error: `Timed out: ${path}` }))))
+          }
+        }, 35000)
+        machinePending.set(id, (msg) => {
+          clearTimeout(timer)
+          resolve(makeResponse(msg.status, msg.bodyB64 || '', msg.headers || {}))
+        })
+        const frame = { type: 'hj-machine-request', id, path, init: {
+          method: init.method || 'GET',
+          headers: init.headers || {},
+        } }
+        if (init.body !== undefined) {
+          frame.init.bodyB64 = btoa(typeof init.body === 'string' ? init.body : JSON.stringify(init.body))
+        }
+        window.parent.postMessage(frame, '*')
+      })
+    }
+    /**
+     * Enough of the Response surface for the call sites here, plus `b64`/`dataUrl` for binary.
+     *
+     * The body stays base64 all the way from the server and is decoded HERE, through TextDecoder,
+     * because `atob` alone yields a Latin-1 binary string — which mangles any non-ASCII character
+     * in a source file being opened in the editor.
+     */
+    function makeResponse(status, bodyB64, headers = {}) {
+      let text = null
+      const decode = () => {
+        if (text === null) {
+          const bytes = Uint8Array.from(atob(bodyB64 || ''), (c) => c.charCodeAt(0))
+          text = new TextDecoder().decode(bytes)
+        }
+        return text
+      }
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        headers,
+        b64: bodyB64 || '',
+        dataUrl: () => `data:${headers['content-type'] || 'application/octet-stream'};base64,${bodyB64 || ''}`,
+        json: async () => JSON.parse(decode() || '{}'),
+        text: async () => decode(),
+      }
+    }
     const WS_URL = `ws://localhost:${PORT}/ws/terminal`
 
     const messagesEl = document.getElementById('messages')
@@ -849,7 +919,7 @@
               shellIdEl.textContent = shellId
               // Set initial cwd if provided via URL param
               if (INITIAL_CWD) {
-                fetch(`${BASE_URL}/terminal/command`, {
+                hjFetch(`/terminal/command`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ command: `cd ${INITIAL_CWD}`, shellId }),
@@ -862,7 +932,7 @@
               }
               // Auto-name based on mode
               if (MODE === 'agent') {
-                fetch(`${BASE_URL}/terminal/command`, {
+                hjFetch(`/terminal/command`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ command: `whoami agent`, shellId }),
@@ -1059,7 +1129,7 @@
       if (!span) return
       if (span.dataset.action === 'open-tasks') {
         try {
-          const res = await fetch(`${BASE_URL}/terminal/tasks-path`)
+          const res = await hjFetch(`/terminal/tasks-path`)
           const data = await res.json()
           if (data.path) {
             if (!filePaneOpen) filesToggle.click()
@@ -1147,7 +1217,7 @@
     async function runCommand(cmd) {
       addMessage('command', cmd)
       try {
-        const resp = await fetch(`${BASE_URL}/terminal/command`, {
+        const resp = await hjFetch(`/terminal/command`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command: cmd, shellId }),
@@ -1321,7 +1391,7 @@
       scrollToBottom()
 
       try {
-        const resp = await fetch(`${BASE_URL}/terminal/command`, {
+        const resp = await hjFetch(`/terminal/command`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command, shellId }),
@@ -1385,7 +1455,7 @@
     // Stop button handler
     stopBtn.addEventListener('click', async () => {
       try {
-        await fetch(`${BASE_URL}/terminal/agent-stop`, {
+        await hjFetch(`/terminal/agent-stop`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ shellId }),
@@ -1443,7 +1513,7 @@
       scrollToBottom()
 
       try {
-        const resp = await fetch(`${BASE_URL}/terminal/agent-prompt`, {
+        const resp = await hjFetch(`/terminal/agent-prompt`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, shellId }),
@@ -1719,7 +1789,7 @@
     // Listen for messages from parent (address bar, restore, etc.)
     window.addEventListener('message', (event) => {
       if (event.data?.type === 'rename' && event.data.name && shellId) {
-        fetch(`${BASE_URL}/terminal/command`, {
+        hjFetch(`/terminal/command`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command: `whoami ${event.data.name}`, shellId }),
@@ -1730,7 +1800,7 @@
 
     })
 
-    fetch(`${BASE_URL}/terminal/status`)
+    hjFetch(`/terminal/status`)
       .then(r => r.text())
       .then(line => renderStatusLine(line))
       .catch(() => {})
@@ -1848,7 +1918,7 @@
     // Load file tree
     async function loadFileTree() {
       try {
-        const res = await fetch(`${BASE_URL}/files/tree?depth=3${shellId ? '&shellId=' + shellId : ''}`)
+        const res = await hjFetch(`/files/tree?depth=3${shellId ? '&shellId=' + shellId : ''}`)
         const data = await res.json()
         fileTreeEl.innerHTML = ''
         renderTree(data.tree, fileTreeEl)
@@ -1889,7 +1959,7 @@
     async function refreshTouches() {
       if (!filePaneOpen) return
       try {
-        const res = await fetch(`${BASE_URL}/files/touches?shellId=${shellId || '_global'}`)
+        const res = await hjFetch(`/files/touches?shellId=${shellId || '_global'}`)
         const data = await res.json()
         touchedList.innerHTML = ''
         if (!data.touches.length) {
@@ -1935,7 +2005,7 @@
       document.querySelectorAll('.file-item.active, .tree-file.active').forEach(el => el.classList.remove('active'))
 
       try {
-        const res = await fetch(`${BASE_URL}/files/read?path=${encodeURIComponent(filePath)}${shellId ? '&shellId=' + shellId : ''}`)
+        const res = await hjFetch(`/files/read?path=${encodeURIComponent(filePath)}${shellId ? '&shellId=' + shellId : ''}`)
         const data = await res.json()
 
         if (data.error) {
@@ -1959,7 +2029,12 @@
 
         if (data.image) {
           const isSvg = data.path.endsWith('.svg')
-          fileEditorEl.innerHTML = `<div class="image-preview"><img class="${isSvg ? 'svg-preview' : ''}" src="${BASE_URL}/files/image?path=${encodeURIComponent(data.path)}"></div>`
+          // The <img> cannot fetch this itself any more: /files/* is refused on the network
+          // listener (#40), and a browser cannot address the pipe. So the bytes come over the
+          // channel and go in as a data: URL — which is also why the transport stayed base64.
+          const imgRes = await hjFetch(`/files/image?path=${encodeURIComponent(data.path)}`)
+          const imgSrc = imgRes.ok ? imgRes.dataUrl() : ''
+          fileEditorEl.innerHTML = `<div class="image-preview"><img class="${isSvg ? 'svg-preview' : ''}" src="${imgSrc}"></div>`
           fileEditBtn.classList.add('hidden')
           return
         }
@@ -2082,7 +2157,7 @@
         showCodeEditor(content, langGuess[lang] || 'text', false)
       } else {
         // Markdown preview — fetch raw content and open in editor
-        const res = await fetch(`${BASE_URL}/files/read?path=${encodeURIComponent(currentFilePath)}${shellId ? '&shellId=' + shellId : ''}`)
+        const res = await hjFetch(`/files/read?path=${encodeURIComponent(currentFilePath)}${shellId ? '&shellId=' + shellId : ''}`)
         const data = await res.json()
         showCodeEditor(data.content || '', langGuess[lang] || 'text', false)
       }
@@ -2108,7 +2183,7 @@
       if (!currentFilePath || !currentEditor) return
       const content = currentEditor.state.doc.toString()
       try {
-        const res = await fetch(`${BASE_URL}/files/write`, {
+        const res = await hjFetch(`/files/write`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: currentFilePath, content, shellId }),

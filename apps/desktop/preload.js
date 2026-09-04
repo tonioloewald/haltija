@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('haltija', {
   goForward: () => ipcRenderer.send('go-forward'),
   refresh: () => ipcRenderer.send('refresh'),
   
+  // Machine control over the server's stdio (#40). /terminal/* and /files/* are refused on the
+  // network listener; this is how the app's own tabs still reach them. Returns {status, bodyB64}.
+  machineRequest: (path, init) => ipcRenderer.invoke('machine-request', path, init),
+
   // Screen capture
   capturePage: () => ipcRenderer.invoke('capture-page'),
   captureElement: (selector) => ipcRenderer.invoke('capture-element', selector),
