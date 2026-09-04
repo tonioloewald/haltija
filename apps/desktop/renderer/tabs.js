@@ -6,7 +6,24 @@ import { tabs, activeTabId, setActiveTabId, nextTabId, el, getServerUrl, lastCwd
 import { showNotification } from './ui-utils.js'
 import { setupWebviewEvents } from './webview-events.js'
 import { checkHaltija, updateNavButtons } from './status.js'
+
+/**
+ * The port of THIS instance's public server.
+ *
+ * Derived from `serverUrl`, which main sets after port resolution — so a private instance reports
+ * its ephemeral port rather than the shared default. Falls back to 8700 only when main told us
+ * nothing, which is the "adopted an external server" case where 8700 is genuinely right.
+ */
+function resolvePublicPort() {
+  try {
+    const url = window.haltija?.serverUrl
+    if (url) return new URL(url).port || '8700'
+  } catch {}
+  return '8700'
+}
+
 import { handleAction, getIsRecordingActions, getIsRecordingVideo, getIsSelecting } from './widget-status.js'
+import { machineFetch } from './machine-relay.js'
 
 // ==========================================
 // Tab dropdown menu
@@ -217,7 +234,13 @@ export async function createTerminalTab(mode = 'human') {
   const iframe = document.createElement('iframe')
   iframe.id = tabId
   const cwdParam = initialCwd ? `&cwd=${encodeURIComponent(initialCwd)}` : ''
-  iframe.src = `terminal.html?port=${window.haltija?.port || 8700}&mode=${mode}${cwdParam}`
+  // `window.haltija.port` HAS NEVER EXISTED — preload exposes `serverUrl`, not `port` — so this
+  // silently resolved to 8700 for every instance. On a `--private --app` run that is another
+  // project's shared server: the terminal's WebSocket registered its shell THERE while everything
+  // else talked to our own ephemeral server, which is an isolation violation the private mode
+  // exists to prevent. It only became visible when /terminal/* moved to the stdio pipe (#40) and
+  // the two transports could no longer agree by accident.
+  iframe.src = `terminal.html?port=${resolvePublicPort()}&mode=${mode}${cwdParam}`
   iframe.className = 'terminal-frame'
 
   el.webviewContainer.appendChild(iframe)
@@ -287,7 +310,7 @@ export function activateTab(tabId) {
     }
 
     if (tab.terminalMode === 'agent' && tab.shellId) {
-      fetch(`${getServerUrl()}/terminal/agent-focus`, {
+      machineFetch(`/terminal/agent-focus`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shellId: tab.shellId }),
@@ -415,7 +438,7 @@ export function navigate(url, tabId = activeTabId) {
 export async function changeTerminalDirectory(tab, path) {
   if (!path) return
   try {
-    const resp = await fetch(`${getServerUrl()}/terminal/command`, {
+    const resp = await machineFetch(`/terminal/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: `cd ${path}`, shellId: tab.shellId }),
@@ -453,7 +476,7 @@ async function checkHjInstalled() {
   hjCheckDone = true
 
   try {
-    const response = await fetch(`${getServerUrl()}/terminal/hj-status`)
+    const response = await machineFetch(`/terminal/hj-status`)
     if (!response.ok) return
 
     const { installed, installCommand, message } = await response.json()

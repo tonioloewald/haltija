@@ -316,6 +316,38 @@ every hop, ending in a shell command's side effect on disk, while the same route
 Do NOT retry a Unix socket — Bun 1.4.0 cannot serve on one (three forms, all silent; Node↔Node
 control works).
 
+**Local LLM backend for the shell — pick an endpoint (LM Studio et al.) and wire it in.**
+Today the agent tab is hard-wired to `claude -p` (`src/agent-shell.ts` spawns it and parses its
+stream-JSON). The ask is to choose a backend instead: an OpenAI-compatible base URL + model, so
+LM Studio / Ollama / llama.cpp / any endpoint can drive the shell.
+
+- **Why it matters beyond convenience:** `CLAUDE.md` already names this as the one plausible reason
+  to resume DMG builds. A GUI that runs a *local* model against your own machine is a different
+  product from a wrapper around a hosted CLI — it is the case where a desktop app earns its keep,
+  and it works for people who cannot send code to a vendor at all (in-region/GDPR, air-gapped).
+- **Shape:** make the agent backend an interface, not a branch. `claude -p` and an
+  OpenAI-compatible HTTP endpoint differ in transport and in streaming format, not in what the
+  shell needs from them (prompt in, streamed text + tool calls out). Two implementations behind one
+  contract; `agent-shell.ts`'s stream-JSON parsing becomes one of them rather than the shape
+  everything else assumes.
+- **Config:** endpoint URL + model + optional key, per shell (so one tab can be local and another
+  hosted) with a sensible default. LM Studio is `http://localhost:1234/v1` and speaks
+  `/v1/chat/completions` with SSE.
+- **Tool calling is where this gets real.** Most local models are much weaker at it than Claude, and
+  the harness currently assumes competent tool use. Expect to need a stricter loop, a smaller tool
+  surface, and a way to surface "the model produced something unparseable" as a visible failure
+  rather than silence — the same instrument-must-not-lie rule as everywhere else.
+- **Security: route it through the machine channel (#40), never a new network endpoint.** The whole
+  point of that work is that shell execution has no address on the network. A local-LLM backend
+  that opens its own HTTP route to run commands would reintroduce exactly what was just removed.
+  The model endpoint is an *outbound* call; the tool execution stays on the pipe.
+
+**Dead twin: `setShellCwd()`.** Exported from `src/terminal.ts` and called by nothing —
+`server.ts` assigns `shell.cwd = newCwd` directly instead. Two expressions of one operation with
+one of them dead, which is the drift shape this repo keeps paying for. Delete it, or route the
+assignment through it. Noticed while fixing the file panel; left alone because it is unrelated to
+that fix.
+
 **Open majors carried forward:**
 
 - [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including

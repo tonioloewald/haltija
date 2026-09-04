@@ -2,6 +2,19 @@
 
 ## 1.12.7 (unreleased)
 
+### Desktop app fixes found while testing the above
+
+- **The terminal iframe was always told port 8700.** `window.haltija.port` has never existed —
+  preload exposes `serverUrl` — so `window.haltija?.port || 8700` silently resolved to the shared
+  default for every launch. It happened to be right whenever the app's own server was on 8700, and
+  was an **isolation violation** on a `--private` run: the terminal's WebSocket registered its shell
+  on a *different project's* server while everything else used the private one. Symptoms were the
+  Claude tab reporting "shell not found" and the file browser stuck on haltija's own directory
+  (`/files/tree` falls back to the server's cwd when the shell id resolves to nothing).
+- **The file panel did not follow `cd`.** It only loaded when toggled, so after changing directory
+  the tree and the prompt disagreed about where you were. It now refreshes on `cwd-changed`, when
+  visible. Pre-existing.
+
 ### Security: shell execution and filesystem access are no longer served over HTTP (#40)
 
 A default `bunx haltija` answered `POST /terminal/command` → `spawn('sh', ['-c', …])`,

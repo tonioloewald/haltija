@@ -4,6 +4,7 @@
 
 import { tabs, el, getServerUrl } from './state.js'
 import { escapeHtml, createFloatPanel } from './ui-utils.js'
+import { machineFetch } from './machine-relay.js'
 
 let agentStatusWs = null
 let connectedShells = new Map()
@@ -132,7 +133,7 @@ async function showMemosPanel(target) {
   if (!panel) return
 
   try {
-    const resp = await fetch(`${getServerUrl()}/terminal/command`, {
+    const resp = await machineFetch(`/terminal/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tool: 'tasks', command: 'board' })
@@ -209,7 +210,7 @@ export async function initAgentStatusBar() {
   if (selectorEl) selectorEl.style.display = 'none'
 
   try {
-    const response = await fetch(`${getServerUrl()}/terminal/status`)
+    const response = await machineFetch(`/terminal/status`)
     if (response.ok) {
       const line = await response.text()
       renderAgentStatusBar(line)
@@ -220,7 +221,7 @@ export async function initAgentStatusBar() {
 
   // Seed agent list from existing sessions (may have connected before this WS)
   try {
-    const res = await fetch(`${getServerUrl()}/terminal/agents`)
+    const res = await fetch(`${getServerUrl()}/agents`)
     if (res.ok) {
       const data = await res.json()
       for (const agent of data.agents || []) {

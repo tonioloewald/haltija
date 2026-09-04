@@ -942,6 +942,13 @@
             case 'cwd-changed':
               // Notify parent of cwd change
               window.parent.postMessage({ type: 'terminal-cwd', cwd: msg.cwd, shellId }, '*')
+              // …and refresh the file panel, which is rooted at the shell's cwd. It only ever
+              // loaded on toggle, so after a `cd` the tree and the prompt disagreed about where you
+              // were — and a view that is quietly wrong is worse than one you can see is stale.
+              // (Toggling off and on worked because that was the only path that refetched.)
+              // Skipped when the panel is off screen: refetching a tree nobody is looking at costs
+              // a directory walk on every `cd`.
+              if (fileTreeEl && fileTreeEl.offsetParent !== null) loadFileTree()
               break
             case 'status':
               renderStatusLine(msg.line)

@@ -54,3 +54,54 @@ export function initMachineRelay() {
     }
   })
 }
+
+/**
+ * fetch()-shaped access to machine control, for renderer modules (#40).
+ *
+ * The renderer HAS the preload bridge, so it calls `machineRequest` directly — no postMessage hop;
+ * that relay exists only for the terminal iframe, which has no bridge.
+ *
+ * This exists because converting call sites by enumeration missed six of them: `terminal.html` was
+ * done thoroughly while `tabs.js` and `agent-status.js` were forgotten entirely, so `/terminal/*`
+ * from the renderer silently started returning 410 — which is how "Pick folder…" stopped working
+ * (it sends a `cd` via /terminal/command). Keeping the call shape identical to fetch() means the
+ * conversion is mechanical and a missed site is visible rather than subtle.
+ */
+export async function machineFetch(path, init = {}) {
+  const respond = (status, bodyB64, headers = {}) => {
+    let text = null
+    const decode = () => {
+      if (text === null) {
+        const bytes = Uint8Array.from(atob(bodyB64 || ''), (c) => c.charCodeAt(0))
+        text = new TextDecoder().decode(bytes)
+      }
+      return text
+    }
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      headers,
+      b64: bodyB64 || '',
+      json: async () => JSON.parse(decode() || '{}'),
+      text: async () => decode(),
+    }
+  }
+
+  if (!window.haltija?.machineRequest) {
+    return respond(503, btoa(JSON.stringify({
+      success: false,
+      error: 'Machine control is unavailable: no preload bridge in this window.',
+    })))
+  }
+
+  const frame = { method: init.method || 'GET', headers: init.headers || {} }
+  if (init.body !== undefined) {
+    frame.bodyB64 = btoa(typeof init.body === 'string' ? init.body : JSON.stringify(init.body))
+  }
+  try {
+    const res = await window.haltija.machineRequest(path, frame)
+    return respond(res.status, res.bodyB64 || '', res.headers || {})
+  } catch (err) {
+    return respond(500, btoa(JSON.stringify({ success: false, error: String(err?.message || err) })))
+  }
+}
