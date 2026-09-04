@@ -1293,10 +1293,20 @@ let machineProc = null
 function machineRequest(path, init = {}) {
   return new Promise((resolve) => {
     if (!machineProc || !machineProc.stdin || machineProc.stdin.destroyed) {
+      // The likeliest cause by far: serverMode 'auto' found a healthy server on 8700 and ATTACHED
+      // to it rather than starting its own (which is deliberate — it must not kill another
+      // project's channel). But the pipe requires being the server's PARENT, so an adopted server
+      // has no machine control. Name the remedy; "unavailable" alone sends people hunting.
+      const adopted = reusedExternalServer
       resolve({ status: 503, bodyB64: Buffer.from(JSON.stringify({
         success: false,
-        error: 'The machine-control channel is not open. It exists only for the desktop app\'s own '
-          + 'server (issue #40); terminal and file features are unavailable in this instance.',
+        error: adopted
+          ? 'Terminal, agent and file features need a server this app started itself, and this '
+            + 'instance ATTACHED to a haltija server that was already running (it will not kill '
+            + 'another project\'s channel). Quit that server, or relaunch with '
+            + 'HALTIJA_SERVER_MODE=builtin to force its own. See issue #40.'
+          : 'The machine-control channel is not open. It exists only for the desktop app\'s own '
+            + 'server (issue #40); terminal and file features are unavailable in this instance.',
       })).toString('base64') })
       return
     }

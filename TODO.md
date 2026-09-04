@@ -361,6 +361,18 @@ resolve from a blob URL, so those formats load geometry without materials. Curre
 honestly in the caption. A real fix means intercepting Babylon's file requests and serving siblings
 over the machine channel — very doable, and it would make OBJ previews look right rather than bald.
 
+**#40 follow-on: an ADOPTED server has no machine control.** `serverMode: 'auto'` (the default)
+attaches to a healthy server on 8700 rather than starting its own — deliberately, so it never kills
+another project's channel. But the stdio pipe requires being the server's *parent*, so in that
+configuration the terminal / agent / file tabs are dead (503). Before 1.12.7 they worked over HTTP.
+Currently mitigated only by an error message naming `HALTIJA_SERVER_MODE=builtin`.
+
+The clean fix, and it is not much work: **the terminal tabs do not need to share a server with the
+browser tabs.** They are about the machine, not the browser. So when the app adopts an external
+server, it can still spawn its *own* ephemeral server purely for machine control and point the
+terminal iframe at that, while browser tabs keep using the adopted one. Two concerns, two servers,
+and the app is the parent of the one that needs the pipe.
+
 **Open majors carried forward:**
 
 - [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including

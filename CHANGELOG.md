@@ -78,7 +78,13 @@ Two decisions worth recording:
 bookmarklet and the tunnel path all behave exactly as before. Nothing here was public API: these
 routes appear in no `API.md`, `DOCS.md`, `llms.txt` or `api-schema.ts` entry.
 
-**The desktop tabs keep working**, over a channel a browser cannot address: `terminal.html`
+**Known limitation:** if the app *attaches* to a haltija server that was already running
+(`serverMode: 'auto'`, the default, when something is on 8700), the terminal/agent/file tabs are
+unavailable — the pipe requires being the server's parent. The app says so and names
+`HALTIJA_SERVER_MODE=builtin`. Tracked in `TODO.md` with a clean fix.
+
+**The desktop tabs keep working** (when the app started its own server), over a channel a browser
+cannot address: `terminal.html`
 postMessages the renderer, which reaches Electron main over IPC, which talks to the server child
 over its **stdio**. A pipe has no origin, no port and no URL `fetch()` can name.
 
