@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.12.8
+// haltija-cli:do-not-edit v1.12.9
 import { createRequire } from "node:module";
 var __defProp = Object.defineProperty;
 var __returnValue = (v) => v;
@@ -909,7 +909,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.12.8";
+var HJ_VERSION = "1.12.9";
 
 // bin/semver.mjs
 function parseVersion(v) {

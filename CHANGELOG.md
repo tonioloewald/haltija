@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.12.8 (unreleased)
+## 1.12.9 (unreleased)
+
+_Nothing yet._
+
+## 1.12.8
 
 - **Electron discovery assumed macOS, so Linux re-downloaded Electron every run (#43).** The npx-cache
   search looked for `Electron.app` — a macOS bundle — behind a `platform() !== 'win32'` guard, so
