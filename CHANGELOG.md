@@ -44,6 +44,15 @@ harmless calls gets disabled wholesale. `HALTIJA_TEST_ALLOW_SHARED=1` opts back 
 for mutating calls will now get a loud error instead of silently driving whichever browser answered
 — which is the point.
 
+### Dependencies
+
+- **`tosijs-schema` was pinned to an exact `1.5.1`, four minors behind.** Surfaced by a new Tier 0
+  check (from tosijs-ui#61's finding #2: *declared ranges whose window excludes what a consumer
+  installs today*). An exact pin in a regular dependency also invites a duplicate install alongside
+  a consumer's own copy. Moved to `^1.9.0` after verifying the upgrade rather than assuming it:
+  977 unit + 125 e2e green, and every schema-derived generated artifact (`API.md`, `DOCS.md`,
+  `llms.txt`, `bin/hints.json`, `apps/mcp/src/endpoints.json`) rebuilt **byte-identical**.
+
 ### Fixes
 
 - **Window recreation was dead code (review B2).** The 1.12.7 stdout refactor tested
