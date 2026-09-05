@@ -1,3 +1,4 @@
+import { makeMachineResponse } from './machine-response.js'
 /**
  * Relay for the terminal iframe's machine-control calls (#40).
  *
@@ -105,24 +106,7 @@ export function initMachineRelay() {
  * conversion is mechanical and a missed site is visible rather than subtle.
  */
 export async function machineFetch(path, init = {}) {
-  const respond = (status, bodyB64, headers = {}) => {
-    let text = null
-    const decode = () => {
-      if (text === null) {
-        const bytes = Uint8Array.from(atob(bodyB64 || ''), (c) => c.charCodeAt(0))
-        text = new TextDecoder().decode(bytes)
-      }
-      return text
-    }
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      headers,
-      b64: bodyB64 || '',
-      json: async () => JSON.parse(decode() || '{}'),
-      text: async () => decode(),
-    }
-  }
+  const respond = makeMachineResponse // shared with terminal.html via src/machine-response.ts
 
   if (!window.haltija?.machineRequest) {
     return respond(503, btoa(JSON.stringify({

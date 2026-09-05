@@ -166,6 +166,23 @@ writeFileSync(
     readFileSync('apps/desktop/machine-channel.js', 'utf-8'),
 )
 
+// 0k. The machine-channel Response shim, built TWICE from one source: ESM for the renderer's
+// modules, and a global for terminal.html, which is an inline-script page with no imports. Two
+// hand-written copies had already diverged (only one had dataUrl), which is the structural-twin
+// shape that produced the __NEED_WINDOW__ regression in the sibling protocol module.
+await $`bun build ./src/machine-response.ts --outfile=apps/desktop/renderer/machine-response.js --target=browser --format=esm`
+writeFileSync(
+  'apps/desktop/renderer/machine-response.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/machine-response.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/renderer/machine-response.js', 'utf-8'),
+)
+await $`bun build ./src/machine-response.ts --outfile=apps/desktop/machine-response.global.js --target=browser --format=iife`
+writeFileSync(
+  'apps/desktop/machine-response.global.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/machine-response.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/machine-response.global.js', 'utf-8'),
+)
+
 // 1. Generate schema-derived files BEFORE embedding (they become embedded assets)
 const { ALL_ENDPOINTS, getInputSchema } = await import('../src/api-schema')
 const mcpEndpoints = ALL_ENDPOINTS

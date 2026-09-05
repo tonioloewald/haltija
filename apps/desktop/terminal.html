@@ -801,6 +801,9 @@
       }
     }
   </style>
+  <!-- Shared base64 Response shim (src/machine-response.ts). A plain script tag because this page
+       has no import mechanism; the renderer imports the ESM build of the same source. -->
+  <script src="machine-response.global.js"></script>
 </head>
 <body>
   <div id="status-bar">
@@ -903,32 +906,10 @@
         window.parent.postMessage(frame, '*')
       })
     }
-    /**
-     * Enough of the Response surface for the call sites here, plus `b64`/`dataUrl` for binary.
-     *
-     * The body stays base64 all the way from the server and is decoded HERE, through TextDecoder,
-     * because `atob` alone yields a Latin-1 binary string — which mangles any non-ASCII character
-     * in a source file being opened in the editor.
-     */
-    function makeResponse(status, bodyB64, headers = {}) {
-      let text = null
-      const decode = () => {
-        if (text === null) {
-          const bytes = Uint8Array.from(atob(bodyB64 || ''), (c) => c.charCodeAt(0))
-          text = new TextDecoder().decode(bytes)
-        }
-        return text
-      }
-      return {
-        ok: status >= 200 && status < 300,
-        status,
-        headers,
-        b64: bodyB64 || '',
-        dataUrl: () => `data:${headers['content-type'] || 'application/octet-stream'};base64,${bodyB64 || ''}`,
-        json: async () => JSON.parse(decode() || '{}'),
-        text: async () => decode(),
-      }
-    }
+    // Shared with the renderer via src/machine-response.ts — this was a second, drifted copy
+    // (only this one had dataUrl). Loaded as a global because this page has no import mechanism.
+    const makeResponse = (status, bodyB64, headers = {}) =>
+      window.__hjMachineResponse.makeMachineResponse(status, bodyB64, headers)
     // Presented on the machine-scope socket; see src/ws-origin.ts. This frame is file://, so its
     // Origin is `null` — indistinguishable from a hostile page's sandboxed srcdoc frame without it.
     const WS_NONCE = params.get('nonce') || ''

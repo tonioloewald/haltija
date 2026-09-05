@@ -53,6 +53,19 @@ for mutating calls will now get a loud error instead of silently driving whichev
   977 unit + 125 e2e green, and every schema-derived generated artifact (`API.md`, `DOCS.md`,
   `llms.txt`, `bin/hints.json`, `apps/mcp/src/endpoints.json`) rebuilt **byte-identical**.
 
+### Coverage and structure (the two gaps the reviews left open)
+
+- **Nothing exercised the terminal's WebSocket**, which is why a regression that broke it was
+  invisible to 977 green tests: `/terminal/command` travels over the stdio pipe and never needed
+  the socket, so commands kept working. Two guards now: a live upgrade test against a real private
+  server (raw HTTP upgrade, so it can set `Origin` — which the browser WebSocket API forbids), and
+  a wiring test asserting `main.js` actually *passes* what `buildServerEnv` can grant. The second
+  is the one that matters: the function was already tested; the defect was a caller that silently
+  dropped an argument. Both verified by mutation.
+- **The base64 Response shim existed twice and had already diverged** (only one copy had
+  `dataUrl()`). Now one source, `src/machine-response.ts`, built twice — ESM for the renderer's
+  modules, a global for `terminal.html`, which is an inline-script page with no import mechanism.
+
 ### Fixes
 
 - **Window recreation was dead code (review B2).** The 1.12.7 stdout refactor tested
