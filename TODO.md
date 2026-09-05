@@ -397,7 +397,12 @@ and the app is the parent of the one that needs the pipe.
   when schematic rendering changes, not a CI gate.
 
 
-- [ ] **Replace the 7 `s.any` uses once tosijs-schema#3 lands** (or sooner, with concrete types).
+- [x] **Replace the 7 `s.any` uses once tosijs-schema#3 lands** — **re-checked 2026-09-05: #3 is
+  CLOSED and haltija now runs tosijs-schema ^1.9.0.** Verified against our own output rather than
+  the tracker: the invalid `{"type":[null,"null"]}` fragment appears in none of `API.md`,
+  `apps/mcp/src/endpoints.json` or `llms.txt`. The correctness bug this tracked is gone.
+- [ ] **Give those 7 `s.any` uses concrete types** — now a schema *quality* item, not a validity
+  one: an agent reading the API learns nothing from `any`. Low priority, no longer blocked.
   Our published schemas carry invalid JSON Schema fragments today. Deferred past 1.12.0 because
   changing validation on `test`/`tests` — the JSON test runner's payload — right before a release
   is the kind of late change that bites. See `UPSTREAM.md`.
