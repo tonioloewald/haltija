@@ -373,6 +373,18 @@ server, it can still spawn its *own* ephemeral server purely for machine control
 terminal iframe at that, while browser tabs keep using the adopted one. Two concerns, two servers,
 and the app is the parent of the one that needs the pipe.
 
+**Tier 0 `shipped imports declared` — disposition of the three it flags.** Recorded so they are
+not re-litigated each release:
+
+- `electron-store` — **was a real bug, fixed.** The `require` sat outside its `try`, so the
+  documented fallback was unreachable and the path always threw for npm users (it is declared in no
+  manifest). Kept undeclared deliberately: it is a genuine optional, and the fallback now works.
+- `electron` — **not a defect.** `require('electron')` inside an Electron main process resolves to
+  the runtime's built-in module, never `node_modules`, so nothing needs to declare it.
+- `:u.moduleKeyword,` — **a false positive in the checker.** It is a fragment of minified
+  CodeMirror, not a package name. Worth reporting upstream: the scan should skip minified bundles,
+  or at least reject candidates that are not valid npm names.
+
 **Open majors carried forward:**
 
 - [ ] **#26** — a tab becoming permanently undrivable. Not reproducible on ANY version, including

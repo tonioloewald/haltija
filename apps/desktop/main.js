@@ -307,8 +307,14 @@ async function checkAndPromptMcpSetup() {
     }
   } else if (result.response === 2) {
     // Don't ask again - store preference
-    const store = require('electron-store')
     try {
+      // The require MUST be inside the try. It was outside, so a missing electron-store threw
+      // before the catch could run and the fallback below was unreachable — while its comment
+      // claimed otherwise. electron-store is declared in NO manifest (not the root's, not
+      // apps/desktop's), so for anyone installing from npm it is always missing and this path
+      // always threw. Found by a release-doctor check for shipped imports the manifest never
+      // declares. `hasSkippedMcpSetup()` below already had it right; the two disagreed.
+      const store = require('electron-store')
       const Store = store.default || store
       const appStore = new Store()
       appStore.set('skipMcpSetup', true)
