@@ -18,11 +18,22 @@ Full report: `reviews/1.12.9-tier1-v1.12.6-to-v1.12.8.md`.
   frame in the renderer could reach shell and filesystem. It now requires `event.source` to be a
   known terminal iframe. This is what turned "third-party code in a preview pane" into "third-party
   code with a shell", and it would have handed shell access to any plain `<iframe>` added later.
-- **`/ws/terminal` and `/ws/agent` require a local origin (review B3).** They accepted
-  unauthenticated cross-origin upgrades and volunteer `{shellId, cwd}` on connect, streaming the
-  developer's working directory and absolute file paths to any web page. `/ws/browser` is
-  deliberately unrestricted — the widget connects from whatever origin its page has, which is the
-  product.
+- **`/ws/terminal` upgrades are restricted (review B3).** It accepted unauthenticated
+  cross-origin upgrades and volunteers `{shellId, cwd}` on connect, streaming the developer's
+  working directory and absolute file paths to any web page. It now admits: a **loopback hostname**
+  origin, an opaque/`file:` origin that presents a per-launch nonce the desktop app gives only to
+  its own terminal frame, or a request with **no `Origin` header at all** (a non-browser client — a
+  browser always sends one cross-origin).
+
+  **Stated precisely, because an earlier draft of this bullet was false in three directions and a
+  pre-publish review caught it.** What is *not* claimed: `/ws/agent` and `/ws/browser` are
+  deliberately **not** gated — the REST surface already answers any origin
+  (`Access-Control-Allow-Origin: *`), so any page can already `POST /tree` and `/eval`; gating the
+  socket alone would close nothing and would break non-browser agents, which is why an attempt to
+  do so was reverted during this release. And the `/ws/terminal` rule is not "local machine only":
+  a loopback match is **hostname-only, any port**, so a third-party script on your own
+  `localhost:3000` dev server qualifies, and an absent `Origin` is admitted from anywhere on the
+  LAN because the server binds `0.0.0.0`. **`--token` is what addresses those**, not this gate.
 - **The channel grant no longer leaks to child processes.** `HALTIJA_MACHINE_CHANNEL=1` was spread
   into every command the terminal or an agent spawned, so a nested `bunx haltija` would start
   treating its own stdin as an authenticated control channel.
