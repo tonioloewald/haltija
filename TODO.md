@@ -399,6 +399,12 @@ not re-litigated each release:
   before the word is reused — `no alias may shadow a live action` enforces it. Note `select` already
   has a third meaning (`POST /select` is interactive element picking).
 - [ ] **1.13: adopt tosijs-floorplan** as the schematic renderer, delete ours, become a producer.
+  **Ready on their side as of tosijs-floorplan 0.5.0 (checked 2026-09-13).** Both blockers we
+  filed are fixed: `interactive?: boolean` is now an explicit producer field (and `href` counts as
+  evidence, which covers our links for free), and the link exemption is no longer "any link with
+  text" — a square icon link now flags. New surface worth using when we adopt: `flags` +
+  `honorProducerFlags`, so we can suppress a finding we know is wrong instead of the renderer
+  guessing. We still do not depend on it; no runtime impact today.
 - [ ] **`map` may be the wrong name** — it lost to `form` and `tree` in two framings. n=3 and n=1 on
   the flagship command; gather more samples before renaming anything.
 
