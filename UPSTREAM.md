@@ -165,6 +165,34 @@ pure function over plain data rather than entangled with the widget.
 flow both ways instead of diverging. **1.13, not 1.12**: it is an architectural change, and 1.12.0
 is in RC.
 
+## tosijs-ui / tosijs-3d — consumer input on `testInBrowser` (real-browser unit tests)
+
+**Filed:** [tosijs-ui#175](https://github.com/tonioloewald/tosijs-ui/issues/175) ·
+[tosijs-3d#80](https://github.com/tonioloewald/tosijs-3d/issues/80) · **Status:** open ·
+**Covers:** haltija at `df2aaab`
+
+Asking two likely consumers before designing, not proposing work for them. Proposal is
+[haltija#51](https://github.com/tonioloewald/haltija/issues/51) — jest-shaped tests whose bodies
+run in a real browser and compose with haltija's realistic `click`/`type`/`drag`. Prototyped
+end-to-end; the bridge works, including a failing assertion throwing on the host.
+
+**Why these two, and why the asks differ.** happy-dom reports **zero geometry** — a review in this
+ecosystem found it "hid an entire tier from every test" — so for a *component* library the
+untestable part is layout, computed style, shadow/slot behaviour and `::part` (the deprecated-1.7.7
+`parts` regression is exactly that class). For a *3D* library the gap is larger: happy-dom has **no
+WebGL at all**, so the rendering half is structurally untestable and only scene-graph arithmetic
+remains. tosijs-3d-ensemble also filed haltija#41 after a session of false diagnoses caused by
+verifying rendered output through a throttled background tab, so they have direct scar tissue.
+
+**The question we cannot answer alone** is ergonomic: host-side interactions cannot literally be
+awaited inside the serialized body (it runs in the page; `hj` lives on the host), so either the body
+is page-only with interactions outside it, or the API interleaves them explicitly. Consumers who
+write these tests daily should pick the shape. Also open: whether a small injected `expect` shim is
+adoptable or only full jest-compatible matchers would be.
+
+A "no, our tier split is fine" is an equally useful answer — it stops us building for an imagined
+consumer.
+
 ## Bun — `Bun.serve({unix})` accepts connections but never responds (1.4.0)
 
 **Filed:** https://github.com/oven-sh/bun/issues/41381 · **Status:** open · **Covers:** haltija at `99858e1`
