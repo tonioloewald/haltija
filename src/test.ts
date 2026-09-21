@@ -516,3 +516,18 @@ export function createTestClient(serverUrl: string): HaltijaTestClient {
 
 // Re-export useful types
 export type { DevChannelTest, TestRunResult, SuiteRunResult }
+
+// `testInBrowser` (#51) — probe-based: the body stays on the host, only the probe crosses.
+// Design credit tosijs-3d, whose inversion dissolved three of the four constraints the original
+// body-crossing proposal had to apologise for.
+export {
+  createBrowserPage,
+  serializeProbe,
+  BrowserProbeError,
+  assertBrowserTierRan,
+  markBrowserTestRan,
+  browserTestsRan,
+  resetBrowserTestCount,
+  type BrowserPage,
+  type BrowserBridge,
+} from './test-in-browser'
