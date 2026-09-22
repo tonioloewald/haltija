@@ -112,5 +112,8 @@
     "asarUnpack": [
       "resources/*"
     ]
+  },
+  "optionalDependencies": {
+    "electron-store": "^10.0.0"
   }
 }

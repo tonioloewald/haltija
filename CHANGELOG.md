@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.13.0 (unreleased)
+
+### Added
+
+- **`testInBrowser`** — jest-shaped tests whose assertions run on the host and whose probes run in a
+  real browser (#51). The body stays on the host with its real `expect`; only the probe crosses.
+  Coordinates (`clickAt`, `dragFrom`) are first-class alongside selectors, because SVG-based UI has
+  no selectable element to name. Design credit tosijs-3d; corpus-liveness requirement from
+  tosijs-3d-ensemble; the numbers that made the case from tosijs-ui.
+
 ## 1.12.9 (unreleased)
 
 Remediation of a Tier 1 review that returned **BLOCK** on the already-published 1.12.7/1.12.8.
