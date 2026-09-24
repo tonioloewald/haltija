@@ -39,6 +39,19 @@ export function buildServerEnv(
   // the one agents drive; the internal chrome server stays out of the registry entirely.
   env.HALTIJA_DESKTOP_PUBLIC = opts.role === 'public' ? '1' : '0'
 
+  // Transports. Since #32a the server defaults to `both`, and NEITHER child is told an HTTPS port —
+  // so without this, the public and internal servers would both default to HTTPS 8701 and one would
+  // lose the race and print the loud "HTTPS could not bind" failure on every desktop launch.
+  //
+  // The internal server is HTTP-only on purpose: its sole client is the app's own chrome widget,
+  // loaded from a `file://` page in the same process. It has never had an https:// caller and
+  // cannot acquire one, so an HTTPS listener there would be a port claimed for nobody.
+  //
+  // The public server is left unset, so it inherits the `both` default — the desktop app serves
+  // other projects' pages too, and #32 is precisely about a server deciding that for its neighbours.
+  if (opts.role === 'internal') env.DEV_CHANNEL_MODE = 'http'
+  else delete env.DEV_CHANNEL_MODE
+
   // Machine control over stdio (#40). PUBLIC role only: the terminal / agent / file tabs talk to
   // the public server, and the internal chrome server has no such tabs — so granting it the
   // channel would widen the capability for nothing. Requires stdin to be a pipe; main.js spawns

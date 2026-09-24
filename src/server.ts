@@ -44,6 +44,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
+import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -165,36 +166,64 @@ if (INSTANCE_NAME === 'desktop' && process.env.HALTIJA_DESKTOP !== '1') {
 const SNAPSHOTS_DIR = process.env.DEV_CHANNEL_SNAPSHOTS_DIR || null
 const DOCS_DIR = process.env.DEV_CHANNEL_DOCS_DIR || null
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const certsDir = join(__dirname, '../certs')
 
-// Cert paths
-const certPath = join(certsDir, 'localhost.pem')
-const keyPath = join(certsDir, 'localhost-key.pem')
-
-// Mode: 'http', 'https', or 'both'
-const MODE = process.env.DEV_CHANNEL_MODE || 'http'
+// Mode: 'http', 'https', or 'both' — now defaulting to BOTH (#32a). The channel is shared across
+// projects, so an HTTP-only default was not a choice a project made for itself: it decided, for
+// every neighbour on the machine, whether https:// pages could connect at all. In #32 that cost
+// tosijs-3d its entire channel while every indicator reported healthy.
+const TRANSPORTS = resolveTransportMode(process.env, { isPrivate: IS_PRIVATE })
+const MODE = TRANSPORTS.mode
 const WANT_HTTPS = MODE === 'https' || MODE === 'both'
 const WANT_HTTP = MODE === 'http' || MODE === 'both'
+if (TRANSPORTS.degradesSharedChannel && process.env.HALTIJA_NO_TRANSPORT_WARN !== '1') {
+  console.warn(`${LOG_PREFIX} ⚠️  ${sharedChannelDegradedWarning(MODE)}`)
+}
 
-// Generate self-signed certs if needed for HTTPS
-let certsAvailable = existsSync(certPath) && existsSync(keyPath)
+// The certificate is MACHINE-level (`~/.haltija/certs`), not per-install. Per-install certs were
+// tolerable while almost nobody had any; with HTTPS on by default they would mean the user re-accepts
+// a browser warning every time a different install wins the race to bind 8701, and again after every
+// `npm install` that wipes node_modules. A warning you must click through routinely is one you stop
+// reading. See src/transports.ts.
+const certsDir = resolveCertDir(process.env, homedir())
+const legacyCertsDir = join(__dirname, '../certs')
+const certPlan = planCertSetup({ certDir: certsDir, legacyCertDir: legacyCertsDir, exists: existsSync })
+const certPath = certPlan.paths.cert
+const keyPath = certPlan.paths.key
+
+let certsAvailable = certPlan.action === 'use'
 if (WANT_HTTPS && !certsAvailable) {
-  // Try mkcert first (produces trusted certs), fall back to openssl
   try {
-    mkdirSync(certsDir, { recursive: true })
-    try {
-      execSync(`mkcert -cert-file "${certPath}" -key-file "${keyPath}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
-      console.log(`${LOG_PREFIX} Generated trusted certificates with mkcert`)
-    } catch {
-      // Fall back to openssl self-signed cert
-      execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
-      console.log(`${LOG_PREFIX} Generated self-signed certificates with openssl`)
-      console.log(`${LOG_PREFIX} For trusted certs, install mkcert: brew install mkcert && mkcert -install`)
+    // 0700: the private key is the one thing here worth protecting from other users on a shared
+    // machine. Free to do correctly, and awkward to retrofit once keys are already on disk.
+    mkdirSync(certsDir, { recursive: true, mode: 0o700 })
+    if (certPlan.action === 'adopt') {
+      // Carry forward a cert the user has ALREADY clicked through a browser warning for. Generating
+      // a fresh one would silently revoke that decision and re-prompt, punishing existing users for
+      // an internal reorganisation they cannot see.
+      copyFileSync(certPlan.from.cert, certPath)
+      copyFileSync(certPlan.from.key, keyPath)
+      console.log(`${LOG_PREFIX} Adopted the existing certificate from ${legacyCertsDir} (your browser's trust for it still applies)`)
+    } else {
+      try {
+        execSync(`mkcert -cert-file "${certPath}" -key-file "${keyPath}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
+        console.log(`${LOG_PREFIX} Generated trusted certificates with mkcert`)
+      } catch {
+        // Fall back to openssl self-signed cert
+        execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
+        console.log(`${LOG_PREFIX} Generated self-signed certificates with openssl`)
+        console.log(`${LOG_PREFIX} For trusted certs, install mkcert: brew install mkcert && mkcert -install`)
+      }
     }
+    try { chmodSync(keyPath, 0o600) } catch { /* best effort; a readable key is not worth failing over */ }
     certsAvailable = true
   } catch (err) {
-    console.error(`${LOG_PREFIX} Failed to generate certificates:`, err)
-    console.error(`${LOG_PREFIX} HTTPS will not be available`)
+    // NOT fatal in `both`: HTTP still serves, and `hj` still works. The machine may simply have
+    // neither mkcert nor openssl — which is a missing tool, not a broken haltija. Say what is
+    // missing and what it costs, then carry on; the transport report below states HTTPS is down.
+    const why = err instanceof Error ? err.message.split('\n')[0] : String(err)
+    console.error(`${LOG_PREFIX} Could not obtain a TLS certificate (${why})`)
+    console.error(`${LOG_PREFIX} HTTPS will be unavailable — pages served over https:// cannot connect to this channel.`)
+    console.error(`${LOG_PREFIX} Install mkcert (brew install mkcert && mkcert -install) or openssl, then restart.`)
   }
 }
 

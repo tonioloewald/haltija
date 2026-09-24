@@ -46,9 +46,10 @@ Modes: ${dim('(the browser ENGINE differs — see "Choosing a CI engine" below)'
   --ci            CI mode: ${bold('Electron')} app + wait-ready + sandbox off. No Playwright. Recommended for CI
 
 Options:
-  --http          HTTP only on port 8700 (default protocol)
+  --http          HTTP only on port 8700. NOT the default, and it degrades the SHARED
+                  channel: https:// pages on this machine then cannot connect at all (#32)
   --https         HTTPS only on port 8701 (auto-generates certs)
-  --both          Both HTTP (8700) and HTTPS (8701)
+  --both          Both HTTP (8700) and HTTPS (8701) — this is the DEFAULT
   --headless-url <url>  URL to open in headless browser (default: none)
   --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
   --docs-dir <path>       Directory with custom docs (*.md files)
@@ -95,7 +96,8 @@ Environment Variables:
   HALTIJA_REGISTRY_DIR     Instance registry location (default: ~/.haltija/servers)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
   DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
-  DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'http')
+  DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'both')
+  HALTIJA_CERTS_DIR        TLS certificate location (default: ~/.haltija/certs)
   DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)
   DEV_CHANNEL_DOCS_DIR       Directory with custom docs (default: built-in only)
 
@@ -363,12 +365,17 @@ if (args.includes('--setup-mcp-remove')) {
 // Set up environment from args
 const env = { ...process.env }
 
+// Transport mode. The `else` branch deliberately sets NOTHING: the server defaults to `both`
+// (#32a), and pinning `'http'` here would override that default while also looking to the server
+// like a deliberate opt-out — so every plain `haltija` would print the #32d degradation warning
+// about a choice the user never made.
 if (args.includes('--https')) {
   env.DEV_CHANNEL_MODE = 'https'
 } else if (args.includes('--both')) {
   env.DEV_CHANNEL_MODE = 'both'
-} else {
-  env.DEV_CHANNEL_MODE = env.DEV_CHANNEL_MODE || 'http'
+} else if (args.includes('--http')) {
+  // Explicit opt-out. The server warns that this degrades the shared channel for other projects.
+  env.DEV_CHANNEL_MODE = 'http'
 }
 
 // HALTIJA_PORT is preferred; promote it to DEV_CHANNEL_PORT (the var the

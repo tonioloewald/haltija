@@ -19,9 +19,9 @@ Usage:
   tosijs-dev [options]
 
 Options:
-  --http          HTTP only on port 8700 (default)
+  --http          HTTP only on port 8700 (degrades the shared channel — see #32)
   --https         HTTPS only on port 8701 (auto-generates certs)
-  --both          Both HTTP (8700) and HTTPS (8701)
+  --both          Both HTTP (8700) and HTTPS (8701) — this is the DEFAULT
   --port <n>      Set HTTP port (default: 8700)
   --https-port <n> Set HTTPS port (default: 8701)
   --help, -h      Show this help
@@ -29,10 +29,10 @@ Options:
 Environment Variables:
   DEV_CHANNEL_PORT       HTTP port (default: 8700)
   DEV_CHANNEL_HTTPS_PORT HTTPS port (default: 8701)
-  DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'http')
+  DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'both')
 
 Examples:
-  tosijs-dev                    # HTTP on 8700
+  tosijs-dev                    # HTTP on 8700 + HTTPS on 8701 (both, by default)
   tosijs-dev --https            # HTTPS on 8701 (generates certs with mkcert or openssl)
   tosijs-dev --both             # HTTP on 8700 + HTTPS on 8701
   tosijs-dev --port 3000        # HTTP on 3000
@@ -43,12 +43,14 @@ Once running, curl the /docs endpoint for full API documentation.
 }
 
 // Parse args
+// See bin/tosijs-dev.mjs for why the `else` sets nothing: the server defaults to `both` (#32a),
+// and pinning 'http' here would both override that and read as a deliberate opt-out.
 if (args.includes('--https')) {
   process.env.DEV_CHANNEL_MODE = 'https'
 } else if (args.includes('--both')) {
   process.env.DEV_CHANNEL_MODE = 'both'
-} else {
-  process.env.DEV_CHANNEL_MODE = process.env.DEV_CHANNEL_MODE || 'http'
+} else if (args.includes('--http')) {
+  process.env.DEV_CHANNEL_MODE = 'http'
 }
 
 const portIdx = args.indexOf('--port')

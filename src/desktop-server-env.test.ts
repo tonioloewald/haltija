@@ -83,3 +83,25 @@ describe('machine-control channel (#40)', () => {
     expect(env.HALTIJA_MACHINE_CHANNEL).toBeUndefined()
   })
 })
+
+describe('transport mode per role (#32a)', () => {
+  it('pins the INTERNAL server to http', () => {
+    // Since the server defaults to `both` and neither child is told an HTTPS port, both children
+    // would otherwise default to HTTPS 8701 — one loses the race and prints the loud
+    // "HTTPS could not bind" failure on every desktop launch.
+    expect(buildServerEnv({}, { port: 8710, role: 'internal' }).DEV_CHANNEL_MODE).toBe('http')
+  })
+
+  it('leaves the PUBLIC server on the `both` default', () => {
+    // The desktop app serves other projects' pages too, and #32 is precisely about a server
+    // deciding for its neighbours whether https:// can connect.
+    expect(buildServerEnv({}, { port: 8700, role: 'public' }).DEV_CHANNEL_MODE).toBeUndefined()
+  })
+
+  it('does not let a parent DEV_CHANNEL_MODE leak into the public child', () => {
+    // Inheriting the launcher's mode would silently reimpose #32's half-open channel on every
+    // project the desktop app serves.
+    const env = buildServerEnv({ DEV_CHANNEL_MODE: 'http' }, { port: 8700, role: 'public' })
+    expect(env.DEV_CHANNEL_MODE).toBeUndefined()
+  })
+})

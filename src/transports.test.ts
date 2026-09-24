@@ -1,0 +1,144 @@
+import { describe, it, expect } from 'bun:test'
+import {
+  resolveTransportMode,
+  sharedChannelDegradedWarning,
+  resolveCertDir,
+  certPaths,
+  planCertSetup,
+  CERT_DIR_ENV,
+  isDesktopInternal,
+} from './transports'
+
+describe('resolveTransportMode (#32a)', () => {
+  it('defaults to both — the fix for the whole issue', () => {
+    // #32: an HTTP-only default meant the first project to start the shared server decided, for
+    // every OTHER project on the machine, whether https:// pages could connect at all.
+    const r = resolveTransportMode({})
+    expect(r.mode).toBe('both')
+    expect(r.source).toBe('default')
+  })
+
+  it('honours an explicit mode', () => {
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'http' }).mode).toBe('http')
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'https' }).mode).toBe('https')
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'both' }).mode).toBe('both')
+  })
+
+  it('falls back to both on garbage, NOT to http', () => {
+    // A typo must not silently produce the half-open channel this change exists to eliminate.
+    // `'htttp'` landing on http-only would reintroduce #32 through the back door.
+    const r = resolveTransportMode({ DEV_CHANNEL_MODE: 'htttp' })
+    expect(r.mode).toBe('both')
+    expect(r.source).toBe('default')
+  })
+})
+
+describe('degradesSharedChannel (#32d)', () => {
+  it('flags an EXPLICIT single-transport choice on a shared server', () => {
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'http' }).degradesSharedChannel).toBe(true)
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'https' }).degradesSharedChannel).toBe(true)
+  })
+
+  it('does not flag the default, or an explicit both', () => {
+    // A default nobody chose is not a decision to warn about; warning on it would make the
+    // warning routine, and a routine warning is an ignored one.
+    expect(resolveTransportMode({}).degradesSharedChannel).toBe(false)
+    expect(resolveTransportMode({ DEV_CHANNEL_MODE: 'both' }).degradesSharedChannel).toBe(false)
+  })
+
+  it('does not flag a PRIVATE instance, which denies no neighbour anything', () => {
+    // The cross-project consequence is a shared-channel property. A --private run is isolated by
+    // construction, so the same mode there is not a degradation of anything.
+    const r = resolveTransportMode({ DEV_CHANNEL_MODE: 'http' }, { isPrivate: true })
+    expect(r.degradesSharedChannel).toBe(false)
+  })
+
+  it('the warning names the consequence for OTHER projects, not this one', () => {
+    const msg = sharedChannelDegradedWarning('http')
+    expect(msg).toContain('every project on this machine')
+    expect(msg).toContain('HTTPS')
+    expect(msg).toContain("tabs aren't registering") // #32's reported symptom
+  })
+})
+
+describe('resolveCertDir', () => {
+  it('is machine-level, not per-install', () => {
+    expect(resolveCertDir({}, '/Users/x')).toBe('/Users/x/.haltija/certs')
+  })
+
+  it('is overridable so tests leave no machine-scope footprint', () => {
+    expect(resolveCertDir({ [CERT_DIR_ENV]: '/tmp/t' }, '/Users/x')).toBe('/tmp/t')
+  })
+})
+
+describe('planCertSetup', () => {
+  const certDir = '/home/u/.haltija/certs'
+  const legacyCertDir = '/proj/node_modules/haltija/certs'
+  const p = certPaths(certDir)
+  const legacy = certPaths(legacyCertDir)
+
+  it('uses the machine-level cert when it is already there', () => {
+    const plan = planCertSetup({ certDir, legacyCertDir, exists: (f) => f.startsWith(certDir) })
+    expect(plan.action).toBe('use')
+  })
+
+  it('ADOPTS an existing per-install cert rather than regenerating', () => {
+    // The user already clicked through a browser warning for that certificate. Generating a fresh
+    // one would silently revoke that decision and re-prompt — punishing existing users for an
+    // internal reorganisation they cannot see.
+    const plan = planCertSetup({ certDir, legacyCertDir, exists: (f) => f.startsWith(legacyCertDir) })
+    expect(plan.action).toBe('adopt')
+    if (plan.action === 'adopt') {
+      expect(plan.from.cert).toBe(legacy.cert)
+      expect(plan.paths.cert).toBe(p.cert)
+    }
+  })
+
+  it('generates when neither location has one', () => {
+    expect(planCertSetup({ certDir, legacyCertDir, exists: () => false }).action).toBe('generate')
+  })
+
+  it('does not adopt a HALF-present legacy pair', () => {
+    // A cert with no key is unusable, and `readFileSync` on the missing half would throw at
+    // startup — after we had already announced we were adopting it.
+    const plan = planCertSetup({
+      certDir,
+      legacyCertDir,
+      exists: (f) => f === legacy.cert, // cert present, key missing
+    })
+    expect(plan.action).toBe('generate')
+  })
+
+  it('does not use a HALF-present machine-level pair either', () => {
+    const plan = planCertSetup({ certDir, legacyCertDir, exists: (f) => f === p.cert })
+    expect(plan.action).toBe('generate')
+  })
+})
+
+describe('isDesktopInternal', () => {
+  it('recognises the internal chrome server from the role signal that already exists', () => {
+    expect(isDesktopInternal({ HALTIJA_DESKTOP: '1', HALTIJA_DESKTOP_PUBLIC: '0' })).toBe(true)
+  })
+
+  it('does not mistake the public desktop server for it', () => {
+    expect(isDesktopInternal({ HALTIJA_DESKTOP: '1', HALTIJA_DESKTOP_PUBLIC: '1' })).toBe(false)
+  })
+
+  it('does not mistake a plain server for it', () => {
+    expect(isDesktopInternal({})).toBe(false)
+    expect(isDesktopInternal({ HALTIJA_DESKTOP_PUBLIC: '0' })).toBe(false)
+  })
+
+  it('the internal server is not warned about being HTTP-only — we configured it that way', () => {
+    // It is HTTP-only by our own deliberate choice in buildServerEnv, and it has no neighbours.
+    // Warning here would fire on every single desktop-app launch, which is how a warning stops
+    // being read before it ever meets a real degradation.
+    const r = resolveTransportMode({
+      DEV_CHANNEL_MODE: 'http',
+      HALTIJA_DESKTOP: '1',
+      HALTIJA_DESKTOP_PUBLIC: '0',
+    })
+    expect(r.mode).toBe('http')
+    expect(r.degradesSharedChannel).toBe(false)
+  })
+})

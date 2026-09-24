@@ -4,6 +4,39 @@
 
 ### Changed (breaking)
 
+- **A server now opens BOTH transports by default** (#32a). `DEV_CHANNEL_MODE` defaults to `both`
+  instead of `http`, so HTTP 8700 *and* HTTPS 8701 come up whichever project starts the channel.
+
+  #32 reported this as a missing-certificate problem — `foresight/node_modules/haltija/certs`
+  didn't exist, so that instance came up HTTP-only. The causation runs the other way: certs are
+  only generated when HTTPS is *wanted*, and the mode defaulted to `http`. The certs were absent
+  **because** the transport was, so shipping certs in the package would have fixed nothing.
+
+  The default is a cross-project decision, which is what makes it worth changing rather than
+  documenting. The channel is shared, so an HTTP-only default is not a choice a project makes for
+  itself — it decides, for every neighbour on the machine, whether `https://` pages can connect at
+  all. In #32 that cost tosijs-3d its entire channel while every indicator said healthy: `hj where`
+  reported "haltija 1.12.2, 1 tab", the dev server logged "dev-channel ready", and every command
+  routed into an unrelated project's page. An unrecognised `DEV_CHANNEL_MODE` now falls back to
+  `both` rather than `http`, so a typo cannot produce the half-open channel either.
+
+  **`--http` now actually does something.** It was listed in `--help` but never parsed — it
+  "worked" only because the `else` branch made HTTP the default. It is a real flag now, and
+  choosing it (or `--https`) explicitly on a shared server prints what it costs your neighbours
+  (#32d). The default is never warned about; a warning that fires routinely is one nobody reads.
+
+- **The TLS certificate moved to `~/.haltija/certs`** — machine-level, not per-install. This is a
+  consequence of the above: per-install certs were nearly invisible while almost nobody had any,
+  but with HTTPS on by default they mean the browser's "I trust this" memory is invalidated every
+  time a different install wins the race to bind 8701, and again after every `npm install` that
+  wipes `node_modules`. The user would be asked to trust localhost repeatedly with no way to make
+  it stop. An existing per-install certificate is **adopted** (copied forward) rather than
+  regenerated, so trust you have already granted survives the move. The private key is written
+  `0600` into a `0700` directory. Override with `HALTIJA_CERTS_DIR`.
+
+  If neither `mkcert` nor `openssl` is present, HTTPS is skipped with an explanation and HTTP still
+  serves — a missing tool is not a broken haltija.
+
 - **The desktop app's internal chrome-widget port moved from 8701 to 8710** (#32a). `8701` was
   *also* the default for the public HTTPS listener — one number with two independent literals, in
   `src/server.ts` and `apps/desktop/main.js`, neither file aware of the other. They cannot both bind.

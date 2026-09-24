@@ -257,6 +257,33 @@ A **closed** shadow root is invisible to any script, so its host reports as chil
 
 The Electron desktop app spawns *two* haltija servers: a public one on `HALTIJA_PORT` (default 8700) for content tabs, and an internal one on `HALTIJA_INTERNAL_PORT` (**default 8710**) that hosts the outer "chrome" widget — the haltija UI inspecting itself. The chrome widget never connects to the public server, so it never appears in agent listings on 8700; no exclusion logic needed.
 
+### Transports: both by default (#32a)
+
+`DEV_CHANNEL_MODE` defaults to **`both`**, so HTTP 8700 and HTTPS 8701 come up whichever project
+starts the channel. Policy lives in `src/transports.ts`.
+
+**The channel is shared, so the transport default is a decision made on other projects' behalf.**
+#32 reported it as a missing-cert problem; the causation is the reverse — certs are only generated
+when HTTPS is *wanted*, and the mode defaulted to `http`, so the certs were absent **because** the
+transport was. Shipping certs in the package would have fixed nothing. An unrecognised mode falls
+back to `both`, never `http`: a typo must not be able to produce the half-open channel.
+
+Two consequences worth knowing before you touch this:
+
+- **The certificate is machine-level (`~/.haltija/certs`), not per-install.** Per-install certs were
+  tolerable when nobody had any; with HTTPS on by default they would re-prompt the user every time a
+  different install won the race to bind 8701, and after every `npm install`. An existing
+  per-install cert is **adopted** (copied forward) so trust already granted survives. Key `0600`,
+  dir `0700`. `HALTIJA_CERTS_DIR` overrides — **tests must set it**, along with
+  `DEV_CHANNEL_MODE=http`, or every spawned test server reaches for the real 8701 and contends with
+  the machine's live dev channel. `isolateTestMachineState()` does both; `uniqueTestPort()` alone is
+  not enough because it only ever moved the HTTP side.
+- **`buildServerEnv` pins the desktop INTERNAL server to `http`.** Neither desktop child is told an
+  HTTPS port, so both would default to 8701 and one would lose the race and print the loud
+  "HTTPS could not bind" failure on every launch. The internal server's only client is the app's own
+  `file://` chrome widget, which can never be an https caller. The public child is left unset so it
+  inherits `both` — the desktop app serves other projects' pages too.
+
 **Every well-known port and its role lives in `src/ports.ts`** — 8700 public HTTP, 8701 public HTTPS, 8710 internal HTTP, 8711 reserved. Nothing else may declare a port default. The internal server defaulted to **8701** through 1.12.x, which is *also* `src/server.ts`'s default for the public HTTPS listener: one number, two independent literals in two files that knew nothing about each other, and they cannot both bind (#32a). It was not theoretical — in `serverMode: 'builtin'` the app's `killZombieServer()` POSTs `/shutdown` to its internal port, so it shut down a bystander's `haltija --both` server and took that server's **HTTP** transport with it, since both transports share one process. The internal port moved (not HTTPS) because HTTPS 8701 is hardcoded in the injected loader, in adopters' dev servers, and in the user's per-origin self-signed-cert trust, whereas the internal port's only client is the app's own renderer. `src/ports.test.ts` asserts the public and internal blocks stay disjoint — and asserts the *roles*, not the literals, because two literals agreeing is exactly what the bug was.
 
 **The app REUSES an existing server by default (`serverMode: 'auto'`, `apps/desktop/main.js`).** On a machine running more than one project, 8700/8701 are shared — another project may have a live channel there (`haltija --server --both`). The old default `'builtin'` treated that channel as a "zombie" and killed both ports via `killZombieServer()` to start fresh, so *any* desktop-app launch (`bunx haltija`, an `hj` auto-launch, `--ci`, the integration test) silently took down another project's channel and made its widget vanish. `'auto'` detects a healthy server on 8700 (`checkServerRunning` → `/status` 200) and attaches to it instead, announcing that it did. This is the same "don't harm a healthy peer" discipline as retirement — the desktop app is not exempt from it. Force a fresh own-server with `HALTIJA_SERVER_MODE=builtin`.
@@ -485,6 +512,8 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
+| `HALTIJA_NO_TRANSPORT_WARN` | Set to `1` to silence the #32d warning that an explicit single-transport mode degrades the shared channel for other projects | — |
+| `HALTIJA_CERTS_DIR` | Where the machine-level TLS certificate lives (tests must point this at a temp dir) | `~/.haltija/certs` |
 | `HALTIJA_NO_TAB_WARN` | Set to `1` to silence the hidden-tab / focus-ambiguity result warnings | — |
 | `HALTIJA_MACHINE_CHANNEL` | *Set by the desktop app.* `1` opens the stdio machine-control channel on this server (#40). Absent = no `/terminal/*` or `/files/*` on any transport | — |
 | `HALTIJA_IDLE_TIMEOUT_HOURS` | Exit after this many hours with no client activity. `0` disables. Defaults to 8h for `--private`, off for shared servers (#39) | — |
@@ -504,7 +533,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_TEST_QUIET` | Silence `haltija/test`'s shared-default-port warning | — |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
 | `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port (public; immovable — hardcoded in the injected loader and in adopters' cert trust) | `8701` |
-| `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
+| `DEV_CHANNEL_MODE` | `http`, `https`, or `both`. **Defaults to `both` since 1.13.0** (#32a) — the channel is shared, so one project serving a single transport decides for every other project on the machine whether its pages can connect. An unrecognised value falls back to `both`, never `http`. | `both` |
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
 
