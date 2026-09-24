@@ -56,8 +56,8 @@ driving someone else's page (and fails outright under `--strict`). `HALTIJA_ORIG
 one-off shells and CI.
 
 **A shared channel can be half-open.** `hj where` prints a `transports:` line — which of HTTP/HTTPS
-is listening, and why not. An HTTP-only instance leaves every **https** page with nothing to import
-(mixed content blocks the fallback), including other projects'. It looks healthy throughout.
+is listening, and why not. An HTTP-only instance leaves every **https** page with nothing to import,
+including other projects'. It looks healthy throughout.
 
 **Both diagnostics report what routing will actually do.** `hj where` and `hj doctor` each print an
 `origins:` line — what you declared, where the declaration was found, and which connected window it

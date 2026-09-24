@@ -218,8 +218,10 @@ async function runWhere(port, portSource, jsonOutput) {
     // the alarming answer rather than the true one.
     if (t.https && !t.https.listening && !serverInfo.isPrivate) {
       console.log(
-        dim('  an HTTPS page cannot import an HTTP channel (mixed content), so any page served over ' +
-          'https has no haltija here — including pages belonging to other projects sharing this channel.'),
+        dim('  the injected loader picks the transport matching the page, so any page served over ' +
+          'https has no haltija here — including pages belonging to other projects sharing this channel. ' +
+          '(It is the loader that does not fall back, not the browser that forbids it: http://localhost ' +
+          'is a potentially trustworthy origin, so it is NOT mixed content — verified in Chromium.)'),
       )
     }
   }

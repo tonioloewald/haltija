@@ -41,6 +41,37 @@
  * `mkcert` sidesteps the prompt entirely (it signs with a locally-trusted CA), but it is not
  * installed on most machines and we fall back to `openssl`. The design has to be right for the
  * fallback, which is the common case.
+ *
+ * ## Correction: an https page is NOT blocked from reaching `http://localhost`
+ *
+ * This repo asserted the opposite in six places — `hj where`'s hint, `SKILL.md`, the generated
+ * snippet docs, two source comments, and #32 itself ("with no fallback, because an HTTPS page
+ * importing HTTP is mixed-content blocked"). **It is false**, and it was load-bearing: it is why
+ * nobody considered a fallback, and why #32's remedy (c) was framed as printing a better error
+ * rather than not having the error.
+ *
+ * `http://localhost` is a *potentially trustworthy origin* (W3C Secure Contexts), so requests to it
+ * are not mixed content. Measured 2026-09-24 in stock Chromium (Playwright, no security flags), from
+ * a genuine `https://localhost:<p>/test` page with `isSecureContext === true`:
+ *
+ *   to http://localhost   fetch OK 200   import() OK   ws:// OK      ← zero mixed-content messages
+ *   to http://<LAN IP>    fetch warned   import warned ws:// BLOCKED ← "insecure WebSocket ... may
+ *                                                                      not be initiated from a page
+ *                                                                      loaded over HTTPS"
+ *
+ * The LAN-IP row is the control, and it is the reason this note is trustworthy: an earlier attempt
+ * to settle the same question inside the Electron app showed "localhost works", but the control
+ * *also* passed there, which means that environment was permissive and proved nothing. A result
+ * without a control that fails is not a result. (The `fetch`/`import` rows for the LAN IP are warned
+ * rather than blocked because the test context bypasses the self-signed cert error; the WebSocket
+ * check is unconditional, which is what makes the contrast decisive.)
+ *
+ * **Verified in Chromium only.** Firefox and Safari are not tested and must not be assumed.
+ *
+ * What this changes: an HTTP-only channel leaves https pages unserved because **the loader picks the
+ * transport matching the page and does not fall back** — a limitation of our code, not a rule of the
+ * platform. Matching the transport is still the right default (it needs no fallback and works on
+ * every engine), but "impossible" was never true.
  */
 
 import { join } from 'path'

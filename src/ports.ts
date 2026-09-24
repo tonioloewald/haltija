@@ -58,9 +58,13 @@
 export const DEFAULT_HTTP_PORT = 8700
 
 /**
- * Public HTTPS: the same channel for `https://` pages, which cannot import from HTTP
- * (mixed-content). Hardcoded in the injected loader and in adopters' dev servers — treat as
- * effectively immovable.
+ * Public HTTPS: the same channel for `https://` pages. Hardcoded in the injected loader and in
+ * adopters' dev servers — treat as effectively immovable.
+ *
+ * (An earlier version of this comment said https pages "cannot import from HTTP (mixed-content)".
+ * That is false for `http://localhost`, which is a potentially trustworthy origin — see the
+ * verified note in `src/transports.ts`. The port is immovable because of who hardcodes it, not
+ * because the browser forbids the alternative.)
  */
 export const DEFAULT_HTTPS_PORT = 8701
 

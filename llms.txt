@@ -77,9 +77,9 @@ inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible
 
 Or via a script tag (auto-injecting IIFE bundle served by the running server).
 
-**Use this form.** An `https://` page cannot load an `http://` script — the browser
-blocks it as mixed content and says nothing useful — so the snippet picks the matching
-transport. Serving an https page needs `bunx haltija --server --both` and accepting the
+**Use this form.** It picks the transport matching the page, so one snippet works on
+both http and https dev servers without a fallback.
+Serving an https page needs `bunx haltija --server --both` and accepting the
 self-signed cert once at https://localhost:8701.
 
 ```html

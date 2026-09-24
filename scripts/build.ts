@@ -820,15 +820,21 @@ function generateLlmsTxt(): string {
   lines.push('')
   lines.push('Or via a script tag (auto-injecting IIFE bundle served by the running server).')
   lines.push('')
-  // SCHEME-AWARE, because the http-only snippet fails SILENTLY on an https dev server (issue #33):
-  // the browser blocks it as mixed content, with no console error naming the cause, so you get no
-  // widget, `hj where` reports 0 tabs, and you assume your own setup is wrong. It is not an edge
+  // SCHEME-AWARE, because the http-only snippet failed SILENTLY on an https dev server (issue #33):
+  // no widget, `hj where` reports 0 tabs, and you assume your own setup is wrong. It is not an edge
   // case — the tosijs-ui doc-system dev server is https by default, so the default project setup
   // hits it on the first attempt. A static `src` cannot branch on the page's scheme, so the
   // canonical form is a three-line loader.
-  lines.push('**Use this form.** An `https://` page cannot load an `http://` script — the browser')
-  lines.push('blocks it as mixed content and says nothing useful — so the snippet picks the matching')
-  lines.push('transport. Serving an https page needs `bunx haltija --server --both` and accepting the')
+  //
+  // NOTE: #33 attributed that failure to mixed-content blocking. That attribution is WRONG and the
+  // wording below was corrected in 1.13.0: `http://localhost` is a potentially trustworthy origin,
+  // so an https page may fetch, `import()` and open a `ws://` to it — verified in Chromium, with a
+  // LAN-IP control that DOES get blocked. Whatever broke in #33, it was not the browser refusing.
+  // Matching the page's transport is still right (it works on every engine and needs no fallback),
+  // so the snippet is unchanged; only the false explanation is gone.
+  lines.push('**Use this form.** It picks the transport matching the page, so one snippet works on')
+  lines.push('both http and https dev servers without a fallback.')
+  lines.push('Serving an https page needs `bunx haltija --server --both` and accepting the')
   lines.push('self-signed cert once at https://localhost:8701.')
   lines.push('')
   lines.push('```html')

@@ -2820,7 +2820,7 @@ async function runWhere(port, portSource, jsonOutput) {
     }
     console.log(`${bold2("transports:")} ${parts.join("   ")}`);
     if (t.https && !t.https.listening && !serverInfo.isPrivate) {
-      console.log(dim3("  an HTTPS page cannot import an HTTP channel (mixed content), so any page served over " + "https has no haltija here — including pages belonging to other projects sharing this channel."));
+      console.log(dim3("  the injected loader picks the transport matching the page, so any page served over " + "https has no haltija here — including pages belonging to other projects sharing this channel. " + "(It is the loader that does not fall back, not the browser that forbids it: http://localhost " + "is a potentially trustworthy origin, so it is NOT mixed content — verified in Chromium.)"));
     }
   }
   const desc = [
