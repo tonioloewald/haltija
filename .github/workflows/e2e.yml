@@ -32,3 +32,30 @@ jobs:
 
       - name: Run E2E
         run: bun run test:e2e
+
+  # The ONE suite whose answer differs by browser engine: whether an https page may reach
+  # http://localhost (Chromium/Firefox yes, WebKit no — src/transports.ts). A Chromium-only
+  # measurement once got this repo to declare the WebKit behaviour "false" in six places, so this
+  # suite runs in all three engines. Separate job so the main e2e lane doesn't wait on two extra
+  # browser downloads.
+  engines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build (embeds the current widget the server serves)
+        run: bun run build
+
+      - name: Install Playwright Chromium, Firefox and WebKit
+        run: bunx playwright install --with-deps chromium firefox webkit
+
+      - name: Run the transport-fallback suite in all three engines
+        run: bun run test:engines

@@ -762,7 +762,10 @@ Four GitHub Actions workflows run on push/PR to main:
   `tests/homepage.json`. `tests/xinjs-spa.json` is non-blocking (external site). On failure it
   captures a snapshot + screenshot as artifacts.
 - **`e2e.yml`** — runs the Playwright suites (`src/*.playwright.ts`); each spawns its own haltija
-  server and injects the widget into a real Chromium page.
+  server and injects the widget into a real Chromium page. A second job, `engines`, runs
+  `loader-snippet.playwright.ts` in Chromium, Firefox **and WebKit** (`bun run test:engines`),
+  because whether an https page may reach `http://localhost` differs by engine (WebKit blocks it).
+  A browser-behaviour claim measured in one engine is a claim about that engine only.
 - **`docs-drift.yml`** — fails if the generated artifacts are stale relative to the schema. Any
   change to `src/api-schema.ts` **must** be followed by `bun run build` and a commit of the
   regenerated `API.md`, `DOCS.md`, `llms.txt`, `bin/hints.json`, and `apps/mcp/src/endpoints.json`,

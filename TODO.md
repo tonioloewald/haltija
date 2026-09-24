@@ -311,8 +311,8 @@ than claiming.
   engine-specific wording is now in `src/transports.ts` (the table), `hj where`, SKILL.md, the
   generated docs, `ports.ts`, `server.ts`. Whether the #33 reporter was on Safari isn't recorded,
   but it's the only cause the evidence supports. Consequence: `both` by default (#32a) is the ONLY
-  fix for Safari — no loader can route around it. CI still runs Chromium only; `test:engines` is
-  manual until someone decides the extra browser downloads are worth a lane.
+  fix for Safari — no loader can route around it. `e2e.yml`'s `engines` job runs it in all three
+  engines on every push.
 - [ ] **`apps/mcp` packaging.** Not in `files`, so npm users have no `apps/mcp/` for `--setup-mcp`
   to find. Two defensible answers: ship `apps/mcp/build/`, or detect the absence and say so rather
   than writing a config that points at nothing.
