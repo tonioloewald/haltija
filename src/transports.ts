@@ -42,37 +42,41 @@
  * installed on most machines and we fall back to `openssl`. The design has to be right for the
  * fallback, which is the common case.
  *
- * ## Correction: an https page is NOT blocked from reaching `http://localhost`
+ * ## Can an https page reach `http://localhost`? It depends on the ENGINE
  *
- * This repo asserted the opposite in six places — `hj where`'s hint, `SKILL.md`, the generated
- * snippet docs, two source comments, and #32 itself ("with no fallback, because an HTTPS page
- * importing HTTP is mixed-content blocked"). **It is false**, and it was load-bearing: it is why
- * nobody considered a fallback, and why #32's remedy (c) was framed as printing a better error
- * rather than not having the error.
+ * This note has been wrong in both directions, so read it whole.
  *
- * `http://localhost` is a *potentially trustworthy origin* (W3C Secure Contexts), so requests to it
- * are not mixed content. Measured 2026-09-24 in stock Chromium (Playwright, no security flags), from
- * a genuine `https://localhost:<p>/test` page with `isSecureContext === true`:
+ * For a long time this repo said "no, mixed content", in six places. Commit `8470c82` then called
+ * that **false** on the strength of a Chromium measurement and removed it everywhere. That
+ * over-corrected: it generalised from one engine, while this very note said "Chromium only —
+ * Firefox and Safari must not be assumed". Measured across all three on 2026-09-24 (Playwright,
+ * real https server, `isSecureContext === true`; `loader-snippet.playwright.ts` reproduces it):
  *
- *   to http://localhost   fetch OK 200   import() OK   ws:// OK      ← zero mixed-content messages
- *   to http://<LAN IP>    fetch warned   import warned ws:// BLOCKED ← "insecure WebSocket ... may
- *                                                                      not be initiated from a page
- *                                                                      loaded over HTTPS"
+ *                                 fetch       ws://      <script src>
+ *   Chromium → http://localhost   OK          OK         OK
+ *   Firefox  → http://localhost   OK          OK         OK
+ *   WebKit   → http://localhost   BLOCKED     BLOCKED    BLOCKED   "[blocked] The page at
+ *   WebKit   → http://127.0.0.1   BLOCKED     BLOCKED    BLOCKED    https://localhost:… requested
+ *                                                                   insecure content from http://…"
+ *   any      → http://<LAN IP>    ws:// refused — the control
  *
- * The LAN-IP row is the control, and it is the reason this note is trustworthy: an earlier attempt
- * to settle the same question inside the Electron app showed "localhost works", but the control
- * *also* passed there, which means that environment was permissive and proved nothing. A result
- * without a control that fails is not a result. (The `fetch`/`import` rows for the LAN IP are warned
- * rather than blocked because the test context bypasses the self-signed cert error; the WebSocket
- * check is unconditional, which is what makes the contrast decisive.)
+ * Chromium and Firefox treat loopback as a *potentially trustworthy origin* (W3C Secure Contexts)
+ * and exempt it from mixed-content blocking. WebKit (Playwright's build, WebKit 26.0 — real Safari
+ * not driven, but it is the engine) does not. So **#33's "mixed content" diagnosis was correct for
+ * Safari** and "false" was never true, only "false in Chromium".
  *
- * **Verified in Chromium only.** Firefox and Safari are not tested and must not be assumed.
+ * The LAN-IP row is the control. An earlier attempt inside the Electron app showed "localhost
+ * works" while the control ALSO passed, i.e. a permissive environment that proved nothing. A result
+ * without a control that fails is not a result — and, the lesson of the second mistake, a result
+ * from one engine is not a result about "the browser".
  *
- * What this changed: an HTTP-only channel left https pages unserved because **the loader picked the
- * transport matching the page and did not fall back** — a limitation of our code, not a rule of the
- * platform. The loader (`src/loader-snippet.ts`) now tries the matching transport first and then
- * the other, https → http on loopback only (#32c); `loader-snippet.playwright.ts` holds both the
- * fallback and the LAN-IP control.
+ * What follows for the design:
+ * - **HTTPS on the channel is REQUIRED for https pages in Safari.** That is the strongest argument
+ *   for #32a's `both` default: no loader cleverness can substitute for it on WebKit.
+ * - The loader (`src/loader-snippet.ts`, #32c) tries the matching transport, then the other —
+ *   https → http on loopback only. That rescues Chromium and Firefox pages when a channel is
+ *   HTTP-only; on WebKit the fallback attempt is blocked and it ends at the "no channel reachable"
+ *   warning, which names the HTTPS address to fix it.
  *
  * One trap for whoever re-measures this: a page served by Playwright's `page.route` has no IP
  * address space, so Chromium's Local Network Access check refuses its loopback subresources

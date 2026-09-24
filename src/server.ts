@@ -1489,9 +1489,9 @@ async function handleRest(req: Request, viaMachineChannel = false): Promise<Resp
       //
       // The channel is shared across local projects, so the cost of one project's transport choice
       // is paid by a DIFFERENT project: an instance that came up HTTP-only because its install had
-      // no certs leaves an HTTPS page with nothing to import (the loader picks the matching
-      // transport and does not fall back — see the note in src/transports.ts: the browser does NOT
-      // forbid http://localhost from an https page, which was long assumed here and is untrue),
+      // no certs leaves an HTTPS page with nothing to import (in Safari, WebKit blocks
+      // http://localhost from https as mixed content; Chromium/Firefox allow it, and only the
+      // fallback loader snippet uses that — engine table in src/transports.ts),
       // and everything still LOOKS healthy — `hj where` said "haltija 1.12.2, 1 tab", the dev
       // server logged "ready", and commands routed to the other project's page. Diagnosing it took
       // reading server.js and lsof, because a half-open channel and a fully-open one were

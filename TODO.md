@@ -301,13 +301,18 @@ than claiming.
   and a verified mutation (the old no-fallback order fails the suite). Trap found on the way:
   `page.route`-served pages have no IP address space, so Chromium's Local Network Access refuses
   their loopback subresources — it looks exactly like the false claim coming true. Real servers only.
-  Chromium only; Firefox/Safari still unverified. `/dev.js` and the bookmarklet were NOT changed —
+  Verified in all three engines (`bun run test:engines`) — see #33 below for why that mattered. `/dev.js` and the bookmarklet were NOT changed —
   they pick a transport server-side and are a separate question.
-- [ ] **Re-examine #33's diagnosis.** `scripts/build.ts` attributes the silent failure of the
-  http-only snippet on an https dev server to mixed-content blocking. Per the above that attribution
-  is wrong, so *something else* broke it (server not on 8700? https-only?). The scheme-aware snippet
-  is still correct and stays; only the explanation was removed. Worth knowing the real cause before
-  it bites again under a different symptom.
+- [x] **Re-examine #33's diagnosis** — done; **#33 was RIGHT, for Safari.** Running the #32c suite
+  in all three engines: Chromium and Firefox let an https page reach `http://localhost`; WebKit 26
+  blocks fetch, `ws://` and `<script src>` alike ("[blocked] … requested insecure content"), for
+  `127.0.0.1` too. So `8470c82` ("remove a false mixed-content claim") over-corrected from a
+  Chromium-only measurement, despite its own "Firefox/Safari untested" caveat. The corrected,
+  engine-specific wording is now in `src/transports.ts` (the table), `hj where`, SKILL.md, the
+  generated docs, `ports.ts`, `server.ts`. Whether the #33 reporter was on Safari isn't recorded,
+  but it's the only cause the evidence supports. Consequence: `both` by default (#32a) is the ONLY
+  fix for Safari — no loader can route around it. CI still runs Chromium only; `test:engines` is
+  manual until someone decides the extra browser downloads are worth a lane.
 - [ ] **`apps/mcp` packaging.** Not in `files`, so npm users have no `apps/mcp/` for `--setup-mcp`
   to find. Two defensible answers: ship `apps/mcp/build/`, or detect the absence and say so rather
   than writing a config that points at nothing.

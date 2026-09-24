@@ -2,12 +2,15 @@
  * The pasted loader snippet falls back across transports (#32c) — and the claim that makes that
  * legal is held to a control.
  *
- * The claim: an https page may reach `http://localhost`, because loopback is a potentially
- * trustworthy origin. This repo asserted the opposite in six places for a long time, so a test that
- * only shows "it connected" is not enough — an earlier attempt showed "localhost works" in an
- * environment where the LAN IP ALSO worked, i.e. a permissive environment that proved nothing. So
- * the control is here too: the same page over a LAN IP must be refused. If the control ever
- * passes, this suite fails, because then the localhost result means nothing.
+ * The claim, which is ENGINE-SPECIFIC: Chromium and Firefox let an https page reach
+ * `http://localhost` (loopback is a potentially trustworthy origin); WebKit/Safari blocks it as
+ * mixed content. This repo has been wrong both ways — "always blocked", then "never blocked" from a
+ * Chromium-only measurement — so each engine's answer is asserted here, not just the one we like.
+ *
+ * A test that only shows "it connected" is not enough either: an earlier attempt showed "localhost
+ * works" in an environment where the LAN IP ALSO worked, i.e. a permissive environment that proved
+ * nothing. So the control is here too: the same reach from a LAN-IP page must be refused. If the
+ * control ever passes, this suite fails, because then the localhost result means nothing.
  *
  * The app pages are served by REAL http/https servers (throwaway self-signed cert), not
  * `page.route`. A route-fulfilled page has no IP address space, so Chromium's Local Network Access
@@ -16,7 +19,8 @@
  * `https://localhost` page is loopback → loopback and is not subject to it. `isSecureContext` is
  * asserted, not assumed. The CHANNEL is a real haltija server, http-only — the configuration #32 hit.
  *
- * Chromium only (the project list in `playwright.config.ts`). Firefox and Safari are unverified.
+ * `bun run test:e2e` runs it in Chromium only (`playwright.config.ts`). Run all three engines with
+ * `bun run test:engines` (needs `npx playwright install firefox webkit`).
  */
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'child_process'
@@ -28,6 +32,12 @@ import { join } from 'path'
 import { startTestServer, type TestServer } from './playwright-server'
 import { uniqueTestPort } from './test-ports'
 import { loaderSnippetHtml } from './loader-snippet'
+
+/**
+ * Engines that block https → http://localhost as mixed content. Measured, not assumed: WebKit's
+ * console says "[blocked] The page at https://localhost:… requested insecure content from http://…".
+ */
+const blocksLoopbackFromHttps = (browserName: string) => browserName === 'webkit'
 
 let server: TestServer
 /** Nothing listens here: it stands in for an https transport that is down. */
@@ -96,12 +106,24 @@ async function waitForBrowsers(atLeast: number, ms = 10000): Promise<boolean> {
 }
 
 test.describe('loader snippet — transport fallback (#32c)', () => {
-  test('an https localhost page connects to an http-only channel by falling back', async ({ page }) => {
+  test('an https localhost page falls back to an http-only channel — except in WebKit', async ({ page, browserName }) => {
+    const warnings: string[] = []
+    page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()) })
     const before = await browsers()
     const snippet = loaderSnippetHtml({ httpPort: server.port, httpsPort: deadHttpsPort })
     await serveApp(page, `https://localhost:${httpsApp.port}/`, snippet)
 
     expect(await page.evaluate(() => isSecureContext)).toBe(true)
+
+    if (blocksLoopbackFromHttps(browserName)) {
+      // Safari's users get the honest failure, not a silent one: both attempts fail, both tags are
+      // gone, and the warning names the HTTPS address that would fix it.
+      await expect.poll(() => warnings.some((w) => w.includes('no channel reachable'))).toBe(true)
+      expect(await page.$$('script[src*="component.js"]')).toHaveLength(0)
+      expect(await browsers()).toBe(before)
+      return
+    }
+
     expect(await waitForBrowsers(before + 1)).toBe(true)
 
     // Exactly one component tag survives, and it is the http one — the failed https tag was
@@ -111,7 +133,7 @@ test.describe('loader snippet — transport fallback (#32c)', () => {
     expect(srcs[0]).toContain(`http://localhost:${server.port}/`)
   })
 
-  test('control: the same reach from an https LAN-IP page is refused by the browser', async ({ page }) => {
+  test('control: the same reach from an https LAN-IP page is refused by the browser', async ({ page, browserName }) => {
     const ip = lanIPv4()
     test.skip(!ip, 'no non-internal IPv4 interface, so there is no LAN origin to use as the control')
 
@@ -119,7 +141,7 @@ test.describe('loader snippet — transport fallback (#32c)', () => {
     expect(await page.evaluate(() => isSecureContext)).toBe(true)
 
     // Same probe from both origins: open a ws:// to the channel's own host. Only the
-    // loopback one may succeed.
+    // loopback one may succeed, and only in engines that exempt loopback.
     const probe = (wsUrl: string) =>
       page.evaluate(
         (u) =>
@@ -135,10 +157,12 @@ test.describe('loader snippet — transport fallback (#32c)', () => {
         wsUrl,
       )
 
-    expect(await probe(`ws://${ip}:${server.port}/ws/browser`)).toBe('threw SecurityError')
+    const blocks = blocksLoopbackFromHttps(browserName)
+    // Chromium/Firefox throw synchronously; WebKit blocks and reports it as an error event.
+    expect(await probe(`ws://${ip}:${server.port}/ws/browser`)).toBe(blocks ? 'error' : 'threw SecurityError')
 
     await serveApp(page, `https://localhost:${httpsApp.port}/`)
-    expect(await probe(`ws://localhost:${server.port}/ws/browser`)).toBe('open')
+    expect(await probe(`ws://localhost:${server.port}/ws/browser`)).toBe(blocks ? 'error' : 'open')
   })
 
   test('an https LAN-IP page does not even try http, and says why it gave up', async ({ page }) => {

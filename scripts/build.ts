@@ -827,15 +827,16 @@ function generateLlmsTxt(): string {
   // hits it on the first attempt. A static `src` cannot branch on the page's scheme, so the
   // canonical form is a small loader.
   //
-  // NOTE: #33 attributed that failure to mixed-content blocking. That attribution is WRONG (see
-  // `src/transports.ts`): `http://localhost` is a potentially trustworthy origin, so an https page
-  // may reach it. Which is why the loader now FALLS BACK to the other transport (#32c) instead of
-  // giving up — it lives in `src/loader-snippet.ts` so the snippet documented here is the one
-  // `loader-snippet.playwright.ts` runs.
+  // #33 attributed that failure to mixed-content blocking. That is TRUE in WebKit/Safari and false
+  // in Chromium/Firefox, which exempt `http://localhost` (engine table in `src/transports.ts`). So
+  // the loader tries the matching transport, then FALLS BACK to the other (#32c) — which rescues
+  // Chromium/Firefox and cannot rescue Safari. It lives in `src/loader-snippet.ts` so the snippet
+  // documented here is the one `loader-snippet.playwright.ts` runs.
   lines.push('**Use this form.** It tries the transport matching the page, then the other one, so one')
   lines.push('snippet works on http and https dev servers against whichever transports the channel has')
-  lines.push('open (both, by default). An https page falls back to http only on localhost. Reaching the')
-  lines.push('https transport needs the self-signed cert accepted once at https://localhost:8701.')
+  lines.push('open (both, by default). An https page falls back to http only on localhost, and not in')
+  lines.push('Safari, which blocks that as mixed content — so https pages in Safari need the HTTPS')
+  lines.push('transport, with the self-signed cert accepted once at https://localhost:8701.')
   lines.push('')
   lines.push('```html')
   lines.push(loaderSnippetHtml())

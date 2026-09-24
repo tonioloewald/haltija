@@ -79,8 +79,9 @@ Or via a script tag (auto-injecting IIFE bundle served by the running server).
 
 **Use this form.** It tries the transport matching the page, then the other one, so one
 snippet works on http and https dev servers against whichever transports the channel has
-open (both, by default). An https page falls back to http only on localhost. Reaching the
-https transport needs the self-signed cert accepted once at https://localhost:8701.
+open (both, by default). An https page falls back to http only on localhost, and not in
+Safari, which blocks that as mixed content — so https pages in Safari need the HTTPS
+transport, with the self-signed cert accepted once at https://localhost:8701.
 
 ```html
 <script>
@@ -88,7 +89,7 @@ https transport needs the self-signed cert accepted once at https://localhost:87
     const host = location.hostname   // NOT localhost — works over LAN/Bonjour too
     const http = [`http://${host}:8700`, `ws://${host}:8700`]
     const https = [`https://${host}:8701`, `wss://${host}:8701`]
-    // Matching transport first, then the other. https → http only for loopback (not mixed content).
+    // Matching transport first, then the other. https → http only on loopback (Safari blocks even that).
     const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host)
     const order = location.protocol !== 'https:' ? [http, https] : loopback ? [https, http] : [https]
     const load = (i) => {

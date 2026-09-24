@@ -75,6 +75,23 @@
   no selectable element to name. Design credit tosijs-3d; corpus-liveness requirement from
   tosijs-3d-ensemble; the numbers that made the case from tosijs-ui.
 
+- **The embed snippet falls back to the other transport** (#32c). It tries the transport matching
+  the page, then the other; an https page drops to http only on `localhost`. If neither works it
+  logs `haltija: no channel reachable` in the page console, naming the HTTPS address to accept,
+  instead of failing silently. The snippet now has one source (`src/loader-snippet.ts`) shared by
+  the `/docs` copy and its Playwright suite, and `bun run test:engines` runs that suite in
+  Chromium, Firefox and WebKit.
+
+### Fixed
+
+- **Whether an https page can reach `http://localhost` depends on the browser, and the docs now
+  say so.** Chromium and Firefox allow it; **Safari (WebKit) blocks it as mixed content**. The docs
+  had said it was always blocked. Earlier in this release they were changed to say it was never
+  blocked, based on a Chromium-only measurement. Both were wrong. The effect is that the fallback
+  above helps Chromium and Firefox, but https pages in Safari still need the HTTPS transport. That
+  is the strongest reason for `both` being the default. #33's original "mixed content" diagnosis
+  was correct for Safari.
+
 ## 1.12.9 (unreleased)
 
 Remediation of a Tier 1 review that returned **BLOCK** on the already-published 1.12.7/1.12.8.

@@ -6,11 +6,11 @@
  * ## Why it falls back (#32c)
  *
  * It tries the transport matching the page first (that works on every engine and needs nothing
- * clever), and if that fails, tries the other one. The fallback exists because an https page is
- * NOT blocked from reaching `http://localhost` — it is a potentially trustworthy origin (full
- * measurement in `src/transports.ts`) — so an http-only channel can still serve an https page. The
- * old snippet matched the transport and gave up, which turned a limitation of OUR code into what
- * looked like a platform rule ("impossible because mixed content").
+ * clever), and if that fails, tries the other one. The fallback exists because Chromium and Firefox
+ * do NOT block an https page from reaching `http://localhost` — it is a potentially trustworthy
+ * origin — so an http-only channel can still serve their https pages. **WebKit/Safari does block
+ * it** (engine table in `src/transports.ts`); there the fallback attempt fails and the snippet ends
+ * at its warning. Safari's https pages need the HTTPS transport, full stop.
  *
  * ## Why https → http is loopback-only
  *
@@ -40,7 +40,7 @@ export function loaderSnippetLines({ httpPort = 8700, httpsPort = 8701 }: Loader
     `  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too`,
     `  const http = [\`http://\${host}:${httpPort}\`, \`ws://\${host}:${httpPort}\`]`,
     `  const https = [\`https://\${host}:${httpsPort}\`, \`wss://\${host}:${httpsPort}\`]`,
-    `  // Matching transport first, then the other. https → http only for loopback (not mixed content).`,
+    `  // Matching transport first, then the other. https → http only on loopback (Safari blocks even that).`,
     `  const loopback = /^(localhost|127\\.0\\.0\\.1|\\[::1\\])$/.test(host)`,
     `  const order = location.protocol !== 'https:' ? [http, https] : loopback ? [https, http] : [https]`,
     `  const load = (i) => {`,
