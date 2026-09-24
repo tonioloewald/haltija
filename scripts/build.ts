@@ -10,6 +10,20 @@ import { HJ_MARKER } from '../src/hj-install'
 import { stepActionsInline as stepActionsInlineForDocs } from '../src/test-actions'
 import { loaderSnippetHtml } from '../src/loader-snippet'
 
+// The committed bundles (dist copies in apps/desktop/resources, src/embedded-assets.ts) are Bun's
+// OUTPUT, and that output changes between Bun releases for identical source — 1.4.2 renames locals
+// and swaps its module-helper prelude versus 1.4.0. With CI on `bun-version: latest`, docs-drift
+// went red on every push from the day Bun moved past what the artifacts were built with, while
+// nothing in the source had drifted. `.bun-version` pins CI; this warning pins the author. Warn,
+// not fail: building with another Bun is fine for trying things, just not for committing.
+const pinnedBun = existsSync('.bun-version') ? readFileSync('.bun-version', 'utf-8').trim() : ''
+if (pinnedBun && Bun.version !== pinnedBun) {
+  console.warn(
+    `\n  ⚠️  Building with Bun ${Bun.version}, but .bun-version pins ${pinnedBun}. Generated bundles` +
+      `\n      will differ byte-for-byte and docs-drift will fail if you commit them.\n`,
+  )
+}
+
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
 writeFileSync('src/version.ts', `/**

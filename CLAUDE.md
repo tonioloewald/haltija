@@ -769,7 +769,10 @@ Four GitHub Actions workflows run on push/PR to main:
 - **`docs-drift.yml`** — fails if the generated artifacts are stale relative to the schema. Any
   change to `src/api-schema.ts` **must** be followed by `bun run build` and a commit of the
   regenerated `API.md`, `DOCS.md`, `llms.txt`, `bin/hints.json`, and `apps/mcp/src/endpoints.json`,
-  or CI goes red.
+  or CI goes red. **Build with the Bun in `.bun-version`** — every workflow reads it. Bun's bundler
+  output changes between releases for identical source, so with CI on `latest` this gate sat red
+  from 2026-09-04 onward with nothing actually stale. The build warns if your Bun differs. Bumping
+  Bun means changing `.bun-version`, rebuilding, and committing the regenerated bundles together.
 
 ## Issue Tracking
 
