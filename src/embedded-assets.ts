@@ -3469,24 +3469,36 @@ inject('ws://localhost:8700/ws/browser', { mode: 'headless' }) // invisible
 
 Or via a script tag (auto-injecting IIFE bundle served by the running server).
 
-**Use this form.** It picks the transport matching the page, so one snippet works on
-both http and https dev servers without a fallback.
-Serving an https page needs \`bunx haltija --server --both\` and accepting the
-self-signed cert once at https://localhost:8701.
+**Use this form.** It tries the transport matching the page, then the other one, so one
+snippet works on http and https dev servers against whichever transports the channel has
+open (both, by default). An https page falls back to http only on localhost. Reaching the
+https transport needs the self-signed cert accepted once at https://localhost:8701.
 
 \`\`\`html
 <script>
-  const secure = location.protocol === 'https:'
-  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too
-  const origin = secure ? \`https://\${host}:8701\` : \`http://\${host}:8700\`
-  const ws = secure ? \`wss://\${host}:8701\` : \`ws://\${host}:8700\`
-  const s = document.createElement('script')
-  s.src = \`\${origin}/component.js?autoInject=true&serverUrl=\${ws}/ws/browser\`
-  document.head.appendChild(s)
+  ;(() => {
+    const host = location.hostname   // NOT localhost — works over LAN/Bonjour too
+    const http = [\`http://\${host}:8700\`, \`ws://\${host}:8700\`]
+    const https = [\`https://\${host}:8701\`, \`wss://\${host}:8701\`]
+    // Matching transport first, then the other. https → http only for loopback (not mixed content).
+    const loopback = /^(localhost|127\\.0\\.0\\.1|\\[::1\\])$/.test(host)
+    const order = location.protocol !== 'https:' ? [http, https] : loopback ? [https, http] : [https]
+    const load = (i) => {
+      if (i === order.length) return console.warn(
+        'haltija: no channel reachable. Start one with \`bunx haltija --server\`; ' +
+        'for https, accept the cert once at ' + https[0])
+      const [origin, ws] = order[i]
+      const s = document.createElement('script')
+      s.src = \`\${origin}/component.js?autoInject=true&serverUrl=\${ws}/ws/browser\`
+      s.onerror = () => { s.remove(); load(i + 1) }
+      document.head.appendChild(s)
+    }
+    load(0)
+  })()
 </script>
 \`\`\`
 
-On an http-only page a plain tag is equivalent:
+On an http page, a plain tag works too (it just has no fallback):
 
 \`\`\`html
 <script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>

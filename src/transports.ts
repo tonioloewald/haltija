@@ -68,10 +68,17 @@
  *
  * **Verified in Chromium only.** Firefox and Safari are not tested and must not be assumed.
  *
- * What this changes: an HTTP-only channel leaves https pages unserved because **the loader picks the
- * transport matching the page and does not fall back** — a limitation of our code, not a rule of the
- * platform. Matching the transport is still the right default (it needs no fallback and works on
- * every engine), but "impossible" was never true.
+ * What this changed: an HTTP-only channel left https pages unserved because **the loader picked the
+ * transport matching the page and did not fall back** — a limitation of our code, not a rule of the
+ * platform. The loader (`src/loader-snippet.ts`) now tries the matching transport first and then
+ * the other, https → http on loopback only (#32c); `loader-snippet.playwright.ts` holds both the
+ * fallback and the LAN-IP control.
+ *
+ * One trap for whoever re-measures this: a page served by Playwright's `page.route` has no IP
+ * address space, so Chromium's Local Network Access check refuses its loopback subresources
+ * ("Permission was denied for this request to access the `unknown` address space"). That looks
+ * exactly like the old false claim coming true. It isn't — a real `https://localhost` page is
+ * loopback → loopback. Measure with a real server.
  */
 
 import { join } from 'path'

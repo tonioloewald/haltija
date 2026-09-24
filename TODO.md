@@ -293,17 +293,16 @@ than claiming.
   would otherwise re-prompt for trust on every reinstall and every race for 8701; an existing
   per-install cert is adopted so granted trust survives. (b) was already done; (d) shipped with
   this — an explicit single-transport choice on a shared server says what it costs neighbours.
-- [ ] **#32(c) — RESHAPED: the loader should FALL BACK, not just explain.** As specified, (c) was
-  "print a better message about an impossible situation". The impossibility was a myth: **an https
-  page is not blocked from reaching `http://localhost`** — it is a potentially trustworthy origin,
-  so fetch, `import()` and `ws://` all work. Measured 2026-09-24 in stock Chromium with a LAN-IP
-  control that *did* get blocked; full method and numbers in `src/transports.ts`. Chromium only —
-  Firefox/Safari untested and must not be assumed.
-  So the work is: the injected loader tries the matching transport, and on failure tries the other
-  one (localhost only) before giving up; only if BOTH fail does it print the #32(c) explanation,
-  which `/status` already supplies via `transports[].reason`. Guard it with a
-  `mixed-content.playwright.ts` carrying the LAN-IP control — a corrected claim with no test is a
-  claim that comes back.
+- [x] **#32(c) — the loader FALLS BACK, not just explains** — done in 1.13.0. The pasted snippet
+  (`src/loader-snippet.ts`, the one source for the `/docs` copy) tries the matching transport, then
+  the other; https → http only on loopback, since from a LAN page it IS mixed content. Both failing
+  logs `haltija: no channel reachable`. Guarded by `loader-snippet.playwright.ts`, including the
+  LAN-IP control (ws:// from an https LAN page throws `SecurityError`; from https localhost it opens)
+  and a verified mutation (the old no-fallback order fails the suite). Trap found on the way:
+  `page.route`-served pages have no IP address space, so Chromium's Local Network Access refuses
+  their loopback subresources — it looks exactly like the false claim coming true. Real servers only.
+  Chromium only; Firefox/Safari still unverified. `/dev.js` and the bookmarklet were NOT changed —
+  they pick a transport server-side and are a separate question.
 - [ ] **Re-examine #33's diagnosis.** `scripts/build.ts` attributes the silent failure of the
   http-only snippet on an https dev server to mixed-content blocking. Per the above that attribution
   is wrong, so *something else* broke it (server not on 8700? https-only?). The scheme-aware snippet

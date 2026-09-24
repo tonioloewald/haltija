@@ -8,6 +8,7 @@ import { $ } from 'bun'
 import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs'
 import { HJ_MARKER } from '../src/hj-install'
 import { stepActionsInline as stepActionsInlineForDocs } from '../src/test-actions'
+import { loaderSnippetHtml } from '../src/loader-snippet'
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
@@ -824,36 +825,23 @@ function generateLlmsTxt(): string {
   // no widget, `hj where` reports 0 tabs, and you assume your own setup is wrong. It is not an edge
   // case — the tosijs-ui doc-system dev server is https by default, so the default project setup
   // hits it on the first attempt. A static `src` cannot branch on the page's scheme, so the
-  // canonical form is a three-line loader.
+  // canonical form is a small loader.
   //
-  // NOTE: #33 attributed that failure to mixed-content blocking. That attribution is WRONG and the
-  // wording below was corrected in 1.13.0: `http://localhost` is a potentially trustworthy origin,
-  // so an https page may fetch, `import()` and open a `ws://` to it — verified in Chromium, with a
-  // LAN-IP control that DOES get blocked. Whatever broke in #33, it was not the browser refusing.
-  // Matching the page's transport is still right (it works on every engine and needs no fallback),
-  // so the snippet is unchanged; only the false explanation is gone.
-  lines.push('**Use this form.** It picks the transport matching the page, so one snippet works on')
-  lines.push('both http and https dev servers without a fallback.')
-  lines.push('Serving an https page needs `bunx haltija --server --both` and accepting the')
-  lines.push('self-signed cert once at https://localhost:8701.')
+  // NOTE: #33 attributed that failure to mixed-content blocking. That attribution is WRONG (see
+  // `src/transports.ts`): `http://localhost` is a potentially trustworthy origin, so an https page
+  // may reach it. Which is why the loader now FALLS BACK to the other transport (#32c) instead of
+  // giving up — it lives in `src/loader-snippet.ts` so the snippet documented here is the one
+  // `loader-snippet.playwright.ts` runs.
+  lines.push('**Use this form.** It tries the transport matching the page, then the other one, so one')
+  lines.push('snippet works on http and https dev servers against whichever transports the channel has')
+  lines.push('open (both, by default). An https page falls back to http only on localhost. Reaching the')
+  lines.push('https transport needs the self-signed cert accepted once at https://localhost:8701.')
   lines.push('')
   lines.push('```html')
-  lines.push('<script>')
-  // `location.hostname`, not `localhost`. In a served page `localhost` means the BROWSER's machine,
-  // so a page opened from another device — a LAN IP, a Bonjour `.local` name — was told to connect
-  // to its own machine, where nothing is listening. It fails silently. The page's own host is right
-  // whenever haltija runs alongside the dev server, which is the usual case.
-  lines.push('  const secure = location.protocol === \'https:\'')
-  lines.push('  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too')
-  lines.push('  const origin = secure ? `https://${host}:8701` : `http://${host}:8700`')
-  lines.push('  const ws = secure ? `wss://${host}:8701` : `ws://${host}:8700`')
-  lines.push('  const s = document.createElement(\'script\')')
-  lines.push('  s.src = `${origin}/component.js?autoInject=true&serverUrl=${ws}/ws/browser`')
-  lines.push('  document.head.appendChild(s)')
-  lines.push('</script>')
+  lines.push(loaderSnippetHtml())
   lines.push('```')
   lines.push('')
-  lines.push('On an http-only page a plain tag is equivalent:')
+  lines.push('On an http page, a plain tag works too (it just has no fallback):')
   lines.push('')
   lines.push('```html')
   lines.push('<script src="http://localhost:8700/component.js?autoInject=true&serverUrl=ws://localhost:8700/ws/browser"></script>')
