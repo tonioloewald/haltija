@@ -2,6 +2,38 @@
 
 ## 1.13.0 (unreleased)
 
+### Changed (breaking)
+
+- **The desktop app's internal chrome-widget port moved from 8701 to 8710** (#32a). `8701` was
+  *also* the default for the public HTTPS listener — one number with two independent literals, in
+  `src/server.ts` and `apps/desktop/main.js`, neither file aware of the other. They cannot both bind.
+
+  This was live, not latent. Verified on a developer machine mid-fix: one process (a project's
+  `haltija --both`) held **8700 and 8701 together**, because both transports share a process. Launch
+  the desktop app in `serverMode: 'builtin'` against that and `killZombieServer()` POSTs `/shutdown`
+  to 8701 to claim it for a private widget — shutting down that project's **HTTP** channel as
+  collateral. It also blocked #32's headline request outright: "both transports by default" cannot
+  ship while the desktop app claims one of them.
+
+  **The internal port moved rather than HTTPS**, because HTTPS 8701 has callers we do not ship —
+  the injected loader and bookmarklet hardcode `https://localhost:8701` (see #38 for the last time
+  that string drifted), adopters' dev servers import from it, and self-signed-cert trust is
+  per-origin, so moving it would silently un-trust the cert and present as a dead channel. The
+  internal port's only client is the app's own renderer, updated in the same binary.
+
+  **Who is affected:** anyone who targeted the chrome widget as `HALTIJA_PORT=8701 hj tree` should
+  now use `8710`. A desktop app older than 1.13.0 still holds 8701, so a new `--both` server may
+  fail to bind HTTPS until that app restarts. Setting `HALTIJA_INTERNAL_PORT=8701` by hand now
+  prints what will break instead of surfacing as a bind failure in a process you forgot was
+  involved.
+
+  Every well-known port and its role now lives in **`src/ports.ts`** (8700 public HTTP / 8701 public
+  HTTPS / 8710 internal HTTP / 8711 reserved), compiled to a CJS twin for Electron main the same way
+  `server-env.js` is. `src/ports.test.ts` asserts the public and internal blocks stay disjoint — and
+  asserts the *roles*, not the literals, since two literals agreeing is precisely what the bug was.
+  Verified against a real `--private --app` launch: chrome widget connected, ports released on
+  teardown, and the unrelated `--both` server on 8700/8701 untouched throughout.
+
 ### Added
 
 - **`testInBrowser`** — jest-shaped tests whose assertions run on the host and whose probes run in a

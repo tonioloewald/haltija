@@ -255,14 +255,16 @@ A **closed** shadow root is invisible to any script, so its host reports as chil
 
 ### Chrome Widget on Internal Port
 
-The Electron desktop app spawns *two* haltija servers: a public one on `HALTIJA_PORT` (default 8700) for content tabs, and an internal one on `HALTIJA_INTERNAL_PORT` (default 8701) that hosts the outer "chrome" widget — the haltija UI inspecting itself. The chrome widget never connects to the public server, so it never appears in agent listings on 8700; no exclusion logic needed.
+The Electron desktop app spawns *two* haltija servers: a public one on `HALTIJA_PORT` (default 8700) for content tabs, and an internal one on `HALTIJA_INTERNAL_PORT` (**default 8710**) that hosts the outer "chrome" widget — the haltija UI inspecting itself. The chrome widget never connects to the public server, so it never appears in agent listings on 8700; no exclusion logic needed.
+
+**Every well-known port and its role lives in `src/ports.ts`** — 8700 public HTTP, 8701 public HTTPS, 8710 internal HTTP, 8711 reserved. Nothing else may declare a port default. The internal server defaulted to **8701** through 1.12.x, which is *also* `src/server.ts`'s default for the public HTTPS listener: one number, two independent literals in two files that knew nothing about each other, and they cannot both bind (#32a). It was not theoretical — in `serverMode: 'builtin'` the app's `killZombieServer()` POSTs `/shutdown` to its internal port, so it shut down a bystander's `haltija --both` server and took that server's **HTTP** transport with it, since both transports share one process. The internal port moved (not HTTPS) because HTTPS 8701 is hardcoded in the injected loader, in adopters' dev servers, and in the user's per-origin self-signed-cert trust, whereas the internal port's only client is the app's own renderer. `src/ports.test.ts` asserts the public and internal blocks stay disjoint — and asserts the *roles*, not the literals, because two literals agreeing is exactly what the bug was.
 
 **The app REUSES an existing server by default (`serverMode: 'auto'`, `apps/desktop/main.js`).** On a machine running more than one project, 8700/8701 are shared — another project may have a live channel there (`haltija --server --both`). The old default `'builtin'` treated that channel as a "zombie" and killed both ports via `killZombieServer()` to start fresh, so *any* desktop-app launch (`bunx haltija`, an `hj` auto-launch, `--ci`, the integration test) silently took down another project's channel and made its widget vanish. `'auto'` detects a healthy server on 8700 (`checkServerRunning` → `/status` 200) and attaches to it instead, announcing that it did. This is the same "don't harm a healthy peer" discipline as retirement — the desktop app is not exempt from it. Force a fresh own-server with `HALTIJA_SERVER_MODE=builtin`.
 
 To inspect the outer Haltija UI from `hj`, target the internal port:
 
 ```bash
-HALTIJA_PORT=8701 hj tree
+HALTIJA_PORT=8710 hj tree
 ```
 
 Same model for embedders: each project chooses a port, agents target it via `HALTIJA_PORT`. Process boundary is the isolation primitive.
@@ -476,7 +478,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_PORT` | HTTP server port; if unset, server tries 8700 then ephemeral. Also read by `hj`. | — |
 | `HALTIJA_URL` | Full base URL override. Highest priority in the `haltija/test` helper (beats `HALTIJA_PORT`) and in the MCP bridge. | — |
 | `HALTIJA_NAME` | Register/look up the server under this name in `~/.haltija/servers/` | — |
-| `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget | `8701` |
+| `HALTIJA_INTERNAL_PORT` | Internal server port for the desktop app's chrome widget (was 8701 through 1.12.x — see #32a) | `8710` |
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
 | `HALTIJA_SESSION_KEY` | Write capability handle for `hj session write`, returned once by `session attach --allow-input` (or pass `--key`) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
@@ -501,7 +503,7 @@ or reviewing so often it gets skipped. Accumulate patches; let the review certif
 | `HALTIJA_TEST_ALLOW_SHARED` | Set to `1` to let `haltija/test` MUTATE the shared default 8700 (navigate/click/type). Off by default: driving a browser nobody named is how a suite hijacks another project's session (#42) | — |
 | `HALTIJA_TEST_QUIET` | Silence `haltija/test`'s shared-default-port warning | — |
 | `DEV_CHANNEL_PORT` | Legacy alias for `HALTIJA_PORT` | — |
-| `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port | `8701` |
+| `DEV_CHANNEL_HTTPS_PORT` | HTTPS server port (public; immovable — hardcoded in the injected loader and in adopters' cert trust) | `8701` |
 | `DEV_CHANNEL_MODE` | `http`, `https`, or `both` | `http` |
 | `DEV_CHANNEL_SNAPSHOTS_DIR` | Save test snapshots to disk (CI) | — |
 | `DEV_CHANNEL_DOCS_DIR` | Custom docs directory | — |
@@ -538,11 +540,11 @@ live browser:
     page — a harmless GET (the app injects its own widget at the ephemeral port; the shared
     channel isn't driven), but it pollutes the private window list. **FIXED in 1.11.x** — and the
     original framing understated it: the renderer read `process.env`, which private mode never
-    updated, so a private app's chrome widget connected to the **shared 8701** and its first tab to
+    updated, so a private app's chrome widget connected to the **shared internal server** and its first tab to
     the shared 8700. That is a client connection to another project's server, not "a harmless GET".
     The narrow claim that 8700/8701's *server lifecycle and registry* stay untouched does survive.
     main.js now publishes the resolved addresses into `process.env` before any window exists, and
-    refuses to fall back to 8701 when the internal server doesn't report.
+    refuses to fall back to the shared internal port when the internal server doesn't report.
   - **Teardown is part of the isolation (issue #7).** A private Electron must not outlive its run.
     Three cooperating rules: (1) a private run **never requests the single-instance lock** — so an
     orphan can't block the next run and concurrent private runs don't collide (`gotTheLock =

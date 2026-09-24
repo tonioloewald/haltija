@@ -32,8 +32,8 @@ describe('resolveInternalPort: 0 means "none" and must survive as 0', () => {
     expect(resolveInternalPort({ HALTIJA_INTERNAL_PORT: '54321' })).toBe(54321)
   })
 
-  it('"0" stays 0 and does NOT become 8701', () => {
-    // The whole reason this is a function. `parseInt(x, 10) || 8701` — the form anyone would
+  it('"0" stays 0 and does NOT become the shared internal port', () => {
+    // The whole reason this is a function. `parseInt(x, 10) || SHARED_INTERNAL_PORT` — the form anyone would
     // write — resurrects the SHARED internal port for a private instance that deliberately has no
     // internal server, attaching its chrome widget to another project's channel under the same
     // windowId ('hj-chrome') so the two collide.

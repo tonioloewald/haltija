@@ -87,6 +87,17 @@ writeFileSync(
     readFileSync('bin/server-list.mjs', 'utf-8'),
 )
 
+// 0f-pre. Compile src/ports.ts for the Electron main process (CommonJS). main.js declared its own
+// `8701` literal for the internal chrome server while src/server.ts declared the same number for the
+// public HTTPS listener — one idea, two literals, unable to both bind (#32a). Compiled twin rather
+// than a hand-copy for exactly the reason every other twin here exists.
+await $`bun build ./src/ports.ts --outfile=apps/desktop/ports.js --target=node --format=cjs`
+writeFileSync(
+  'apps/desktop/ports.js',
+  `/** ⚠️  AUTO-GENERATED FROM src/ports.ts — DO NOT EDIT. Run: bun run build */\n` +
+    readFileSync('apps/desktop/ports.js', 'utf-8'),
+)
+
 // 0f. Compile src/desktop-server-env.ts for the Electron main process (CommonJS — main.js uses
 // require). Its contract is asserted in src/desktop-server-env.test.ts without launching Electron.
 await $`bun build ./src/desktop-server-env.ts --outfile=apps/desktop/server-env.js --target=node --format=cjs`

@@ -858,11 +858,18 @@ squatter held 8700; `--both` relocated/failed and the fixed-port probe couldn't 
       pair (`HALTIJA_PORT`/`HALTIJA_INTERNAL_PORT`) + `HALTIJA_SERVER_MODE=builtin` so it tests
       the app's OWN server on ports nothing else contends — the same hermeticity the unit suite
       got. (On-demand Electron test; not in the CI unit lane.)
-- [ ] **The internal chrome server (8701) in the start-embedded path.** When `auto` finds no
-      public server and starts embedded, it still spawns an internal server on 8701; if 8701 is
-      held by an unrelated channel's HTTPS, that spawn should fall back to another port, never
-      kill the occupant. (Bounded: only on the rare no-public-server-but-8701-occupied path, and
-      the internal server is best-effort. Verify against a real Electron launch.)
+- [x] **The internal chrome server (8701) in the start-embedded path** — done (#32a). The named
+      cause is gone: the internal server no longer defaults to a public port. It was worse than
+      this entry described — the collision was not only "fails to bind on the rare occupied path",
+      it was `killZombieServer()` in `serverMode: 'builtin'` POSTing `/shutdown` to 8701 and taking
+      an unrelated `haltija --both` server's HTTP transport down with it, since both transports
+      share one process. Observed live on this machine (pid 13373, tosijs-3d's server, holding 8700
+      and 8701 together) while fixing it. Defaults now come from `src/ports.ts`; verified against a
+      real `--private --app` Electron launch.
+      *Residual, deliberately not done:* `killZombieOnPort` still shuts down whatever haltija holds
+      the internal port, now 8710. Nothing else uses 8710, so the blast radius is gone, but the
+      rule "fall back, never kill the occupant" is still not implemented for that path. Low
+      priority — `auto` (the default) never takes it.
 
 ## Post-1.4.0 follow-ups (from the pre-release review — none block the tag)
 

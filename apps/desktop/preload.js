@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('haltija', {
   webviewPreloadPath: webviewPreloadPath,
   // Internal-server port (chrome widget connects here, hidden from public agent traffic).
   // Set by main AFTER port resolution, so a --private instance reports its EPHEMERAL port rather
-  // than the shared 8701. 0 means "none" and must stay 0. See src/desktop-isolation.ts.
+  // than the shared internal port. 0 means "none" and must stay 0. See src/desktop-isolation.ts.
   internalPort: resolveInternalPort(process.env),
   // This instance's public server, or NULL if main didn't set one. Not a default: `|| 8700` here
   // made state.js's "did main tell me?" check always true, so it overwrote the user's saved

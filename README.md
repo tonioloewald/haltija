@@ -419,10 +419,10 @@ HALTIJA_NAME=dashboard hj tree         # any shell can address it by name
 
 What this means for you, depending on how you used 1.3.0-beta.7:
 
-- **`bunx haltija` desktop app** — works the same; no migration needed. The outer "chrome" widget that lets the app inspect itself now lives on a separate internal port (8701) so it never appears in agent-facing window listings.
+- **`bunx haltija` desktop app** — works the same; no migration needed. The outer "chrome" widget that lets the app inspect itself now lives on a separate internal port (8701 then, 8710 since 1.13.0) so it never appears in agent-facing window listings.
 - **`HALTIJA_SESSION` / `--session` / `--secure` / the click-to-copy session badge** — gone. If you were setting `HALTIJA_SESSION` in your shell, replace it with `HALTIJA_NAME` (and start the server with `--name <foo>`) or `HALTIJA_PORT`.
 - **`inject(url, { session })`** — the `session` option is removed. If you need auth, use `inject(url, { token })` (matches `haltija --token <secret>`); for embedding without auth, just `inject(url)` or `inject(url, { mode: 'headless' })`.
-- **`hj-chrome` exclusion logic** — gone from the public REST API. To inspect the desktop app's outer UI from `hj`, target the internal port directly: `HALTIJA_PORT=8701 hj tree`.
+- **`hj-chrome` exclusion logic** — gone from the public REST API. To inspect the desktop app's outer UI from `hj`, target the internal port directly: `HALTIJA_PORT=8710 hj tree`. *(That port was 8701 in 1.4.0–1.12.x; it moved in 1.13.0 because 8701 is the public HTTPS listener — see [#32](https://github.com/tonioloewald/haltija/issues/32).)*
 
 Net code change: ~830 lines removed, ~150 added back for the simpler model. Test count went up (we now have integration coverage for the token stub, named instances, and auto-port fallback that the previous betas lacked).
 

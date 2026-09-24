@@ -120,7 +120,7 @@ This is useful for:
 1. **Outer widget** — lives in Electron's renderer document (not inside any webview).
    Persists forever — page navigations don't touch it. Can inspect the Electron app's
    own UI (tab bar, terminal, agent status) for self-debugging. Connects to the
-   *internal* haltija server (default port 8701) with `windowId: 'hj-chrome'`, so
+   *internal* haltija server (default port 8710) with `windowId: 'hj-chrome'`, so
    it never appears on the public server's window listings.
 
 2. **Inner widget** — lives in the webview DOM as today, but headless. No visible UI.
@@ -128,7 +128,7 @@ This is useful for:
    public haltija server (default port 8700).
 
 Two servers, port-based isolation. Agents that want to inspect the outer Haltija UI
-target the internal port explicitly: `HALTIJA_PORT=8701 hj tree`.
+target the internal port explicitly: `HALTIJA_PORT=8710 hj tree`.
 
 ### App chrome owns the UI
 

@@ -25,6 +25,7 @@ const { spawn } = require('child_process')
 const http = require('http')
 const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
 const { buildServerEnv } = require('./server-env.js')
+const { DEFAULT_HTTP_PORT, DEFAULT_INTERNAL_PORT, internalPortConflict } = require('./ports.js')
 // The wire protocol, generated from src/machine-channel.ts — NOT re-declared here. main.js used to
 // hand-roll the prefixes, the line split and the parse; that copy is where the __NEED_WINDOW__
 // regression came from, and it had no test while the src/ original did.
@@ -88,14 +89,29 @@ if (IS_PRIVATE) {
 }
 
 // Haltija server config
-let HALTIJA_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_PORT || '8700')
+let HALTIJA_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_PORT || String(DEFAULT_HTTP_PORT))
 let HALTIJA_SERVER = `http://localhost:${HALTIJA_PORT}`
 
 // Internal port for the chrome widget (the haltija UI inspecting itself).
 // Lives on a separate server so it never appears in agent-facing window lists
 // — agents see only content tabs unless they explicitly target this port.
-let HALTIJA_INTERNAL_PORT = IS_PRIVATE ? 0 : parseInt(process.env.HALTIJA_INTERNAL_PORT || '8701')
+//
+// The default comes from src/ports.ts, NOT a literal here. It used to be `8701`, which is also
+// src/server.ts's default for the public HTTPS listener — two independent literals for one number,
+// which cannot both bind (#32a). In 'builtin' mode that made `killZombieServer()` shut down a
+// `haltija --both` server on 8701 and take its HTTP transport down with it.
+let HALTIJA_INTERNAL_PORT = IS_PRIVATE
+  ? 0
+  : parseInt(process.env.HALTIJA_INTERNAL_PORT || String(DEFAULT_INTERNAL_PORT))
 let HALTIJA_INTERNAL_SERVER = `http://localhost:${HALTIJA_INTERNAL_PORT}`
+
+// Someone who pins the old number by hand re-creates the collision, so say what will break rather
+// than letting them discover it as a bind failure in a process they forgot was involved (#32b:
+// a half-open channel and a healthy one must not look alike).
+{
+  const conflict = internalPortConflict(HALTIJA_INTERNAL_PORT)
+  if (conflict) console.error(`[Haltija Desktop] ${conflict}`)
+}
 
 // Unique app instance ID - used to create stable window IDs across navigations
 // Combined with webContents.id to create globally unique tab identifiers
@@ -1548,10 +1564,10 @@ async function startEmbeddedServer() {
       HALTIJA_INTERNAL_SERVER = `http://localhost:${intPort}`
     } else {
       // The internal server never reported. Leaving the port at 0 makes the preload's
-      // `parseInt(...) || 8701` fall back to the SHARED internal port — a private app's chrome
+      // `parseInt(...) || DEFAULT_INTERNAL_PORT` fall back to the SHARED internal port — a private app's chrome
       // widget would attach to another project's server. Better to have no chrome widget than to
       // silently join the channel this mode exists to stay out of.
-      console.error('[Haltija Desktop] Private internal server did not report a port — chrome widget disabled (refusing to fall back to the shared 8701)')
+      console.error('[Haltija Desktop] Private internal server did not report a port — chrome widget disabled (refusing to fall back to the shared internal port)')
       HALTIJA_INTERNAL_PORT = 0
       HALTIJA_INTERNAL_SERVER = ''
     }
@@ -1732,7 +1748,8 @@ async function ensureServer() {
  *
  * The renderer learns them from `process.env` via the preload, but private mode only reassigns the
  * module-level `let`s — which does not touch `process.env`. Without this, a private app's chrome
- * widget attached to the SHARED 8701 and its first tab loaded the shared 8700. Must run on EVERY
+ * widget attached to the SHARED internal server (8701 at the time; 8710 since #32a) and its first
+ * tab loaded the shared 8700. Must run on EVERY
  * path that reaches `createWindow()`, including the startup-failure one, or the leak returns
  * through the error path. 0 / '' mean "no server", and the renderer treats them as such.
  */
@@ -1819,7 +1836,7 @@ if (!gotTheLock) {
     } catch (err) {
       console.error('[Haltija Desktop] Fatal error during startup:', err)
       // Publish here too. This path still creates a window, so without it the preload would see
-      // NEITHER variable and fall back to the shared 8701/8700 — the isolation leak, via the
+      // NEITHER variable and fall back to the shared internal port/8700 — the isolation leak, via the
       // error path. On a failed startup the values are 0/'' , which is the safe state.
       publishResolvedAddresses()
       // Still try to create a window so user sees something

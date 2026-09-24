@@ -48,8 +48,14 @@ __export(exports_desktop_isolation, {
   resolveServerUrl: () => resolveServerUrl
 });
 module.exports = __toCommonJS(exports_desktop_isolation);
-var SHARED_PUBLIC_URL = "http://localhost:8700";
-var SHARED_INTERNAL_PORT = 8701;
+
+// src/ports.ts
+var DEFAULT_HTTP_PORT = 8700;
+var DEFAULT_INTERNAL_PORT = 8710;
+
+// src/desktop-isolation.ts
+var SHARED_PUBLIC_URL = `http://localhost:${DEFAULT_HTTP_PORT}`;
+var SHARED_INTERNAL_PORT = DEFAULT_INTERNAL_PORT;
 function resolveInternalPort(env) {
   const raw = env.HALTIJA_INTERNAL_PORT;
   if (raw === undefined || raw === "")

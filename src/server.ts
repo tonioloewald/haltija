@@ -43,6 +43,7 @@ import {
   parseRequestLine,
   splitLines,
 } from './machine-channel'
+import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -144,8 +145,13 @@ const PORT_PREFERENCE = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT
 // Private never binds a fixed shared port — always ephemeral, so it can't collide with or adopt
 // the shared server.
 const PORT_IS_STRICT = !!PORT_PREFERENCE && !IS_PRIVATE
-let PORT = IS_PRIVATE ? 0 : parseInt(PORT_PREFERENCE || '8700')
-let HTTPS_PORT = IS_PRIVATE ? 0 : parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || '8701')
+let PORT = IS_PRIVATE ? 0 : parseInt(PORT_PREFERENCE || String(DEFAULT_HTTP_PORT))
+// Defaults come from `src/ports.ts`, which is the whole point of that file: this line and
+// `apps/desktop/main.js`'s internal-port default were two independent `8701` literals, and they
+// cannot both bind (#32a).
+let HTTPS_PORT = IS_PRIVATE
+  ? 0
+  : parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || String(DEFAULT_HTTPS_PORT))
 const INSTANCE_NAME = process.env.HALTIJA_NAME || ''
 // `desktop` is reserved for the Haltija desktop app (it registers under that name, cwd-less, so
 // `hj --name desktop` reaches it). A normal server claiming it (`--name desktop` / HALTIJA_NAME=

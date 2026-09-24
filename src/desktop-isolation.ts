@@ -21,10 +21,18 @@
  * because the two consumers genuinely differ in module system — not two implementations.
  */
 
+import { DEFAULT_HTTP_PORT, DEFAULT_INTERNAL_PORT } from './ports'
+
 /** The shared, well-known public server. A private instance must never resolve to this. */
-export const SHARED_PUBLIC_URL = 'http://localhost:8700'
-/** The shared, well-known internal (chrome-widget) server. */
-export const SHARED_INTERNAL_PORT = 8701
+export const SHARED_PUBLIC_URL = `http://localhost:${DEFAULT_HTTP_PORT}`
+/**
+ * The shared, well-known internal (chrome-widget) server.
+ *
+ * Imported, not re-declared. This was its own `8701` literal, which is the other half of the #32a
+ * collision — `src/server.ts` independently defaulted the public HTTPS listener to the same number.
+ * One source, so the next person to change it changes it once.
+ */
+export const SHARED_INTERNAL_PORT = DEFAULT_INTERNAL_PORT
 
 export interface IsolationEnv {
   HALTIJA_INTERNAL_PORT?: string
@@ -36,9 +44,9 @@ export interface IsolationEnv {
  * The internal chrome-widget port for THIS instance.
  *
  * `0` means "this instance has no internal server" and must survive as `0`. Writing this as
- * `parseInt(env.X, 10) || SHARED_INTERNAL_PORT` — the obvious form — resurrects the *shared* 8701
- * for a private instance that deliberately has none, which is precisely the cross-project
- * connection the private mode exists to prevent.
+ * `parseInt(env.X, 10) || SHARED_INTERNAL_PORT` — the obvious form — resurrects the *shared*
+ * internal port for a private instance that deliberately has none, which is precisely the
+ * cross-project connection the private mode exists to prevent.
  */
 export function resolveInternalPort(env: IsolationEnv): number {
   const raw = env.HALTIJA_INTERNAL_PORT

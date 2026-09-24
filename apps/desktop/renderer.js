@@ -38,17 +38,17 @@ createTab()
 setInterval(checkHaltija, 5000)
 
 // Inject outer widget (headless) into the renderer for persistence + self-inspection.
-// Connects to the *internal* server (default port 8701) so it doesn't appear in
-// agent-facing window lists on the public server. To inspect the outer Haltija
-// UI from `hj`, target the internal port: HALTIJA_PORT=8701 hj tree
+// Connects to the *internal* server (default port 8710 — see src/ports.ts) so it
+// doesn't appear in agent-facing window lists on the public server. To inspect the
+// outer Haltija UI from `hj`, target the internal port: HALTIJA_PORT=8710 hj tree
 ;(async function injectOuterWidget() {
   // 0 / NaN means "this instance has NO internal server" — main.js sets it that way on purpose for
-  // a private run whose internal server never reported. `|| 8701` undid that one layer above the
+  // a private run whose internal server never reported. `|| <shared internal port>` undid that one layer above the
   // guard and attached the chrome widget to ANOTHER project's shared internal server, with the same
   // windowId ('hj-chrome'), so the two collided on that channel. Third instance of this leak.
   const internalPort = Number(window.haltija?.internalPort)
   if (!Number.isFinite(internalPort) || internalPort <= 0) {
-    console.warn('[Haltija Desktop] No internal server for this instance — chrome widget disabled (refusing to attach to the shared 8701)')
+    console.warn('[Haltija Desktop] No internal server for this instance — chrome widget disabled (refusing to attach to the shared internal port)')
     return
   }
   const internalUrl = getServerUrl().replace(/:\d+/, `:${internalPort}`)
