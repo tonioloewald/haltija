@@ -285,10 +285,20 @@ than claiming.
 
 **Blocked on a release being possible** (each changes startup or packaging and wants exercising):
 
-- [ ] **#32(a) — open BOTH transports by default.** The asymmetry is the bug: a shared server's
-  capabilities should not depend on which directory started it. Means shipping certs or generating
-  them on first run; changes startup for every existing install. (b) is done; (c) — explain a failed
-  connection in the page console — is now cheap because `/status` exposes transports.
+- [x] **#32(a) — open BOTH transports by default** — done in 1.13.0 (`3875b1a`). `DEV_CHANNEL_MODE`
+  defaults to `both`; an unrecognised value falls back to `both`, never `http`. **Shipping certs
+  would have fixed nothing** — the issue's own diagnosis was backwards: certs are generated only
+  when HTTPS is *wanted*, so they were absent *because* the transport was. The cert moved to
+  `~/.haltija/certs` (machine-level) as a consequence of the default flip, since per-install certs
+  would otherwise re-prompt for trust on every reinstall and every race for 8701; an existing
+  per-install cert is adopted so granted trust survives. (b) was already done; (d) shipped with
+  this — an explicit single-transport choice on a shared server says what it costs neighbours.
+- [ ] **#32(c) — explain a failed connection in the PAGE console.** The injected loader should say
+  *why* it can't reach the channel ("this page is https; the channel has no HTTPS listener, started
+  by `<name>` which has no certs") rather than failing silently. Cheap, because `/status` already
+  exposes `transports` with a `reason`. **Lower value since (a) landed** — the mismatch it explains
+  is now something you have to opt into — but it is still the only signal a *page* gets, and the
+  loader is where someone first notices nothing is connected.
 - [ ] **`apps/mcp` packaging.** Not in `files`, so npm users have no `apps/mcp/` for `--setup-mcp`
   to find. Two defensible answers: ship `apps/mcp/build/`, or detect the absence and say so rather
   than writing a config that points at nothing.
@@ -810,11 +820,13 @@ not a nice-to-have. What I verified against 1.4.0 (so this list is evidence, not
       times out on a backgrounded tab. *Not caused by 1.4.0.* This is the same need as
       tosijs-project's fencing-tokens / per-call-targeting item above — **explicit per-call tab
       targeting (by id/url, not ambient focus)** is the fix. Reinforces that item.
-- [ ] **#3 — HTTP/HTTPS asymmetry (hj→8700, widget on an https page→8701).** The CLI reports
-      "connected" (to 8700) while the widget can't connect (to 8701) — two truths. *Not caused by
-      1.4.0*, though the https-only phantom-registration fix helps a little (an https-only server
-      no longer advertises an HTTP port it isn't serving). Needs: hj aware of the https port, and
-      a too-fast restart leaving 8701 in TIME_WAIT should not silently downgrade to HTTP-only.
+- [x] **#3 — HTTP/HTTPS asymmetry (hj→8700, widget on an https page→8701)** — done in 1.13.0 via
+      #32(a)+(b)+(d). Both transports open by default, so the two-truths case (CLI "connected" to
+      8700 while the widget can't reach 8701) no longer arises from configuration; `hj where` states
+      both transports present *and* absent with a reason; and the TIME_WAIT case was already handled
+      (same-port retry with backoff, then a loud failure — never a silent ephemeral relocation).
+      The certificate is machine-level now, so which install started the channel no longer decides
+      whether HTTPS comes up.
 - [ ] **#2 — the dev channel dies with the dev server.** Kill the dev server for a clean build →
       channel drops, tab orphans (page loaded, socket dead). *Architectural (the embedding
       model), not caused by 1.4.0.* Design a channel that outlives a dev-server restart, or
