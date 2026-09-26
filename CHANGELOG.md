@@ -1,6 +1,18 @@
 # Changelog
 
-## 1.13.0 (unreleased)
+## 1.13.0-beta.1 (2026-09-26)
+
+Beta (`npm i haltija@beta`); `latest` stays 1.12.9. Breaking changes are listed first.
+
+### Known issue: any web page can call the REST API (#44)
+
+The REST API answers any origin (`Access-Control-Allow-Origin: *`) and needs no token by default,
+so a page you visit can call `/eval` in your connected tabs, or `/shutdown`, and read the results.
+This predates 1.13. What 1.13 changes: with HTTPS on by default, https pages in **Safari** can now
+reach it once the certificate is trusted, where mixed-content blocking used to stop them. Until an
+origin gate lands (planned before 1.13.0), start the server with `--token <secret>` (or set
+`HALTIJA_TOKEN`) on any machine where that matters, and don't leave a server running you aren't
+using.
 
 ### Changed (breaking)
 

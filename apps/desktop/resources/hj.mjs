@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// haltija-cli:do-not-edit v1.13.0
+// haltija-cli:do-not-edit v1.13.0-beta.1
 var __esm = (fn, res, err) => () => {
   if (fn)
     try {
@@ -785,7 +785,7 @@ function substituteGeneratedVars(text, seed) {
 }
 
 // bin/version.mjs
-var HJ_VERSION = "1.13.0";
+var HJ_VERSION = "1.13.0-beta.1";
 
 // bin/semver.mjs
 function parseVersion(v) {

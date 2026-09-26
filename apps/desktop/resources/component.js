@@ -46,7 +46,7 @@
   });
 
   // src/version.ts
-  var VERSION = "1.13.0";
+  var VERSION = "1.13.0-beta.1";
 
   // src/ws-url.ts
   function httpBaseFromWsUrl(wsUrl2, fallback = "http://localhost:8700") {
