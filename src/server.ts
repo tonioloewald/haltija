@@ -5289,6 +5289,33 @@ if (MODE === 'both') {
   }
 }
 
+/**
+ * What a caller gets for a running listener: a STRUCTURAL type, deliberately not Bun's.
+ *
+ * `haltija/server` runs only under Bun, but its `.d.ts` is read by any TypeScript consumer of the
+ * package, and exporting `ReturnType<typeof Bun.serve>` made those types fail to compile without
+ * `@types/bun` ("Cannot find name 'Bun'") — found by the publish workflow's consumer smoke test,
+ * which typechecks the packed tarball with skipLibCheck off. Nothing in this repo uses these
+ * exports as values (everything imports `dist/server.js` for its side effect), so the public
+ * surface is the part a caller can reasonably want: where it is, and how to stop it.
+ */
+export interface ListeningServer {
+  readonly port: number | undefined
+  readonly hostname: string | undefined
+  readonly url: URL
+  stop(closeActiveConnections?: boolean): Promise<void> | void
+}
+
 // Export the primary server (HTTPS preferred)
-const server = httpsServer || httpServer!
-export { server, httpServer, httpsServer, PORT, HTTPS_PORT, USE_HTTP, USE_HTTPS }
+const server: ListeningServer = (httpsServer || httpServer)!
+const publicHttpServer: ListeningServer | null = httpServer
+const publicHttpsServer: ListeningServer | null = httpsServer
+export {
+  server,
+  publicHttpServer as httpServer,
+  publicHttpsServer as httpsServer,
+  PORT,
+  HTTPS_PORT,
+  USE_HTTP,
+  USE_HTTPS,
+}

@@ -92,6 +92,12 @@
   is the strongest reason for `both` being the default. #33's original "mixed content" diagnosis
   was correct for Safari.
 
+- **`haltija/server`'s types no longer require `@types/bun`.** Its `.d.ts` exported Bun's own
+  server type, so a TypeScript project importing it failed to compile with "Cannot find name
+  'Bun'". `server`, `httpServer` and `httpsServer` are now typed as a small `ListeningServer`
+  interface (`port`, `hostname`, `url`, `stop()`); the runtime values are unchanged. Found by the
+  new publish workflow's consumer smoke test.
+
 ## 1.12.9
 
 Remediation of a Tier 1 review that returned **BLOCK** on the already-published 1.12.7/1.12.8.
