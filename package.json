@@ -46,7 +46,9 @@
     "apps/desktop/*.css",
     "apps/desktop/package.json",
     "apps/desktop/resources/component.js",
-    "apps/desktop/resources/icon.svg"
+    "apps/desktop/resources/icon.svg",
+    "!bin/*.ts",
+    "!dist/.*"
   ],
   "scripts": {
     "build:assets": "bun run scripts/embed-assets.ts",
@@ -94,5 +96,25 @@
   },
   "dependencies": {
     "tosijs-schema": "^1.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tonioloewald/haltija.git"
+  },
+  "peerDependencies": {
+    "electron-store": "^10.0.0"
+  },
+  "peerDependenciesMeta": {
+    "electron-store": {
+      "optional": true
+    }
+  },
+  "releaseDoctor": {
+    "attestedLanes": [
+      "test:integration",
+      "test:e2e",
+      "test:engines",
+      "test:all"
+    ]
   }
 }

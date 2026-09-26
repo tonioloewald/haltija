@@ -92,7 +92,7 @@
   is the strongest reason for `both` being the default. #33's original "mixed content" diagnosis
   was correct for Safari.
 
-## 1.12.9 (unreleased)
+## 1.12.9
 
 Remediation of a Tier 1 review that returned **BLOCK** on the already-published 1.12.7/1.12.8.
 Full report: `reviews/1.12.9-tier1-v1.12.6-to-v1.12.8.md`.

@@ -14,14 +14,20 @@ import { loaderSnippetHtml } from '../src/loader-snippet'
 // OUTPUT, and that output changes between Bun releases for identical source — 1.4.2 renames locals
 // and swaps its module-helper prelude versus 1.4.0. With CI on `bun-version: latest`, docs-drift
 // went red on every push from the day Bun moved past what the artifacts were built with, while
-// nothing in the source had drifted. `.bun-version` pins CI; this warning pins the author. Warn,
-// not fail: building with another Bun is fine for trying things, just not for committing.
+// nothing in the source had drifted. `.bun-version` pins CI and the publish workflow; this pins the
+// author. It REFUSES rather than warns (practices/publishing-via-oidc.md): a mismatched build
+// fails here, not at publish time. HALTIJA_ALLOW_BUN_MISMATCH=1 to build anyway for a quick try —
+// just never commit that output.
 const pinnedBun = existsSync('.bun-version') ? readFileSync('.bun-version', 'utf-8').trim() : ''
 if (pinnedBun && Bun.version !== pinnedBun) {
-  console.warn(
-    `\n  ⚠️  Building with Bun ${Bun.version}, but .bun-version pins ${pinnedBun}. Generated bundles` +
-      `\n      will differ byte-for-byte and docs-drift will fail if you commit them.\n`,
-  )
+  const msg =
+    `Building with Bun ${Bun.version}, but .bun-version pins ${pinnedBun}. Generated bundles would` +
+    ` differ byte-for-byte, and docs-drift and the publish workflow would fail on them.`
+  if (process.env.HALTIJA_ALLOW_BUN_MISMATCH !== '1') {
+    console.error(`\n  ❌ ${msg}\n     Install Bun ${pinnedBun}, or set HALTIJA_ALLOW_BUN_MISMATCH=1 to build anyway (don't commit it).\n`)
+    process.exit(1)
+  }
+  console.warn(`\n  ⚠️  ${msg} (HALTIJA_ALLOW_BUN_MISMATCH=1)\n`)
 }
 
 // 0. Generate version.ts from package.json (single source of truth)

@@ -498,6 +498,26 @@ The review is slow and expensive and repeatedly catches real blockers — mintin
 you can review them means either skipping the gate (so the number lies about the scrutiny applied)
 or reviewing so often it gets skipped. Accumulate patches; let the review certify the minor.
 
+## Publishing
+
+Through `.github/workflows/publish.yml`, which is `tosijs-coding-practices/templates/publish.yml`
+**copied unchanged**. Fixes go to the template, not here. The process is
+[`publishing-via-oidc.md`](../tosijs-coding-practices/practices/publishing-via-oidc.md): CI can only
+*stage*, and the maintainer's 2FA approval on npmjs.com (works from a phone) is what publishes.
+Before tagging, run `gh workflow run publish.yml -f tag=main -f dry_run=true`.
+
+Specific to haltija:
+
+- **Four lanes are attested, not run in CI** (`releaseDoctor.attestedLanes`): `test:integration`
+  needs a live haltija server with a browser attached, and `test:e2e` / `test:engines` /
+  `test:all` need Playwright browsers the publish job doesn't install. At release, on the clean
+  release commit: `bun run build && bun ../tosijs-coding-practices/tools/attest.ts`, commit **only**
+  `release-attestation.json`, and tag that commit. CI rebuilds and must reproduce every shipped
+  file byte-for-byte, so build with the pinned Bun (the build refuses otherwise).
+- **`electron-store` is an optional peer**: npm never installs a nested non-workspace manifest's
+  dependencies, so `apps/desktop/package.json`'s declaration never reached anyone. `main.js`
+  falls back without it.
+
 ## Environment Variables
 
 | Variable | Purpose | Default |

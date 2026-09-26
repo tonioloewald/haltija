@@ -339,25 +339,25 @@
       shadowPrefix.unshift("::shadow");
       hostEl = rootNode.host;
       const hostParts = [];
-      let current2 = hostEl;
-      while (current2) {
-        let selector = current2.tagName.toLowerCase();
-        if (current2.id) {
-          selector = `#${current2.id}`;
+      let current = hostEl;
+      while (current) {
+        let selector = current.tagName.toLowerCase();
+        if (current.id) {
+          selector = `#${current.id}`;
           hostParts.unshift(selector);
           break;
         }
-        if (current2.className && typeof current2.className === "string") {
-          const classes = current2.className.trim().split(/\s+/).slice(0, 2).join(".");
+        if (current.className && typeof current.className === "string") {
+          const classes = current.className.trim().split(/\s+/).slice(0, 2).join(".");
           if (classes)
             selector += `.${classes}`;
         }
         hostParts.unshift(selector);
-        const nextRoot = current2.getRootNode();
+        const nextRoot = current.getRootNode();
         if (nextRoot instanceof ShadowRoot) {
           break;
         }
-        current2 = current2.parentElement;
+        current = current.parentElement;
       }
       shadowPrefix.unshift(...hostParts);
       rootNode = hostEl.getRootNode();
@@ -551,10 +551,10 @@
         const allSimilar = document.querySelectorAll(selector);
         const matchingText = Array.from(allSimilar).filter((e) => e.innerText?.trim() === text);
         if (matchingText.length === 1) {
-          const structuralSelector2 = getSelector(el);
+          const structuralSelector = getSelector(el);
           return {
             primary: `${tag}:text-is("${text}")`,
-            fallback: !isSelectorFragile(structuralSelector2) ? structuralSelector2 : undefined,
+            fallback: !isSelectorFragile(structuralSelector) ? structuralSelector : undefined,
             isFragile: false,
             confidence: "medium"
           };
@@ -564,10 +564,10 @@
     if (tag === "input" || tag === "textarea" || tag === "select") {
       const name = el.getAttribute("name");
       if (name && !isUnstableId(name)) {
-        const placeholder2 = el.getAttribute("placeholder");
+        const placeholder = el.getAttribute("placeholder");
         return {
           primary: `${tag}[name="${name}"]`,
-          fallback: placeholder2 ? `${tag}[placeholder="${placeholder2}"]` : undefined,
+          fallback: placeholder ? `${tag}[placeholder="${placeholder}"]` : undefined,
           isFragile: false,
           confidence: "medium"
         };
@@ -587,10 +587,10 @@
     }
     const roleSelector = getRoleSelector();
     if (roleSelector) {
-      const structuralSelector2 = getSelector(el);
+      const structuralSelector = getSelector(el);
       return {
         primary: roleSelector,
-        fallback: !isSelectorFragile(structuralSelector2) ? structuralSelector2 : undefined,
+        fallback: !isSelectorFragile(structuralSelector) ? structuralSelector : undefined,
         isFragile: false,
         confidence: "medium"
       };
@@ -1616,14 +1616,14 @@
       };
     };
     const stripHandle = (sIn, handle) => handle && sIn.startsWith(handle) ? sIn.slice(handle.length).trim() : sIn;
-    const refChip = (handle, x, y2, size = 9) => {
+    const refChip = (handle, x, y, size = 9) => {
       if (!handle)
         return { svg: "", w: 0 };
       const pad = 2.5;
       const cw = Math.ceil(textW(handle) * (size / 11)) + pad * 2;
       const ch = size + 4;
       return {
-        svg: `<rect x="${x}" y="${y2 - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` + `<text x="${x + pad}" y="${y2}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
+        svg: `<rect x="${x}" y="${y - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` + `<text x="${x + pad}" y="${y}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
         w: cw
       };
     };
@@ -1632,50 +1632,50 @@
     const drawPlaced = (b, g, yOff) => {
       if (visibleIn(b, g) && b.rect && !isPureLayout(b)) {
         const x = b.rect.x - g.x + PAD;
-        const y2 = b.rect.y - g.y + PAD + yOff;
+        const y = b.rect.y - g.y + PAD + yOff;
         const w = Math.max(2, b.rect.w);
         const h = Math.max(2, b.rect.h);
         const kind = (b.inputType || "").toLowerCase();
         if (kind === "checkbox" || kind === "radio") {
           const s = Math.max(6, Math.min(w, h));
           const cx = x + s / 2;
-          const cy = y2 + s / 2;
-          const stroke2 = b.disabled ? "#94a3b8" : "#334155";
-          const fill2 = b.checked ? b.disabled ? "#94a3b8" : "#2563eb" : "#ffffff";
+          const cy = y + s / 2;
+          const stroke = b.disabled ? "#94a3b8" : "#334155";
+          const fill = b.checked ? b.disabled ? "#94a3b8" : "#2563eb" : "#ffffff";
           if (kind === "radio") {
-            parts.push(`<circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="${fill2}" stroke="${stroke2}" stroke-width="1.5"/>`);
+            parts.push(`<circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
             if (b.checked)
               parts.push(`<circle cx="${cx}" cy="${cy}" r="${Math.max(1, s / 6)}" fill="#ffffff"/>`);
           } else {
-            parts.push(`<rect x="${x + 1}" y="${y2 + 1}" width="${s - 2}" height="${s - 2}" rx="2" fill="${fill2}" stroke="${stroke2}" stroke-width="1.5"/>`);
+            parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${s - 2}" height="${s - 2}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
             if (b.checked) {
-              const p1 = `${x + s * 0.25},${y2 + s * 0.5}`;
-              const p2 = `${x + s * 0.45},${y2 + s * 0.7}`;
-              const p3 = `${x + s * 0.78},${y2 + s * 0.28}`;
+              const p1 = `${x + s * 0.25},${y + s * 0.5}`;
+              const p2 = `${x + s * 0.45},${y + s * 0.7}`;
+              const p3 = `${x + s * 0.78},${y + s * 0.28}`;
               parts.push(`<polyline points="${p1} ${p2} ${p3}" fill="none" stroke="#ffffff" stroke-width="${Math.max(1.5, s / 8)}" stroke-linecap="round" stroke-linejoin="round"/>`);
             }
           }
           if (b.focused)
-            parts.push(`<rect x="${x - 2}" y="${y2 - 2}" width="${s + 4}" height="${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
+            parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${s + 4}" height="${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
           return;
         }
         const fill = b.colors?.bg || "rgba(148,163,184,0.10)";
         const stroke = b.disabled ? "#94a3b8" : b.interactive ? b.colors?.border || "#334155" : b.colors?.border || (b.colors ? "rgba(0,0,0,.18)" : "#cbd5e1");
         const strokeW = b.interactive && !b.disabled ? 1.5 : 1;
         const dash = b.disabled ? ' stroke-dasharray="3 2"' : "";
-        parts.push(`<rect x="${x}" y="${y2}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`);
+        parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`);
         if (b.disabled) {
-          parts.push(`<rect x="${x}" y="${y2}" width="${w}" height="${h}" rx="3" fill="rgba(148,163,184,0.35)"/>`);
+          parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="rgba(148,163,184,0.35)"/>`);
         }
         if (b.focused) {
-          parts.push(`<rect x="${x - 2}" y="${y2 - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
+          parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
         }
         if (b.contrastFail)
-          parts.push(`<rect x="${x}" y="${y2}" width="3" height="${h}" fill="#dc2626"/>`);
+          parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`);
         if (b.smallTarget)
-          parts.push(`<rect x="${x}" y="${y2 + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`);
+          parts.push(`<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`);
         if (b.svgImage) {
-          parts.push(`<image x="${x}" y="${y2}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`);
+          parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`);
         }
         const fg = b.colors?.fg || "#0f172a";
         const head = headOf(b);
@@ -1705,13 +1705,13 @@
         const emitCaption = (full, opts = {}) => {
           const size = opts.size ?? 10;
           const cid = `x${parts.length}`;
-          const baseY = y2 + Math.min(h - 3, 11);
+          const baseY = y + Math.min(h - 3, 11);
           const style = `font-family="ui-monospace,Menlo,monospace" font-size="${size}" fill="${fg}"` + (opts.italic ? ' font-style="italic"' : "") + (opts.opacity ? ` opacity="${opts.opacity}"` : "");
-          const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y2}" width="${w}" height="${h}"/></clipPath>`;
+          const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`;
           const chip = b.handle ? refChip(b.handle, tx, baseY) : { svg: "", w: 0 };
           const textX = tx + (chip.w ? chip.w + 3 : 0);
           if (opts.lines) {
-            const spans = opts.lines.map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y2 + 11 + i * 12}">${esc(ln)}</tspan>`).join("");
+            const spans = opts.lines.map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y + 11 + i * 12}">${esc(ln)}</tspan>`).join("");
             parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}<text ${style}>${spans}</text></g>`);
             return;
           }
@@ -1790,29 +1790,29 @@
     };
     const parts = [];
     let uniformW = 0;
-    const draw = (b, x, y2, depth) => {
+    const draw = (b, x, y, depth) => {
       const m = measure(b);
       const w = depth === 0 && uniformW ? uniformW : m.w;
       const h = m.h;
       const fill = b.colors?.bg || ["#f8fafc", "#eef2f7", "#e6ecf3", "#dde5ee"][Math.min(depth, 3)];
       const stroke = b.colors?.border || (b.colors ? "rgba(0,0,0,.15)" : "#94a3b8");
       const strokeW = b.colors?.border ? 1.5 : 1;
-      parts.push(`<rect x="${x}" y="${y2}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`);
+      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`);
       if (b.contrastFail) {
-        parts.push(`<rect x="${x}" y="${y2}" width="4" height="${h}" fill="#dc2626"/>`);
+        parts.push(`<rect x="${x}" y="${y}" width="4" height="${h}" fill="#dc2626"/>`);
       }
       const head = headOf(b);
       const fg = b.colors?.fg || "#0f172a";
-      parts.push(`<text x="${x + PAD}" y="${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`);
+      parts.push(`<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`);
       let dx = x + PAD + textW(head) + GAP;
       if (b.detail) {
-        parts.push(`<text x="${dx}" y="${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}" opacity="0.85">${esc(b.detail)}</text>`);
+        parts.push(`<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}" opacity="0.85">${esc(b.detail)}</text>`);
         dx += textW(b.detail) + GAP;
       }
       if (b.contrastFail) {
-        parts.push(`<text x="${dx}" y="${y2 + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc("⚠ contrast " + b.contrastFail)}</text>`);
+        parts.push(`<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc("⚠ contrast " + b.contrastFail)}</text>`);
       }
-      let cy = y2 + ROW;
+      let cy = y + ROW;
       for (const c of b.children) {
         cy += draw(c, x + PAD, cy, depth + 1) + 4;
       }
@@ -3666,11 +3666,11 @@
           if (action2 === "kill")
             this.kill();
           if (action2 === "logs") {
-            const btn2 = e.currentTarget;
-            if (btn2.classList.contains("has-errors")) {
-              const logFilter2 = this.shadowRoot?.querySelector(".log-filter");
-              if (logFilter2) {
-                logFilter2.value = "console";
+            const btn = e.currentTarget;
+            if (btn.classList.contains("has-errors")) {
+              const logFilter = this.shadowRoot?.querySelector(".log-filter");
+              if (logFilter) {
+                logFilter.value = "console";
               }
             }
             this.toggleLogPanel();
@@ -7227,12 +7227,12 @@ ${elementSummary}${moreText}`;
             this.respond(msg2.id, false, null, "Invalid data URL format");
             return;
           }
-          const mimeType2 = match[1] || "text/plain";
+          const mimeType = match[1] || "text/plain";
           const isBase64 = url.includes(";base64,");
           const data = match[2];
-          const base642 = isBase64 ? data : btoa(decodeURIComponent(data));
+          const base64 = isBase64 ? data : btoa(decodeURIComponent(data));
           const size = isBase64 ? Math.ceil(data.length * 0.75) : data.length;
-          this.respond(msg2.id, true, { mimeType: mimeType2, base64: base642, size, url });
+          this.respond(msg2.id, true, { mimeType, base64, size, url });
           return;
         }
         const response = await fetch(url);

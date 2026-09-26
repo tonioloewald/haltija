@@ -1,96 +1,18 @@
 #!/usr/bin/env bun
 // haltija-cli:do-not-edit v1.13.0
-import { createRequire } from "node:module";
-var __defProp = Object.defineProperty;
-var __returnValue = (v) => v;
-function __exportSetter(name, newValue) {
-  this[name] = __returnValue.bind(null, newValue);
-}
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, {
-      get: all[name],
-      enumerable: true,
-      configurable: true,
-      set: __exportSetter.bind(all, name)
-    });
+var __esm = (fn, res, err) => () => {
+  if (fn)
+    try {
+      res = fn(fn = 0);
+    } catch (e) {
+      err = [e];
+    }
+  if (err)
+    throw err[0];
+  return res;
 };
-var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
-var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/tmux-session.mjs
-var exports_tmux_session = {};
-__export(exports_tmux_session, {
-  attachSession: () => attachSession,
-  detachSession: () => detachSession,
-  listSessions: () => listSessions,
-  newTailOnly: () => newTailOnly,
-  readSession: () => readSession,
-  sessionState: () => sessionState,
-  tokenAdvisory: () => tokenAdvisory,
-  writeSession: () => writeSession
-});
-function sessionState() {
-  return { ...state };
-}
-async function listSessions(run) {
-  const res = await run(["list-sessions", "-F", "#{session_name}"]);
-  if (!res.ok)
-    return [];
-  return res.stdout.split(`
-`).map((l) => l.trim()).filter(Boolean);
-}
-function tokenAdvisory(hasToken) {
-  if (hasToken)
-    return;
-  return "this server has no token, so anything that can reach its port can now read the agent's " + "terminal — not just drive the browser. Fine on a laptop; NOT fine over a tunnel. Start the " + "server with `--token <secret>` (and set HALTIJA_TOKEN for clients) if the port is reachable " + "from anywhere else.";
-}
-async function attachSession(run, target, hasToken = false, allowInput = false) {
-  const available = await listSessions(run);
-  if (!available.length) {
-    return {
-      ok: false,
-      error: "no tmux sessions are running. Start your agent inside one — `tmux new -s agent` then run " + "it there — or attach to an existing session by name.",
-      available: []
-    };
-  }
-  if (!available.includes(target)) {
-    return {
-      ok: false,
-      error: `no tmux session named "${target}"`,
-      available
-    };
-  }
-  state.target = target;
-  state.attachedAt = Date.now();
-  state.allowInput = allowInput;
-  state.writeKey = allowInput ? mintKey() : null;
-  return { ok: true, target, available, allowInput, writeKey: state.writeKey ?? undefined, warning: tokenAdvisory(hasToken) };
-}
-function detachSession() {
-  state.target = null;
-  state.attachedAt = null;
-  state.allowInput = false;
-  state.writeKey = null;
-}
-async function readSession(run, lines = 200) {
-  if (!state.target) {
-    return {
-      ok: false,
-      error: "no session attached. `hj session attach <tmux-session>` first — mirroring is opt-in because " + "it exposes everything the agent prints."
-    };
-  }
-  const safeLines = Math.max(1, Math.min(1e4, Math.floor(lines) || 200));
-  const res = await run(["capture-pane", "-t", state.target, "-p", "-S", `-${safeLines}`]);
-  if (!res.ok) {
-    return {
-      ok: false,
-      target: state.target,
-      error: `could not read tmux session "${state.target}": ${res.stderr.trim() || "unknown error"}`
-    };
-  }
-  return { ok: true, target: state.target, text: res.stdout.replace(/\s+$/, "") };
-}
 function newTailOnly(previous, current) {
   if (!previous)
     return current;
@@ -105,53 +27,7 @@ function newTailOnly(previous, current) {
   }
   return current;
 }
-function mintKey() {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-function keyMatches(provided, expected) {
-  if (provided.length !== expected.length)
-    return false;
-  let diff = 0;
-  for (let i = 0;i < provided.length; i++)
-    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
-  return diff === 0;
-}
-async function writeSession(run, text, submit = true, writeKey = "") {
-  if (!state.target) {
-    return { ok: false, error: "no session attached. `hj session attach <tmux-session>` first." };
-  }
-  if (!state.allowInput || !state.writeKey) {
-    return {
-      ok: false,
-      target: state.target,
-      error: "this session was attached for reading only; writing is a separate grant made at attach time."
-    };
-  }
-  if (!keyMatches(writeKey, state.writeKey)) {
-    return {
-      ok: false,
-      target: state.target,
-      error: "missing or invalid write key. The handle is returned once, to the caller that attached " + "with input permitted; pass it as `writeKey`."
-    };
-  }
-  if (!text)
-    return { ok: false, target: state.target, error: "nothing to send" };
-  const args = ["send-keys", "-t", state.target, "-l", "--", text];
-  const res = await run(args);
-  if (res.ok && submit) {
-    const nl = await run(["send-keys", "-t", state.target, "Enter"]);
-    if (!nl.ok) {
-      return { ok: false, target: state.target, error: nl.stderr.trim() || "send-keys Enter failed" };
-    }
-  }
-  return res.ok ? { ok: true, target: state.target } : { ok: false, target: state.target, error: res.stderr.trim() || "send-keys failed" };
-}
-var state;
-var init_tmux_session = __esm(() => {
-  state = { target: null, attachedAt: null, allowInput: false, writeKey: null };
-});
+var init_tmux_session = () => {};
 
 // bin/cli-subcommand.mjs
 import { spawn } from "child_process";
@@ -1992,8 +1868,8 @@ async function ensureBrowserConnected(port, { explicitTarget = false } = {}) {
       const resp = await fetch(`http://localhost:${port}/status`, {
         signal: AbortSignal.timeout(1000)
       });
-      const status2 = await resp.json();
-      if (status2.ok) {
+      const status = await resp.json();
+      if (status.ok) {
         process.stderr.write(`\x1B[2m ready\x1B[0m
 `);
         return true;
@@ -2246,9 +2122,9 @@ async function runSubcommand(subcommand, subArgs, port = "8700", options = {}) {
   }
   if (targetWindowId) {
     if (isGet) {
-      const url2 = new URL(path, baseUrl);
-      url2.searchParams.set("window", targetWindowId);
-      return doRequest(url2.toString(), "GET", undefined, { subcommand, jsonOutput, args: filteredArgs });
+      const url = new URL(path, baseUrl);
+      url.searchParams.set("window", targetWindowId);
+      return doRequest(url.toString(), "GET", undefined, { subcommand, jsonOutput, args: filteredArgs });
     } else {
       if (!body)
         body = {};
@@ -2458,7 +2334,7 @@ function levenshtein(a, b) {
     return b.length;
   if (b.length === 0)
     return a.length;
-  const matrix = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_2, j) => i === 0 ? j : j === 0 ? i : 0));
+  const matrix = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0));
   for (let i = 1;i <= a.length; i++) {
     for (let j = 1;j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
@@ -3186,7 +3062,7 @@ if (args.length === 1 && !isSubcommand(args[0]) && Object.hasOwn(NOUN_DEFAULTS, 
   args[0] = NOUN_DEFAULTS[args[0]];
 }
 if ((args[0] === "session-read" || args[0] === "session" && args[1] === "read") && args.includes("--follow")) {
-  const { newTailOnly: newTailOnly2 } = await Promise.resolve().then(() => (init_tmux_session(), exports_tmux_session));
+  await Promise.resolve().then(() => init_tmux_session());
   const linesIdx = args.indexOf("--lines");
   const lines = linesIdx !== -1 ? Number(args[linesIdx + 1]) : 200;
   let seen = "";
@@ -3211,7 +3087,7 @@ if ((args[0] === "session-read" || args[0] === "session" && args[1] === "read") 
       process.exit(1);
     }
     const text = json.text || "";
-    const fresh = firstPass ? text : newTailOnly2(seen, text);
+    const fresh = firstPass ? text : newTailOnly(seen, text);
     if (fresh)
       process.stdout.write(fresh.endsWith(`
 `) ? fresh : fresh + `
