@@ -1,69 +1,109 @@
 /**
- * A bad certificate must cost HTTPS, never HTTP (1.13.0-beta.1 security review).
+ * The machine-level certificate, end to end (1.13.0-beta.1 review and re-review).
  *
- * The machine-level cert dir is shared by every haltija on the machine, so a broken pair there — a
- * hand-replaced half, an interrupted write — used to be rethrown from the TLS bind and stop EVERY
- * server from starting, HTTP included, although HTTP needs no certificate. Reproduced with
- * `ERR_OSSL_X509_KEY_VALUES_MISMATCH`: a cert and a key that each parse but do not belong together.
+ * The cert dir is shared by every haltija on the machine, so each failure here used to be
+ * machine-wide:
+ *   - a bad pair was rethrown from the TLS bind and stopped EVERY server, HTTP included;
+ *   - a mismatched pair (two servers renewing at once can interleave their renames) passed every
+ *     later check, so HTTPS stayed down until someone deleted the dir;
+ *   - nothing checked the date, so the openssl cert would lapse after a year;
+ *   - /status blamed "port N is held by another process" for a certificate problem.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, it, expect, afterAll } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { execSync } from 'child_process'
-import { mkdirSync } from 'fs'
+import { X509Certificate } from 'crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
 import { isolateTestMachineState, uniqueTestPort } from './test-support'
 
-const dir = isolateTestMachineState()
-const HTTP_PORT = uniqueTestPort()
-const HTTPS_PORT = uniqueTestPort()
-const certs = join(dir, 'certs')
+isolateTestMachineState()
+const REPO = join(import.meta.dir, '..')
+const procs: Subprocess[] = []
 
-let proc: Subprocess | null = null
-let status: any = null
+afterAll(async () => {
+  for (const p of procs) p.kill()
+  await Promise.all(procs.map((p) => p.exited))
+})
 
-beforeAll(async () => {
-  mkdirSync(certs, { recursive: true, mode: 0o700 })
-  const gen = (keyOut: string, certOut: string) =>
-    execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyOut}" -out "${certOut}" -days 90 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
-  // Two unrelated pairs; keep the cert of one and the key of the other. Both parse and are in
-  // date, so planCertSetup says `use` and the failure happens at the TLS bind, where it bit.
-  gen(join(certs, 'localhost-key.pem'), join(dir, 'other-cert.pem'))
-  gen(join(dir, 'other-key.pem'), join(certs, 'localhost.pem'))
+const openssl = (keyOut: string, certOut: string, days: number) =>
+  execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyOut}" -out "${certOut}" -days ${days} -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
 
-  proc = spawn({
+/** A server with its own cert dir and receipt log; returns its /status once it answers. */
+async function start(certs: string, extraEnv: Record<string, string> = {}) {
+  const port = uniqueTestPort()
+  const log = join(mkdtempSync(join(tmpdir(), 'haltija-receipts-')), 'receipts.log')
+  const proc = spawn({
     cmd: ['bun', 'run', 'bin/server.ts'],
-    cwd: join(import.meta.dir, '..'),
+    cwd: REPO,
     env: {
       ...process.env,
       DEV_CHANNEL_MODE: 'both',
-      HALTIJA_PORT: String(HTTP_PORT),
-      DEV_CHANNEL_HTTPS_PORT: String(HTTPS_PORT),
+      HALTIJA_PORT: String(port),
+      DEV_CHANNEL_HTTPS_PORT: String(uniqueTestPort()),
+      HALTIJA_CERTS_DIR: certs,
+      HALTIJA_MACHINE_LOG: log,
+      ...extraEnv,
     },
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  for (let i = 0; i < 50 && !status; i++) {
+  procs.push(proc)
+  for (let i = 0; i < 50; i++) {
     try {
-      const res = await fetch(`http://localhost:${HTTP_PORT}/status`)
-      if (res.ok) status = await res.json()
+      const res = await fetch(`http://localhost:${port}/status`)
+      if (res.ok) return { status: await res.json(), log: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') }
     } catch {}
-    if (!status) await Bun.sleep(200)
+    await Bun.sleep(200)
   }
-}, 20000)
+  throw new Error('server never answered')
+}
 
-afterAll(async () => {
-  proc?.kill()
-  await proc?.exited
-})
+const freshCertDir = () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'haltija-certtest-')), 'certs')
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  return dir
+}
 
-describe('a mismatched certificate pair', () => {
-  it('leaves HTTP serving', () => {
-    expect(status).not.toBeNull()
+describe('the machine-level certificate', () => {
+  it('a MISMATCHED pair heals: replaced, old pair kept as .bak, with a receipt', async () => {
+    const certs = freshCertDir()
+    // Keep the cert of one pair and the key of another. Both parse and are in date.
+    openssl(join(certs, 'localhost-key.pem'), join(certs, '..', 'other-cert.pem'), 90)
+    openssl(join(certs, '..', 'other-key.pem'), join(certs, 'localhost.pem'), 90)
+    const { status, log } = await start(certs)
     expect(status.transports.http.listening).toBe(true)
-  })
+    expect(status.transports.https.listening).toBe(true)
+    expect(existsSync(join(certs, 'localhost.pem.bak'))).toBe(true)
+    expect(log()).toContain('mismatched')
+  }, 30000)
 
-  it('reports HTTPS as down rather than pretending', () => {
-    expect(status.transports.https.listening).toBe(false)
-  })
+  it('an EXPIRING cert is renewed, with a receipt', async () => {
+    const certs = freshCertDir()
+    openssl(join(certs, 'localhost-key.pem'), join(certs, 'localhost.pem'), 5)
+    const before = new Date(new X509Certificate(readFileSync(join(certs, 'localhost.pem'))).validTo)
+    const { status, log } = await start(certs)
+    const after = new Date(new X509Certificate(readFileSync(join(certs, 'localhost.pem'))).validTo)
+    expect(status.transports.https.listening).toBe(true)
+    expect(after.getTime()).toBeGreaterThan(before.getTime())
+    expect(log()).toContain('renewed')
+  }, 30000)
+
+  it('with no way to write a cert, HTTP serves and /status names the real reason', async () => {
+    // A cert dir under a read-only parent, so every route fails — generate AND adopt (a checkout
+    // has its own gitignored certs/ to adopt, which is why a PATH without openssl is not enough).
+    const parent = mkdtempSync(join(tmpdir(), 'haltija-certtest-ro-'))
+    chmodSync(parent, 0o555)
+    try {
+      const { status } = await start(join(parent, 'certs'))
+      expect(status.transports.http.listening).toBe(true)
+      expect(status.transports.https.listening).toBe(false)
+      expect(status.transports.https.reason).toContain('could not obtain a TLS certificate')
+      expect(status.transports.https.reason).not.toContain('held by another process')
+    } finally {
+      chmodSync(parent, 0o755)
+    }
+  }, 30000)
 })

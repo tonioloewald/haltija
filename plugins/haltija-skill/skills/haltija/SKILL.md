@@ -55,10 +55,10 @@ if you declared origins and no connected tab matches, `hj` says so loudly rather
 driving someone else's page (and fails outright under `--strict`). `HALTIJA_ORIGINS=…` overrides for
 one-off shells and CI.
 
-**A shared channel can be half-open.** `hj where` prints a `transports:` line — which of HTTP/HTTPS
-is listening, and why not. HTTP-only leaves https pages unserved while looking healthy — Safari
-blocks http://localhost from https; the `/docs` snippet's fallback helps Chromium/Firefox only.
-Both failing logs `haltija: no channel reachable`.
+**A shared channel can be half-open.** `hj where`'s `transports:` line says which of HTTP/HTTPS
+listens, and the real reason if not (port held, bad cert). HTTP-only leaves https pages unserved
+while looking healthy (Safari blocks http://localhost from https). Only the 8700 server takes
+HTTPS 8701; a `--port`/`--name` server's is ephemeral. Cert writes log to stderr.
 
 **Both diagnostics report what routing will actually do.** `hj where` and `hj doctor` each print an
 `origins:` line — what you declared, where the declaration was found, and which connected window it

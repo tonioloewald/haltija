@@ -23,12 +23,12 @@ Options:
   --https         HTTPS only on port 8701 (auto-generates certs)
   --both          Both HTTP (8700) and HTTPS (8701) — this is the DEFAULT
   --port <n>      Set HTTP port (default: 8700)
-  --https-port <n> Set HTTPS port (default: 8701)
+  --https-port <n> Set HTTPS port (default: 8701 for the server on 8700, else ephemeral)
   --help, -h      Show this help
 
 Environment Variables:
   DEV_CHANNEL_PORT       HTTP port (default: 8700)
-  DEV_CHANNEL_HTTPS_PORT HTTPS port (default: 8701)
+  DEV_CHANNEL_HTTPS_PORT HTTPS port (default: 8701 for the server on 8700, else ephemeral)
   DEV_CHANNEL_MODE       'http', 'https', or 'both' (default: 'both')
 
 Examples:

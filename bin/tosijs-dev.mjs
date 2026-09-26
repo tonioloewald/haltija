@@ -54,7 +54,7 @@ Options:
   --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
   --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
-  --https-port <n> Set HTTPS port (default: 8701)
+  --https-port <n> Set HTTPS port (default: 8701 for the server on 8700, else ephemeral)
   --token <value> Require X-Haltija-Token header on REST and ?token= on WebSocket
                   (default: off; sets HALTIJA_TOKEN)
   --name <foo>    Register this server as <foo> in ~/.haltija/servers/ so
@@ -95,7 +95,7 @@ Environment Variables:
   HALTIJA_NO_TAB_WARN      Set to 1: silence hidden-tab / focus-ambiguity result warnings
   HALTIJA_REGISTRY_DIR     Instance registry location (default: ~/.haltija/servers)
   DEV_CHANNEL_PORT         Legacy alias for HALTIJA_PORT
-  DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701)
+  DEV_CHANNEL_HTTPS_PORT   HTTPS port (default: 8701 for the server on 8700, else ephemeral)
   DEV_CHANNEL_MODE         'http', 'https', or 'both' (default: 'both')
   HALTIJA_CERTS_DIR        TLS certificate location (default: ~/.haltija/certs)
   DEV_CHANNEL_SNAPSHOTS_DIR  Directory to save snapshots (default: memory only)

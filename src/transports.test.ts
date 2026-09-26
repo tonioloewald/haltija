@@ -140,6 +140,12 @@ describe('planCertSetup', () => {
       expect(plan).toMatchObject({ action: 'generate', replacing: 'unreadable' })
     })
 
+    it('treats a key that does not match its cert as unreadable, so the pair heals', () => {
+      // Two servers renewing at once can interleave their renames into key A + cert B.
+      const plan = planCertSetup({ certDir, legacyCertDir, exists: machine, validUntil: () => days(90), pairMatches: () => false, now })
+      expect(plan).toMatchObject({ action: 'generate', replacing: 'unreadable' })
+    })
+
     it('does not ADOPT an expiring legacy cert; generates instead', () => {
       const plan = planCertSetup({
         certDir,

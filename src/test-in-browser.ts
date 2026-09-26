@@ -181,7 +181,7 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
         hjSend(el, 'over', p.x, p.y, 0)
         hjSend(el, 'down', p.x, p.y, 1)
         hjSend(el, 'up', p.x, p.y, 0)
-        el.dispatchEvent(new MouseEvent('click', { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, composed: true, button: 0 }))
+        el.dispatchEvent(new MouseEvent('click', { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, composed: true, button: 0, detail: 1 }))
         return true
       })()`, 'clickAt')
     },

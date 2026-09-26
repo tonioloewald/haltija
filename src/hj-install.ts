@@ -29,6 +29,19 @@
 export const HJ_MARKER = 'haltija-cli:do-not-edit'
 
 /**
+ * The version stamped beside the marker (`// haltija-cli:do-not-edit v1.13.0`), or null.
+ *
+ * A server run from a source checkout copies the gitignored `dist/hj.js`, whose version nothing
+ * else checks: after a `git pull` that bumps the version without a rebuild, it would "repair" a
+ * newer `hj` with an older bundle, record the wrong version in the receipt, and repeat on every
+ * boot (1.13.0-beta.1 re-review). So the bundle must say which version it is.
+ */
+export function bundleVersion(head: string): string | null {
+  const m = head.match(new RegExp(HJ_MARKER + ' v(\\S+)'))
+  return m ? m[1] : null
+}
+
+/**
  * Smallest plausible haltija `hj`. Our JS bundle is ~68 KB; a hand-written shim is a few
  * hundred bytes. This is the size gate the old comment promised and the old code never
  * applied — it is what separates "our bundle" from "someone's two-line wrapper".

@@ -31,7 +31,7 @@ import { register as registerNamedInstance, unregister as unregisterNamedInstanc
 import { isOlderThan } from './semver'
 import { candidatePorts, planForServer, planFreePort, GUARDS_VERSION, type ServerProbe } from './legacy-servers'
 import { recordMachineAction } from './machine-log'
-import { HJ_MARKER, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
+import { HJ_MARKER, bundleVersion, identifyHjBounded, planHjInstall, type HjIdentity } from './hj-install'
 import { listenerPidsOnPort, listenerPidOnPort, isHaltijaProcess } from './port-pid'
 import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
@@ -54,7 +54,7 @@ import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type Task
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, statSync, openSync, readSync, closeSync, unlinkSync, copyFileSync, chmodSync, renameSync } from 'fs'
-import { X509Certificate } from 'crypto'
+import { X509Certificate, createPrivateKey } from 'crypto'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -197,28 +197,41 @@ const certValidUntil = (p: string): Date | null => {
     return null
   }
 }
+const certPairMatches = (pair: { cert: string; key: string }): boolean => {
+  try {
+    return new X509Certificate(readFileSync(pair.cert)).checkPrivateKey(createPrivateKey(readFileSync(pair.key)))
+  } catch {
+    return false
+  }
+}
 const certPlan = planCertSetup({
   certDir: certsDir,
   legacyCertDir: legacyCertsDir,
   exists: existsSync,
   validUntil: certValidUntil,
+  pairMatches: certPairMatches,
 })
 const certPath = certPlan.paths.cert
 const keyPath = certPlan.paths.key
 
+// Why HTTPS is down, when it is. /status reports it and `hj where` prints it, so it must name the
+// real cause: a bad certificate used to be reported as "port N is held by another process".
+let httpsDownReason: string | null = null
+
 let certsAvailable = certPlan.action === 'use'
 if (WANT_HTTPS && !certsAvailable) {
+  const replacing = certPlan.action === 'generate' ? certPlan.replacing : undefined
+  // Written to temp names and renamed into place, so a crash or full disk mid-write cannot leave a
+  // truncated file. The two renames are separate, so two servers renewing at once CAN interleave
+  // into a mismatched pair; planCertSetup checks the key against the cert, so the next start
+  // treats that as unreadable and heals it rather than keeping HTTPS down for good.
+  const tmp = `.tmp-${process.pid}`
+  const tmpCert = certPath + tmp
+  const tmpKey = keyPath + tmp
   try {
     // 0700: the private key is the one thing here worth protecting from other users on a shared
     // machine. Free to do correctly, and awkward to retrofit once keys are already on disk.
     mkdirSync(certsDir, { recursive: true, mode: 0o700 })
-    // Written to temp names and renamed into place: two servers starting at once, or a crash or
-    // full disk mid-write, must not leave a truncated or mismatched pair that every later start
-    // then reads. Every write is a machine-scope action, so it gets a receipt (stderr + log): a
-    // private key appearing in $HOME must be traceable to the version and project that put it there.
-    const tmp = `.tmp-${process.pid}`
-    const tmpCert = certPath + tmp
-    const tmpKey = keyPath + tmp
     if (certPlan.action === 'adopt') {
       // Carry forward a cert the user has ALREADY clicked through a browser warning for. Generating
       // a fresh one would silently revoke that decision and re-prompt, punishing existing users for
@@ -235,26 +248,42 @@ if (WANT_HTTPS && !certsAvailable) {
       }
     }
     try { chmodSync(tmpKey, 0o600) } catch { /* best effort; a readable key is not worth failing over */ }
+    // Replacing a pair: keep the old one as .bak. HALTIJA_CERTS_DIR may point at a directory the
+    // user owns (mkcert's default file names are the same), and a renewal must be undoable.
+    if (replacing && existsSync(certPath) && existsSync(keyPath)) {
+      copyFileSync(certPath, certPath + '.bak')
+      copyFileSync(keyPath, keyPath + '.bak')
+      chmodSync(keyPath + '.bak', 0o600)
+    }
     renameSync(tmpKey, keyPath)
     renameSync(tmpCert, certPath)
-    const replacing = certPlan.action === 'generate' ? certPlan.replacing : undefined
     const why = certPlan.action === 'adopt'
       ? `adopted the existing certificate from ${legacyCertsDir} (your browser's trust for it still applies)`
       : replacing === 'expiring'
-        ? 'renewed the TLS certificate, which was expiring (your browser will ask to trust it again once)'
+        ? 'renewed the TLS certificate, which was expiring; the old pair is kept as *.bak (browsers may ask to trust the new one)'
         : replacing === 'unreadable'
-          ? 'replaced an unreadable TLS certificate'
+          ? 'replaced an unreadable or mismatched TLS certificate; the old pair is kept as *.bak'
           : 'generated a TLS certificate'
     recordMachineAction({ kind: 'cert', detail: `${why} in ${certsDir} (set HALTIJA_CERTS_DIR to use another directory)` })
     certsAvailable = true
   } catch (err) {
-    // NOT fatal in `both`: HTTP still serves, and `hj` still works. The machine may simply have
-    // neither mkcert nor openssl — which is a missing tool, not a broken haltija. Say what is
-    // missing and what it costs, then carry on; the transport report below states HTTPS is down.
+    for (const f of [tmpCert, tmpKey]) {
+      try { unlinkSync(f) } catch { /* not there */ }
+    }
     const why = err instanceof Error ? err.message.split('\n')[0] : String(err)
-    console.error(`${LOG_PREFIX} Could not obtain a TLS certificate (${why})`)
-    console.error(`${LOG_PREFIX} HTTPS will be unavailable — pages served over https:// cannot connect to this channel.`)
-    console.error(`${LOG_PREFIX} Install mkcert (brew install mkcert && mkcert -install) or openssl, then restart.`)
+    const oldUntil = replacing === 'expiring' ? certValidUntil(certPath) : null
+    if (oldUntil && oldUntil.getTime() > Date.now()) {
+      // A failed RENEWAL must not throw away a cert that still works for up to 30 more days.
+      console.error(`${LOG_PREFIX} Could not renew the TLS certificate (${why}); using the current one, valid until ${oldUntil.toISOString().slice(0, 10)}.`)
+      certsAvailable = true
+    } else {
+      // NOT fatal in `both`: HTTP still serves, and `hj` still works. The machine may simply have
+      // neither mkcert nor openssl, which is a missing tool, not a broken haltija.
+      httpsDownReason = `could not obtain a TLS certificate in ${certsDir} (${why})`
+      console.error(`${LOG_PREFIX} Could not obtain a TLS certificate (${why})`)
+      console.error(`${LOG_PREFIX} HTTPS will be unavailable — pages served over https:// cannot connect to this channel.`)
+      console.error(`${LOG_PREFIX} Install mkcert (brew install mkcert && mkcert -install) or openssl, then restart.`)
+    }
   }
 }
 
@@ -1541,8 +1570,8 @@ async function handleRest(req: Request, viaMachineChannel = false): Promise<Resp
             : !WANT_HTTPS
               ? `not requested (mode=${MODE})`
               : !certsAvailable
-                ? `no certs at ${certsDir}`
-                : `port ${HTTPS_PORT} is held by another process`,
+                ? httpsDownReason ?? `no certs at ${certsDir}`
+                : httpsDownReason ?? `port ${HTTPS_PORT} is held by another process`,
         },
       },
     }, { headers })
@@ -4827,14 +4856,25 @@ if (USE_HTTPS) {
   // A bad pair (a hand-replaced half, a key that does not match) throws from Bun.serve with an
   // OpenSSL error, not EADDRINUSE. That used to be rethrown and took HTTP down with it, although
   // HTTP needs no certificate at all (1.13.0-beta.1 security review).
-  const certFailure = (err: unknown): boolean => {
+  // Only an OpenSSL/PEM error, or a failed read, is a CERTIFICATE problem. Anything else (EACCES on
+  // a privileged --https-port, EADDRNOTAVAIL) must not advise deleting a certificate the user has
+  // already trusted. Either way HTTP keeps serving and /status names the real cause.
+  const certFailure = (err: unknown, knownCert = false): boolean => {
     const code = err && typeof err === 'object' && 'code' in err ? String((err as any).code) : ''
     if (code === 'EADDRINUSE' || !USE_HTTP) return false
     const why = err instanceof Error ? err.message.split('\n')[0] : String(err)
+    const isCert = knownCert || /ERR_OSSL|X509|KEY_VALUES|PEM|certificate|private key/i.test(`${code} ${why}`)
     console.error('')
-    console.error(`  ⚠️  HTTPS could not start with the certificate in ${certsDir}: ${why}`)
-    console.error(`      HTTP is still serving; pages served over https:// will not connect.`)
-    console.error(`      Fix: delete ${certsDir} and restart, and haltija will make a new one.`)
+    if (isCert) {
+      httpsDownReason = `the certificate in ${certsDir} could not be used (${why})`
+      console.error(`  ⚠️  HTTPS could not start with the certificate in ${certsDir}: ${why}`)
+      console.error(`      HTTP is still serving; pages served over https:// will not connect.`)
+      console.error(`      Fix: delete ${certsDir} and restart, and haltija will make a new one.`)
+    } else {
+      httpsDownReason = `HTTPS could not bind port ${HTTPS_PORT} (${code || why})`
+      console.error(`  ⚠️  HTTPS could not bind port ${HTTPS_PORT}: ${why}`)
+      console.error(`      HTTP is still serving; pages served over https:// will not connect.`)
+    }
     console.error('')
     return true
   }
@@ -4842,7 +4882,7 @@ if (USE_HTTPS) {
   try {
     tls = { cert: readFileSync(certPath), key: readFileSync(keyPath) }
   } catch (err) {
-    if (!certFailure(err)) throw err
+    if (!certFailure(err, true)) throw err
   }
   const wantedHttpsPort = HTTPS_PORT
   const bindHttps = () => Bun.serve({ port: wantedHttpsPort, tls: tls!, ...serverConfig })
@@ -5211,6 +5251,11 @@ if (REGISTRY_NAME) {
         console.error(`  [hj] Not installing hj: no built bundle at ${candidates.join(' or ')} (run \`bun run build\`).`)
         return
       }
+      const built = bundleVersion(readFileSync(source, 'utf8').slice(0, 300))
+      if (built !== VERSION) {
+        console.error(`  [hj] Not installing hj: ${source} is ${built ?? 'unversioned'}, this server is ${VERSION} (run \`bun run build\`).`)
+        return
+      }
       if (existsSync(hjTarget)) {
         unlinkSync(hjTarget)
       }
@@ -5313,6 +5358,19 @@ if (INSTANCE_NAME) {
   console.log(`  NAME:      ${INSTANCE_NAME}   (use HALTIJA_NAME=${INSTANCE_NAME} hj <cmd>)`)
 }
 
+// The /docs loader hardcodes the shared channel's 8700/8701. Recommending it from a server that
+// does not hold 8701 (a --port/--name project server, whose HTTPS is ephemeral) would send https
+// pages to the SHARED channel instead of this one — the misroute httpsPortFor exists to prevent.
+function httpsLoaderHint(): string {
+  if (!httpsServer) return ''
+  if (HTTPS_PORT === DEFAULT_HTTPS_PORT) {
+    return `              On https pages use the loader in /docs ("Embed in your app"): Safari
+              blocks http://localhost from https, so they need the HTTPS transport.`
+  }
+  return `              On https pages load https://localhost:${HTTPS_PORT}/component.js?autoInject=true&serverUrl=wss://localhost:${HTTPS_PORT}/ws/browser
+              (this server's HTTPS port is ephemeral; pass --https-port for a stable one).`
+}
+
 console.log(`
   To connect: Visit the server URL and drag the bookmarklet to your toolbar.
               The bookmarklet auto-detects HTTP/HTTPS based on the target page.
@@ -5321,8 +5379,7 @@ console.log(`
 
               /^localhost$|^127\\./.test(location.hostname)&&import('${primaryUrl}/dev.js')
 
-              On https pages use the loader in /docs ("Embed in your app"): Safari
-              blocks http://localhost from https, so they need the HTTPS transport.
+${httpsLoaderHint()}
 
   AI AGENTS:  curl ${primaryUrl}/docs
 

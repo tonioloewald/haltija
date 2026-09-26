@@ -23,6 +23,7 @@ const CERTS_DIR = join(dir, 'certs')
 
 let proc: Subprocess | null = null
 let status: any = null
+let banner = ''
 
 beforeAll(async () => {
   const env: Record<string, string | undefined> = { ...process.env, HALTIJA_PORT: String(HTTP_PORT) }
@@ -36,6 +37,11 @@ beforeAll(async () => {
     stdout: 'pipe',
     stderr: 'pipe',
   })
+  // Collect the banner as it streams; the process stays up, so read chunks rather than to EOF.
+  ;(async () => {
+    const dec = new TextDecoder()
+    for await (const chunk of proc!.stdout as ReadableStream<Uint8Array>) banner += dec.decode(chunk)
+  })()
   for (let i = 0; i < 50 && !status; i++) {
     try {
       const res = await fetch(`http://localhost:${HTTP_PORT}/status`)
@@ -68,6 +74,16 @@ describe('the transport default, spawned (#32a)', () => {
       tls: { rejectUnauthorized: false },
     })
     expect(res.ok).toBe(true)
+  })
+
+  it('points agents at HTTP, not the self-signed HTTPS URL', async () => {
+    for (let i = 0; i < 25 && !banner.includes('AI AGENTS'); i++) await Bun.sleep(100)
+    expect(banner).toContain(`curl http://localhost:${HTTP_PORT}/docs`)
+  })
+
+  it("tells https pages this server's own port, not the shared channel's /docs loader", () => {
+    expect(banner).toContain(`https://localhost:${status.transports.https.port}/component.js`)
+    expect(banner).not.toContain('use the loader in /docs')
   })
 
   it('writes the certificate into the configured dir with a 0600 key', () => {

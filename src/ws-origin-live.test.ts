@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { spawn, type ChildProcess } from 'child_process'
 import http from 'http'
 import { join } from 'path'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { isolatedServerEnv } from './test-ports'
 
 /**
  * The machine-scope socket policy, against a REAL server (review M1).
@@ -41,9 +44,11 @@ beforeAll(async () => {
   proc = spawn('bun', [join(import.meta.dir, '../dist/server.js')], {
     env: {
       ...process.env,
+      // Temp certs, receipt, registry and artifacts, HTTP-only. It used to set only the three
+      // below, so run alone (not after another file had set the env) it wrote a cert and a
+      // receipt line into the real ~/.haltija (1.13.0-beta.1 re-review).
+      ...isolatedServerEnv(mkdtempSync(join(tmpdir(), 'haltija-wsorigin-'))),
       HALTIJA_PRIVATE: '1',        // ephemeral port, registers nothing, touches no shared server
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
       HALTIJA_WS_NONCE: NONCE,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

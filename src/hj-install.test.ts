@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'bun:test'
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'fs'
 import { join } from 'path'
-import { HEAD_SCAN_BYTES, HJ_MARKER, TAIL_SCAN_BYTES, identifyHj, identifyHjBounded, planHjInstall, type HjState } from './hj-install'
+import { HEAD_SCAN_BYTES, HJ_MARKER, bundleVersion, TAIL_SCAN_BYTES, identifyHj, identifyHjBounded, planHjInstall, type HjState } from './hj-install'
 import { isOlderThan } from './semver'
 
 const REPO = join(import.meta.dir, '..')
@@ -194,5 +194,14 @@ describe('the DMG shim', () => {
   it("still declines a user's shim of similar size that lacks the marker", () => {
     const userShim = Buffer.from('#!/bin/sh\nHALTIJA_PORT=9123 exec /opt/hj "$@"\n')
     expect(identifyHj(userShim)).toBe('foreign')
+  })
+})
+
+describe('bundleVersion', () => {
+  it('reads the version stamped beside the marker', () => {
+    expect(bundleVersion(`#!/usr/bin/env bun\n// ${HJ_MARKER} v1.13.0-beta.1\nimport x from 'y'`)).toBe('1.13.0-beta.1')
+  })
+  it('is null for a bundle with no stamp, so a stale or foreign file is never installed', () => {
+    expect(bundleVersion('#!/usr/bin/env bun\nconsole.log(1)')).toBeNull()
   })
 })

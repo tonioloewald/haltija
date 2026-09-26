@@ -217,25 +217,31 @@ export function planCertSetup(opts: {
   exists: (path: string) => boolean
   /** The certificate's notAfter, or null if it cannot be parsed. Omitted: dates are not checked. */
   validUntil?: (certPath: string) => Date | null
+  /**
+   * Whether the key belongs to the cert. A mismatched pair (two servers renewing at once can
+   * interleave their renames) otherwise passes every later check and keeps HTTPS down for good.
+   */
+  pairMatches?: (paths: CertPaths) => boolean
   now?: Date
 }): CertPlan {
   const paths = certPaths(opts.certDir)
   const now = (opts.now ?? new Date()).getTime()
-  const health = (cert: string): 'ok' | 'expiring' | 'unreadable' => {
+  const health = (pair: CertPaths): 'ok' | 'expiring' | 'unreadable' => {
+    if (opts.pairMatches && !opts.pairMatches(pair)) return 'unreadable'
     if (!opts.validUntil) return 'ok'
-    const until = opts.validUntil(cert)
+    const until = opts.validUntil(pair.cert)
     if (!until || Number.isNaN(until.getTime())) return 'unreadable'
     return until.getTime() - now < CERT_RENEW_WITHIN_MS ? 'expiring' : 'ok'
   }
 
   if (opts.exists(paths.cert) && opts.exists(paths.key)) {
-    const h = health(paths.cert)
+    const h = health(paths)
     if (h === 'ok') return { action: 'use', paths }
     return { action: 'generate', paths, replacing: h }
   }
 
   const legacy = certPaths(opts.legacyCertDir)
-  if (opts.exists(legacy.cert) && opts.exists(legacy.key) && health(legacy.cert) === 'ok') {
+  if (opts.exists(legacy.cert) && opts.exists(legacy.key) && health(legacy) === 'ok') {
     return { action: 'adopt', paths, from: legacy }
   }
   return { action: 'generate', paths }
