@@ -33,6 +33,11 @@ jobs:
       - name: Run E2E
         run: bun run test:e2e
 
+      # Every Playwright suite spawns a haltija server. This lane had no footprint gate, which is
+      # how its servers binding the real 8701 and writing ~/.haltija/certs went unnoticed.
+      - name: Assert the suite left no footprint on the machine
+        run: scripts/assert-no-machine-footprint.sh
+
   # The ONE suite whose answer differs by browser engine: whether an https page may reach
   # http://localhost (Chromium/Firefox yes, WebKit no — src/transports.ts). A Chromium-only
   # measurement once got this repo to declare the WebKit behaviour "false" in six places, so this
@@ -59,3 +64,6 @@ jobs:
 
       - name: Run the transport-fallback suite in all three engines
         run: bun run test:engines
+
+      - name: Assert the suite left no footprint on the machine
+        run: scripts/assert-no-machine-footprint.sh

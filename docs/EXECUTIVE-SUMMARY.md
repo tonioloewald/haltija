@@ -80,9 +80,9 @@ Unlike Selenium or Playwright, you don't write selectors. You describe intent: "
 
 Haltija runs a WebSocket server on localhost that accepts commands to control browser tabs. The widget self-identifies when active (no silent operation), and users can pause or kill the connection at any time.
 
-The threat model assumes a trusted local environment. The server binds to localhost by default. Cross-origin stylesheets cannot be inspected due to browser security. The widget cannot access cross-origin iframe content.
+The threat model assumes a trusted local environment. The server listens on all interfaces, and without `--token` its REST API answers any caller, including web pages you visit; set `--token` on untrusted networks. Cross-origin stylesheets cannot be inspected due to browser security. The widget cannot access cross-origin iframe content.
 
-- **Localhost-only by default**, no remote connections without explicit configuration
+- **Not localhost-only**: it listens on all interfaces; `--token` gates every request
 - **Visible indicator** in browser when agent is connected and operating
 - **User kill switch** to immediately disconnect and remove widget
 - **No credential storage**, authentication is handled by the browser normally

@@ -14,8 +14,10 @@
  *  - **Teardown.** `e2e` sent SIGTERM and then *confirmed*, escalating to SIGKILL. The other two
  *    called bare `serverProcess?.kill()` and moved on — so a `bun run` wrapper that outlives the
  *    signal leaves a server holding the port, which is precisely how the leak above happens.
- *  - **HTTPS.** Two set `DEV_CHANNEL_NO_HTTPS`; `mutation` didn't, so it also bound a second
- *    (unused) TLS listener, doubling its chances of colliding with something.
+ *  - **HTTPS.** Two set `DEV_CHANNEL_NO_HTTPS`; `mutation` didn't. None of it mattered, because
+ *    nothing had read that variable since v0.1.7 — harmless while the default was `http`, and a
+ *    real bind of the machine's 8701 once 1.13.0 defaulted to `both`. The env now comes from
+ *    `isolatedServerEnv` in `test-ports.ts`, the one definition the Bun suites use too.
  *  - **Registry dir.** All three `mkdtempSync`'d one and none ever removed it, so every Playwright
  *    run left another `haltija-pw-registry-…` in tmpdir forever.
  *
@@ -32,7 +34,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
-import { uniqueTestPort } from './test-ports'
+import { isolatedServerEnv, uniqueTestPort } from './test-ports'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -65,10 +67,9 @@ export async function startTestServer(
     env: {
       ...process.env,
       DEV_CHANNEL_PORT: String(port),
-      DEV_CHANNEL_NO_HTTPS: '1',
-      HALTIJA_REGISTRY_DIR: registryDir,
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
+      // HTTP only, temp certs/registry/receipt/artifacts: the shared definition, so this copy
+      // cannot drift again (it once relied on a variable nothing read — see isolatedServerEnv).
+      ...isolatedServerEnv(registryDir),
     },
     stdio: logPrefix ? 'pipe' : 'inherit',
   })

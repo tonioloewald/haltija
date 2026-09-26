@@ -36,8 +36,12 @@
  *     await page.dragFrom(box.x, box.y, 40, 0)
  *
  * Their coordinate bugs — clicking below the fold where `elementFromPoint` returns null, hitting a
- * list row instead of the field — are why this routes through haltija's existing scroll-into-view
- * and actionability handling rather than dispatching raw events at a point.
+ * list row instead of the field — are why a point is scrolled into view and re-based before anything
+ * is dispatched (see POINTER_KIT below). What is then dispatched IS synthetic events at a point:
+ * pointer events and mouse events, both, with `buttons` set. An earlier version of this comment
+ * claimed it routed through haltija's actionability handling while the code sent bare MouseEvents,
+ * and pointer-driven controls (3D orbit cameras listen for pointer events and check `buttons`)
+ * would have ignored the drag and still reported success (1.13.0-beta.1 correctness review).
  */
 
 
@@ -92,6 +96,43 @@ export interface BrowserPage {
   dragFrom(x: number, y: number, dx: number, dy: number, steps?: number): Promise<void>
 }
 
+/**
+ * Page-side helpers shared by `clickAt` and `dragFrom`, pasted into each probe. They were two
+ * verbatim 20-line copies, and the copies already agreed on a bug: the "outside the document" check
+ * compared VIEWPORT coordinates against document size, so on a scrolled page a real element above
+ * the fold (negative `getBoundingClientRect().y`) was rejected as outside the document.
+ *
+ * - `hjPoint(x, y)`: viewport coordinates in, viewport coordinates out, scrolled into view first.
+ * - `hjSend(el, kind, x, y, buttons)`: one pointer event and its mouse twin, the order a browser
+ *   uses. `buttons` is 1 while pressed, which is what drag handlers test.
+ */
+const POINTER_KIT = `
+  const hjPoint = (x, y) => {
+    // Reject a point outside the DOCUMENT before scrolling, in document coordinates. Otherwise
+    // scrolling clamps a wild coordinate back into the viewport and we act on whatever is there.
+    const docX = x + scrollX, docY = y + scrollY
+    const docW = Math.max(document.documentElement.scrollWidth, innerWidth)
+    const docH = Math.max(document.documentElement.scrollHeight, innerHeight)
+    if (docX < 0 || docY < 0 || docX > docW || docY > docH) {
+      throw new Error('(' + x + ', ' + y + ') is outside the document (' + docW + 'x' + docH + ')')
+    }
+    if (y < 0 || y > innerHeight || x < 0 || x > innerWidth) {
+      // Adjust by the ACTUAL scroll, not the requested one: the page may refuse to scroll that
+      // far (already at an edge), and over-correcting puts the point somewhere else.
+      const beforeY = scrollY, beforeX = scrollX
+      scrollBy(x - innerWidth / 2, y - innerHeight / 2)
+      x -= scrollX - beforeX
+      y -= scrollY - beforeY
+    }
+    return { x, y }
+  }
+  const hjSend = (el, kind, x, y, buttons) => {
+    const common = { clientX: x, clientY: y, bubbles: true, cancelable: true, composed: true, buttons, button: 0 }
+    el.dispatchEvent(new PointerEvent('pointer' + kind, { ...common, pointerId: 1, pointerType: 'mouse', isPrimary: true }))
+    el.dispatchEvent(new MouseEvent('mouse' + kind, common))
+  }
+`
+
 export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
   const unwrap = (res: any) => (res && typeof res === 'object' && 'data' in res ? res.data : res)
 
@@ -104,13 +145,13 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
    *
    * This is precisely the failure this feature exists to catch, committed inside the feature.
    */
-  const evalChecked = async (code: string, what: string) => {
-    const res = await bridge.eval(code)
+  const checked = (res: any, what: string, code = what) => {
     if (res && typeof res === 'object' && res.success === false) {
       throw new BrowserProbeError(res.error || `${what} failed in the page`, code)
     }
-    return unwrap(res)
+    return res
   }
+  const evalChecked = async (code: string, what: string) => unwrap(checked(await bridge.eval(code), what, code))
 
   return {
     async read(fn, args = []) {
@@ -127,69 +168,38 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
       if (!out.ok) throw new BrowserProbeError(out.error || 'probe threw', probe)
       return out.value
     },
-    async click(selector) { await bridge.click(selector) },
-    async type(selector, text) { await bridge.type(selector, text) },
-    async press(key) { await bridge.press(key) },
+    // Same envelope check as eval. `BrowserBridge` is structural, and a raw-REST bridge reports a
+    // missing selector as `{ success: false }` rather than throwing, which these used to swallow.
+    async click(selector) { checked(await bridge.click(selector), `click ${selector}`) },
+    async type(selector, text) { checked(await bridge.type(selector, text), `type into ${selector}`) },
+    async press(key) { checked(await bridge.press(key), `press ${key}`) },
     async clickAt(x, y) {
-      await evalChecked(`(() => {
-        const p = (() => {
-          let x = ${x}, y = ${y}
-          // Reject a point outside the DOCUMENT before scrolling. Otherwise scrolling clamps a
-          // wild coordinate back into the viewport and we click whatever happens to be there —
-          // silently hitting the wrong thing, which is worse than failing.
-          const docW = Math.max(document.documentElement.scrollWidth, innerWidth)
-          const docH = Math.max(document.documentElement.scrollHeight, innerHeight)
-          if (x < 0 || y < 0 || x > docW || y > docH) {
-            throw new Error('(' + x + ', ' + y + ') is outside the document (' + docW + 'x' + docH + ')')
-          }
-          if (y < 0 || y > innerHeight || x < 0 || x > innerWidth) {
-            // Adjust by the ACTUAL scroll, not the requested one — the page may refuse to scroll
-            // that far (already at an edge), and over-correcting puts the point somewhere else.
-            const beforeY = scrollY, beforeX = scrollX
-            scrollBy(x - innerWidth / 2, y - innerHeight / 2)
-            x -= scrollX - beforeX
-            y -= scrollY - beforeY
-          }
-          return { x, y }
-        })()
+      await evalChecked(`(() => {${POINTER_KIT}
+        const p = hjPoint(${x}, ${y})
         const el = document.elementFromPoint(p.x, p.y)
         if (!el) throw new Error('nothing at (' + p.x + ', ' + p.y + ') even after scrolling it into view')
-        for (const type of ['mouseover','mousedown','mouseup','click']) {
-          el.dispatchEvent(new MouseEvent(type, { clientX: p.x, clientY: p.y, bubbles: true }))
-        }
+        hjSend(el, 'over', p.x, p.y, 0)
+        hjSend(el, 'down', p.x, p.y, 1)
+        hjSend(el, 'up', p.x, p.y, 0)
+        el.dispatchEvent(new MouseEvent('click', { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, composed: true, button: 0 }))
         return true
       })()`, 'clickAt')
     },
     async dragFrom(x, y, dx, dy, steps = 12) {
-      await evalChecked(`(async () => {
-        const p = (() => {
-          let x = ${x}, y = ${y}
-          // Reject a point outside the DOCUMENT before scrolling. Otherwise scrolling clamps a
-          // wild coordinate back into the viewport and we click whatever happens to be there —
-          // silently hitting the wrong thing, which is worse than failing.
-          const docW = Math.max(document.documentElement.scrollWidth, innerWidth)
-          const docH = Math.max(document.documentElement.scrollHeight, innerHeight)
-          if (x < 0 || y < 0 || x > docW || y > docH) {
-            throw new Error('(' + x + ', ' + y + ') is outside the document (' + docW + 'x' + docH + ')')
-          }
-          if (y < 0 || y > innerHeight || x < 0 || x > innerWidth) {
-            // Adjust by the ACTUAL scroll, not the requested one — the page may refuse to scroll
-            // that far (already at an edge), and over-correcting puts the point somewhere else.
-            const beforeY = scrollY, beforeX = scrollX
-            scrollBy(x - innerWidth / 2, y - innerHeight / 2)
-            x -= scrollX - beforeX
-            y -= scrollY - beforeY
-          }
-          return { x, y }
-        })()
+      await evalChecked(`(async () => {${POINTER_KIT}
+        const p = hjPoint(${x}, ${y})
         const el = document.elementFromPoint(p.x, p.y)
         if (!el) throw new Error('nothing at (' + p.x + ', ' + p.y + ') even after scrolling it into view')
-        el.dispatchEvent(new MouseEvent('mousedown', { clientX: p.x, clientY: p.y, bubbles: true }))
+        hjSend(el, 'down', p.x, p.y, 1)
+        // Moves go to whatever is under the pointer, as a browser sends them, falling back to the
+        // pressed element. They bubble, so a document-level handler still sees them.
+        let last = el
         for (let i = 1; i <= ${steps}; i++) {
           const px = p.x + (${dx} * i) / ${steps}, py = p.y + (${dy} * i) / ${steps}
-          document.dispatchEvent(new MouseEvent('mousemove', { clientX: px, clientY: py, bubbles: true }))
+          last = document.elementFromPoint(px, py) || el
+          hjSend(last, 'move', px, py, 1)
         }
-        document.dispatchEvent(new MouseEvent('mouseup', { clientX: p.x + ${dx}, clientY: p.y + ${dy}, bubbles: true }))
+        hjSend(last, 'up', p.x + ${dx}, p.y + ${dy}, 0)
         return true
       })()`, 'dragFrom')
     },

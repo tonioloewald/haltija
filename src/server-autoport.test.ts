@@ -11,6 +11,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
+import { isolatedServerEnv } from './test-ports'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
@@ -87,9 +88,8 @@ it('falls back to an ephemeral port when 8700 is taken and no preference is give
       // this file don't reach it. Pass them through explicitly: HOME above is the
       // developer's real one, so without these the server would SIGTERM processes
       // it found on well-known ports and rewrite their ~/.local/bin/hj.
-      HALTIJA_REGISTRY_DIR: process.env.HALTIJA_REGISTRY_DIR,
-      HALTIJA_NO_RETIRE: '1',
-      HALTIJA_NO_INSTALL: '1',
+      // ...plus HTTP-only transport and temp certs, since `both` is the default now.
+      ...isolatedServerEnv(REGISTRY_DIR),
     },
     stdout: 'pipe',
     stderr: 'pipe',

@@ -44,7 +44,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
-import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup } from './transports'
+import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -53,7 +53,8 @@ import { createTerminalState, updateStatus, removeStatus, getStatusLine, pushMes
 import { loadBoard, reloadBoard, dispatchTaskCommand, getBoardSummary, type TaskBoard } from './tasks'
 import { createAgentSession, getAgentSession, removeAgentSession, getTranscript, runAgentPrompt, killAgent, sendToAgent, listTranscripts, loadTranscript, restoreSession, sendAgentMessage, getAgentMessageCount, consumeAgentMessages, setLastActiveAgent, getLastActiveAgent, listAgentSessions, type AgentConfig, type AgentEvent } from './agent-shell'
 import { formatRecordingMessage, type SemanticEvent } from './agent-message-format'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, statSync, openSync, readSync, closeSync, unlinkSync, symlinkSync, copyFileSync, chmodSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, lstatSync, statSync, openSync, readSync, closeSync, unlinkSync, copyFileSync, chmodSync, renameSync } from 'fs'
+import { X509Certificate } from 'crypto'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
@@ -150,9 +151,12 @@ let PORT = IS_PRIVATE ? 0 : parseInt(PORT_PREFERENCE || String(DEFAULT_HTTP_PORT
 // Defaults come from `src/ports.ts`, which is the whole point of that file: this line and
 // `apps/desktop/main.js`'s internal-port default were two independent `8701` literals, and they
 // cannot both bind (#32a).
-let HTTPS_PORT = IS_PRIVATE
-  ? 0
-  : parseInt(process.env.DEV_CHANNEL_HTTPS_PORT || String(DEFAULT_HTTPS_PORT))
+const HTTPS_PORT_EXPLICIT = process.env.DEV_CHANNEL_HTTPS_PORT
+  ? parseInt(process.env.DEV_CHANNEL_HTTPS_PORT)
+  : null
+// Provisional. The real port depends on the HTTP bind (only the server holding 8700 may claim
+// 8701), so it is settled by `httpsPortFor` just before the HTTPS listener starts.
+let HTTPS_PORT = IS_PRIVATE ? 0 : (HTTPS_PORT_EXPLICIT ?? DEFAULT_HTTPS_PORT)
 const INSTANCE_NAME = process.env.HALTIJA_NAME || ''
 // `desktop` is reserved for the Haltija desktop app (it registers under that name, cwd-less, so
 // `hj --name desktop` reaches it). A normal server claiming it (`--name desktop` / HALTIJA_NAME=
@@ -186,7 +190,19 @@ if (TRANSPORTS.degradesSharedChannel && process.env.HALTIJA_NO_TRANSPORT_WARN !=
 // reading. See src/transports.ts.
 const certsDir = resolveCertDir(process.env, homedir())
 const legacyCertsDir = join(__dirname, '../certs')
-const certPlan = planCertSetup({ certDir: certsDir, legacyCertDir: legacyCertsDir, exists: existsSync })
+const certValidUntil = (p: string): Date | null => {
+  try {
+    return new Date(new X509Certificate(readFileSync(p)).validTo)
+  } catch {
+    return null
+  }
+}
+const certPlan = planCertSetup({
+  certDir: certsDir,
+  legacyCertDir: legacyCertsDir,
+  exists: existsSync,
+  validUntil: certValidUntil,
+})
 const certPath = certPlan.paths.cert
 const keyPath = certPlan.paths.key
 
@@ -196,25 +212,40 @@ if (WANT_HTTPS && !certsAvailable) {
     // 0700: the private key is the one thing here worth protecting from other users on a shared
     // machine. Free to do correctly, and awkward to retrofit once keys are already on disk.
     mkdirSync(certsDir, { recursive: true, mode: 0o700 })
+    // Written to temp names and renamed into place: two servers starting at once, or a crash or
+    // full disk mid-write, must not leave a truncated or mismatched pair that every later start
+    // then reads. Every write is a machine-scope action, so it gets a receipt (stderr + log): a
+    // private key appearing in $HOME must be traceable to the version and project that put it there.
+    const tmp = `.tmp-${process.pid}`
+    const tmpCert = certPath + tmp
+    const tmpKey = keyPath + tmp
     if (certPlan.action === 'adopt') {
       // Carry forward a cert the user has ALREADY clicked through a browser warning for. Generating
       // a fresh one would silently revoke that decision and re-prompt, punishing existing users for
       // an internal reorganisation they cannot see.
-      copyFileSync(certPlan.from.cert, certPath)
-      copyFileSync(certPlan.from.key, keyPath)
-      console.log(`${LOG_PREFIX} Adopted the existing certificate from ${legacyCertsDir} (your browser's trust for it still applies)`)
+      copyFileSync(certPlan.from.cert, tmpCert)
+      copyFileSync(certPlan.from.key, tmpKey)
     } else {
       try {
-        execSync(`mkcert -cert-file "${certPath}" -key-file "${keyPath}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
-        console.log(`${LOG_PREFIX} Generated trusted certificates with mkcert`)
+        execSync(`mkcert -cert-file "${tmpCert}" -key-file "${tmpKey}" localhost 127.0.0.1 ::1`, { stdio: 'pipe' })
       } catch {
-        // Fall back to openssl self-signed cert
-        execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
-        console.log(`${LOG_PREFIX} Generated self-signed certificates with openssl`)
-        console.log(`${LOG_PREFIX} For trusted certs, install mkcert: brew install mkcert && mkcert -install`)
+        // Fall back to an openssl self-signed cert. 365 days: planCertSetup renews it 30 days out.
+        execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${tmpKey}" -out "${tmpCert}" -days 365 -nodes -subj "/CN=localhost"`, { stdio: 'pipe' })
+        console.error(`${LOG_PREFIX} For a certificate browsers trust without a warning: brew install mkcert && mkcert -install`)
       }
     }
-    try { chmodSync(keyPath, 0o600) } catch { /* best effort; a readable key is not worth failing over */ }
+    try { chmodSync(tmpKey, 0o600) } catch { /* best effort; a readable key is not worth failing over */ }
+    renameSync(tmpKey, keyPath)
+    renameSync(tmpCert, certPath)
+    const replacing = certPlan.action === 'generate' ? certPlan.replacing : undefined
+    const why = certPlan.action === 'adopt'
+      ? `adopted the existing certificate from ${legacyCertsDir} (your browser's trust for it still applies)`
+      : replacing === 'expiring'
+        ? 'renewed the TLS certificate, which was expiring (your browser will ask to trust it again once)'
+        : replacing === 'unreadable'
+          ? 'replaced an unreadable TLS certificate'
+          : 'generated a TLS certificate'
+    recordMachineAction({ kind: 'cert', detail: `${why} in ${certsDir} (set HALTIJA_CERTS_DIR to use another directory)` })
     certsAvailable = true
   } catch (err) {
     // NOT fatal in `both`: HTTP still serves, and `hj` still works. The machine may simply have
@@ -4788,16 +4819,39 @@ if (USE_HTTP) {
 }
 
 if (USE_HTTPS) {
-  const tls = {
-    cert: readFileSync(certPath),
-    key: readFileSync(keyPath),
+  HTTPS_PORT = httpsPortFor({
+    isPrivate: IS_PRIVATE,
+    explicitHttpsPort: HTTPS_PORT_EXPLICIT,
+    boundHttpPort: httpServer ? PORT : null,
+  })
+  // A bad pair (a hand-replaced half, a key that does not match) throws from Bun.serve with an
+  // OpenSSL error, not EADDRINUSE. That used to be rethrown and took HTTP down with it, although
+  // HTTP needs no certificate at all (1.13.0-beta.1 security review).
+  const certFailure = (err: unknown): boolean => {
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as any).code) : ''
+    if (code === 'EADDRINUSE' || !USE_HTTP) return false
+    const why = err instanceof Error ? err.message.split('\n')[0] : String(err)
+    console.error('')
+    console.error(`  ⚠️  HTTPS could not start with the certificate in ${certsDir}: ${why}`)
+    console.error(`      HTTP is still serving; pages served over https:// will not connect.`)
+    console.error(`      Fix: delete ${certsDir} and restart, and haltija will make a new one.`)
+    console.error('')
+    return true
+  }
+  let tls: { cert: Buffer; key: Buffer } | null = null
+  try {
+    tls = { cert: readFileSync(certPath), key: readFileSync(keyPath) }
+  } catch (err) {
+    if (!certFailure(err)) throw err
   }
   const wantedHttpsPort = HTTPS_PORT
-  const bindHttps = () => Bun.serve({ port: wantedHttpsPort, tls, ...serverConfig })
+  const bindHttps = () => Bun.serve({ port: wantedHttpsPort, tls: tls!, ...serverConfig })
   try {
-    httpsServer = bindHttps()
+    if (tls) httpsServer = bindHttps()
   } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
+    if (certFailure(err)) {
+      // HTTPS stays down; the transport report and /status say so.
+    } else if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
       // The HTTPS port is a CONTRACT: a widget on an https page connects to this exact port.
       // So — unlike the HTTP side, which hj rediscovers via the registry — we must NOT quietly
       // relocate it to an ephemeral port. That produced the "half-dead channel" bug: HTTP up,
@@ -4842,7 +4896,11 @@ if (USE_HTTPS) {
 // banner would claim a channel that's down (the very "looks healthy, isn't" lie we just fixed).
 const httpUrl = httpServer ? `http://localhost:${PORT}` : null
 const httpsUrl = httpsServer ? `https://localhost:${HTTPS_PORT}` : null
-const primaryUrl = httpsUrl || httpUrl
+// HTTP first. "HTTPS preferred" dated from when HTTPS meant someone had asked for `--both`; with
+// `both` the default it pointed every banner at a self-signed cert: `curl https://…/docs` fails
+// on an openssl cert, and `import('https://…/dev.js')` from an http page fails silently until the
+// cert is accepted — the #33 silent-failure class (1.13.0-beta.1 correctness review).
+const primaryUrl = httpUrl || httpsUrl
 
 // A private instance reports its ephemeral address so the caller can drive it — it isn't in the
 // registry, so this (or HALTIJA_PORT_FILE) is the ONLY way to find it. Machine-readable, one line.
@@ -5137,36 +5195,28 @@ if (REGISTRY_NAME) {
         detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)`,
       })
     } else {
-      // Running from source (bunx or development)
-      // Prefer standalone bundle (dist/hj.js) — works even if source tree is gone
-      const hjBundle = join(__dirname, 'hj.js')
-      const hjSource = join(__dirname, '..', 'bin', 'hj.mjs')
-      const useBundle = existsSync(hjBundle)
-      const source = useBundle ? hjBundle : hjSource
-      
-      if (!existsSync(source)) {
-        console.log(`  [hj] Source not found: ${hjBundle} or ${hjSource}`)
+      // Running from the package (dist/server.js) or a source checkout (src/server.ts via
+      // bin/server.ts). Install ONLY the self-contained bundle, by copy.
+      //
+      // There used to be a fallback: with no bundle beside us, SYMLINK ~/.local/bin/hj to this
+      // checkout's bin/hj.mjs. Rule 1 above says a symlinked hj is a deliberate developer choice
+      // and is never touched again, so the server's own fallback manufactured something rule 1 then
+      // protected forever: one `bun run bin/server.ts` in a checkout with an older hj installed
+      // pinned the machine's hj to that checkout permanently, exempt from every later repair. The
+      // 1.13.0-beta.1 review did exactly that to a real machine. A server may bootstrap or repair
+      // with a copy; only a person makes a symlink.
+      const candidates = [join(__dirname, 'hj.js'), join(__dirname, '..', 'dist', 'hj.js')]
+      const source = candidates.find((p) => existsSync(p))
+      if (!source) {
+        console.error(`  [hj] Not installing hj: no built bundle at ${candidates.join(' or ')} (run \`bun run build\`).`)
         return
       }
-      
-      // Check if target already matches source. (A symlinked target already
-      // returned above, so this is always a real file.)
-      // We only get here having decided to install (bootstrap or repair).
-      {
-        if (existsSync(hjTarget)) {
-          unlinkSync(hjTarget)
-        }
-        if (useBundle) {
-          // Copy standalone bundle — works from any location
-          copyFileSync(source, hjTarget)
-          chmodSync(hjTarget, 0o755)
-            recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
-        } else {
-          // Fallback: symlink to source (dev mode only)
-          symlinkSync(source, hjTarget)
-            recordMachineAction({ kind: 'hj-install', detail: `linked the shared hj CLI at ${hjTarget} -> ${source}` })
-        }
+      if (existsSync(hjTarget)) {
+        unlinkSync(hjTarget)
       }
+      copyFileSync(source, hjTarget)
+      chmodSync(hjTarget, 0o755)
+      recordMachineAction({ kind: 'hj-install', detail: `installed the shared hj CLI ${VERSION} at ${hjTarget} (set HALTIJA_NO_INSTALL=1 to disable)` })
     }
     
     // Ensure ~/.local/bin is in PATH for this process and its children
@@ -5271,6 +5321,9 @@ console.log(`
 
               /^localhost$|^127\\./.test(location.hostname)&&import('${primaryUrl}/dev.js')
 
+              On https pages use the loader in /docs ("Embed in your app"): Safari
+              blocks http://localhost from https, so they need the HTTPS transport.
+
   AI AGENTS:  curl ${primaryUrl}/docs
 
 ================================================================================
@@ -5306,8 +5359,8 @@ export interface ListeningServer {
   stop(closeActiveConnections?: boolean): Promise<void> | void
 }
 
-// Export the primary server (HTTPS preferred)
-const server: ListeningServer = (httpsServer || httpServer)!
+// Export the primary server: HTTP when it is up, for the same reason as `primaryUrl` above.
+const server: ListeningServer = (httpServer || httpsServer)!
 const publicHttpServer: ListeningServer | null = httpServer
 const publicHttpsServer: ListeningServer | null = httpsServer
 export {

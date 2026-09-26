@@ -132,6 +132,54 @@ test.describe('testInBrowser — probe-based (#51)', () => {
     expect(moved).toBeGreaterThan(30)
   })
 
+  test('a POINTER-driven drag moves too (orbit cameras listen for pointer events and check buttons)', async () => {
+    markBrowserTestRan()
+    // A fixture that ignores mouse events entirely, as Babylon/three.js camera controls do. The
+    // mouse-only fixture above could not tell that dragFrom sent no pointer events at all.
+    await page.read(() => {
+      const knob = document.createElement('div')
+      knob.id = 'tib-pknob'
+      knob.style.cssText = 'position:fixed;left:20px;top:120px;width:40px;height:40px;background:#c3f'
+      document.body.appendChild(knob)
+      const w = window as any
+      w.tibPointer = { dx: 0, down: false }
+      let startX = 0
+      knob.addEventListener('pointerdown', (e: PointerEvent) => { w.tibPointer.down = true; startX = e.clientX })
+      document.addEventListener('pointermove', (e: PointerEvent) => {
+        if (w.tibPointer.down && e.buttons & 1) w.tibPointer.dx = e.clientX - startX
+      })
+      document.addEventListener('pointerup', () => { w.tibPointer.down = false })
+      return true
+    })
+    await page.dragFrom(40, 140, 50, 0)
+    const dx = await page.read(() => (window as any).tibPointer.dx)
+    expect(dx).toBeGreaterThan(40)
+  })
+
+  test('clickAt accepts a real point ABOVE the fold on a scrolled page', async () => {
+    markBrowserTestRan()
+    // getBoundingClientRect() of an element above the viewport has a NEGATIVE y. The old check
+    // compared viewport coordinates against document size and rejected it as outside the document.
+    const y = await page.read(() => {
+      const spacer = document.createElement('div')
+      spacer.style.height = '3000px'
+      document.body.appendChild(spacer)
+      const target = document.createElement('button')
+      target.id = 'tib-above'
+      target.textContent = 'above'
+      target.style.cssText = 'position:absolute;left:10px;top:10px;width:80px;height:30px'
+      document.body.appendChild(target)
+      ;(window as any).tibAboveClicks = 0
+      target.addEventListener('click', () => (window as any).tibAboveClicks++)
+      scrollTo(0, 2000)
+      const r = target.getBoundingClientRect()
+      return r.y + r.height / 2
+    })
+    expect(y).toBeLessThan(0)
+    await page.clickAt(50, y)
+    expect(await page.read(() => (window as any).tibAboveClicks)).toBe(1)
+  })
+
   test('a coordinate hitting nothing fails loudly, rather than dispatching into the void', async () => {
     markBrowserTestRan()
     await expect(page.clickAt(99999, 99999)).rejects.toThrow()

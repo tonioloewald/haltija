@@ -22,6 +22,7 @@
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { isolatedServerEnv } from './test-ports'
 
 /**
  * Point every machine-scope write at a throwaway location and disable the reach-out actions.
@@ -30,31 +31,9 @@ import { join } from 'path'
  */
 export function isolateTestMachineState(): string {
   const dir = mkdtempSync(join(tmpdir(), 'haltija-test-'))
-  process.env.HALTIJA_REGISTRY_DIR = dir
-  process.env.HALTIJA_MACHINE_LOG = join(dir, 'machine-actions.log')
-  process.env.HALTIJA_NO_RETIRE = '1' // never stop another server (also gates freePort)
-  process.env.HALTIJA_NO_INSTALL = '1' // never write ~/.local/bin/hj
-  // Artifacts too: writing one triggers a prune, and with the real tmpdir that DELETED the
-  // developer's screenshots older than 24h. A test suite may not destroy data outside itself.
-  process.env.HALTIJA_ARTIFACT_DIR = dir
-
-  // Transports (#32a). The server now defaults to `both`, and the HTTPS port default is the
-  // well-known 8701 — which `uniqueTestPort()` does NOT cover, because it only ever moved the HTTP
-  // side. So without this, every spawned test server would reach for 8701 and contend with the real
-  // dev-channel server on a shared machine: precisely hazard 2 above, reintroduced through the
-  // transport default rather than the port constant.
-  //
-  // Tests that actually exercise HTTPS (`https.test.ts`, `both-mode.test.ts`) pass `--https` /
-  // `--both`, which the CLI applies over anything inherited here, and they already allocate their
-  // own unique HTTPS port.
-  process.env.DEV_CHANNEL_MODE = 'http'
-  // ...and that is an explicit opt-out, so it would print the #32d "you are degrading the shared
-  // channel" warning on every spawn. True in general, false here — a temp-registry test server has
-  // no neighbours — and it would bury real output under a warning nobody can act on.
-  process.env.HALTIJA_NO_TRANSPORT_WARN = '1'
-  // Certificates are machine-level now (`~/.haltija/certs`). Generating one during a unit run is
-  // exactly the machine-scope footprint `unit-tests.yml` asserts against.
-  process.env.HALTIJA_CERTS_DIR = join(dir, 'certs')
+  // One definition shared with the Playwright helper and hand-built spawns — see
+  // `isolatedServerEnv` for what each variable guards and why there used to be three copies.
+  Object.assign(process.env, isolatedServerEnv(dir))
   return dir
 }
 

@@ -35,6 +35,8 @@ export type MachineAction =
   | { kind: 'server-stopped'; detail: string }
   /** We found something harmful and deliberately did NOT act on it. */
   | { kind: 'declined'; detail: string }
+  /** We wrote a TLS certificate and private key into the machine-level cert dir. */
+  | { kind: 'cert'; detail: string }
 
 /**
  * Record — and announce — something we did to the user's machine.

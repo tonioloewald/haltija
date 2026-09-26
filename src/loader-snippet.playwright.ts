@@ -53,6 +53,8 @@ let certDir: string
 // clicking through once. It does not touch the mixed-content or loopback rules under test.
 test.use({ ignoreHTTPSErrors: true })
 
+// 0.0.0.0, not 127.0.0.1, on purpose: the LAN-IP control needs the same page reachable over the
+// machine's LAN address. It serves a static test page for the suite's duration only.
 const listen = (srv: Server, port: number) =>
   new Promise<{ port: number; server: Server }>((resolve, reject) => {
     srv.once('error', reject)

@@ -53,9 +53,10 @@ export function isLoopbackOrigin(origin: string | null | undefined): boolean {
  * frame. An attacker's frame cannot read it: it is never sent to a page, only embedded in the URL
  * of an iframe the app itself creates.
  *
- * Absent Origin (a non-browser client: the CLI, a test harness) is treated the same as `null` —
- * browsers always send Origin on a cross-origin WebSocket, so absence is not forgeable BY a page,
- * but it IS forgeable by anything on the LAN, and the server binds 0.0.0.0.
+ * Absent Origin (a non-browser client: the CLI, a test harness) is ALLOWED, unlike `null`:
+ * browsers always send Origin on a cross-origin WebSocket, so absence is not forgeable BY a page.
+ * It IS available to anything on the LAN, and the server binds 0.0.0.0 — that is the `--token`
+ * story, not this gate's.
  */
 export function mayOpenMachineSocket(opts: {
   origin: string | null | undefined

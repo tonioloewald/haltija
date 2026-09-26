@@ -48,34 +48,7 @@ jobs:
       - name: Unit tests
         run: bun test src/
 
-      # The suite spawns real haltija servers. Every spawn site sets HALTIJA_NO_RETIRE
-      # and HALTIJA_NO_INSTALL so a test can never kill a process it did not start or
-      # rewrite ~/.local/bin/hj. If a new spawn site forgets, this catches it.
+      # The suite spawns real haltija servers, which re-read the real $HOME. The script checks
+      # ~/.haltija whole, the PATH and the artifact dirs; see its header for why not a list.
       - name: Assert the suite left no footprint on the machine
-        run: |
-          if [ -e "$HOME/.local/bin/hj" ]; then
-            echo "FAIL: the test suite installed hj onto the PATH."
-            echo "A spawn site is missing HALTIJA_NO_INSTALL=1."
-            exit 1
-          fi
-          if [ -d "$HOME/.haltija/servers" ] && [ -n "$(ls -A "$HOME/.haltija/servers" 2>/dev/null)" ]; then
-            echo "FAIL: the test suite left entries in the real instance registry:"
-            ls -la "$HOME/.haltija/servers"
-            echo "A spawn site is missing HALTIJA_REGISTRY_DIR."
-            exit 1
-          fi
-          # Artifacts are the third machine-scope write, and the one that DELETES. `saveDataUrl`
-          # prunes on every write (>24h, keep 200), so before HALTIJA_ARTIFACT_DIR existed a
-          # `bun test src/` removed the developer's real screenshots. This gate watched the two
-          # writes and not the deletion — the more dangerous of the three.
-          for d in screenshots schematics videos; do
-            REAL="${TMPDIR:-/tmp}"
-            REAL="${REAL%/}/haltija-$d"
-            if [ -d "$REAL" ]; then
-              echo "FAIL: the test suite created the REAL artifact directory $REAL."
-              ls -la "$REAL"
-              echo "A test wrote an artifact without HALTIJA_ARTIFACT_DIR — it can also DELETE from there."
-              exit 1
-            fi
-          done
-          echo "OK: no machine-scope side effects from the suite."
+        run: scripts/assert-no-machine-footprint.sh
