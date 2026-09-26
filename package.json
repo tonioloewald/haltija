@@ -115,6 +115,9 @@
       "test:e2e",
       "test:engines",
       "test:all"
-    ]
+    ],
+    "runtimeModules": {
+      "electron": "apps/desktop/*.js run inside Electron, where require('electron') is the runtime's built-in module; the launcher resolves an Electron binary itself (bin/tosijs-dev.mjs resolveElectronBinary), never from a dependency"
+    }
   }
 }

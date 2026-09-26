@@ -12,10 +12,19 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { listenerPidOnPort, listenerPidsOnPort, isHaltijaProcess } from './port-pid'
 
-// Derived from our pid, not hardcoded: these tests bind a real socket, and a fixed
-// port collides with a lingering listener from a previous or concurrent run — which
-// fails the bind and takes down tests that never even ran.
-const PORT = 18000 + (process.pid % 1000)
+// ASKED OF THE OS, not derived. These tests bind a real socket, and a fixed port collides with
+// a lingering listener from a previous or concurrent run, which fails the bind and takes down
+// tests that never even ran. Deriving it from our pid (`18000 + pid % 1000`) still flaked: a
+// release-doctor run on a machine busy with other projects failed all three tests here, starting
+// with "returns nothing when the port is free", i.e. something unrelated held the port. Binding
+// port 0 gets one the kernel knows is free right now; the window before the listener rebinds it
+// is milliseconds, versus a formula that can land on any long-lived listener.
+const PORT = await new Promise<number>((resolve) => {
+  const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+  const port = probe.port
+  probe.stop(true)
+  resolve(port)
+})
 const procs = new Set<Subprocess>()
 
 afterEach(async () => {
