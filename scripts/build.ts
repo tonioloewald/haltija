@@ -5,7 +5,7 @@
  */
 
 import { $ } from 'bun'
-import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'fs'
 import { HJ_MARKER } from '../src/hj-install'
 import { stepActionsInline as stepActionsInlineForDocs } from '../src/test-actions'
 import { loaderSnippetHtml } from '../src/loader-snippet'
@@ -29,6 +29,14 @@ if (pinnedBun && Bun.version !== pinnedBun) {
   }
   console.warn(`\n  ⚠️  ${msg} (HALTIJA_ALLOW_BUN_MISMATCH=1)\n`)
 }
+
+// Start from an EMPTY dist/. Nothing cleared it, so a file whose source was deleted lived on in
+// every developer's dist/ and shipped from whichever machine published: 1.13.0-beta.1's first
+// publish run caught `dist/machine-socket.d.ts`, the declaration of a Unix-socket experiment
+// abandoned on 2026-09-04, in the locally attested tarball and not in CI's clean build. The
+// attestation check refused it before staging; this makes the local build match CI's by
+// construction. (Safe here: the tsc emit is not incremental, so a wiped dist/ is rebuilt whole.)
+rmSync('dist', { recursive: true, force: true })
 
 // 0. Generate version.ts from package.json (single source of truth)
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
