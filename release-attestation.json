@@ -1,31 +1,31 @@
 {
   "version": "1.13.0-beta.1",
-  "tree": "f90f4864f59af00b0a6d1ec6d3a41e1b2ccd77d6",
-  "commit": "296914e182b2926aff1b49a4f26647e91647a317",
+  "tree": "b3c80cb18de0bdf6b8e2ddf60e180e56d904021a",
+  "commit": "ed0056067a7560b08d018c28db21bd52f6e86450",
   "bun": "1.4.2",
   "lanes": {
     "test:integration": {
       "command": "bun test tests/",
       "exitCode": 0,
-      "durationMs": 33,
-      "tail": "tests/haltija.test.ts:\n\n 0 pass\n 11 skip\n 0 fail\nRan 11 tests across 1 file. [21.00ms]"
+      "durationMs": 27,
+      "tail": "tests/haltija.test.ts:\n\n 0 pass\n 11 skip\n 0 fail\nRan 11 tests across 1 file. [17.00ms]"
     },
     "test:e2e": {
       "command": "bunx playwright test",
       "exitCode": 0,
-      "durationMs": 74033,
-      "tail": "  ✓  138 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (2ms)\n  ✓  139 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  139 passed (1.2m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
+      "durationMs": 73159,
+      "tail": "  ✓  138 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (1ms)\n  ✓  139 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  139 passed (1.2m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     },
     "test:engines": {
       "command": "bunx playwright test -c playwright.engines.config.ts",
       "exitCode": 0,
-      "durationMs": 6465,
-      "tail": "  ✓  10 [webkit] › src/loader-snippet.playwright.ts:138:3 › loader snippet — transport fallback (#32c) › control: the same reach from an https LAN-IP page is refused by the browser (301ms)\n  ✓  11 [webkit] › src/loader-snippet.playwright.ts:170:3 › loader snippet — transport fallback (#32c) › an https LAN-IP page does not even try http, and says why it gave up (147ms)\n  ✓  12 [webkit] › src/loader-snippet.playwright.ts:184:3 › loader snippet — transport fallback (#32c) › with nothing reachable, an http page warns once instead of failing silently (158ms)\n\n  12 passed (6.0s)\n$ bunx playwright test -c playwright.engines.config.ts"
+      "durationMs": 6650,
+      "tail": "  ✓  10 [webkit] › src/loader-snippet.playwright.ts:138:3 › loader snippet — transport fallback (#32c) › control: the same reach from an https LAN-IP page is refused by the browser (289ms)\n  ✓  11 [webkit] › src/loader-snippet.playwright.ts:170:3 › loader snippet — transport fallback (#32c) › an https LAN-IP page does not even try http, and says why it gave up (142ms)\n  ✓  12 [webkit] › src/loader-snippet.playwright.ts:184:3 › loader snippet — transport fallback (#32c) › with nothing reachable, an http page warns once instead of failing silently (151ms)\n\n  12 passed (6.2s)\n$ bunx playwright test -c playwright.engines.config.ts"
     },
     "test:all": {
       "command": "bun test src/ && bun test tests/ && bunx playwright test",
       "exitCode": 0,
-      "durationMs": 119812,
+      "durationMs": 117636,
       "tail": "\n 0 pass\n 11 skip\n 0 fail\nRan 11 tests across 1 file. [17.00ms]\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     }
   },
@@ -117,7 +117,6 @@
     "dist/machine-control.d.ts": "8bbb93842f4dd44bd1c46b5b9265f290860555bcd6240e5d5a1f602771da9bc3",
     "dist/machine-log.d.ts": "04e8fd46955c0018306a39bbe100cffc9584596c285b54617a1405bbe66a1c08",
     "dist/machine-response.d.ts": "bbe303a07f102164c568d548f39dbbeda86eeccf8955fb71b7151529e9cdf192",
-    "dist/machine-socket.d.ts": "f54c0d513b6be8f28c453e93d382cdb565ed5c02c1906e9ccbae4a85c5e5a2db",
     "dist/mcp-config.d.ts": "fab5faa015b1be573d1a9e0fbcbcc7a7f133d2aab140865846814f46e4872119",
     "dist/naming-probe.d.ts": "557204ee936bd2bdec67ef23f2f1a029cd1f7fd2a3e80e2f26240613444a2948",
     "dist/playwright-server.d.ts": "8bbf319e9bb7c37ebc79b5d6ee5377f0c648bb97c9a3840e9af0cecbbac98db3",
