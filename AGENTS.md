@@ -10,26 +10,35 @@
 > what is **specific to or divergent from** those defaults; when they conflict, this file wins.
 > Same contract as `CLAUDE.md`, which has the architecture.
 
-This project tracks issues and roadmap notes in **`TODO.md`** (free-form: build/distribution
-items, multi-phase plans, known bugs). There is no separate issue-tracker tool — keep `TODO.md`
-current as you work.
+Work is tracked on the **virta board** (`virta brief`, `virta ls "project:haltija status:ready"`;
+the session hooks in `.claude/settings.json` run the brief for you). `TODO.md` is only a pointer
+to it. File new work with `virta create`, not as a list item in a markdown file.
 
 **Pushing is not gated to a human here.** A session is not done until `git push` succeeds — see
 ["Landing the plane"](../tosijs-coding-practices/practices/releasing.md#landing-the-plane--session-completion).
-`npm publish`, by contrast, is usually left to Tonio; ask rather than assume.
+Publishing goes through `.github/workflows/publish.yml`: CI can only *stage*, and Tonio's 2FA
+approval on npmjs.com is what publishes. Agents never run `npm publish`.
 
 ## Releases
 
-The sequence lives upstream under
-[Project-specific practices → haltija](../tosijs-coding-practices/practices/releasing.md#haltija-npm--electron-dmg).
-The short version: bump **both** `package.json` files → `bun run build` → `bun test src/` 100%
-green → commit → annotated tag → push commits **and** tag → `gh release create` → `npm publish` →
-**update haltija's row in the shared scoreboard** (README of `tosijs-coding-practices`).
+The canonical process is
+[`publishing-via-oidc.md`](../tosijs-coding-practices/practices/publishing-via-oidc.md), and
+`CLAUDE.md` → Publishing has haltija's part of it (the attested lanes). In short:
 
-That last step is not optional and is the one this summary used to drop: a restated sequence
-silently overrides the canonical one, and haltija's row sat **fifteen tags stale** (1.5.2 while HEAD
-was 1.11.3) because both places an agent reads when releasing ended at `npm publish`. Treat the
-short version as a *delta*, not a replacement — when in doubt, run the canonical flow.
+1. Bump **both** `package.json` files; update the CHANGELOG heading.
+2. `gh workflow run publish.yml -f tag=main -f dry_run=true`, and read it through to the stop
+   before staging.
+3. Release commit → `bun run build` → `bun ../tosijs-coding-practices/tools/attest.ts` on the
+   clean tree → commit **only** `release-attestation.json` → annotated tag on that commit →
+   push the commits **and** the tag.
+4. `gh workflow run publish.yml -f tag=vX.Y.Z`. It stages; Tonio approves on npmjs.com (Staged
+   Packages). A green run is the "published and verified" statement; don't poll npm yourself.
+5. `gh release create` (`--prerelease` for a beta), and **update haltija's row in the shared
+   scoreboard** (README of `tosijs-coding-practices`).
+
+That last step is not optional and is the one an earlier summary here used to drop: a restated
+sequence silently overrides the canonical one, and haltija's row sat **fifteen tags stale** (1.5.2
+while HEAD was 1.11.3). Treat this list as a *delta*, not a replacement.
 
 Then confirm the CI runs the push triggered are green (`gh run list -L 3`). A push that goes red is
 not landed; nobody else is watching.
@@ -39,12 +48,11 @@ gate). Patch releases don't require it.
 
 Haltija-specific notes not worth upstreaming:
 
-- **Betas** add two flags — `gh release create --prerelease` and `npm publish --tag beta`. Get
-  them right in both directions; upstream explains why.
+- **Betas**: the dist-tag comes from the version (`-beta.N` → `beta`), and the workflow refuses to
+  let a prerelease become `latest`. `gh release create` still needs `--prerelease` by hand.
 - The **annotated tag message doubles as the release-note seed** — write it as prose you'd be
   happy to publish, then expand it into `gh release create --notes-file`.
 - **Commit body** for a release: one bullet per meaningful commit since the last one.
-- Run **`npm whoami`** before publishing if it's been a while.
 - `bun run build` regenerates `src/version.ts`, `src/embedded-assets.ts`, the `dist/` bundles,
   and the `apps/desktop/resources/component.js` copy that ships in the DMG. Verify
   `src/version.ts` shows the new version. It also regenerates the schema-derived docs, which CI

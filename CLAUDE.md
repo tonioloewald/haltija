@@ -796,11 +796,17 @@ Four GitHub Actions workflows run on push/PR to main:
 
 ## Issue Tracking
 
-- **`TODO.md`** — the roadmap and issue list (build/distribution items, multi-phase plans, known bugs). Keep it current as you work. See `AGENTS.md` for the session-completion workflow (the "landing the plane" steps culminating in `git push`).
-- Two other files look like issue lists but aren't: `ROADMAP.md` (repo root) is mostly a log of completed phases plus a "Planned"/"Ideas Parking Lot" backlog, and `docs/ROADMAP.md` is a longer-horizon vision doc ("Roadmap to 11/10"). Neither is the work queue — day-to-day items belong in `TODO.md`.
+- **The virta board** is the work queue: `virta brief`, `virta ls "project:haltija status:ready"`,
+  `virta create`. The session hooks run the brief automatically. `TODO.md` is now a prose pointer
+  to it, and must stay free of list items (the importer would read each one as a task). See
+  `AGENTS.md` for the session-completion workflow (the "landing the plane" steps culminating in
+  `git push`).
+- Records, not work: `docs/DECISIONS.md` (design records and release history moved out of
+  `TODO.md`) and `docs/ROADMAP-HISTORY.md` (finished phases). `ROADMAP.md` keeps the
+  longer-range plan and the ideas parking lot, and `docs/ROADMAP.md` is the vision doc.
 
 ## Related Docs
 
 - `COMPONENT-PATTERNS.md` — Required reading before editing `component.ts`, `task-board.ts`, or any custom element. Covers stable-by-default rendering, shadow DOM encapsulation, animation gotchas (transitions need start points; can't animate `left`↔`right`), drag handling, console interception, and WebSocket reconnection with kill flags.
-- `AGENTS.md` — Session workflow rules (issue tracking via `TODO.md`, mandatory push on session end).
+- `AGENTS.md` — Session workflow rules (the virta board, releases, mandatory push on session end).
 - `docs/` — Hand-written reference docs (`agent-prompt.md`, `recipes.md`, `UX-CRIMES.md`, `CI-INTEGRATION.md`, `AGENTIC-IDE.md`, `REST-API.md`, `EXECUTIVE-SUMMARY.md`, `ROADMAP.md`, `getting-started/`). Distinct from the auto-generated `API.md` and `DOCS.md` at the repo root.
