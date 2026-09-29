@@ -52,6 +52,7 @@ import type {
 // Component version - imported from shared version file
 import { VERSION as _VERSION } from './version'
 import { httpBaseFromWsUrl } from './ws-url'
+import { isSameDocument, readHandoff, resolveNavigationUrl, withHandoff } from './navigation-url'
 export const VERSION = _VERSION
 
 // Product name and element tag
@@ -4498,6 +4499,14 @@ export class DevChannel extends HTMLElement {
         storedWindowId = uid()
       } else {
         try {
+          // A tab that just navigated here from another ORIGIN handed its id across in window.name
+          // (sessionStorage is per-origin, so it cannot follow). Adopting it keeps the tab's
+          // identity DECLARED rather than leaving the server to guess which new window it is (#54).
+          const handoff = readHandoff(window.name)
+          if (handoff.windowId) {
+            window.name = handoff.original
+            sessionStorage.setItem(WINDOW_ID_KEY, handoff.windowId)
+          }
           storedWindowId = sessionStorage.getItem(WINDOW_ID_KEY)
           if (!storedWindowId) {
             storedWindowId = uid()
@@ -9365,30 +9374,30 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, true)
       }
     } else if (action === 'goto') {
-      // A change of fragment alone does not load a new document, so no widget will "reconnect" and
-      // the server must not wait for one (#54). Decided BEFORE choosing a path: the Electron branch
-      // below used to skip it, so a hash-only navigation in the desktop app waited out the timeout.
-      // `includes('#')`, not `hash !== ''`: `/page#` has an empty hash and still does not reload.
-      let url = payload.url
-      let sameDocument = false
+      // ONE resolved URL for the navigation, for sameDocument, and for the server (#54): they used
+      // to disagree, so `start#x` was judged same-document while the page went to `https://start/#x`.
+      let url: string
       try {
-        const next = new URL(url, location.href)
-        sameDocument = url.includes('#') && next.href.split('#')[0] === location.href.split('#')[0]
-      } catch { /* the navigation itself will report the bad URL */ }
-      // Use Electron's smart navigate (with https->http fallback) if available
+        url = resolveNavigationUrl(payload.url, location.href)
+      } catch (err: any) {
+        this.respond(msg.id, false, null, `Cannot navigate to ${payload.url}: ${err?.message || err}`)
+        return
+      }
+      const sameDocument = isSameDocument(url, location.href)
       const haltija = (window as any).haltija
       if (haltija?.navigate) {
+        // Desktop app: the windowId is injected and stable across origins; no handoff needed. It is
+        // given the RESOLVED url, so its own heuristics no longer turn `#x` into a web search.
         haltija.navigate(url)
-          .then(() => this.respond(msg.id, true, { sameDocument }))
+          .then(() => this.respond(msg.id, true, { sameDocument, url }))
           .catch((err: Error) => this.respond(msg.id, false, null, err.message))
         return
       }
-      // Fallback for non-Electron: auto-add https:// if no protocol specified
-      if (url && !url.includes('://')) {
-        url = 'https://' + url
+      if (!sameDocument && window.top === window.self) {
+        try { window.name = withHandoff(window.name, this.windowId) } catch { /* best effort */ }
       }
       location.href = url
-      this.respond(msg.id, true, { sameDocument })
+      this.respond(msg.id, true, { sameDocument, url })
     } else if (action === 'location') {
       this.respond(msg.id, true, {
         url: location.href,

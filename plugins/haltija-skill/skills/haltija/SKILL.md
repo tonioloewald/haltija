@@ -125,7 +125,7 @@ hj click 42            # Click by ref ID
 hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
-hj navigate <url>      # Waits for the new page (--no-wait); a new origin may mean a new windowId (in result)
+hj navigate <url>      # Waits for the new page (--no-wait); warns if the tab didn't come back as itself
 hj evaluate "document.title"   # Run JS in the page (async OK — see below)
 hj screenshot          # Capture the page — PNG default; --format webp|jpeg, --scale 0.5, --maxWidth 800 (browser: user clicks 🖥 in the widget once)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user

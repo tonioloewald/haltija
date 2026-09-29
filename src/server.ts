@@ -44,7 +44,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
-import { returnedWindow, clampPageWait, type PageTarget } from './page-wait'
+import { returnedWindow, clampPageWait, originOf, type PageTarget } from './page-wait'
 import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
@@ -371,10 +371,14 @@ let focusedWindowId: string | null = null
  * handler (`ctx.focusWindow`) and the test-runner `tabs-focus` step, so the two can't drift (the
  * test path used to set `focusedWindowId` directly and skip `updateHjStatus()`).
  */
+/** Bumped by every DELIBERATE focus change, so a navigation wait can tell it must not undo one. */
+let focusGeneration = 0
+
 function setFocusedWindow(windowId: string): TrackedWindow | null {
   const win = windows.get(windowId)
   if (!win) return null
   focusedWindowId = windowId
+  focusGeneration++
   updateHjStatus()
   raiseTabInDesktopApp(windowId)
   return win
@@ -883,17 +887,39 @@ function pageTarget(windowId?: string): PageTarget | null {
  * (measured: 407 ms per navigate for a 21 ms reconnect). The test runner's `navigate` step and the
  * /navigate and /refresh endpoints all wait through here.
  */
+/** How long a possible-but-unproven tab is given to turn out to be the real one coming back. */
+const CANDIDATE_GRACE_MS = 2000
+
 async function waitForNewPage(
   target: PageTarget | null,
   opts: { timeoutMs?: number; expectedOrigin?: string | null } = {},
-): Promise<{ reconnected: boolean; windowId?: string }> {
+): Promise<{ reconnected: boolean; windowId?: string; candidate?: { windowId: string; url: string } }> {
   const deadline = Date.now() + clampPageWait(opts.timeoutMs)
   const known = new Set(windows.keys())
+  const generation = focusGeneration
+  let candidateSince: number | null = null
   for (;;) {
-    const found = returnedWindow(windows, target, known, opts.expectedOrigin ?? null)
-    if (found) {
-      if (target?.focused && focusedWindowId !== found.id) setFocusedWindow(found.id)
-      return { reconnected: true, windowId: found.id }
+    const back = returnedWindow(windows, target, known, opts.expectedOrigin ?? null)
+    if (back?.confirmed) {
+      // Focus follows the tab only if it had focus and nobody changed focus on purpose meanwhile
+      // (a user switching desktop tabs, another agent's tabs-focus): a snapshot must not undo that.
+      if (target?.focused && focusGeneration === generation && focusedWindowId !== back.window.id) {
+        setFocusedWindow(back.window.id)
+      }
+      return { reconnected: true, windowId: back.window.id }
+    }
+    if (back) {
+      // Not provably the tab: a cross-site navigation wiped its identity, OR an unrelated tab opened
+      // in the gap after the old page unloaded while the real one is still loading. Give the real
+      // tab CANDIDATE_GRACE_MS to come back as itself before reporting the candidate — reporting at
+      // first sight misfired on exactly that second case. Either way it is never claimed as the
+      // tab and never given focus.
+      candidateSince ??= Date.now()
+      if (Date.now() - candidateSince >= CANDIDATE_GRACE_MS || Date.now() >= deadline) {
+        return { reconnected: false, candidate: { windowId: back.window.id, url: back.window.url } }
+      }
+    } else {
+      candidateSince = null
     }
     if (Date.now() >= deadline) return { reconnected: false }
     await new Promise((r) => setTimeout(r, 25))
@@ -2852,11 +2878,13 @@ Run 'hj --help' for all commands.`
               break
             }
             if (!response.data?.sameDocument) {
-              const expected = (() => { try { return new URL(step.url, target?.url).origin } catch { return null } })()
+              const expected = originOf(response.data?.url ?? step.url, target?.url)
               const back = await waitForNewPage(target, { timeoutMs: stepTimeout, expectedOrigin: expected })
               if (!back.reconnected) {
                 stepPassed = false
-                error = 'Browser did not reconnect after navigation'
+                error = back.candidate
+                  ? `The tab did not come back as itself; a new tab appeared at ${back.candidate.url} (window ${back.candidate.windowId}). A cross-site navigation resets a tab's identity outside the desktop app.`
+                  : 'Browser did not reconnect after navigation'
               }
             }
             break

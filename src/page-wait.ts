@@ -1,21 +1,23 @@
 /**
- * After a navigation or reload: which window is the navigated tab now? (#54, beta.2 review)
+ * After a navigation or reload: has the navigated tab come back? (#54)
  *
  * Pure, so the rule is unit-tested without a browser; `waitForNewPage` in server.ts polls it.
  *
- * Two shapes of "came back":
- *  - the SAME windowId with a new browserId: a same-origin load, and every load in the desktop app,
- *    whose windowId is injected and stable;
- *  - a NEW windowId: outside the desktop app the id lives in sessionStorage, which is PER-ORIGIN, so
- *    a tab that moves to another origin (another localhost port, an OAuth redirect) reconnects under
- *    a fresh id, and an iframe mints one on every load. The first version watched only the old id,
- *    waited out the whole timeout and reported "no widget reconnected" ~20 ms after it was back.
- *    Accepted: a window of the same kind that did not exist when the navigation began and is on the
- *    requested origin — or the navigated tab is gone, which covers a redirect to another origin.
+ * Only by IDENTITY: the same windowId with a new browserId. Across origins the widget hands its id
+ * over in `window.name` (navigation-url.ts), so a tab keeps its id through same-site navigations, and
+ * the desktop app's ids are stable anyway. An earlier version accepted "a new window that appeared",
+ * and an unrelated tab opening during a slow load was reported as the page coming back and given
+ * focus (beta.2 re-review). That is routing by inference, which this repo refuses.
+ *
+ * Where identity cannot follow — a cross-SITE navigation clears `window.name` — a new same-kind
+ * window on the expected origin, after the tab has gone, is reported as a CANDIDATE: never as
+ * "reconnected", and never given focus. The caller is told which window it might be.
  */
-
-/** The most a caller may make a navigation wait. Caller-supplied, and reachable by any page (#44). */
-export const MAX_PAGE_WAIT_MS = 60_000
+/**
+ * The most a caller may make a navigation wait. Caller-supplied and reachable by any page (#44), so
+ * capped; and under the ~60 s an MCP host gives a tool call, allowing for the 5 s navigation send.
+ */
+export const MAX_PAGE_WAIT_MS = 50_000
 
 /** Clamp a caller-supplied wait: default when absent, never negative, never beyond the cap. */
 export function clampPageWait(timeoutMs: unknown, fallback = 10_000): number {
@@ -42,30 +44,32 @@ export interface WindowLike {
 
 export function originOf(url: string, base?: string): string | null {
   try {
-    return new URL(url, base).origin
+    const o = new URL(url, base).origin
+    return o === 'null' ? null : o
   } catch {
     return null
   }
 }
 
+export type PageReturn<W> = { window: W; confirmed: true } | { window: W; confirmed: false } | undefined
+
 /**
- * The window the navigated tab came back as, or undefined if it has not come back yet.
- * `known` is the set of window ids that existed when the navigation began.
+ * The navigated tab, if it is back (`confirmed`), or a window that may be it but cannot be shown to
+ * be (`confirmed: false`), or undefined. `known` is the set of window ids when the navigation began.
  */
 export function returnedWindow<W extends WindowLike>(
   windows: Map<string, W>,
   target: PageTarget | null,
   known: Set<string>,
   expectedOrigin: string | null,
-): W | undefined {
-  const kind = (w: { windowType?: string }) => w.windowType || 'tab'
-  if (!target) return Array.from(windows.values()).find((w) => !known.has(w.id))
+): PageReturn<W> {
+  if (!target) return undefined
   const same = windows.get(target.id)
-  if (same && same.browserId !== target.browserId) return same
-  return Array.from(windows.values()).find(
-    (w) =>
-      !known.has(w.id) &&
-      kind(w) === kind(target) &&
-      ((expectedOrigin !== null && originOf(w.url) === expectedOrigin) || !windows.has(target.id)),
+  if (same && same.browserId !== target.browserId) return { window: same, confirmed: true }
+  if (windows.has(target.id)) return undefined // still the old page, or not back yet
+  const kind = (w: { windowType?: string }) => w.windowType || 'tab'
+  const candidate = Array.from(windows.values()).find(
+    (w) => !known.has(w.id) && kind(w) === kind(target) && expectedOrigin !== null && originOf(w.url) === expectedOrigin,
   )
+  return candidate ? { window: candidate, confirmed: false } : undefined
 }

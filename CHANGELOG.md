@@ -4,10 +4,17 @@
 
 ### Changed
 
-- **`hj navigate` and `hj refresh` now block until the new page's widget is back** (see Fixed).
-  Usually that takes tens of milliseconds. On a page that doesn't load the widget itself (a
-  bookmarklet tab), nothing comes back, so each call waits out `--timeout` (default 10 s, max
-  60 s) and then returns with a warning. Pass `--no-wait` (`wait: false`) there.
+- **Navigating or reloading now blocks until the page's widget is back** (see Fixed). This
+  applies everywhere: `hj navigate` / `hj refresh`, REST `/navigate` / `/refresh`, the MCP
+  bridge, `DevChannelClient` and `haltija/test`, and the test runner's `navigate` step.
+  - Usually it takes tens of milliseconds. On a page that doesn't load the widget itself (a
+    bookmarklet tab), nothing comes back, so each call waits out `--timeout` (default 10 s, max
+    50 s) and then returns with a warning. Pass `--no-wait` (`wait: false`, or `timeout: 0`)
+    there.
+  - Focus follows the navigated tab, so the next untargeted command reaches the page just
+    loaded, unless focus was deliberately changed during the load.
+  - `DevChannelClient.navigate()` / `refresh()` (and the `haltija/test` wrappers) now return
+    `{ reconnected, warning?, candidateWindowId? }` instead of nothing.
 
 ### Fixed
 
@@ -16,16 +23,21 @@
   after was answered by the page being left, failed with "No browser connected" during the
   handover, or was lost and timed out after 5 s. Snowfox saw it as a page that "stopped loading"
   and worked around it with a 2.5 s pause.
-  - They now return once the widget is back from the new page (`data.reconnected: true`).
-  - Across origins, a plain browser tab comes back under a new window id, because the id lives
-    in per-origin sessionStorage. That new id is returned as `data.windowId`, and focus follows
-    the tab.
-  - A `#hash`-only navigation returns at once.
-  - If nothing comes back in time, the result carries a `warning`, joined to any other warning,
-    rather than letting the next command go nowhere.
-  - The test runner's `navigate` step uses the same wait and the same tab choice. It previously
-    failed cross-origin navigations with "Browser did not reconnect after navigation", and it
-    no longer spends a fixed 400 ms per navigation.
+  - They now return once the tab is back from the new page (`data.reconnected: true`).
+  - A tab keeps its identity across origins: the widget hands its window id to the next page
+    through `window.name`, since the sessionStorage it normally uses is per-origin. The tab is
+    therefore recognised by its id, never by guessing which new window it might be.
+  - Where the browser clears `window.name` (a cross-site navigation such as an OAuth redirect),
+    the call returns promptly with `reconnected: false`, a `warning`, and the new window as
+    `candidateWindowId`. Focus is not moved.
+  - The URL is resolved once, and that URL is both what is loaded and what the server waits for.
+    `/docs` used to go to `https:///docs`, `#x` became a web search in the desktop app, and a
+    `#hash`-only navigation (which returns at once) was misjudged.
+  - Warnings are joined to any already attached, rather than replacing them.
+  - The test runner's `navigate` step uses the same wait and tab choice. It had failed
+    cross-origin navigations and spent a fixed 400 ms per navigation.
+- **`DevChannelClient.refresh(false)` was always a hard reload:** it sent `hard` to an endpoint
+  that reads `soft`.
 
 ## 1.13.0-beta.1 (2026-09-26)
 

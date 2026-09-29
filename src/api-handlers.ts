@@ -14,7 +14,7 @@ import { performDrag } from './drag'
 import { attachSession, readSession, writeSession, detachSession, type RunTmux } from './tmux-session'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
-import { clampPageWait, type PageTarget } from './page-wait'
+import { clampPageWait, originOf, type PageTarget } from './page-wait'
 
 // ============================================
 // Handler Context Type
@@ -97,7 +97,7 @@ export interface HandlerContext {
   waitForNewPage: (
     target: PageTarget | null,
     opts?: { timeoutMs?: number; expectedOrigin?: string | null },
-  ) => Promise<{ reconnected: boolean; windowId?: string }>
+  ) => Promise<{ reconnected: boolean; windowId?: string; candidate?: { windowId: string; url: string } }>
   headers: Record<string, string>
   url: URL
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
@@ -741,33 +741,29 @@ async function withNewPage(
   target: PageTarget | null,
   body: { url?: string; wait?: boolean; timeout?: number },
 ): Promise<Response> {
-  if (!response.success || body.wait === false || response.data?.sameDocument) {
+  const timeoutMs = clampPageWait(body.timeout ?? 10000)
+  // timeout 0 means "don't wait", not "wait zero ms and then warn that nothing came back".
+  if (!response.success || body.wait === false || timeoutMs === 0 || response.data?.sameDocument) {
     return Response.json(response, { headers: ctx.headers })
   }
-  // Resolved against the page it was on, so a relative URL expects that page's origin. /refresh has
-  // no url: the reloaded page is on the origin it was on.
-  const expectedOrigin = (() => {
-    try { return new URL(body.url ?? target?.url ?? '', target?.url).origin } catch { return null }
-  })()
-  const back = await ctx.waitForNewPage(target, { timeoutMs: clampPageWait(body.timeout ?? 10000), expectedOrigin })
-  const data = {
-    ...(response.data || {}),
-    reconnected: back.reconnected,
-    // Outside the desktop app a tab that changes origin comes back under a NEW windowId; say which,
-    // so a caller that targets windows by id can follow it.
-    ...(back.windowId && back.windowId !== target?.id ? { windowId: back.windowId } : {}),
-  }
+  // The widget reports the URL it actually loaded; /refresh reloads the page it was on.
+  const expectedOrigin = originOf(response.data?.url ?? target?.url ?? '')
+  const back = await ctx.waitForNewPage(target, { timeoutMs, expectedOrigin })
+  const data = { ...(response.data || {}), reconnected: back.reconnected }
   if (back.reconnected) return Response.json({ ...response, data }, { headers: ctx.headers })
-  // Still a success — the navigation happened — but a page that doesn't load the widget itself (a
-  // plain bookmarklet tab) never reconnects, and the caller must know commands now go nowhere.
-  // JOINED to any warning already attached (hidden tab, ambiguous focus), never replacing it, and a
-  // new warning is by definition not a repeat: keeping the old `warningRepeated: true` made `hj`
-  // print nothing at all (beta.2 review).
-  const timeoutMs = clampPageWait(body.timeout ?? 10000)
-  const note =
-    `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
-    `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
-    `commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`
+  // Still a success — the navigation happened — but the caller must know the next command may go
+  // nowhere, or to the wrong tab. JOINED to any warning already attached (hidden tab, ambiguous
+  // focus), never replacing it, and a new warning is not a repeat: keeping the old
+  // `warningRepeated: true` made `hj` print nothing (beta.2 review).
+  const note = back.candidate
+    ? `The page changed, but the tab did not come back as itself: a new tab appeared at ` +
+      `${back.candidate.url} (window ${back.candidate.windowId}). Outside the desktop app a ` +
+      `cross-site navigation resets a tab's identity; if that is this tab, target it with ` +
+      `--window ${back.candidate.windowId}. Focus was not moved.`
+    : `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
+      `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
+      `commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`
+  if (back.candidate) (data as any).candidateWindowId = back.candidate.windowId
   const { warningRepeated: _stale, ...rest } = response
   return Response.json(
     { ...rest, data, warning: [response.warning, note].filter(Boolean).join('\n\n') },

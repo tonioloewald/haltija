@@ -30,10 +30,17 @@ test.beforeAll(async () => {
     // /bare has no widget: it never reconnects. Every other load gets a fresh boot id, so a reload
     // is distinguishable from the page before it.
     if (path === '/bare') return res.end('<!doctype html><title>bare</title><h1>no widget</h1>')
-    res.end(`<!doctype html><title>${path}</title>
+    // /wiped clears window.name before the widget loads: what a cross-SITE navigation does, which a
+    // test on localhost ports (same-site) cannot otherwise produce.
+    const wipe = path === '/wiped' ? '<script>window.name = ""</script>' : ''
+    // /slow answers late, so a tab can open elsewhere while this one is still loading.
+    const delay = path === '/slow' ? 1500 : 0
+    return void setTimeout(() => {
+      res.end(`<!doctype html><title>${path}</title>${wipe}
 <script>globalThis.__boot = Math.random().toString(36).slice(2)</script>
 <script src="${hal.serverUrl}/component.js?autoInject=true&serverUrl=${hal.wsUrl}"></script>
 <h1>${path}</h1>`)
+    }, delay)
   }
   app = createServer(page)
   other = createServer(page)
@@ -83,26 +90,56 @@ test('a #hash-only navigation returns at once; there is no new page to wait for'
   expect(Date.now() - t0).toBeLessThan(1500)
 })
 
-test('ANOTHER ORIGIN: the tab comes back under a new windowId, and navigate follows it fast', async () => {
-  // Outside the desktop app the windowId lives in sessionStorage, which is per-origin. The first
-  // version of this wait watched only the old id: 10 s, then a false "no widget reconnected".
+test('ANOTHER ORIGIN: the tab keeps its identity (window.name handoff), and navigate is fast', async () => {
+  // Outside the desktop app the windowId lives in per-origin sessionStorage. The first version of
+  // this wait watched only the old id: 10 s, then a false "no widget reconnected". The widget now
+  // hands its id across in window.name, so the tab comes back as ITSELF.
+  const before = (await (await fetch(hal.serverUrl + '/windows')).json()).windows.map((w: any) => w.id)
   const t0 = Date.now()
   const nav = await post('/navigate', { url: `${OTHER}/elsewhere` })
   expect(nav.data.reconnected).toBe(true)
-  expect(nav.data.windowId).toBeTruthy() // the new id, so id-targeting callers can follow it
   expect(nav.warning).toBeUndefined()
   expect(Date.now() - t0).toBeLessThan(3000)
-  const first = await here()
-  expect(first.data.path).toBe('/elsewhere')
-  // And back again, the other direction.
+  const after = (await (await fetch(hal.serverUrl + '/windows')).json()).windows.map((w: any) => w.id)
+  expect(after).toEqual(before)
+  expect((await here()).data.path).toBe('/elsewhere')
   const back = await post('/navigate', { url: `${APP}/home` })
   expect(back.data.reconnected).toBe(true)
   expect((await here()).data.path).toBe('/home')
 })
 
+test('a tab opening on the destination origin during a slow load is NOT taken for the navigated one', async ({ context }) => {
+  // The rejected version accepted any new window on the expected origin: this unrelated tab was
+  // reported as "your page came back" and handed focus.
+  const navigating = post('/navigate', { url: `${OTHER}/slow` })
+  await new Promise((r) => setTimeout(r, 300))
+  const intruder = await context.newPage()
+  await intruder.goto(`${OTHER}/unrelated`)
+  const nav = await navigating
+  expect(nav.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/slow') // focus is on the navigated tab, not the intruder
+  await intruder.close()
+})
+
+test('identity wiped (a cross-site navigation): an unconfirmed candidate, reported fast, focus not moved', async () => {
+  const t0 = Date.now()
+  const nav = await post('/navigate', { url: `${OTHER}/wiped` })
+  expect(nav.success).toBe(true)
+  expect(nav.data.reconnected).toBe(false)
+  expect(nav.data.candidateWindowId).toBeTruthy()
+  expect(nav.warning).toContain('did not come back as itself')
+  expect(Date.now() - t0).toBeLessThan(4000) // the 2 s grace, not the 10 s timeout
+})
+
 test('an empty trailing # is the same document too', async () => {
   const nav = await post('/navigate', { url: `${APP}/start#` })
   expect(nav.data.sameDocument).toBe(true)
+})
+
+test('timeout 0 means no wait, not "wait 0 ms and warn"', async () => {
+  const nav = await post('/navigate', { url: `${APP}/zero`, timeout: 0 })
+  expect(nav.success).toBe(true)
+  expect(nav.warning).toBeUndefined()
 })
 
 test('a page that never reconnects: success, a warning, and not marked as a repeat', async () => {

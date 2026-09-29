@@ -24,6 +24,14 @@ import type {
   TestAssertion,
 } from './types'
 
+/** Returned by `navigate()` / `refresh()`: did the page come back so the next command reaches it? */
+export interface NavigationOutcome {
+  reconnected: boolean
+  /** A cross-site navigation resets a tab's identity outside the desktop app: the window it may be now. */
+  candidateWindowId?: string
+  warning?: string
+}
+
 export class DevChannelClient {
   private baseUrl: string
   
@@ -174,19 +182,36 @@ export class DevChannelClient {
   // Navigation
   // ==========================================
   
-  async refresh(hard = false): Promise<void> {
+  /**
+   * What a navigation or reload came back with (#54). `reconnected: false` with a `warning` means
+   * the next command may reach nothing, or the wrong tab — it is logged, because in a test it is
+   * otherwise invisible.
+   */
+  private navigationOutcome(response: DevResponse & { warning?: string }): NavigationOutcome {
+    const data = (response.data || {}) as any
+    const outcome: NavigationOutcome = { reconnected: data.reconnected !== false }
+    if (data.candidateWindowId) outcome.candidateWindowId = data.candidateWindowId
+    if (response.warning) outcome.warning = response.warning
+    if (data.reconnected === false && response.warning) console.warn(`[haltija] ${response.warning}`)
+    return outcome
+  }
+
+  async refresh(hard = false): Promise<NavigationOutcome> {
     const res = await fetch(`${this.baseUrl}/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hard }),
+      // The endpoint's field is `soft`. This sent `{ hard }`, which it ignored, so `refresh(false)`
+      // was always a hard, cache-busting reload.
+      body: JSON.stringify({ soft: !hard }),
     })
     const response: DevResponse = await res.json()
     if (!response.success) {
       throw new Error(response.error || 'Refresh failed')
     }
+    return this.navigationOutcome(response)
   }
-  
-  async navigate(url: string): Promise<void> {
+
+  async navigate(url: string): Promise<NavigationOutcome> {
     const res = await fetch(`${this.baseUrl}/navigate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -196,8 +221,9 @@ export class DevChannelClient {
     if (!response.success) {
       throw new Error(response.error || 'Navigate failed')
     }
+    return this.navigationOutcome(response)
   }
-  
+
   async getLocation(): Promise<{ url: string; title: string; pathname: string; search: string; hash: string }> {
     const res = await fetch(`${this.baseUrl}/location`)
     const response: DevResponse = await res.json()
