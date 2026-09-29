@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "name": "xinjs SPA navigation",
-  "description": "Tests navigation and interactive components on the xinjs UI documentation site",
-  "url": "https://ui.xinjs.net",
+  "name": "tosijs-ui SPA navigation",
+  "description": "Tests navigation and interactive components on the tosijs-ui documentation site (ours: ui.xinjs.net now redirects here)",
+  "url": "https://ui.tosijs.net",
   "tags": ["external", "spa"],
   "steps": [
     {
       "action": "navigate",
-      "url": "https://ui.xinjs.net",
-      "description": "Load xinjs UI docs"
+      "url": "https://ui.tosijs.net",
+      "description": "Load tosijs-ui docs"
     },
     {
       "action": "wait",
@@ -18,8 +18,8 @@
     },
     {
       "action": "assert",
-      "assertion": { "type": "title", "pattern": "xinjs" },
-      "description": "Page title contains xinjs",
+      "assertion": { "type": "title", "pattern": "tosijs-ui" },
+      "description": "Page title contains tosijs-ui",
       "purpose": "Confirm the site loaded correctly"
     },
     {

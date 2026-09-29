@@ -58,16 +58,32 @@ async function isServerReady(): Promise<boolean> {
   }
 }
 
+/**
+ * The external HTTPS site these tests drive: navigation, widget re-injection, a DOM query, a click.
+ *
+ * Our OWN site, not example.com. example.com has started serving a page aimed at test traffic, and
+ * a third party's patience is not a dependency a test suite should have. tosijs.net is ours, has a
+ * real certificate and a static <h1>, and links to ui.tosijs.net (also ours), which gives the click
+ * test somewhere to land that is not someone else's server.
+ */
+const EXTERNAL = {
+  url: 'https://tosijs.net/',
+  host: 'tosijs.net',
+  h1: 'tosijs',
+  link: 'a[href^="https://ui.tosijs.net"]',
+  linkHost: 'ui.tosijs.net',
+}
+
 // Helper to check if external network is available (requires two successful fetches)
 let networkAvailable: boolean | null = null
 async function checkNetwork(): Promise<boolean> {
   if (networkAvailable !== null) return networkAvailable
   try {
-    const res = await fetch('https://example.com', { signal: AbortSignal.timeout(3000) })
+    const res = await fetch(EXTERNAL.url, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) throw new Error('not ok')
     // Verify we can actually read the response
     const text = await res.text()
-    if (!text.includes('Example Domain')) throw new Error('unexpected content')
+    if (!text.includes(`<h1>${EXTERNAL.h1}</h1>`)) throw new Error('unexpected content')
     networkAvailable = true
   } catch {
     networkAvailable = false
@@ -244,11 +260,10 @@ describe('Desktop App Integration Tests', () => {
       return
     }
 
-    // Navigate to example.com
     const navRes = await fetch(`${BASE_URL}/navigate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://example.com' }),
+      body: JSON.stringify({ url: EXTERNAL.url }),
     })
     expect(navRes.ok).toBe(true)
 
@@ -256,15 +271,14 @@ describe('Desktop App Integration Tests', () => {
     const reconnected = await waitFor(async () => {
       const res = await fetch(`${BASE_URL}/windows`)
       const data = await res.json()
-      return data.count > 0 && data.windows[0]?.url?.includes('example.com')
+      return data.count > 0 && data.windows[0]?.url?.includes(EXTERNAL.host)
     }, 8000)
 
     expect(reconnected).toBe(true)
 
-    // Verify we're on example.com
     const windowsRes = await fetch(`${BASE_URL}/windows`)
     const windows = await windowsRes.json()
-    expect(windows.windows[0].url).toContain('example.com')
+    expect(windows.windows[0].url).toContain(EXTERNAL.host)
   }, 15000) // External site navigation needs more time
 
   it('can query DOM on HTTPS site', async () => {
@@ -277,7 +291,6 @@ describe('Desktop App Integration Tests', () => {
       return
     }
 
-    // Query the h1 on example.com
     const res = await fetch(`${BASE_URL}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -287,7 +300,7 @@ describe('Desktop App Integration Tests', () => {
     expect(res.ok).toBe(true)
     const data = await res.json()
     expect(data.success).toBe(true)
-    expect(data.data.textContent).toBe('Example Domain')
+    expect(data.data.textContent).toBe(EXTERNAL.h1)
   })
 
   it('can click elements on HTTPS site', async () => {
@@ -300,27 +313,26 @@ describe('Desktop App Integration Tests', () => {
       return
     }
 
-    // Click the "More information..." link on example.com
+    // A specific link to another of OUR sites: `a` alone clicked whatever came first.
     const res = await fetch(`${BASE_URL}/click`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selector: 'a' }),
+      body: JSON.stringify({ selector: EXTERNAL.link }),
     })
 
     expect(res.ok).toBe(true)
     const data = await res.json()
     expect(data.success).toBe(true)
 
-    // Wait for navigation
-    await new Promise(r => setTimeout(r, 2000))
-
-    // Check we navigated (URL should change)
-    const windowsRes = await fetch(`${BASE_URL}/windows`)
-    const windows = await windowsRes.json()
-    
-    // Widget might disconnect during navigation, that's OK
-    // The important thing is the click worked
-  })
+    // The click must actually have navigated. This used to wait two seconds and assert nothing
+    // ("the important thing is the click worked"), so a click that did nothing passed.
+    const landed = await waitFor(async () => {
+      const r = await fetch(`${BASE_URL}/windows`)
+      const d = await r.json()
+      return d.windows?.some((w: any) => w.url?.includes(EXTERNAL.linkHost))
+    }, 8000)
+    expect(landed).toBe(true)
+  }, 15000)
 
   it('navigates to local server page and reconnects', async () => {
     if (!await isServerAvailable()) {

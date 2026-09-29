@@ -779,7 +779,7 @@ Four GitHub Actions workflows run on push/PR to main:
   gate that makes the process-killing / PATH-writing tests non-advisory.
 - **`test-qa.yml`** — builds, launches Electron under xvfb, waits for server + browser connection,
   then runs the test JSON fixtures via `POST /test/run` (not `bun test`): `tests/playground.json`,
-  `tests/homepage.json`. `tests/xinjs-spa.json` is non-blocking (external site). On failure it
+  `tests/homepage.json`. `tests/tosijs-ui-spa.json` is non-blocking (external site, but ours). On failure it
   captures a snapshot + screenshot as artifacts.
 - **`e2e.yml`** — runs the Playwright suites (`src/*.playwright.ts`); each spawns its own haltija
   server and injects the widget into a real Chromium page. A second job, `engines`, runs

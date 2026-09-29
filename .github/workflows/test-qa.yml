@@ -118,17 +118,17 @@ jobs:
             exit 1
           fi
 
-      - name: Run xinjs SPA tests (non-blocking)
+      - name: Run tosijs-ui SPA tests (non-blocking)
         continue-on-error: true
         run: |
           RESULT=$(curl -s -X POST http://localhost:8700/test/run \
             -H "Content-Type: application/json" \
             --max-time 60 \
-            -d @tests/xinjs-spa.json) || true
+            -d @tests/tosijs-ui-spa.json) || true
           echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
           PASSED=$(echo "$RESULT" | jq '.passed' 2>/dev/null || echo "false")
           if [ "$PASSED" != "true" ]; then
-            echo "::warning::xinjs SPA tests failed (external site, non-blocking)"
+            echo "::warning::tosijs-ui SPA tests failed (external site, non-blocking)"
           fi
 
       # `--private --app` is the ONE advertised invocation with no automated coverage anywhere.
