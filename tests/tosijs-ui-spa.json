@@ -24,9 +24,9 @@
     },
     {
       "action": "assert",
-      "assertion": { "type": "exists", "selector": "nav" },
+      "assertion": { "type": "exists", "selector": "tosi-sidenav" },
       "description": "Navigation exists",
-      "purpose": "SPA should have a navigation element"
+      "purpose": "The docs site navigates with its own <tosi-sidenav> component, not a <nav> element"
     },
     {
       "action": "assert",
@@ -35,7 +35,7 @@
     },
     {
       "action": "eval",
-      "code": "document.querySelectorAll('nav a, nav button, [role=navigation] a').length > 0",
+      "code": "document.querySelectorAll('tosi-sidenav a, .doc-nav a').length > 0",
       "expect": true,
       "description": "Nav has clickable items",
       "purpose": "SPA navigation should have interactive elements"
