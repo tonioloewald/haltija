@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.13.0-beta.2 (unreleased)
+## 1.13.0-beta.2 (2026-09-29)
 
 ### Changed
 
