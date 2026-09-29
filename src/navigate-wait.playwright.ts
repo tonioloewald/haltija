@@ -26,6 +26,9 @@ test.beforeAll(async () => {
   OTHER = `http://localhost:${otherPort}`
   const page = (req: any, res: any) => {
     const path = new URL(req.url!, 'http://x').pathname
+    // /nocontent answers 204 (before any header is written): the browser stays on the current page,
+    // which must be left untouched.
+    if (path === '/nocontent') { res.writeHead(204); return res.end() }
     res.writeHead(200, { 'content-type': 'text/html' })
     // /bare has no widget: it never reconnects. Every other load gets a fresh boot id, so a reload
     // is distinguishable from the page before it.
@@ -129,6 +132,44 @@ test('identity wiped (a cross-site navigation): an unconfirmed candidate, report
   expect(nav.data.candidateWindowId).toBeTruthy()
   expect(nav.warning).toContain('did not come back as itself')
   expect(Date.now() - t0).toBeLessThan(4000) // the 2 s grace, not the 10 s timeout
+})
+
+test('a deliberate focus change during the load wins; navigate does not take focus back', async ({ context, page }) => {
+  // In a real browser the user has switched away, so the loading tab is HIDDEN and reconnects with
+  // active:false (a visible tab connecting takes focus by design; that is not the case under test).
+  await page.addInitScript(() => {
+    if (location.pathname === '/slow') {
+      Object.defineProperty(document, 'visibilityState', { get: () => 'hidden' })
+      Object.defineProperty(document, 'hidden', { get: () => true })
+    }
+  })
+  const other = await context.newPage()
+  await other.goto(`${APP}/other-tab`)
+  await expect.poll(async () => (await (await fetch(hal.serverUrl + '/windows')).json()).windows.length).toBe(2)
+  const tabs = (await (await fetch(hal.serverUrl + '/windows')).json()).windows
+  const otherId = tabs.find((w: any) => w.url.endsWith('/other-tab')).id
+  const startId = tabs.find((w: any) => w.url.endsWith('/start')).id
+  await post('/tabs/focus', { window: startId })
+  const navigating = post('/navigate', { url: `${OTHER}/slow`, window: startId })
+  await new Promise((r) => setTimeout(r, 300))
+  await fetch(`${hal.serverUrl}/windows/${otherId}/focus`, { method: 'POST' }) // the user's choice
+  const nav = await navigating
+  expect(nav.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/other-tab')
+  await other.close()
+})
+
+test('the same page spelled differently (uppercase host, #hash) is still the same document', async () => {
+  const nav = await post('/navigate', { url: `${APP.replace('localhost', 'LOCALHOST')}/start#s` })
+  expect(nav.data.sameDocument).toBe(true)
+})
+
+test('a cross-origin navigation that never unloads (204) leaves the page’s window.name alone', async ({ page }) => {
+  await page.evaluate(() => { window.name = 'host-app-name' })
+  const nav = await post('/navigate', { url: `${OTHER}/nocontent`, timeout: 800 })
+  expect(nav.success).toBe(true)
+  expect(page.url()).toContain('/start') // really stayed
+  expect(await page.evaluate(() => window.name)).toBe('host-app-name')
 })
 
 test('an empty trailing # is the same document too', async () => {

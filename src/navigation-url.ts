@@ -5,26 +5,55 @@
  */
 
 /**
- * The absolute URL a `navigate` to `raw` loads, from the page at `base`. ONE answer, used for the
- * navigation itself, for `sameDocument`, and reported to the server, which derives what to wait for
- * from it. The beta.2 re-review found them disagreeing: `sameDocument` was judged on `start#x` while
- * the page went to `https://start/#x`, and `/docs` went to `https:///docs`.
+ * What a `navigate` to `raw` loads, from the page at `base`. ONE answer for the navigation, for
+ * `sameDocument`, and for what the server waits for; the beta.2 review found them disagreeing
+ * (`sameDocument` was judged on `start#x` while the page went to `https://start/#x`, and `/docs` went
+ * to `https:///docs`).
  *
- *  - a scheme (`https://…`, `about:`, `data:`, `file:`, …): as given;
+ *  - a scheme (`https://…`, `about:`, `data:`, …): parsed, so the comparison below sees a normalised
+ *    URL (`http://LOCALHOST:3000` → `http://localhost:3000/`);
  *  - `/…`, `#…`, `?…`, `./…`, `../…`: relative to the current page;
- *  - anything else (`example.com/x`, `localhost:4000/x`): a host, so `https://` is prefixed, as before.
+ *  - anything else (`example.com/x`, `localhost:3000`): a BARE host. `href` is the `https://` guess the
+ *    plain-browser path loads, but `bare` is set so the desktop app is handed the raw input: it adds
+ *    the scheme itself and, only then, falls back to http when https fails — handing it a prefixed URL
+ *    silently disabled that fallback for every plain-http dev server (beta.2 re-review).
  */
-export function resolveNavigationUrl(raw: string, base: string): string {
+export function resolveNavigationUrl(raw: string, base: string): { href: string; bare: boolean } {
   const url = String(raw ?? '').trim()
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^(about|data|blob|javascript|mailto):/i.test(url)) return url
-  if (/^(\/|#|\?|\.\.?\/)/.test(url)) return new URL(url, base).href
-  return 'https://' + url
+  if (!url) throw new Error('url is required')
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^(about|data|blob|javascript|mailto):/i.test(url)) {
+    return { href: new URL(url).href, bare: false }
+  }
+  if (/^(\/|#|\?|\.\.?\/)/.test(url)) return { href: new URL(url, base).href, bare: false }
+  return { href: new URL('https://' + url).href, bare: true }
 }
 
 /** A fragment-only change of the current page: no new document loads, so nothing reconnects. */
 export function isSameDocument(resolved: string, current: string): boolean {
+  // Both sides normalised, so `http://h:1#x` from `http://h:1/` and an uppercase host still match.
   // `includes('#')`, not a non-empty hash: `/page#` has an empty hash and still does not reload.
-  return resolved.includes('#') && resolved.split('#')[0] === current.split('#')[0]
+  let a: string, b: string
+  try {
+    a = new URL(resolved).href
+    b = new URL(current).href
+  } catch {
+    return false
+  }
+  return a.includes('#') && a.split('#')[0] === b.split('#')[0]
+}
+
+/**
+ * Whether a navigation needs the window.name handoff: a top-level move to ANOTHER http(s) origin.
+ * Same-origin keeps sessionStorage, and a scheme that does not load a page (mailto:, javascript:,
+ * data:) must not leave a marker in a page that stays.
+ */
+export function needsHandoff(resolved: string, current: string): boolean {
+  try {
+    const next = new URL(resolved)
+    return /^https?:$/.test(next.protocol) && next.origin !== new URL(current).origin
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -37,9 +66,11 @@ export function isSameDocument(resolved: string, current: string): boolean {
  * makes the identity DECLARED instead: `window.name` belongs to the browsing context and survives
  * same-site navigations, so the old page writes its id there and the new page adopts it.
  *
- * Browsers clear `window.name` on a cross-SITE top-level navigation (e.g. an OAuth redirect), and
- * then no id arrives; the tab comes back with a fresh one, and the server reports it as unconfirmed
- * rather than claiming it. The page's own `window.name` is kept behind the marker and restored.
+ * Firefox and WebKit clear `window.name` on a cross-SITE top-level navigation, and Chromium does on a
+ * browsing-context-group swap (COOP, as some OAuth providers send); then no id arrives, the tab comes
+ * back with a fresh one, and the server reports it as unconfirmed rather than claiming it. The page's
+ * own `window.name` is kept behind the marker and restored by the next page's widget; a page with no
+ * widget keeps the marker (documented in the CHANGELOG).
  */
 const HANDOFF = 'haltija-handoff:'
 

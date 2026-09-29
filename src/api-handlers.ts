@@ -759,7 +759,8 @@ async function withNewPage(
     ? `The page changed, but the tab did not come back as itself: a new tab appeared at ` +
       `${back.candidate.url} (window ${back.candidate.windowId}). Outside the desktop app a ` +
       `cross-site navigation resets a tab's identity; if that is this tab, target it with ` +
-      `--window ${back.candidate.windowId}. Focus was not moved.`
+      `--window ${back.candidate.windowId}. Untargeted commands go to whichever visible tab has ` +
+      `focus; check with \`hj windows\`.`
     : `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
       `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
       `commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`

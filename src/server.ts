@@ -4265,6 +4265,7 @@ Run 'hj --help' for all commands.`
   if (path === '/windows/blur' && req.method === 'POST') {
     const previousFocused = focusedWindowId
     focusedWindowId = null
+    focusGeneration++ // deliberate: a pending navigation must not undo it
     return Response.json({ 
       success: true, 
       previousFocused,
@@ -4283,6 +4284,7 @@ Run 'hj --help' for all commands.`
     
     // Set as focused
     focusedWindowId = windowId
+    focusGeneration++ // deliberate: a pending navigation must not undo it
     
     // Send focus command to the browser
     const msg: DevMessage = {
@@ -4578,6 +4580,9 @@ const serverConfig = {
               // active (visible/foreground), route subsequent untargeted
               // commands to it. Ignore iframes/popups so they can't hijack.
               if (active && win.windowType === 'tab') {
+                // A user switching tabs is the most deliberate focus change there is, so a
+                // navigation waiting in another tab must not take focus back when it lands.
+                if (focusedWindowId !== windowId) focusGeneration++
                 focusedWindowId = windowId
               }
             }

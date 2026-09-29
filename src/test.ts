@@ -304,7 +304,7 @@ export class HaltijaTestClient {
     this.refuseMutationOnSharedDefault('navigate')
     return this.client.navigate(url)
   }
-  async refresh(hard = false) {
+  async refresh(hard = true) {
     this.refuseMutationOnSharedDefault('refresh')
     return this.client.refresh(hard)
   }

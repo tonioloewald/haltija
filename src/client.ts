@@ -196,7 +196,8 @@ export class DevChannelClient {
     return outcome
   }
 
-  async refresh(hard = false): Promise<NavigationOutcome> {
+  // Default HARD, matching the /refresh endpoint and what this method actually did before (see below).
+  async refresh(hard = true): Promise<NavigationOutcome> {
     const res = await fetch(`${this.baseUrl}/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

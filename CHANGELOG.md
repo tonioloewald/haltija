@@ -14,7 +14,12 @@
   - Focus follows the navigated tab, so the next untargeted command reaches the page just
     loaded, unless focus was deliberately changed during the load.
   - `DevChannelClient.navigate()` / `refresh()` (and the `haltija/test` wrappers) now return
-    `{ reconnected, warning?, candidateWindowId? }` instead of nothing.
+    `{ reconnected, warning?, candidateWindowId? }` instead of nothing. `refresh()` with no
+    argument is a hard reload, matching the endpoint. It always was one, by accident; see Fixed.
+  - **The widget writes to the page's `window.name`** during a navigation to another origin, to
+    carry the tab's identity across. It is written only when the page actually unloads
+    (`pagehide`), and the next page's widget restores the page's own value. If the next page
+    doesn't load the widget, it is left with `haltija-handoff:<id>|<its original name>`.
 
 ### Fixed
 
@@ -26,13 +31,18 @@
   - They now return once the tab is back from the new page (`data.reconnected: true`).
   - A tab keeps its identity across origins: the widget hands its window id to the next page
     through `window.name`, since the sessionStorage it normally uses is per-origin. The tab is
-    therefore recognised by its id, never by guessing which new window it might be.
-  - Where the browser clears `window.name` (a cross-site navigation such as an OAuth redirect),
-    the call returns promptly with `reconnected: false`, a `warning`, and the new window as
-    `candidateWindowId`. Focus is not moved.
-  - The URL is resolved once, and that URL is both what is loaded and what the server waits for.
-    `/docs` used to go to `https:///docs`, `#x` became a web search in the desktop app, and a
-    `#hash`-only navigation (which returns at once) was misjudged.
+    therefore recognised by its id, never by guessing which new window it might be. A tab that
+    merely appears on the destination origin during a slow load is not mistaken for it.
+  - Where `window.name` does not survive, the call returns within about 2 s with
+    `reconnected: false`, a `warning`, and the new window as `candidateWindowId`, and never claims
+    that window. Firefox and WebKit clear it on a cross-site navigation; Chromium clears it when
+    the browsing-context group changes, which COOP (sent by some OAuth providers) causes. In the
+    test runner, a `navigate` step fails in this case.
+  - The URL is resolved and normalised once, and that URL is both what is loaded and what the
+    server waits for. `/docs` used to go to `https:///docs`, and `#x` became a web search in the
+    desktop app. A `#hash`-only navigation, which returns at once, was misjudged when written
+    differently (`http://localhost:3000#x`, an uppercase host). A bare host (`localhost:3000`)
+    still reaches the desktop app raw, so it keeps falling back to http.
   - Warnings are joined to any already attached, rather than replacing them.
   - The test runner's `navigate` step uses the same wait and tab choice. It had failed
     cross-origin navigations and spent a fixed 400 ms per navigation.

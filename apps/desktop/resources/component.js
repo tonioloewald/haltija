@@ -58,14 +58,32 @@
   // src/navigation-url.ts
   function resolveNavigationUrl(raw, base) {
     const url = String(raw ?? "").trim();
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^(about|data|blob|javascript|mailto):/i.test(url))
-      return url;
+    if (!url)
+      throw new Error("url is required");
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^(about|data|blob|javascript|mailto):/i.test(url)) {
+      return { href: new URL(url).href, bare: false };
+    }
     if (/^(\/|#|\?|\.\.?\/)/.test(url))
-      return new URL(url, base).href;
-    return "https://" + url;
+      return { href: new URL(url, base).href, bare: false };
+    return { href: new URL("https://" + url).href, bare: true };
   }
   function isSameDocument(resolved, current) {
-    return resolved.includes("#") && resolved.split("#")[0] === current.split("#")[0];
+    let a, b;
+    try {
+      a = new URL(resolved).href;
+      b = new URL(current).href;
+    } catch {
+      return false;
+    }
+    return a.includes("#") && a.split("#")[0] === b.split("#")[0];
+  }
+  function needsHandoff(resolved, current) {
+    try {
+      const next = new URL(resolved);
+      return /^https?:$/.test(next.protocol) && next.origin !== new URL(current).origin;
+    } catch {
+      return false;
+    }
   }
   var HANDOFF = "haltija-handoff:";
   function withHandoff(currentName, windowId) {
@@ -6700,6 +6718,15 @@ ${elementSummary}${moreText}`;
         this.respond(msg.id, true, getFormattedStats());
       }
     }
+    armHandoff() {
+      const write = () => {
+        try {
+          window.name = withHandoff(window.name, this.windowId);
+        } catch {}
+      };
+      window.addEventListener("pagehide", write, { once: true });
+      setTimeout(() => window.removeEventListener("pagehide", write), 15000);
+    }
     handleNavigationMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
       if (action2 === "refresh") {
@@ -6723,26 +6750,25 @@ ${elementSummary}${moreText}`;
           this.respond(msg2.id, true);
         }
       } else if (action2 === "goto") {
-        let url;
+        let href;
+        let bare;
         try {
-          url = resolveNavigationUrl(payload2.url, location.href);
+          ({ href, bare } = resolveNavigationUrl(payload2.url, location.href));
         } catch (err) {
-          this.respond(msg2.id, false, null, `Cannot navigate to ${payload2.url}: ${err?.message || err}`);
+          this.respond(msg2.id, false, null, `Cannot navigate to ${JSON.stringify(payload2.url)}: ${err?.message || err}`);
           return;
         }
-        const sameDocument = isSameDocument(url, location.href);
+        const sameDocument = isSameDocument(href, location.href);
         const haltija = window.haltija;
         if (haltija?.navigate) {
-          haltija.navigate(url).then(() => this.respond(msg2.id, true, { sameDocument, url })).catch((err) => this.respond(msg2.id, false, null, err.message));
+          haltija.navigate(bare ? String(payload2.url).trim() : href).then(() => this.respond(msg2.id, true, { sameDocument, url: href })).catch((err) => this.respond(msg2.id, false, null, err.message));
           return;
         }
-        if (!sameDocument && window.top === window.self) {
-          try {
-            window.name = withHandoff(window.name, this.windowId);
-          } catch {}
+        if (!sameDocument && window.top === window.self && needsHandoff(href, location.href)) {
+          this.armHandoff();
         }
-        location.href = url;
-        this.respond(msg2.id, true, { sameDocument, url });
+        location.href = href;
+        this.respond(msg2.id, true, { sameDocument, url: href });
       } else if (action2 === "location") {
         this.respond(msg2.id, true, {
           url: location.href,

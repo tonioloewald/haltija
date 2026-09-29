@@ -52,7 +52,7 @@ import type {
 // Component version - imported from shared version file
 import { VERSION as _VERSION } from './version'
 import { httpBaseFromWsUrl } from './ws-url'
-import { isSameDocument, readHandoff, resolveNavigationUrl, withHandoff } from './navigation-url'
+import { isSameDocument, needsHandoff, readHandoff, resolveNavigationUrl, withHandoff } from './navigation-url'
 export const VERSION = _VERSION
 
 // Product name and element tag
@@ -9344,6 +9344,20 @@ export class DevChannel extends HTMLElement {
     }
   }
 
+  /**
+   * Carry this tab's windowId to the next page through window.name — written in `pagehide`, i.e.
+   * only if the page really unloads. Written before `location.href` instead, a navigation that never
+   * unloads (a 204, a download) left `haltija-handoff:…` in the host page's window.name for good
+   * (beta.2 re-review). Disarmed after 15 s so a later, unrelated navigation is not affected.
+   */
+  private armHandoff() {
+    const write = () => {
+      try { window.name = withHandoff(window.name, this.windowId) } catch { /* best effort */ }
+    }
+    window.addEventListener('pagehide', write, { once: true })
+    setTimeout(() => window.removeEventListener('pagehide', write), 15000)
+  }
+
   private handleNavigationMessage(msg: DevMessage) {
     const { action, payload } = msg
 
@@ -9374,30 +9388,30 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, true)
       }
     } else if (action === 'goto') {
-      // ONE resolved URL for the navigation, for sameDocument, and for the server (#54): they used
-      // to disagree, so `start#x` was judged same-document while the page went to `https://start/#x`.
-      let url: string
+      // ONE resolved URL for the navigation, for sameDocument, and for the server (#54).
+      let href: string
+      let bare: boolean
       try {
-        url = resolveNavigationUrl(payload.url, location.href)
+        ;({ href, bare } = resolveNavigationUrl(payload.url, location.href))
       } catch (err: any) {
-        this.respond(msg.id, false, null, `Cannot navigate to ${payload.url}: ${err?.message || err}`)
+        this.respond(msg.id, false, null, `Cannot navigate to ${JSON.stringify(payload.url)}: ${err?.message || err}`)
         return
       }
-      const sameDocument = isSameDocument(url, location.href)
+      const sameDocument = isSameDocument(href, location.href)
       const haltija = (window as any).haltija
       if (haltija?.navigate) {
-        // Desktop app: the windowId is injected and stable across origins; no handoff needed. It is
-        // given the RESOLVED url, so its own heuristics no longer turn `#x` into a web search.
-        haltija.navigate(url)
-          .then(() => this.respond(msg.id, true, { sameDocument, url }))
+        // Desktop app: the windowId is injected and stable across origins, so no handoff. A BARE
+        // host goes through raw: the app adds the scheme itself and only then falls back to http.
+        haltija.navigate(bare ? String(payload.url).trim() : href)
+          .then(() => this.respond(msg.id, true, { sameDocument, url: href }))
           .catch((err: Error) => this.respond(msg.id, false, null, err.message))
         return
       }
-      if (!sameDocument && window.top === window.self) {
-        try { window.name = withHandoff(window.name, this.windowId) } catch { /* best effort */ }
+      if (!sameDocument && window.top === window.self && needsHandoff(href, location.href)) {
+        this.armHandoff()
       }
-      location.href = url
-      this.respond(msg.id, true, { sameDocument, url })
+      location.href = href
+      this.respond(msg.id, true, { sameDocument, url: href })
     } else if (action === 'location') {
       this.respond(msg.id, true, {
         url: location.href,
