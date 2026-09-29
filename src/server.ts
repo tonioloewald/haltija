@@ -903,7 +903,9 @@ async function waitForNewPage(
     if (back?.confirmed) {
       // Focus follows the tab only if it had focus and nobody changed focus on purpose meanwhile
       // (a user switching desktop tabs, another agent's tabs-focus): a snapshot must not undo that.
-      if (target?.focused && focusGeneration === generation && focusedWindowId !== back.window.id) {
+      // …and only to a tab that is visible: focus follows the visible tab everywhere else, and a
+      // hidden one (the user opened another in front during the load) must not take it back.
+      if (target?.focused && back.window.active && focusGeneration === generation && focusedWindowId !== back.window.id) {
         setFocusedWindow(back.window.id)
       }
       return { reconnected: true, windowId: back.window.id }
@@ -2871,7 +2873,7 @@ Run 'hj --help' for all commands.`
             // both: a different window-selection rule (focused, else most recent of ALL windows) and
             // a wait that only knew same-windowId reconnects.
             const target = pageTarget()
-            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout, target?.id)
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url, waitMs: stepTimeout }, stepTimeout, target?.id)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'

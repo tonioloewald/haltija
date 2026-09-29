@@ -809,7 +809,9 @@ registerHandler(api.navigate, async (body, ctx) => {
   }
 
   const target = body.wait !== false ? await ctx.commandTarget(windowId) : null
-  const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
+  // waitMs: how long the widget should keep its identity handoff in place if the page stays (#54).
+  const waitMs = clampPageWait(body.timeout ?? 10000)
+  const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url, waitMs }, 5000, windowId)
   return withNewPage(ctx, response, target, body)
 })
 

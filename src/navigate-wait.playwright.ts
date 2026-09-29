@@ -29,6 +29,8 @@ test.beforeAll(async () => {
     // /nocontent answers 204 (before any header is written): the browser stays on the current page,
     // which must be left untouched.
     if (path === '/nocontent') { res.writeHead(204); return res.end() }
+    // /redirect sends the tab to the OTHER origin: a same-origin link that lands elsewhere.
+    if (path === '/redirect') { res.writeHead(302, { location: `${OTHER}/landed` }); return res.end() }
     res.writeHead(200, { 'content-type': 'text/html' })
     // /bare has no widget: it never reconnects. Every other load gets a fresh boot id, so a reload
     // is distinguishable from the page before it.
@@ -111,6 +113,21 @@ test('ANOTHER ORIGIN: the tab keeps its identity (window.name handoff), and navi
   expect((await here()).data.path).toBe('/home')
 })
 
+test('ANOTHER SITE (localhost → 127.0.0.1): identity still carries in Chromium', async () => {
+  // Chromium commits a cross-site page before the old page's pagehide runs, so the handoff has to be
+  // written before navigating; written in pagehide it arrived too late (round-3 review).
+  const crossSite = OTHER.replace('localhost', '127.0.0.1')
+  const nav = await post('/navigate', { url: `${crossSite}/far` })
+  expect(nav.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/far')
+})
+
+test('a same-origin link that REDIRECTS to another origin keeps its identity too', async () => {
+  const nav = await post('/navigate', { url: `${APP}/redirect` })
+  expect(nav.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/landed')
+})
+
 test('a tab opening on the destination origin during a slow load is NOT taken for the navigated one', async ({ context }) => {
   // The rejected version accepted any new window on the expected origin: this unrelated tab was
   // reported as "your page came back" and handed focus.
@@ -164,12 +181,14 @@ test('the same page spelled differently (uppercase host, #hash) is still the sam
   expect(nav.data.sameDocument).toBe(true)
 })
 
-test('a cross-origin navigation that never unloads (204) leaves the page’s window.name alone', async ({ page }) => {
+test('a navigation that never unloads (204) gets the page’s window.name back after the wait', async ({ page }) => {
   await page.evaluate(() => { window.name = 'host-app-name' })
   const nav = await post('/navigate', { url: `${OTHER}/nocontent`, timeout: 800 })
   expect(nav.success).toBe(true)
   expect(page.url()).toContain('/start') // really stayed
-  expect(await page.evaluate(() => window.name)).toBe('host-app-name')
+  // The marker is written before navigating (Chromium needs that), so a page that stays gets its
+  // own name back once the caller's wait is over: 800 ms + 1 s here.
+  await expect.poll(() => page.evaluate(() => window.name), { timeout: 4000 }).toBe('host-app-name')
 })
 
 test('an empty trailing # is the same document too', async () => {

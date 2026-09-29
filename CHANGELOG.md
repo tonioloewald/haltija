@@ -16,10 +16,12 @@
   - `DevChannelClient.navigate()` / `refresh()` (and the `haltija/test` wrappers) now return
     `{ reconnected, warning?, candidateWindowId? }` instead of nothing. `refresh()` with no
     argument is a hard reload, matching the endpoint. It always was one, by accident; see Fixed.
-  - **The widget writes to the page's `window.name`** during a navigation to another origin, to
-    carry the tab's identity across. It is written only when the page actually unloads
-    (`pagehide`), and the next page's widget restores the page's own value. If the next page
-    doesn't load the widget, it is left with `haltija-handoff:<id>|<its original name>`.
+  - **The widget writes to the page's `window.name`** when it navigates, to carry the tab's
+    identity across. It writes `haltija-handoff:<id>|<the page's own name>` just before an http(s)
+    navigation that loads a new page. The next page's widget restores the page's own value.
+    - If the page stays (a 204, a download, a cancelled navigation), the widget restores it once
+      the caller's wait is over.
+    - If the next page doesn't load the widget, the marker is left there.
 
 ### Fixed
 
@@ -35,9 +37,14 @@
     merely appears on the destination origin during a slow load is not mistaken for it.
   - Where `window.name` does not survive, the call returns within about 2 s with
     `reconnected: false`, a `warning`, and the new window as `candidateWindowId`, and never claims
-    that window. Firefox and WebKit clear it on a cross-site navigation; Chromium clears it when
-    the browsing-context group changes, which COOP (sent by some OAuth providers) causes. In the
-    test runner, a `navigate` step fails in this case.
+    that window. In the test runner, a `navigate` step fails in this case. How often that happens
+    depends on the browser (measured):
+    - Chromium, which includes `--headless` and the desktop app's engine, keeps `window.name`
+      across origins and sites, including redirects. It is cleared only when the browsing-context
+      group changes, which COOP (sent by some OAuth providers) causes.
+    - Firefox and WebKit clear it on any cross-origin navigation, including a move to another
+      localhost port.
+    - In the desktop app a tab's id is stable anyway.
   - The URL is resolved and normalised once, and that URL is both what is loaded and what the
     server waits for. `/docs` used to go to `https:///docs`, and `#x` became a web search in the
     desktop app. A `#hash`-only navigation, which returns at once, was misjudged when written

@@ -43,14 +43,15 @@ export function isSameDocument(resolved: string, current: string): boolean {
 }
 
 /**
- * Whether a navigation needs the window.name handoff: a top-level move to ANOTHER http(s) origin.
- * Same-origin keeps sessionStorage, and a scheme that does not load a page (mailto:, javascript:,
- * data:) must not leave a marker in a page that stays.
+ * Whether a navigation carries the window.name handoff: any top-level http(s) navigation that loads a
+ * new document, WHATEVER its origin. Gating on the requested URL being cross-origin missed a
+ * same-origin link that redirects to another origin (a login flow): no handoff, a fresh id, a 10 s
+ * wait and a false warning (beta.2 round-3 review). A same-origin next page just adopts and restores.
+ * Schemes that do not load a page (mailto:, javascript:, data:) never carry it.
  */
-export function needsHandoff(resolved: string, current: string): boolean {
+export function needsHandoff(resolved: string): boolean {
   try {
-    const next = new URL(resolved)
-    return /^https?:$/.test(next.protocol) && next.origin !== new URL(current).origin
+    return /^https?:$/.test(new URL(resolved).protocol)
   } catch {
     return false
   }
@@ -66,11 +67,16 @@ export function needsHandoff(resolved: string, current: string): boolean {
  * makes the identity DECLARED instead: `window.name` belongs to the browsing context and survives
  * same-site navigations, so the old page writes its id there and the new page adopts it.
  *
- * Firefox and WebKit clear `window.name` on a cross-SITE top-level navigation, and Chromium does on a
- * browsing-context-group swap (COOP, as some OAuth providers send); then no id arrives, the tab comes
- * back with a fresh one, and the server reports it as unconfirmed rather than claiming it. The page's
- * own `window.name` is kept behind the marker and restored by the next page's widget; a page with no
- * widget keeps the marker (documented in the CHANGELOG).
+ * It is written BEFORE navigating: in Chromium a cross-site navigation commits the new document
+ * before the old page's `pagehide` runs, so a marker written there arrives too late. If the page is
+ * still alive when the caller's wait is over (a 204, a download, a cancelled navigation), the widget
+ * restores the page's own name, so the marker's life in a live page is bounded by that wait.
+ *
+ * Measured survival across engines: Chromium keeps `window.name` across origins and sites unless the
+ * browsing-context group changes (COOP, sent by some OAuth providers). Firefox and WebKit clear it
+ * on ANY cross-origin navigation, including another port on localhost. Where it does not survive,
+ * no id arrives, the tab comes back with a fresh one, and the server reports it as unconfirmed
+ * rather than claiming it. A next page without the widget keeps the marker (in the CHANGELOG).
  */
 const HANDOFF = 'haltija-handoff:'
 

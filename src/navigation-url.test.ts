@@ -41,15 +41,15 @@ describe('isSameDocument', () => {
   })
 })
 
-describe('needsHandoff — only a move to ANOTHER http(s) origin', () => {
-  it('cross-origin http(s): yes', () => {
-    expect(needsHandoff('http://localhost:4000/x', here)).toBe(true)
+describe('needsHandoff — any http(s) navigation, whatever its origin', () => {
+  it('http(s): yes — including same-origin, which may redirect to another origin (a login flow)', () => {
+    expect(needsHandoff('http://localhost:4000/x')).toBe(true)
+    expect(needsHandoff('http://localhost:3000/login')).toBe(true)
   })
-  it('same origin, mailto:, javascript:, data:: no (nothing to carry, or no page is left)', () => {
-    expect(needsHandoff('http://localhost:3000/other', here)).toBe(false)
-    expect(needsHandoff('mailto:a@b.c', here)).toBe(false)
-    expect(needsHandoff('javascript:void(0)', here)).toBe(false)
-    expect(needsHandoff('data:text/plain,x', here)).toBe(false)
+  it('schemes that load no page: no', () => {
+    expect(needsHandoff('mailto:a@b.c')).toBe(false)
+    expect(needsHandoff('javascript:void(0)')).toBe(false)
+    expect(needsHandoff('data:text/plain,x')).toBe(false)
   })
 })
 

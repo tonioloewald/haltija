@@ -9345,17 +9345,23 @@ export class DevChannel extends HTMLElement {
   }
 
   /**
-   * Carry this tab's windowId to the next page through window.name — written in `pagehide`, i.e.
-   * only if the page really unloads. Written before `location.href` instead, a navigation that never
-   * unloads (a 204, a download) left `haltija-handoff:…` in the host page's window.name for good
-   * (beta.2 re-review). Disarmed after 15 s so a later, unrelated navigation is not affected.
+   * Carry this tab's windowId to the next page through window.name (navigation-url.ts): written NOW,
+   * before navigating, because Chromium commits a cross-site page before `pagehide` runs. If this
+   * page is still alive once the caller has stopped waiting (a 204, a download, a cancelled
+   * navigation), the page's own name is put back, so the marker never outlives that wait here.
    */
-  private armHandoff() {
-    const write = () => {
-      try { window.name = withHandoff(window.name, this.windowId) } catch { /* best effort */ }
+  private handOffIdentity(waitMs: number) {
+    try {
+      window.name = withHandoff(window.name, this.windowId)
+    } catch {
+      return
     }
-    window.addEventListener('pagehide', write, { once: true })
-    setTimeout(() => window.removeEventListener('pagehide', write), 15000)
+    setTimeout(() => {
+      try {
+        const { windowId, original } = readHandoff(window.name)
+        if (windowId === this.windowId) window.name = original
+      } catch { /* best effort */ }
+    }, Math.max(0, waitMs) + 1000)
   }
 
   private handleNavigationMessage(msg: DevMessage) {
@@ -9407,8 +9413,8 @@ export class DevChannel extends HTMLElement {
           .catch((err: Error) => this.respond(msg.id, false, null, err.message))
         return
       }
-      if (!sameDocument && window.top === window.self && needsHandoff(href, location.href)) {
-        this.armHandoff()
+      if (!sameDocument && window.top === window.self && needsHandoff(href)) {
+        this.handOffIdentity(Number(payload.waitMs ?? 10000))
       }
       location.href = href
       this.respond(msg.id, true, { sameDocument, url: href })

@@ -3620,10 +3620,9 @@ export const COMPONENT_JS: string = `(() => {
     }
     return a.includes("#") && a.split("#")[0] === b.split("#")[0];
   }
-  function needsHandoff(resolved, current) {
+  function needsHandoff(resolved) {
     try {
-      const next = new URL(resolved);
-      return /^https?:$/.test(next.protocol) && next.origin !== new URL(current).origin;
+      return /^https?:$/.test(new URL(resolved).protocol);
     } catch {
       return false;
     }
@@ -10261,14 +10260,19 @@ export const COMPONENT_JS: string = `(() => {
         this.respond(msg.id, true, getFormattedStats());
       }
     }
-    armHandoff() {
-      const write = () => {
+    handOffIdentity(waitMs) {
+      try {
+        window.name = withHandoff(window.name, this.windowId);
+      } catch {
+        return;
+      }
+      setTimeout(() => {
         try {
-          window.name = withHandoff(window.name, this.windowId);
+          const { windowId, original } = readHandoff(window.name);
+          if (windowId === this.windowId)
+            window.name = original;
         } catch {}
-      };
-      window.addEventListener("pagehide", write, { once: true });
-      setTimeout(() => window.removeEventListener("pagehide", write), 15000);
+      }, Math.max(0, waitMs) + 1000);
     }
     handleNavigationMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
@@ -10307,8 +10311,8 @@ export const COMPONENT_JS: string = `(() => {
           haltija.navigate(bare ? String(payload2.url).trim() : href).then(() => this.respond(msg2.id, true, { sameDocument, url: href })).catch((err) => this.respond(msg2.id, false, null, err.message));
           return;
         }
-        if (!sameDocument && window.top === window.self && needsHandoff(href, location.href)) {
-          this.armHandoff();
+        if (!sameDocument && window.top === window.self && needsHandoff(href)) {
+          this.handOffIdentity(Number(payload2.waitMs ?? 1e4));
         }
         location.href = href;
         this.respond(msg2.id, true, { sameDocument, url: href });
