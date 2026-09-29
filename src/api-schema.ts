@@ -959,7 +959,7 @@ Pass wait: false to return as soon as navigation starts.`,
     url: s.string.describe('URL to navigate to'),
     window: s.string.describe('Target window ID').optional,
     wait: s.boolean.describe('Wait for the new page to reconnect (default true)').optional,
-    timeout: s.number.describe('How long to wait for it, in ms (default 10000)').optional,
+    timeout: s.number.describe('How long to wait for it, in ms (default 10000, max 60000)').optional,
   }),
   examples: [
     {
@@ -991,7 +991,7 @@ export const refresh = endpoint({
     ).optional,
     window: s.string.describe('Target window ID').optional,
     wait: s.boolean.describe('Wait for the reloaded page to reconnect (default true)').optional,
-    timeout: s.number.describe('How long to wait for it, in ms (default 10000)').optional,
+    timeout: s.number.describe('How long to wait for it, in ms (default 10000, max 60000)').optional,
   }),
   examples: [
     {

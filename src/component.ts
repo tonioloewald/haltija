@@ -9365,27 +9365,28 @@ export class DevChannel extends HTMLElement {
         this.respond(msg.id, true)
       }
     } else if (action === 'goto') {
+      // A change of fragment alone does not load a new document, so no widget will "reconnect" and
+      // the server must not wait for one (#54). Decided BEFORE choosing a path: the Electron branch
+      // below used to skip it, so a hash-only navigation in the desktop app waited out the timeout.
+      // `includes('#')`, not `hash !== ''`: `/page#` has an empty hash and still does not reload.
+      let url = payload.url
+      let sameDocument = false
+      try {
+        const next = new URL(url, location.href)
+        sameDocument = url.includes('#') && next.href.split('#')[0] === location.href.split('#')[0]
+      } catch { /* the navigation itself will report the bad URL */ }
       // Use Electron's smart navigate (with https->http fallback) if available
       const haltija = (window as any).haltija
       if (haltija?.navigate) {
-        haltija.navigate(payload.url)
-          .then(() => this.respond(msg.id, true))
+        haltija.navigate(url)
+          .then(() => this.respond(msg.id, true, { sameDocument }))
           .catch((err: Error) => this.respond(msg.id, false, null, err.message))
         return
       }
       // Fallback for non-Electron: auto-add https:// if no protocol specified
-      let url = payload.url
       if (url && !url.includes('://')) {
         url = 'https://' + url
       }
-      // A change of #hash alone does not load a new document, so no widget will "reconnect" and the
-      // server must not wait for one (#54).
-      let sameDocument = false
-      try {
-        const next = new URL(url, location.href)
-        const here = new URL(location.href)
-        sameDocument = next.hash !== '' && next.href.split('#')[0] === here.href.split('#')[0]
-      } catch { /* let location.href report the bad URL */ }
       location.href = url
       this.respond(msg.id, true, { sameDocument })
     } else if (action === 'location') {

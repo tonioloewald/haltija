@@ -1921,7 +1921,7 @@ Pass wait: false to return as soon as navigation starts.
 | \`url\` | string | URL to navigate to *(required)* |
 | \`window\` | string,null | Target window ID |
 | \`wait\` | boolean,null | Wait for the new page to reconnect (default true) |
-| \`timeout\` | number,null | How long to wait for it, in ms (default 10000) |
+| \`timeout\` | number,null | How long to wait for it, in ms (default 10000, max 60000) |
 
 **Examples:**
 
@@ -1949,7 +1949,7 @@ Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: 
 | \`soft\` | boolean,null | Use cached resources if available (default false = hard refresh that busts all caches) |
 | \`window\` | string,null | Target window ID |
 | \`wait\` | boolean,null | Wait for the reloaded page to reconnect (default true) |
-| \`timeout\` | number,null | How long to wait for it, in ms (default 10000) |
+| \`timeout\` | number,null | How long to wait for it, in ms (default 10000, max 60000) |
 
 **Examples:**
 
@@ -10234,21 +10234,20 @@ export const COMPONENT_JS: string = `(() => {
           this.respond(msg2.id, true);
         }
       } else if (action2 === "goto") {
-        const haltija = window.haltija;
-        if (haltija?.navigate) {
-          haltija.navigate(payload2.url).then(() => this.respond(msg2.id, true)).catch((err) => this.respond(msg2.id, false, null, err.message));
-          return;
-        }
         let url = payload2.url;
-        if (url && !url.includes("://")) {
-          url = "https://" + url;
-        }
         let sameDocument = false;
         try {
           const next = new URL(url, location.href);
-          const here = new URL(location.href);
-          sameDocument = next.hash !== "" && next.href.split("#")[0] === here.href.split("#")[0];
+          sameDocument = url.includes("#") && next.href.split("#")[0] === location.href.split("#")[0];
         } catch {}
+        const haltija = window.haltija;
+        if (haltija?.navigate) {
+          haltija.navigate(url).then(() => this.respond(msg2.id, true, { sameDocument })).catch((err) => this.respond(msg2.id, false, null, err.message));
+          return;
+        }
+        if (url && !url.includes("://")) {
+          url = "https://" + url;
+        }
         location.href = url;
         this.respond(msg2.id, true, { sameDocument });
       } else if (action2 === "location") {

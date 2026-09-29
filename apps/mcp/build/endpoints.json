@@ -991,7 +991,7 @@
             "number",
             "null"
           ],
-          "description": "How long to wait for it, in ms (default 10000)"
+          "description": "How long to wait for it, in ms (default 10000, max 60000)"
         }
       },
       "required": [
@@ -1034,7 +1034,7 @@
             "number",
             "null"
           ],
-          "description": "How long to wait for it, in ms (default 10000)"
+          "description": "How long to wait for it, in ms (default 10000, max 60000)"
         }
       },
       "required": [],

@@ -13,25 +13,36 @@ import { uniqueTestPort } from './test-ports'
 
 let hal: TestServer
 let app: Server
+let other: Server
 let APP: string
+/** A second origin (another port), where the tab's windowId changes: sessionStorage is per-origin. */
+let OTHER: string
 
 test.beforeAll(async () => {
   hal = await startTestServer({})
   const port = uniqueTestPort()
   APP = `http://localhost:${port}`
-  app = createServer((req, res) => {
-    const path = new URL(req.url!, APP).pathname
+  const otherPort = uniqueTestPort()
+  OTHER = `http://localhost:${otherPort}`
+  const page = (req: any, res: any) => {
+    const path = new URL(req.url!, 'http://x').pathname
     res.writeHead(200, { 'content-type': 'text/html' })
-    // Every load gets a fresh boot id, so a reload is distinguishable from the page before it.
+    // /bare has no widget: it never reconnects. Every other load gets a fresh boot id, so a reload
+    // is distinguishable from the page before it.
+    if (path === '/bare') return res.end('<!doctype html><title>bare</title><h1>no widget</h1>')
     res.end(`<!doctype html><title>${path}</title>
 <script>globalThis.__boot = Math.random().toString(36).slice(2)</script>
 <script src="${hal.serverUrl}/component.js?autoInject=true&serverUrl=${hal.wsUrl}"></script>
 <h1>${path}</h1>`)
-  })
-  await new Promise<void>((r) => app.listen(port, r))
+  }
+  app = createServer(page)
+  other = createServer(page)
+  await new Promise<void>((r) => app.listen(port, '127.0.0.1', r))
+  await new Promise<void>((r) => other.listen(otherPort, '127.0.0.1', r))
 })
 test.afterAll(async () => {
   app?.close()
+  other?.close()
   await hal?.stop()
 })
 
@@ -70,6 +81,36 @@ test('a #hash-only navigation returns at once; there is no new page to wait for'
   expect(nav.success).toBe(true)
   expect(nav.data.sameDocument).toBe(true)
   expect(Date.now() - t0).toBeLessThan(1500)
+})
+
+test('ANOTHER ORIGIN: the tab comes back under a new windowId, and navigate follows it fast', async () => {
+  // Outside the desktop app the windowId lives in sessionStorage, which is per-origin. The first
+  // version of this wait watched only the old id: 10 s, then a false "no widget reconnected".
+  const t0 = Date.now()
+  const nav = await post('/navigate', { url: `${OTHER}/elsewhere` })
+  expect(nav.data.reconnected).toBe(true)
+  expect(nav.data.windowId).toBeTruthy() // the new id, so id-targeting callers can follow it
+  expect(nav.warning).toBeUndefined()
+  expect(Date.now() - t0).toBeLessThan(3000)
+  const first = await here()
+  expect(first.data.path).toBe('/elsewhere')
+  // And back again, the other direction.
+  const back = await post('/navigate', { url: `${APP}/home` })
+  expect(back.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/home')
+})
+
+test('an empty trailing # is the same document too', async () => {
+  const nav = await post('/navigate', { url: `${APP}/start#` })
+  expect(nav.data.sameDocument).toBe(true)
+})
+
+test('a page that never reconnects: success, a warning, and not marked as a repeat', async () => {
+  const nav = await post('/navigate', { url: `${APP}/bare`, timeout: 800 })
+  expect(nav.success).toBe(true)
+  expect(nav.data.reconnected).toBe(false)
+  expect(nav.warning).toContain('no haltija widget reconnected')
+  expect(nav.warningRepeated).toBeUndefined()
 })
 
 test('wait: false keeps the old immediate reply', async () => {

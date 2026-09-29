@@ -44,6 +44,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
+import { returnedWindow, clampPageWait, type PageTarget } from './page-wait'
 import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
@@ -864,38 +865,39 @@ function pickTargetWindow(windowId?: string) {
   return Array.from(windows.values()).sort(byRecency)[0] ?? null
 }
 
-/**
- * Wait until a navigated tab's widget has come back from the NEW page: same windowId, different
- * browserId (every page load mints a new one). Used by the test runner's `navigate` step and, since
- * #54, by /navigate itself, which used to return before the old page had even unloaded.
- */
-async function waitForBrowserReconnect(
-  windowId: string | null,
-  previousBrowserId: string | null,
-  timeoutMs = 10000,
-): Promise<boolean> {
-  const start = Date.now()
-  // Wait a moment for disconnect to happen
-  await new Promise(r => setTimeout(r, 100))
+/** Snapshot of the tab a navigation is about to go to, for `waitForNewPage`. */
+function pageTarget(windowId?: string): PageTarget | null {
+  const w = pickTargetWindow(windowId)
+  return w ? { id: w.id, browserId: w.browserId ?? null, windowType: w.windowType, focused: w.id === focusedWindowId, url: w.url } : null
+}
 
-  while (Date.now() - start < timeoutMs) {
-    if (windowId) {
-      const w = windows.get(windowId)
-      // Reconnected = same windowId, different browserId (new page load)
-      if (w && w.browserId !== previousBrowserId) {
-        await new Promise(r => setTimeout(r, 300)) // widget init
-        return true
-      }
-    } else {
-      // No specific window — fall back to any browser connected
-      if (browsers.size > 0) {
-        await new Promise(r => setTimeout(r, 300))
-        return true
-      }
+/**
+ * Wait until a navigated tab's widget is back from the NEW page, and say which window it is (the
+ * rule, including the cross-origin new-windowId case, is `returnedWindow` in page-wait.ts).
+ *
+ * If the navigated tab was the focused one, focus follows it to wherever it came back, so the next
+ * untargeted command reaches the page just loaded rather than whatever focus fell back to.
+ *
+ * Polls every 25 ms with no fixed sleeps: the widget accepts commands as soon as it has sent
+ * `connected`, which is what makes it appear here, so the old 100 ms + 300 ms pauses were dead time
+ * (measured: 407 ms per navigate for a 21 ms reconnect). The test runner's `navigate` step and the
+ * /navigate and /refresh endpoints all wait through here.
+ */
+async function waitForNewPage(
+  target: PageTarget | null,
+  opts: { timeoutMs?: number; expectedOrigin?: string | null } = {},
+): Promise<{ reconnected: boolean; windowId?: string }> {
+  const deadline = Date.now() + clampPageWait(opts.timeoutMs)
+  const known = new Set(windows.keys())
+  for (;;) {
+    const found = returnedWindow(windows, target, known, opts.expectedOrigin ?? null)
+    if (found) {
+      if (target?.focused && focusedWindowId !== found.id) setFocusedWindow(found.id)
+      return { reconnected: true, windowId: found.id }
     }
-    await new Promise(r => setTimeout(r, 100))
+    if (Date.now() >= deadline) return { reconnected: false }
+    await new Promise((r) => setTimeout(r, 25))
   }
-  return false
 }
 
 async function requestFromBrowser(
@@ -1146,11 +1148,9 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   // requestFromBrowser wrapper. In desktop app mode, waits briefly for a
   // content tab to connect if none are present (common startup race where
   // hj runs before the widget connects, or no content tab is open yet).
-  const routedRequest: typeof requestFromBrowser = async (
-    channel, action, payload, timeoutMs?, windowId?
-  ) => {
-    // Desktop app: if no windows are connected, signal the parent process to
-    // create one and wait briefly. Skip for plain server mode to avoid blocking.
+  // Desktop app: if no windows are connected, signal the parent process to
+  // create one and wait briefly. Skip for plain server mode to avoid blocking.
+  const ensureDesktopWindow = async () => {
     if (isDesktopApp && windows.size === 0) {
       console.log('__NEED_WINDOW__')
       const waitStart = Date.now()
@@ -1159,7 +1159,11 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
         await new Promise(r => setTimeout(r, 250))
       }
     }
-
+  }
+  const routedRequest: typeof requestFromBrowser = async (
+    channel, action, payload, timeoutMs?, windowId?
+  ) => {
+    await ensureDesktopWindow()
     const effectiveWindowId = windowId || targetWindowId
     return requestFromBrowser(channel, action, payload, timeoutMs, effectiveWindowId)
   }
@@ -1169,11 +1173,14 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
     targetWindowId,
     // Same resolution routedRequest applies, so a caller waiting on "the tab this command went to"
     // waits on the right one.
-    commandTarget: (windowId?: string) => {
-      const w = pickTargetWindow(windowId || targetWindowId)
-      return w ? { id: w.id, browserId: w.browserId ?? null } : null
+    // After the same need-window wait routedRequest applies. Resolving the target BEFORE it (the
+    // first version) left a desktop cold start with no target, and a null target accepted the tab
+    // that had just connected — the unchanged page — as "reconnected" (beta.2 review).
+    commandTarget: async (windowId?: string) => {
+      await ensureDesktopWindow()
+      return pageTarget(windowId || targetWindowId)
     },
-    waitForReconnect: waitForBrowserReconnect,
+    waitForNewPage,
     headers,
     url,
     getWindowInfo,
@@ -2834,28 +2841,23 @@ Run 'hj --help' for all commands.`
       try {
         switch (step.action) {
           case 'navigate': {
-            // Capture current window state before navigation so we can detect reconnect.
-            const contentWins = Array.from(windows.values())
-              .sort((a, b) => {
-                if (a.id === focusedWindowId) return -1
-                if (b.id === focusedWindowId) return 1
-                return b.lastSeen - a.lastSeen
-              })
-            const navWindow = contentWins[0] ?? null
-            const navWindowId = navWindow?.id ?? null
-            const navPrevBrowserId = navWindow?.browserId ?? null
-
-            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout, navWindowId ?? undefined)
+            // The same target rule and the same wait as /navigate. This step had its own copy of
+            // both: a different window-selection rule (focused, else most recent of ALL windows) and
+            // a wait that only knew same-windowId reconnects.
+            const target = pageTarget()
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url }, stepTimeout, target?.id)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'
               break
             }
-            // Wait for browser to reconnect after page load (widget reloads)
-            const reconnected = await waitForBrowserReconnect(navWindowId, navPrevBrowserId, stepTimeout)
-            if (!reconnected) {
-              stepPassed = false
-              error = 'Browser did not reconnect after navigation'
+            if (!response.data?.sameDocument) {
+              const expected = (() => { try { return new URL(step.url, target?.url).origin } catch { return null } })()
+              const back = await waitForNewPage(target, { timeoutMs: stepTimeout, expectedOrigin: expected })
+              if (!back.reconnected) {
+                stepPassed = false
+                error = 'Browser did not reconnect after navigation'
+              }
             }
             break
           }

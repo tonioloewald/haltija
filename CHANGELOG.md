@@ -2,17 +2,30 @@
 
 ## 1.13.0-beta.2 (unreleased)
 
+### Changed
+
+- **`hj navigate` and `hj refresh` now block until the new page's widget is back** (see Fixed).
+  Usually that takes tens of milliseconds. On a page that doesn't load the widget itself (a
+  bookmarklet tab), nothing comes back, so each call waits out `--timeout` (default 10 s, max
+  60 s) and then returns with a warning. Pass `--no-wait` (`wait: false`) there.
+
 ### Fixed
 
 - **`hj navigate` and `hj refresh` wait for the new page** (#54, reported by Snowfox). Both replied
   as soon as the navigation started, before the old page had unloaded. A command sent straight
   after was answered by the page being left, failed with "No browser connected" during the
   handover, or was lost and timed out after 5 s. Snowfox saw it as a page that "stopped loading"
-  and worked around it with a 2.5 s pause. Now they return once the widget has reconnected from
-  the new page (`data.reconnected: true`), within `--timeout` (default 10 s). A `#hash`-only
-  navigation returns at once, and `--no-wait` / `wait: false` restores the immediate reply. If
-  nothing reconnects in time (a page that doesn't load the widget itself) the result carries a
-  `warning` saying so, rather than letting the next command go nowhere.
+  and worked around it with a 2.5 s pause.
+  - They now return once the widget is back from the new page (`data.reconnected: true`).
+  - Across origins, a plain browser tab comes back under a new window id, because the id lives
+    in per-origin sessionStorage. That new id is returned as `data.windowId`, and focus follows
+    the tab.
+  - A `#hash`-only navigation returns at once.
+  - If nothing comes back in time, the result carries a `warning`, joined to any other warning,
+    rather than letting the next command go nowhere.
+  - The test runner's `navigate` step uses the same wait and the same tab choice. It previously
+    failed cross-origin navigations with "Browser did not reconnect after navigation", and it
+    no longer spends a fixed 400 ms per navigation.
 
 ## 1.13.0-beta.1 (2026-09-26)
 

@@ -14,6 +14,7 @@ import { performDrag } from './drag'
 import { attachSession, readSession, writeSession, detachSession, type RunTmux } from './tmux-session'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
+import { clampPageWait, type PageTarget } from './page-wait'
 
 // ============================================
 // Handler Context Type
@@ -87,10 +88,16 @@ export interface StoredRecording {
 export interface HandlerContext {
   requestFromBrowser: RequestFromBrowserFn
   targetWindowId: string | undefined
-  /** The tab a command with this window argument would be sent to (the same rule requestFromBrowser uses). */
-  commandTarget: (windowId?: string) => { id: string; browserId: string | null } | null
-  /** Resolve once that tab's widget reconnects from a NEW page load (new browserId), or time out. */
-  waitForReconnect: (windowId: string | null, previousBrowserId: string | null, timeoutMs?: number) => Promise<boolean>
+  /**
+   * The tab a command with this window argument would be sent to (the same rule requestFromBrowser
+   * uses), resolved after the desktop app's need-window wait.
+   */
+  commandTarget: (windowId?: string) => Promise<PageTarget | null>
+  /** Resolve once that tab's widget is back from a NEW page, under its old id or a new one. */
+  waitForNewPage: (
+    target: PageTarget | null,
+    opts?: { timeoutMs?: number; expectedOrigin?: string | null },
+  ) => Promise<{ reconnected: boolean; windowId?: string }>
   headers: Record<string, string>
   url: URL
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
@@ -731,27 +738,39 @@ registerHandler(api.unhighlight, async (_body, ctx) => {
 async function withNewPage(
   ctx: HandlerContext,
   response: any,
-  target: { id: string; browserId: string | null } | null,
-  body: { wait?: boolean; timeout?: number },
+  target: PageTarget | null,
+  body: { url?: string; wait?: boolean; timeout?: number },
 ): Promise<Response> {
   if (!response.success || body.wait === false || response.data?.sameDocument) {
     return Response.json(response, { headers: ctx.headers })
   }
-  const timeoutMs = body.timeout ?? 10000
-  const reconnected = await ctx.waitForReconnect(target?.id ?? null, target?.browserId ?? null, timeoutMs)
-  const data = { ...(response.data || {}), reconnected }
-  if (reconnected) return Response.json({ ...response, data }, { headers: ctx.headers })
+  // Resolved against the page it was on, so a relative URL expects that page's origin. /refresh has
+  // no url: the reloaded page is on the origin it was on.
+  const expectedOrigin = (() => {
+    try { return new URL(body.url ?? target?.url ?? '', target?.url).origin } catch { return null }
+  })()
+  const back = await ctx.waitForNewPage(target, { timeoutMs: clampPageWait(body.timeout ?? 10000), expectedOrigin })
+  const data = {
+    ...(response.data || {}),
+    reconnected: back.reconnected,
+    // Outside the desktop app a tab that changes origin comes back under a NEW windowId; say which,
+    // so a caller that targets windows by id can follow it.
+    ...(back.windowId && back.windowId !== target?.id ? { windowId: back.windowId } : {}),
+  }
+  if (back.reconnected) return Response.json({ ...response, data }, { headers: ctx.headers })
   // Still a success — the navigation happened — but a page that doesn't load the widget itself (a
   // plain bookmarklet tab) never reconnects, and the caller must know commands now go nowhere.
+  // JOINED to any warning already attached (hidden tab, ambiguous focus), never replacing it, and a
+  // new warning is by definition not a repeat: keeping the old `warningRepeated: true` made `hj`
+  // print nothing at all (beta.2 review).
+  const timeoutMs = clampPageWait(body.timeout ?? 10000)
+  const note =
+    `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
+    `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
+    `commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`
+  const { warningRepeated: _stale, ...rest } = response
   return Response.json(
-    {
-      ...response,
-      data,
-      warning:
-        `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
-        `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
-        `commands; if it is just slow, raise --timeout.`,
-    },
+    { ...rest, data, warning: [response.warning, note].filter(Boolean).join('\n\n') },
     { headers: ctx.headers },
   )
 }
@@ -792,7 +811,7 @@ registerHandler(api.navigate, async (body, ctx) => {
     )
   }
 
-  const target = body.wait !== false ? ctx.commandTarget(windowId) : null
+  const target = body.wait !== false ? await ctx.commandTarget(windowId) : null
   const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
   return withNewPage(ctx, response, target, body)
 })
@@ -801,7 +820,7 @@ registerHandler(api.navigate, async (body, ctx) => {
 registerHandler(api.refresh, async (body, ctx) => {
   const soft = body.soft ?? false
   const windowId = body.window || ctx.targetWindowId
-  const target = body.wait !== false ? ctx.commandTarget(windowId) : null
+  const target = body.wait !== false ? await ctx.commandTarget(windowId) : null
   const response = await ctx.requestFromBrowser('navigation', 'refresh', { soft }, 5000, windowId)
   return withNewPage(ctx, response, target, body)
 })

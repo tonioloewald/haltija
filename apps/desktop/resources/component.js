@@ -6691,21 +6691,20 @@ ${elementSummary}${moreText}`;
           this.respond(msg2.id, true);
         }
       } else if (action2 === "goto") {
-        const haltija = window.haltija;
-        if (haltija?.navigate) {
-          haltija.navigate(payload2.url).then(() => this.respond(msg2.id, true)).catch((err) => this.respond(msg2.id, false, null, err.message));
-          return;
-        }
         let url = payload2.url;
-        if (url && !url.includes("://")) {
-          url = "https://" + url;
-        }
         let sameDocument = false;
         try {
           const next = new URL(url, location.href);
-          const here = new URL(location.href);
-          sameDocument = next.hash !== "" && next.href.split("#")[0] === here.href.split("#")[0];
+          sameDocument = url.includes("#") && next.href.split("#")[0] === location.href.split("#")[0];
         } catch {}
+        const haltija = window.haltija;
+        if (haltija?.navigate) {
+          haltija.navigate(url).then(() => this.respond(msg2.id, true, { sameDocument })).catch((err) => this.respond(msg2.id, false, null, err.message));
+          return;
+        }
+        if (url && !url.includes("://")) {
+          url = "https://" + url;
+        }
         location.href = url;
         this.respond(msg2.id, true, { sameDocument });
       } else if (action2 === "location") {

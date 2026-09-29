@@ -2380,10 +2380,10 @@ function listSubcommands() {
     console                           Console output
 
   ${bold("Control")}
-    navigate <url>                    Go to URL
+    navigate <url> [--no-wait] [--timeout ms]  Go to URL; waits for the new page (default 10 s)
     location                          Current URL + title
     windows                           Connected tabs  (tabs-open/close/focus)
-    refresh [--soft]                  Reload page
+    refresh [--soft] [--no-wait]      Reload page; waits for it to come back
     tabs ${dim2("open|close|focus")}            Tab management (default: list)
     eval <code>                       Run JS in browser
 

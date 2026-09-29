@@ -1005,7 +1005,7 @@ Pass wait: false to return as soon as navigation starts.
 | `url` | string | URL to navigate to *(required)* |
 | `window` | string,null | Target window ID |
 | `wait` | boolean,null | Wait for the new page to reconnect (default true) |
-| `timeout` | number,null | How long to wait for it, in ms (default 10000) |
+| `timeout` | number,null | How long to wait for it, in ms (default 10000, max 60000) |
 
 **Examples:**
 
@@ -1033,7 +1033,7 @@ Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: 
 | `soft` | boolean,null | Use cached resources if available (default false = hard refresh that busts all caches) |
 | `window` | string,null | Target window ID |
 | `wait` | boolean,null | Wait for the reloaded page to reconnect (default true) |
-| `timeout` | number,null | How long to wait for it, in ms (default 10000) |
+| `timeout` | number,null | How long to wait for it, in ms (default 10000, max 60000) |
 
 **Examples:**
 
