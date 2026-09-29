@@ -22,6 +22,8 @@
     - If the page stays (a 204, a download, a cancelled navigation), the widget restores it once
       the caller's wait is over.
     - If the next page doesn't load the widget, the marker is left there.
+    - The next page's own scripts can see the marker until the widget loads and removes it. That
+      matters for an app that keeps state in `window.name`.
 
 ### Fixed
 

@@ -130,15 +130,38 @@ test('a same-origin link that REDIRECTS to another origin keeps its identity too
 
 test('a tab opening on the destination origin during a slow load is NOT taken for the navigated one', async ({ context }) => {
   // The rejected version accepted any new window on the expected origin: this unrelated tab was
-  // reported as "your page came back" and handed focus.
+  // reported as "your page came back". (That a new VISIBLE tab takes focus is the long-standing
+  // focus-follows-the-visible-tab rule; this is about which tab the result says came back.)
+  const startId = (await (await fetch(hal.serverUrl + '/windows')).json()).windows[0].id
   const navigating = post('/navigate', { url: `${OTHER}/slow` })
   await new Promise((r) => setTimeout(r, 300))
   const intruder = await context.newPage()
   await intruder.goto(`${OTHER}/unrelated`)
   const nav = await navigating
   expect(nav.data.reconnected).toBe(true)
-  expect((await here()).data.path).toBe('/slow') // focus is on the navigated tab, not the intruder
+  const back = await post('/eval', { window: startId, code: 'location.pathname' })
+  expect(back.data).toBe('/slow') // the navigated tab kept its identity
   await intruder.close()
+})
+
+test('a focused tab that comes back HIDDEN (window minimised) gets focus back', async ({ context, page }) => {
+  // Its disconnect handed focus to an arbitrary other window; nothing visible took it deliberately,
+  // so the navigate must put it back or untargeted commands silently go to the other tab.
+  await page.addInitScript(() => {
+    if (location.pathname === '/hidden-return') {
+      Object.defineProperty(document, 'visibilityState', { get: () => 'hidden' })
+      Object.defineProperty(document, 'hidden', { get: () => true })
+    }
+  })
+  const other = await context.newPage()
+  await other.goto(`${APP}/bystander`)
+  await expect.poll(async () => (await (await fetch(hal.serverUrl + '/windows')).json()).windows.length).toBe(2)
+  const startId = (await (await fetch(hal.serverUrl + '/windows')).json()).windows.find((w: any) => w.url.endsWith('/start')).id
+  await post('/tabs/focus', { window: startId })
+  const nav = await post('/navigate', { url: `${OTHER}/hidden-return` })
+  expect(nav.data.reconnected).toBe(true)
+  expect((await here()).data.path).toBe('/hidden-return')
+  await other.close()
 })
 
 test('identity wiped (a cross-site navigation): an unconfirmed candidate, reported fast, focus not moved', async () => {

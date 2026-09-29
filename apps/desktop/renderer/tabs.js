@@ -406,7 +406,7 @@ export function navigate(url, tabId = activeTabId) {
     // A host, not a search: dotted names, localhost with a port or path, and any `name:port`. The
     // widget hands bare hosts over raw so this fallback to http applies; `localhost/docs` and
     // `devbox:3000` used to become a web search (#54 review).
-    if (url.includes('.') || /^localhost([:/]|$)/i.test(url) || /^[\w-]+:\d+([/?#]|$)/.test(url)) {
+    if (url.includes('.') || /^localhost([:/]|$)/i.test(url) || /^[a-z][\w-]*:\d+([/?#]|$)/i.test(url)) {
       addedHttps = true
       url = 'https://' + url
     } else {

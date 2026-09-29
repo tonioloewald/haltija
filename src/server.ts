@@ -903,9 +903,11 @@ async function waitForNewPage(
     if (back?.confirmed) {
       // Focus follows the tab only if it had focus and nobody changed focus on purpose meanwhile
       // (a user switching desktop tabs, another agent's tabs-focus): a snapshot must not undo that.
-      // …and only to a tab that is visible: focus follows the visible tab everywhere else, and a
-      // hidden one (the user opened another in front during the load) must not take it back.
-      if (target?.focused && back.window.active && focusGeneration === generation && focusedWindowId !== back.window.id) {
+      // A tab that returns HIDDEN (window minimised or covered while the agent works) still gets
+      // focus back: the disconnect had handed it to an arbitrary window, and untargeted commands
+      // silently went there (round-4 review). A tab that took focus by becoming visible meanwhile
+      // bumped focusGeneration, so it keeps it.
+      if (target?.focused && focusGeneration === generation && focusedWindowId !== back.window.id) {
         setFocusedWindow(back.window.id)
       }
       return { reconnected: true, windowId: back.window.id }
@@ -4519,6 +4521,9 @@ const serverConfig = {
               // used and wasn't.
               const drivable = isVisibleTab({ id: windowId, windowType, active })
               if (!focusedWindowId || focusedWindowId === windowId || drivable) {
+                // A different, VISIBLE tab taking focus is a real change of what the user is
+                // looking at: count it, so a navigation waiting elsewhere does not take focus back.
+                if (drivable && focusedWindowId && focusedWindowId !== windowId) focusGeneration++
                 focusedWindowId = windowId
               }
               
