@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.13.0-beta.2 (unreleased)
+
+### Fixed
+
+- **`hj navigate` and `hj refresh` wait for the new page** (#54, reported by Snowfox). Both replied
+  as soon as the navigation started, before the old page had unloaded. A command sent straight
+  after was answered by the page being left, failed with "No browser connected" during the
+  handover, or was lost and timed out after 5 s. Snowfox saw it as a page that "stopped loading"
+  and worked around it with a 2.5 s pause. Now they return once the widget has reconnected from
+  the new page (`data.reconnected: true`), within `--timeout` (default 10 s). A `#hash`-only
+  navigation returns at once, and `--no-wait` / `wait: false` restores the immediate reply. If
+  nothing reconnects in time (a page that doesn't load the widget itself) the result carries a
+  `warning` saying so, rather than letting the next command go nowhere.
+
 ## 1.13.0-beta.1 (2026-09-26)
 
 Beta (`npm i haltija@beta`); `latest` stays 1.12.9. Breaking changes are listed first.

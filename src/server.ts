@@ -850,6 +850,54 @@ function broadcastToTerminals(msg: Record<string, any>) {
 
 // Send request to browser and wait for response
 // If windowId is provided, send only to that window; otherwise send to focused window or all
+/**
+ * Which tab an untargeted (or targeted) command goes to. ONE definition: requestFromBrowser uses it
+ * to send, and /navigate uses it to know which tab to wait on. Order: the named window, else the
+ * focused one, else the most recently seen active one, else the most recently seen of any.
+ */
+function pickTargetWindow(windowId?: string) {
+  if (windowId) return windows.get(windowId) ?? null
+  if (focusedWindowId && windows.has(focusedWindowId)) return windows.get(focusedWindowId)!
+  const byRecency = (a: { lastSeen: number }, b: { lastSeen: number }) => b.lastSeen - a.lastSeen
+  const active = Array.from(windows.values()).filter((w) => w.active).sort(byRecency)
+  if (active.length > 0) return active[0]
+  return Array.from(windows.values()).sort(byRecency)[0] ?? null
+}
+
+/**
+ * Wait until a navigated tab's widget has come back from the NEW page: same windowId, different
+ * browserId (every page load mints a new one). Used by the test runner's `navigate` step and, since
+ * #54, by /navigate itself, which used to return before the old page had even unloaded.
+ */
+async function waitForBrowserReconnect(
+  windowId: string | null,
+  previousBrowserId: string | null,
+  timeoutMs = 10000,
+): Promise<boolean> {
+  const start = Date.now()
+  // Wait a moment for disconnect to happen
+  await new Promise(r => setTimeout(r, 100))
+
+  while (Date.now() - start < timeoutMs) {
+    if (windowId) {
+      const w = windows.get(windowId)
+      // Reconnected = same windowId, different browserId (new page load)
+      if (w && w.browserId !== previousBrowserId) {
+        await new Promise(r => setTimeout(r, 300)) // widget init
+        return true
+      }
+    } else {
+      // No specific window — fall back to any browser connected
+      if (browsers.size > 0) {
+        await new Promise(r => setTimeout(r, 300))
+        return true
+      }
+    }
+    await new Promise(r => setTimeout(r, 100))
+  }
+  return false
+}
+
 async function requestFromBrowser(
   channel: string, 
   action: string, 
@@ -914,41 +962,21 @@ async function requestFromBrowser(
     const resolveWithLiveness = (res: DevResponse) => resolve(attachWarning(res))
     pendingResponses.set(id, { resolve: resolveWithLiveness, timeout })
     
-    // If windowId specified, send only to that window
-    if (windowId) {
-      const win = windows.get(windowId)
-      if (win) {
-        sentTo = win
-        win.ws.send(JSON.stringify(msg))
-      } else {
-        clearTimeout(timeout)
-        pendingResponses.delete(id)
-        resolve({ id, success: false, error: `Window ${windowId} not found`, timestamp: Date.now() })
-      }
-    } else if (focusedWindowId && windows.has(focusedWindowId)) {
-      const focusedWin = windows.get(focusedWindowId)!
-      sentTo = focusedWin
-      focusedWin.ws.send(JSON.stringify(msg))
+    const target = pickTargetWindow(windowId)
+    if (target) {
+      sentTo = target
+      target.ws.send(JSON.stringify(msg))
     } else {
-      // Fallback: pick ONE active window (most recently seen)
-      const activeWindows = Array.from(windows.values())
-        .filter(w => w.active)
-        .sort((a, b) => b.lastSeen - a.lastSeen)
-
-      if (activeWindows.length > 0) {
-        sentTo = activeWindows[0]
-        activeWindows[0].ws.send(JSON.stringify(msg))
-      } else if (windows.size > 0) {
-        const mostRecent = Array.from(windows.values())
-          .sort((a, b) => b.lastSeen - a.lastSeen)[0]
-        sentTo = mostRecent
-        mostRecent.ws.send(JSON.stringify(msg))
-      } else {
-        // No windows at all
-        clearTimeout(timeout)
-        pendingResponses.delete(id)
-        resolve({ id, success: false, error: 'No browser windows connected. Open a page in the Haltija desktop app or inject the widget into your page.', timestamp: Date.now() })
-      }
+      clearTimeout(timeout)
+      pendingResponses.delete(id)
+      resolve({
+        id,
+        success: false,
+        error: windowId
+          ? `Window ${windowId} not found`
+          : 'No browser windows connected. Open a page in the Haltija desktop app or inject the widget into your page.',
+        timestamp: Date.now(),
+      })
     }
   })
 }
@@ -1139,6 +1167,13 @@ const createHandlerContext = (req: Request, url: URL): HandlerContext => {
   return {
     requestFromBrowser: routedRequest,
     targetWindowId,
+    // Same resolution routedRequest applies, so a caller waiting on "the tab this command went to"
+    // waits on the right one.
+    commandTarget: (windowId?: string) => {
+      const w = pickTargetWindow(windowId || targetWindowId)
+      return w ? { id: w.id, browserId: w.browserId ?? null } : null
+    },
+    waitForReconnect: waitForBrowserReconnect,
     headers,
     url,
     getWindowInfo,
@@ -2724,35 +2759,6 @@ Run 'hj --help' for all commands.`
 
   // Helper: Wait for browser to reconnect after navigation
   // Tracks a specific window by ID + browserId so it works correctly with multiple tabs
-  async function waitForBrowserReconnect(
-    windowId: string | null,
-    previousBrowserId: string | null,
-    timeoutMs = 10000,
-  ): Promise<boolean> {
-    const start = Date.now()
-    // Wait a moment for disconnect to happen
-    await new Promise(r => setTimeout(r, 100))
-    
-    while (Date.now() - start < timeoutMs) {
-      if (windowId) {
-        const w = windows.get(windowId)
-        // Reconnected = same windowId, different browserId (new page load)
-        if (w && w.browserId !== previousBrowserId) {
-          await new Promise(r => setTimeout(r, 300)) // widget init
-          return true
-        }
-      } else {
-        // No specific window — fall back to any browser connected
-        if (browsers.size > 0) {
-          await new Promise(r => setTimeout(r, 300))
-          return true
-        }
-      }
-      await new Promise(r => setTimeout(r, 100))
-    }
-    return false
-  }
-  
   // Run a test and return results
   if (path === '/test/run' && req.method === 'POST') {
     const body = await req.json()

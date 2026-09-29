@@ -964,7 +964,7 @@
     "path": "/navigate",
     "method": "POST",
     "summary": "Navigate to a URL",
-    "description": "Navigate the browser to a new URL. Waits for page load to complete.\n\nUse /location after to verify navigation succeeded.",
+    "description": "Navigate the browser to a new URL, and by default wait until the widget has reconnected from the NEW page (data.reconnected), so the next command reaches it rather than the page being left. A same-document navigation (only the #hash changes) returns at once. If no widget reconnects within the timeout (a page that doesn't load the widget itself), it still succeeds, with a warning.\n\nPass wait: false to return as soon as navigation starts.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -978,6 +978,20 @@
             "null"
           ],
           "description": "Target window ID"
+        },
+        "wait": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for the new page to reconnect (default true)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "How long to wait for it, in ms (default 10000)"
         }
       },
       "required": [
@@ -990,7 +1004,7 @@
     "path": "/refresh",
     "method": "POST",
     "summary": "Refresh the page",
-    "description": "Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.",
+    "description": "Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload. Like /navigate, waits until the widget reconnects from the reloaded page (data.reconnected); wait: false returns at once.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1007,6 +1021,20 @@
             "null"
           ],
           "description": "Target window ID"
+        },
+        "wait": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Wait for the reloaded page to reconnect (default true)"
+        },
+        "timeout": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "How long to wait for it, in ms (default 10000)"
         }
       },
       "required": [],

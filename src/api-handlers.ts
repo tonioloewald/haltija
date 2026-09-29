@@ -87,6 +87,10 @@ export interface StoredRecording {
 export interface HandlerContext {
   requestFromBrowser: RequestFromBrowserFn
   targetWindowId: string | undefined
+  /** The tab a command with this window argument would be sent to (the same rule requestFromBrowser uses). */
+  commandTarget: (windowId?: string) => { id: string; browserId: string | null } | null
+  /** Resolve once that tab's widget reconnects from a NEW page load (new browserId), or time out. */
+  waitForReconnect: (windowId: string | null, previousBrowserId: string | null, timeoutMs?: number) => Promise<boolean>
   headers: Record<string, string>
   url: URL
   getWindowInfo: (windowId?: string) => WindowInfo | undefined
@@ -714,6 +718,44 @@ registerHandler(api.unhighlight, async (_body, ctx) => {
   return Response.json(response, { headers: ctx.headers })
 })
 
+/**
+ * After a navigation or reload, wait for the NEW page's widget before answering (#54).
+ *
+ * Both used to reply the moment the navigation was started, before the old page had unloaded, so a
+ * command sent right after — Snowfox's polled `hj evaluate` — was answered by the OLD page, failed
+ * with "No browser connected" in the handover gap, or went down with the old socket and timed out
+ * after 5 s. Reproduced on 8 of 8 routes with an immediate evaluate and on none with a 2.5 s pause,
+ * which is the workaround Snowfox had to discover. The test runner's `navigate` step always waited;
+ * the endpoints did not. `wait: false` opts out; a same-document (#hash) navigation never waits.
+ */
+async function withNewPage(
+  ctx: HandlerContext,
+  response: any,
+  target: { id: string; browserId: string | null } | null,
+  body: { wait?: boolean; timeout?: number },
+): Promise<Response> {
+  if (!response.success || body.wait === false || response.data?.sameDocument) {
+    return Response.json(response, { headers: ctx.headers })
+  }
+  const timeoutMs = body.timeout ?? 10000
+  const reconnected = await ctx.waitForReconnect(target?.id ?? null, target?.browserId ?? null, timeoutMs)
+  const data = { ...(response.data || {}), reconnected }
+  if (reconnected) return Response.json({ ...response, data }, { headers: ctx.headers })
+  // Still a success — the navigation happened — but a page that doesn't load the widget itself (a
+  // plain bookmarklet tab) never reconnects, and the caller must know commands now go nowhere.
+  return Response.json(
+    {
+      ...response,
+      data,
+      warning:
+        `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
+        `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
+        `commands; if it is just slow, raise --timeout.`,
+    },
+    { headers: ctx.headers },
+  )
+}
+
 // Navigate handler
 registerHandler(api.navigate, async (body, ctx) => {
   const windowId = body.window || ctx.targetWindowId
@@ -750,16 +792,18 @@ registerHandler(api.navigate, async (body, ctx) => {
     )
   }
 
+  const target = body.wait !== false ? ctx.commandTarget(windowId) : null
   const response = await ctx.requestFromBrowser('navigation', 'goto', { url: body.url }, 5000, windowId)
-  return Response.json(response, { headers: ctx.headers })
+  return withNewPage(ctx, response, target, body)
 })
 
 // Refresh handler
 registerHandler(api.refresh, async (body, ctx) => {
   const soft = body.soft ?? false
   const windowId = body.window || ctx.targetWindowId
+  const target = body.wait !== false ? ctx.commandTarget(windowId) : null
   const response = await ctx.requestFromBrowser('navigation', 'refresh', { soft }, 5000, windowId)
-  return Response.json(response, { headers: ctx.headers })
+  return withNewPage(ctx, response, target, body)
 })
 
 // Tree handler

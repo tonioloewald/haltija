@@ -9378,8 +9378,16 @@ export class DevChannel extends HTMLElement {
       if (url && !url.includes('://')) {
         url = 'https://' + url
       }
+      // A change of #hash alone does not load a new document, so no widget will "reconnect" and the
+      // server must not wait for one (#54).
+      let sameDocument = false
+      try {
+        const next = new URL(url, location.href)
+        const here = new URL(location.href)
+        sameDocument = next.hash !== '' && next.href.split('#')[0] === here.href.split('#')[0]
+      } catch { /* let location.href report the bad URL */ }
       location.href = url
-      this.respond(msg.id, true)
+      this.respond(msg.id, true, { sameDocument })
     } else if (action === 'location') {
       this.respond(msg.id, true, {
         url: location.href,

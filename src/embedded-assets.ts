@@ -1910,9 +1910,9 @@ Response: { success: true, data: <return value> }
 
 **Navigate to a URL**
 
-Navigate the browser to a new URL. Waits for page load to complete.
+Navigate the browser to a new URL, and by default wait until the widget has reconnected from the NEW page (data.reconnected), so the next command reaches it rather than the page being left. A same-document navigation (only the #hash changes) returns at once. If no widget reconnects within the timeout (a page that doesn't load the widget itself), it still succeeds, with a warning.
 
-Use /location after to verify navigation succeeded.
+Pass wait: false to return as soon as navigation starts.
 
 **Parameters:**
 
@@ -1920,6 +1920,8 @@ Use /location after to verify navigation succeeded.
 |------|------|-------------|
 | \`url\` | string | URL to navigate to *(required)* |
 | \`window\` | string,null | Target window ID |
+| \`wait\` | boolean,null | Wait for the new page to reconnect (default true) |
+| \`timeout\` | number,null | How long to wait for it, in ms (default 10000) |
 
 **Examples:**
 
@@ -1938,7 +1940,7 @@ Use /location after to verify navigation succeeded.
 
 **Refresh the page**
 
-Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.
+Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload. Like /navigate, waits until the widget reconnects from the reloaded page (data.reconnected); wait: false returns at once.
 
 **Parameters:**
 
@@ -1946,6 +1948,8 @@ Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: 
 |------|------|-------------|
 | \`soft\` | boolean,null | Use cached resources if available (default false = hard refresh that busts all caches) |
 | \`window\` | string,null | Target window ID |
+| \`wait\` | boolean,null | Wait for the reloaded page to reconnect (default true) |
+| \`timeout\` | number,null | How long to wait for it, in ms (default 10000) |
 
 **Examples:**
 
@@ -3155,8 +3159,8 @@ and every node carries \`colors\` + a \`contrastFail\` verdict so it is machine-
 
 ### Navigate
 
-- \`hj navigate [url, window]\` - Navigate to a URL
-- \`hj refresh [soft, window]\` - Refresh the page
+- \`hj navigate [url, window, wait, ...]\` - Navigate to a URL
+- \`hj refresh [soft, window, wait, ...]\` - Refresh the page
 - \`hj location\` - Get current URL and title
 
 ### Watch Events
@@ -10239,8 +10243,14 @@ export const COMPONENT_JS: string = `(() => {
         if (url && !url.includes("://")) {
           url = "https://" + url;
         }
+        let sameDocument = false;
+        try {
+          const next = new URL(url, location.href);
+          const here = new URL(location.href);
+          sameDocument = next.hash !== "" && next.href.split("#")[0] === here.href.split("#")[0];
+        } catch {}
         location.href = url;
-        this.respond(msg2.id, true);
+        this.respond(msg2.id, true, { sameDocument });
       } else if (action2 === "location") {
         this.respond(msg2.id, true, {
           url: location.href,

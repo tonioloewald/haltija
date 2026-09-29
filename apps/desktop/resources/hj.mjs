@@ -1185,7 +1185,10 @@ var ARG_MAPS = {
     const { flags, positional } = takeFlags(args, { "--duration": "num" });
     return { ...parseScrollArgs(positional), ...flags };
   },
-  navigate: (args) => ({ url: args[0] }),
+  navigate: (args) => {
+    const { flags, positional } = takeFlags(args.filter((a) => a !== "--no-wait"), { "--timeout": "num" });
+    return { url: positional[0], ...args.includes("--no-wait") ? { wait: false } : {}, ...flags };
+  },
   eval: (args) => ({ code: args.join(" ") }),
   query: (args) => {
     const { flags, positional } = takeFlags(args, { "--all": "bool" });
@@ -1328,7 +1331,10 @@ var ARG_MAPS = {
   "select-start": () => ({}),
   "select-cancel": () => ({}),
   "select-clear": () => ({}),
-  refresh: (args) => args.includes("--soft") ? { soft: true } : {},
+  refresh: (args) => {
+    const { flags } = takeFlags(args.filter((a) => a !== "--soft" && a !== "--no-wait"), { "--timeout": "num" });
+    return { ...args.includes("--soft") ? { soft: true } : {}, ...args.includes("--no-wait") ? { wait: false } : {}, ...flags };
+  },
   "tabs-open": (args) => ({ url: args[0] }),
   "tabs-close": (args) => ({ window: args[0] }),
   "tabs-focus": (args) => ({ window: args[0] }),
@@ -1905,7 +1911,8 @@ var KNOWN_FLAGS = {
   key: ["--ctrl", "-c", "--shift", "-s", "--alt", "-a", "--meta", "-m", "--repeat"],
   screenshot: ["--data-url", "--format", "--quality", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--delay", "--no-chyron", "--canvas", "--no-fallback", "--schematic"],
   "video-start": ["--maxDuration", "--max-duration"],
-  refresh: ["--soft"],
+  refresh: ["--soft", "--no-wait", "--timeout"],
+  navigate: ["--no-wait", "--timeout"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],

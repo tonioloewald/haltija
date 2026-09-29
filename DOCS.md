@@ -73,8 +73,8 @@ and every node carries `colors` + a `contrastFail` verdict so it is machine-chec
 
 ### Navigate
 
-- `hj navigate [url, window]` - Navigate to a URL
-- `hj refresh [soft, window]` - Refresh the page
+- `hj navigate [url, window, wait, ...]` - Navigate to a URL
+- `hj refresh [soft, window, wait, ...]` - Refresh the page
 - `hj location` - Get current URL and title
 
 ### Watch Events

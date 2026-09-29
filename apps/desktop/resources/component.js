@@ -6700,8 +6700,14 @@ ${elementSummary}${moreText}`;
         if (url && !url.includes("://")) {
           url = "https://" + url;
         }
+        let sameDocument = false;
+        try {
+          const next = new URL(url, location.href);
+          const here = new URL(location.href);
+          sameDocument = next.hash !== "" && next.href.split("#")[0] === here.href.split("#")[0];
+        } catch {}
         location.href = url;
-        this.respond(msg2.id, true);
+        this.respond(msg2.id, true, { sameDocument });
       } else if (action2 === "location") {
         this.respond(msg2.id, true, {
           url: location.href,

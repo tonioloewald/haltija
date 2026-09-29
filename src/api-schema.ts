@@ -951,13 +951,15 @@ export const navigate = endpoint({
   path: '/navigate',
   method: 'POST',
   summary: 'Navigate to a URL',
-  description: `Navigate the browser to a new URL. Waits for page load to complete.
+  description: `Navigate the browser to a new URL, and by default wait until the widget has reconnected from the NEW page (data.reconnected), so the next command reaches it rather than the page being left. A same-document navigation (only the #hash changes) returns at once. If no widget reconnects within the timeout (a page that doesn't load the widget itself), it still succeeds, with a warning.
 
-Use /location after to verify navigation succeeded.`,
+Pass wait: false to return as soon as navigation starts.`,
   category: 'navigation',
   input: s.object({
     url: s.string.describe('URL to navigate to'),
     window: s.string.describe('Target window ID').optional,
+    wait: s.boolean.describe('Wait for the new page to reconnect (default true)').optional,
+    timeout: s.number.describe('How long to wait for it, in ms (default 10000)').optional,
   }),
   examples: [
     {
@@ -981,13 +983,15 @@ export const refresh = endpoint({
   method: 'POST',
   summary: 'Refresh the page',
   description:
-    'Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload.',
+    'Hard reload the current page, bypassing all caches (CSS, JS, images). Use soft: true for cache-friendly reload. Like /navigate, waits until the widget reconnects from the reloaded page (data.reconnected); wait: false returns at once.',
   category: 'navigation',
   input: s.object({
     soft: s.boolean.describe(
       'Use cached resources if available (default false = hard refresh that busts all caches)',
     ).optional,
     window: s.string.describe('Target window ID').optional,
+    wait: s.boolean.describe('Wait for the reloaded page to reconnect (default true)').optional,
+    timeout: s.number.describe('How long to wait for it, in ms (default 10000)').optional,
   }),
   examples: [
     {

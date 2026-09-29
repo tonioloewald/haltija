@@ -318,6 +318,20 @@ describe('ARG_MAPS', () => {
     test('maps url', () => {
       expect(ARG_MAPS.navigate(['https://example.com'])).toEqual({ url: 'https://example.com' })
     })
+    test('--no-wait opts out of waiting for the new page, before or after the url (#54)', () => {
+      expect(ARG_MAPS.navigate(['--no-wait', '/a'])).toEqual({ url: '/a', wait: false })
+      expect(ARG_MAPS.navigate(['/a', '--no-wait'])).toEqual({ url: '/a', wait: false })
+    })
+    test('--timeout sets how long to wait for it', () => {
+      expect(ARG_MAPS.navigate(['/a', '--timeout', '3000'])).toEqual({ url: '/a', timeout: 3000 })
+    })
+  })
+
+  describe('refresh', () => {
+    test('--soft, --no-wait and --timeout combine', () => {
+      expect(ARG_MAPS.refresh(['--soft', '--no-wait'])).toEqual({ soft: true, wait: false })
+      expect(ARG_MAPS.refresh(['--timeout', '2000'])).toEqual({ timeout: 2000 })
+    })
   })
 
   describe('eval', () => {

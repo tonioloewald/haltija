@@ -125,9 +125,9 @@ hj click 42            # Click by ref ID
 hj click "#submit"     # Click by CSS selector
 hj type 10 "hello"     # Type into an input
 hj key Enter           # Press a key (hj key s --ctrl for shortcuts)
-hj navigate <url>      # Go to a URL (also: hj refresh, hj location)
+hj navigate <url>      # Go to a URL; returns once the new page is live (also: hj refresh)
 hj evaluate "document.title"   # Run JS in the page (async OK — see below)
-hj screenshot          # Capture the page — PNG default; --format webp|jpeg (smaller), --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once to grant screen share)
+hj screenshot          # Capture the page — PNG default; --format webp|jpeg, --scale 0.5, --maxWidth 800 (Electron app: automatic; browser: user clicks 🖥 in the widget once)
 hj highlight 5 "Look here" / hj unhighlight   # Point things out to the user
 hj session-attach <tmux>   # Mirror an agent's tmux terminal in (needs --token; --allow-input to type)
 hj session-read --follow   #   a page — even on a headset over a tunnel — watches it work,
