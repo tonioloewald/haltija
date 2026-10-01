@@ -88,6 +88,26 @@ Not a defect in tosijs-ui — informational, and an invitation to report noise b
 audit surfacing a systemic backlog after haltija's console/contrast/map signals improved.
 
 
+## tosijs — a stable identity per `describe().wiring` record
+
+**Status:** filed — https://github.com/tonioloewald/tosijs/issues/47
+
+A wiring record's only handle is its index (or an optional DOM `id`), and the index shifts when the
+list changes, so a multi-turn agent referring back to "that control" can act on the wrong one.
+haltija will pass a stable key through unchanged and accept it as an address. Agreed with the owner
+on haltija#16 (2026-10-01). haltija side: virta #2546.
+
+## tosijs — a documented "settled" signal that states what it cannot see
+
+**Status:** filed — https://github.com/tonioloewald/tosijs/issues/48
+
+After an action, an agent needs to know when to look. haltija waits for its widget after a
+navigation (#54) and otherwise polls author-chosen conditions. A tosijs `settled()` built on its
+update queue would help, but it can only vouch for what tosijs observes. So the ask is a result that
+lists what it covered and what it did not (network, timers, external async), rather than a bare
+`true`. haltija would carry `notCovered` into results as a caveat. Owner: "settled would be very
+nice … but by nature imperfect, so it should be honest about its limitations".
+
 ## tosijs — the `tosiAgent` surface has no version or capability marker
 
 **Status:** FIXED UPSTREAM — https://github.com/tonioloewald/tosijs/issues/23. tosijs 1.8.0 shipped
