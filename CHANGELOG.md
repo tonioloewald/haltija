@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.13.0-beta.3 (unreleased)
+
+### Fixed
+
+- **Freeing a busy HTTPS port is now deliberate.** It used to probe the HTTPS port with plain HTTP,
+  which always failed, so the holder was refused as "a server we could not identify". That was the
+  right outcome only by accident, and the message misled (#1079).
+  - The HTTPS port is freed only when it was itself explicitly requested (`--https-port` /
+    `DEV_CHANNEL_HTTPS_PORT`). Being strict about the HTTP port says nothing about the HTTPS one,
+    and stopping a server's HTTPS listener stops its whole process, HTTP included.
+  - The holder is identified over TLS and asked to stop, under the same rules as the HTTP port.
+
 ## 1.13.0-beta.2 (2026-09-29)
 
 ### Changed

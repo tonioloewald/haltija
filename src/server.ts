@@ -4650,7 +4650,12 @@ const serverConfig = {
  * Order: identify → refuse if it's the desktop app (or unidentifiable) → ask → only then,
  * as a last resort, signal a listener that `ps` confirms is haltija.
  */
-async function freePort(port: number): Promise<boolean> {
+/**
+ * `scheme` is how the port speaks. It matters: probing a TLS port with plain HTTP fails, which used
+ * to make every HTTPS holder "a server we could not identify" — a refusal that was right only by
+ * accident, with a message that misled (#1079).
+ */
+async function freePort(port: number, scheme: 'http' | 'https' = 'http'): Promise<boolean> {
   // freePort reaches out and stops ANOTHER server — a machine-scope action, exactly what
   // HALTIJA_NO_RETIRE governs. The test suite sets NO_RETIRE, and on a shared machine (CI, or
   // a dev box running other haltija servers — including other agents') a test that bound a
@@ -4661,7 +4666,7 @@ async function freePort(port: number): Promise<boolean> {
 
   if (listenerPidsOnPort(port).length === 0) return false
 
-  const probe = await probePort(port)
+  const probe = await probePort(port, scheme)
 
   // A running desktop app is never collateral for a port request, and neither is anything we
   // could not identify (a token-gated or slow server probes as unidentified). Pure, tested
@@ -4675,7 +4680,7 @@ async function freePort(port: number): Promise<boolean> {
   }
 
   // Positively identified as a haltija server that isn't the desktop app: ask it to stop.
-  if (await requestShutdown(port)) {
+  if (await requestShutdown(port, 3000, scheme)) {
     recordMachineAction({
       kind: 'server-stopped',
       detail: `stopped the haltija server on :${port} because this server was explicitly asked to bind that port`,
@@ -4724,16 +4729,17 @@ async function freePort(port: number): Promise<boolean> {
  *
  * Returns true only once the port has actually gone quiet.
  */
-async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean> {
+async function requestShutdown(port: number, timeoutMs = 3000, scheme: 'http' | 'https' = 'http'): Promise<boolean> {
   // /shutdown is token-gated. Send our token so this works at all for --token users — a peer
   // in the same project shares it. (A different project's token won't match; that server 401s
   // and simply doesn't shut down, which is correct: we're not authorized to stop it.)
   const authHeaders: Record<string, string> = REQUIRED_TOKEN ? { 'X-Haltija-Token': REQUIRED_TOKEN } : {}
   try {
-    await fetch(`http://localhost:${port}/shutdown`, {
+    await fetch(`${scheme}://localhost:${port}/shutdown`, {
       method: 'POST',
       headers: authHeaders,
       signal: AbortSignal.timeout(1500),
+      ...selfSigned(scheme),
     })
   } catch {
     // A server that dies mid-response is a success, not a failure — fall through
@@ -4743,9 +4749,10 @@ async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean>
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      await fetch(`http://localhost:${port}/status`, {
+      await fetch(`${scheme}://localhost:${port}/status`, {
         headers: authHeaders,
         signal: AbortSignal.timeout(500),
+        ...selfSigned(scheme),
       })
     } catch {
       return true // nothing is answering: it's gone
@@ -4756,7 +4763,12 @@ async function requestShutdown(port: number, timeoutMs = 3000): Promise<boolean>
 }
 
 /** Ask a port what it is. Anything that doesn't answer cleanly is "not haltija". */
-async function probePort(port: number): Promise<ServerProbe> {
+/** Our certificate is self-signed (or mkcert's): a local probe of our own kind must accept it. */
+function selfSigned(scheme: 'http' | 'https'): Record<string, unknown> {
+  return scheme === 'https' ? { tls: { rejectUnauthorized: false } } : {}
+}
+
+async function probePort(port: number, scheme: 'http' | 'https' = 'http'): Promise<ServerProbe> {
   // desktopApp: null means "we could not tell". It must NEVER be false here: false asserts
   // "identified, and not the desktop app" about a server we never successfully read, and
   // every consumer treats a false as license to stop it. A probe that fails — timeout, 401
@@ -4765,8 +4777,9 @@ async function probePort(port: number): Promise<ServerProbe> {
   // freePort SIGTERMed token-gated and slow servers, including a running desktop app.)
   const unknown: ServerProbe = { port, version: null, desktopApp: null, pid: null }
   try {
-    const resp = await fetch(`http://localhost:${port}/status`, {
+    const resp = await fetch(`${scheme}://localhost:${port}/status`, {
       signal: AbortSignal.timeout(1000),
+      ...selfSigned(scheme),
       // Send our token so a --token-configured server can identify (and later ask to stop)
       // its OWN peers. A different project's server with a different token still 401s and
       // stays unidentified, which is correct — we're not authorized to touch it.
@@ -4949,7 +4962,11 @@ if (USE_HTTPS) {
       // usually our PREVIOUS server still finishing its shutdown (a fast restart races it), and
       // occasionally a genuinely live conflict. Retry the SAME port a few times with a short
       // backoff to ride out the transient case, then give up LOUDLY.
-      if (PORT_IS_STRICT && await freePort(wantedHttpsPort)) {
+      // Free it only if THIS port was explicitly asked for. Strictness about the HTTP port says
+      // nothing about the HTTPS one, and stopping a server's HTTPS listener stops its whole
+      // process — HTTP included, for every project using that channel (#32a). Probed over TLS, so
+      // a holder is identified rather than declined as unknown by accident (#1079).
+      if (HTTPS_PORT_EXPLICIT !== null && await freePort(wantedHttpsPort, 'https')) {
         httpsServer = bindHttps()
       } else {
         for (let attempt = 0; attempt < 5 && !httpsServer; attempt++) {
