@@ -2771,6 +2771,7 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
   const notes = [];
   const unchecked = [];
   let status = null;
+  let observability = null;
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
       headers: token ? { "X-Haltija-Token": token } : {},
@@ -2791,15 +2792,19 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       problems.push(`the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` + `Open a tab in the desktop app, or inject the widget into a page. ` + `("server is up" is not "server is drivable" — that's what this check exists for.)`);
     }
     const hidden = tabs.filter((w) => !isVisible2(w));
+    const target = tabs.find((w) => w.focused) ?? tabs.find((w) => isVisible2(w)) ?? tabs[0] ?? null;
+    const targetLabel = target ? `${target.title && target.title !== "(untitled)" ? `"${target.title}" ` : ""}${target.url || target.id}` : "";
     const silent = tabs.filter((w) => !visibilityKnown(w));
     if (ready && silent.length) {
       unchecked.push(`${silent.length} of ${tabs.length} tab(s) did not report visibility${status.serverVersion ? ` (server ${status.serverVersion} is too old to send it)` : ""} — this check ASSUMED they are on screen and cannot confirm it. ` + `A backgrounded tab returns plausible-but-wrong results (rAF/timers throttled), so if ` + `something looks stale, that assumption is the first thing to doubt. ` + `Upgrade the server to make this checkable.`);
     }
-    if (ready && hidden.length === tabs.length) {
-      problems.push(`every connected tab reports HIDDEN — results from a backgrounded tab can be ` + `plausible-but-wrong (rAF/timers throttled). Bring one to the front.`);
+    if (ready && target && !isVisible2(target)) {
+      problems.push(`the tab commands go to (${targetLabel}) reports HIDDEN — it still answers, but geometry, ` + `screenshots and anything rAF-driven WILL be wrong (timers and rendering are throttled). ` + `Bring it to the front, or target a visible tab with --window <id>.`);
     } else if (hidden.length) {
       notes.push(`${hidden.length} of ${tabs.length} tab(s) are hidden; commands targeting them may return stale results`);
     }
+    if (ready && target)
+      observability = { target: target.id, label: targetLabel, visible: isVisible2(target), painting: null, paintAgeMs: null };
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`);
     }
@@ -2823,6 +2828,10 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
           }
         }
       } catch {}
+      if (observability && raf !== null) {
+        observability.painting = !!raf.fired;
+        observability.paintAgeMs = raf.measured ? raf.ms : null;
+      }
       if (raf === null) {
         unchecked.push(`could not run the requestAnimationFrame probe — whether this tab actually paints is ` + `UNKNOWN. If elements seem missing, suspect a non-compositing tab before the page.`);
       } else if (!raf.fired) {
@@ -2849,6 +2858,7 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       tabs: status?.windows?.length ?? 0,
       problems,
       notes,
+      observability,
       origins: (() => {
         const d = findProjectOrigins(process.cwd(), process.env);
         return d ? { declared: d.origins, source: d.source } : null;
@@ -2864,6 +2874,8 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
   }
   if (status)
     console.log(`${bold2("origins:")} ${describeOrigins(status.windows || []).line}`);
+  if (observability)
+    console.log(`${bold2("observability:")} ${describeObservability(observability)}`);
   for (const n of notes)
     console.log(`${yellow2("!")} ${n}`);
   for (const u of unchecked)
@@ -2874,6 +2886,17 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     console.log(unchecked.length ? `${green2("✓")} ready to drive ${dim3(`(${unchecked.length} check${unchecked.length === 1 ? "" : "s"} could not be performed — see ? above)`)}` : `${green2("✓")} ready to drive`);
   }
   return ok;
+}
+function describeObservability(o) {
+  const where = dim3(`(${o.label})`);
+  if (!o.visible)
+    return `${red2("✗ hidden")} — geometry, screenshots and rAF-driven rendering will be wrong ${where}`;
+  if (o.painting === false)
+    return `${red2("✗ not painting")} — visible but not compositing; missing elements prove nothing ${where}`;
+  if (o.painting === null)
+    return `${dim3("? visible, painting unknown")} ${where}`;
+  const age = o.paintAgeMs === null ? "" : dim3(` (last frame ${(o.paintAgeMs / 1000).toFixed(1)}s ago)`);
+  return `${green2("✓ visible and painting")}${age} ${where}`;
 }
 function lookupNamedInstance(name) {
   const path = join3(REGISTRY_DIR, `${name}.json`);

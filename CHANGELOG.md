@@ -2,7 +2,19 @@
 
 ## 1.13.0-beta.3 (unreleased)
 
+### Added
+
+- **`hj doctor` prints an `observability:` line on every run** (#821, GitHub #50). It says whether
+  the tab that commands go to is visible and painting, and how long ago it last drew a frame. When
+  it isn't, the line says what that invalidates: geometry, screenshots and anything rAF-driven. A
+  backgrounded tab still answers, just wrongly, so this matters even when nothing fails. Also in
+  `--json` as `observability`.
+
 ### Fixed
+
+- **`hj doctor` checks visibility on the tab commands actually go to**, not across all tabs. A
+  hidden target used to pass with a note as long as some other tab was visible, while every
+  command went to the hidden one.
 
 - **Freeing a busy HTTPS port is now deliberate.** It used to probe the HTTPS port with plain HTTP,
   which always failed, so the holder was refused as "a server we could not identify". That was the

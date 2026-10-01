@@ -3268,6 +3268,8 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     const doc = JSON.parse(runDoctor())
     expect(JSON.stringify(doc.problems ?? [])).not.toContain('PAINTED')
     expect(JSON.stringify(doc.problems ?? [])).not.toContain('DID NOT FIRE')
+    // The first-class observability answer (#821): present on every run, not only on failure.
+    expect(doc.observability).toMatchObject({ visible: true, painting: true })
   })
 
   test('a tab whose rAF callbacks never run is caught, and the result says so', async ({ page }) => {
@@ -3322,5 +3324,36 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     // And doctor agrees, from the same number rather than a second opinion.
     const doc = JSON.parse(runDoctor())
     expect(JSON.stringify(doc.problems ?? [])).toContain('HAS NOT PAINTED')
+    expect(doc.observability).toMatchObject({ visible: true, painting: false })
+  })
+
+  test('doctor judges the tab commands GO TO: a hidden target fails even if another tab is visible (#821)', async ({ page, context }) => {
+    // Judged over ALL tabs, this passed with a note while every command went to the hidden one.
+    await injectDevChannel(page) // a visible tab
+    const hiddenPage = await context.newPage()
+    await injectDevChannel(hiddenPage)
+    // Then it goes to the background, the way a real tab tells the widget: visibilitychange.
+    await hiddenPage.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true })
+      Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    let hiddenId: string | undefined
+    for (let i = 0; i < 30 && !hiddenId; i++) {
+      const s = await (await fetch(`${SERVER_URL}/windows`)).json()
+      hiddenId = s.windows?.find((w: any) => w.active === false)?.id
+      if (!hiddenId) await page.waitForTimeout(200)
+    }
+    expect(hiddenId).toBeTruthy()
+    await fetch(`${SERVER_URL}/tabs/focus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ window: hiddenId }),
+    })
+    const doc = JSON.parse(runDoctor())
+    expect(doc.ok).toBe(false)
+    expect(JSON.stringify(doc.problems)).toContain('the tab commands go to')
+    expect(doc.observability).toMatchObject({ target: hiddenId, visible: false })
+    await hiddenPage.close()
   })
 })

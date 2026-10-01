@@ -331,6 +331,11 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
   // this command exists to remove.
   const unchecked = []
   let status = null
+  // First-class answer to "can I believe what this tab tells me?" (#821, GitHub #50). Everything
+  // else doctor checks is about reaching a tab; this is about whether its answers are trustworthy.
+  // A hidden or non-compositing tab still answers — geometry, screenshots and anything rAF-driven
+  // just come back wrong — so it is printed on every run, not only when something fails.
+  let observability = null
 
   try {
     const resp = await fetch(`http://localhost:${port}/status`, {
@@ -365,6 +370,11 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     // Reads `active` via the shared predicate: /status and /windows disagreed on polarity, and
     // keying on one endpoint's field name is what made this diverge from the origin router.
     const hidden = tabs.filter((w) => !isVisible(w))
+    // The tab untargeted commands go to: the focused one, as the server routes them. Judging
+    // visibility over ALL tabs passed a lane whose target was hidden as long as some OTHER tab was
+    // visible — every command still went to the hidden one.
+    const target = tabs.find((w) => w.focused) ?? tabs.find((w) => isVisible(w)) ?? tabs[0] ?? null
+    const targetLabel = target ? `${target.title && target.title !== '(untitled)' ? `"${target.title}" ` : ''}${target.url || target.id}` : ''
     // A tab that reported NEITHER field hasn't told us anything; `isVisible` had to assume. Say so
     // rather than counting the assumption as a passed check.
     const silent = tabs.filter((w) => !visibilityKnown(w))
@@ -378,14 +388,16 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
           `Upgrade the server to make this checkable.`,
       )
     }
-    if (ready && hidden.length === tabs.length) {
+    if (ready && target && !isVisible(target)) {
       problems.push(
-        `every connected tab reports HIDDEN — results from a backgrounded tab can be ` +
-          `plausible-but-wrong (rAF/timers throttled). Bring one to the front.`,
+        `the tab commands go to (${targetLabel}) reports HIDDEN — it still answers, but geometry, ` +
+          `screenshots and anything rAF-driven WILL be wrong (timers and rendering are throttled). ` +
+          `Bring it to the front, or target a visible tab with --window <id>.`,
       )
     } else if (hidden.length) {
       notes.push(`${hidden.length} of ${tabs.length} tab(s) are hidden; commands targeting them may return stale results`)
     }
+    if (ready && target) observability = { target: target.id, label: targetLabel, visible: isVisible(target), painting: null, paintAgeMs: null }
     if (status.serverVersion && differsBeyondPatch(HJ_VERSION, status.serverVersion)) {
       notes.push(`hj ${HJ_VERSION} is driving server ${status.serverVersion} (version skew)`)
     }
@@ -434,6 +446,10 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
         }
       } catch {
         // Fall through to the unchecked branch — never a pass.
+      }
+      if (observability && raf !== null) {
+        observability.painting = !!raf.fired
+        observability.paintAgeMs = raf.measured ? raf.ms : null
       }
       if (raf === null) {
         unchecked.push(
@@ -484,6 +500,7 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       ready: status ? (typeof status.ready === 'boolean' ? status.ready : (status.windows?.length ?? 0) > 0) : false,
       tabs: status?.windows?.length ?? 0,
       problems, notes,
+      observability,
       origins: (() => {
         const d = findProjectOrigins(process.cwd(), process.env)
         return d ? { declared: d.origins, source: d.source } : null
@@ -501,6 +518,7 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     console.log(`${bold('server:')} haltija ${status.serverVersion || '?'}${status.desktopApp ? dim(' (desktop app)') : ''}, ${tabCount} tab${tabCount === 1 ? '' : 's'}`)
   }
   if (status) console.log(`${bold('origins:')} ${describeOrigins(status.windows || []).line}`)
+  if (observability) console.log(`${bold('observability:')} ${describeObservability(observability)}`)
   for (const n of notes) console.log(`${yellow('!')} ${n}`)
   // `?` — its own glyph, because the whole point is that this is neither a pass nor a failure.
   for (const u of unchecked) console.log(`${dim('?')} ${u}`)
@@ -515,6 +533,20 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     )
   }
   return ok
+}
+
+/**
+ * The `observability:` line: whether the tab commands go to will tell the truth (#821). Says what a
+ * bad state invalidates rather than only naming the state — the recorded failures were agents who
+ * knew a tab was "hidden" and still trusted its geometry.
+ */
+function describeObservability(o) {
+  const where = dim(`(${o.label})`)
+  if (!o.visible) return `${red('✗ hidden')} — geometry, screenshots and rAF-driven rendering will be wrong ${where}`
+  if (o.painting === false) return `${red('✗ not painting')} — visible but not compositing; missing elements prove nothing ${where}`
+  if (o.painting === null) return `${dim('? visible, painting unknown')} ${where}`
+  const age = o.paintAgeMs === null ? '' : dim(` (last frame ${(o.paintAgeMs / 1000).toFixed(1)}s ago)`)
+  return `${green('✓ visible and painting')}${age} ${where}`
 }
 
 /**

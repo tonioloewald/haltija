@@ -92,8 +92,8 @@ hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRI
 
 - **`hj doctor`** is the one-line pre-flight for a test lane. It checks, in the order they bite:
   server reachable → a tab is actually connected → the target isn't ambiguous (your cwd matches, or
-  you chose explicitly) → tabs aren't all hidden → **the tab actually paints** → versions aligned. **Non-zero exit** when any of
-  those fails, so the lane stops on the real cause. `--json` for machine-readable output.
+  you chose explicitly) → **the tab commands go to** is visible and **paints** (its `observability:`
+  line) → versions aligned. **Non-zero exit** on any failure. `--json` for machine-readable output.
 - **`--strict` / `HALTIJA_STRICT=1`** makes the warnings you'd otherwise only *read* into failures:
   cross-project targeting, hidden tab, focus ambiguity. In strict mode a suspect result is **not
   printed to stdout at all** — a script must not consume a value that may be wrong.
