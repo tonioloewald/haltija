@@ -167,17 +167,14 @@ theme, viewport or animation timing to shift under you.
 
 Always check `source`:
 
-- **`source: "tosi-agent"` — EXPERIMENTAL.** The page exposes an agent surface
-  (`globalThis.tosiAgent`, a tosijs app calling `enableAgentInterface()`), so the map is the app's
-  **own wiring records**. Treat this tier as best-effort: haltija detects it by duck-typing one
-  method and consumes a shape tosijs has not committed to (tosijs#23 asks for a version marker). If
-  the shape isn't what haltija expects you get a `warning` saying so — believe it, and fall back to
-  the DOM tier rather than trusting an empty map. `agentSurfaceVersion` reports the app's version
-  when it provides one. These carry
-  what the DOM cannot: which state path each control is bound to and in which direction —
-  **`⟷`** two-way (user-writable), **`⟵`** display-only, absent (static) — plus the handler path
-  each event calls, and a list of callable `actions`. Prefer acting through those paths rather than
-  synthesizing input:
+- **`source: "tosi-agent"`** — the page exposes tosijs's agent surface (`globalThis.tosiAgent`,
+  from `enableAgentInterface()`), so the map is the app's **own wiring records**, with
+  `agentSurfaceVersion` (`{ surface, tosijs, capabilities }`). A `warning` means a shape or surface
+  version haltija doesn't read — believe it and fall back to the DOM tier. These carry what the DOM
+  cannot: each control's bound state path and direction — **`⟷`** two-way, **`⟵`** display-only,
+  absent (static) — plus handler paths and callable `actions`. **`act.note` says what this surface
+  permits:** `writable: false` (a manifest without `write: true`) means `write()` is refused; an
+  empty map with a `hint` means the app exposes nothing (`exposure: 'closed'`). Prefer the paths:
   ```bash
   hj map                                              # see the wiring
   hj eval "tosiAgent.write('app.filter', 'milk')"     # set a ⟷ two-way bound value

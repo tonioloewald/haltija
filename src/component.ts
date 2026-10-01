@@ -1872,7 +1872,8 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
       // schematic renders an empty box whose footer still reads "wiring · <title>" — degradation
       // that is silent AND confidently mislabelled, which is the worst combination we ship.
       // So: check the shape we actually depend on, and say so when it isn't there.
-      // Tracked upstream — see UPSTREAM.md (tosijs: agent-surface version/capability marker).
+      // tosijs has since shipped a version marker (UPSTREAM.md, tosijs#23), read below; the shape
+      // check stays for surfaces older than tosijs 1.8 and anything that isn't tosijs at all.
       const wiring = (description as any)?.wiring
       const shapeWarning =
         wiring === undefined
@@ -1884,23 +1885,60 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
             ? `${globalName}.describe().wiring is ${typeof wiring}, expected an array — passing it ` +
               `through unchanged, but the schematic cannot render it.`
             : undefined
+      // tosijs ships the contract this used to guess at (#787, GitHub #16): describe() carries
+      // `version: { surface, tosijs, capabilities }`, `exposure` and `writable`. Read them rather
+      // than inferring — tosijs's own note: "test membership, don't infer from semver", and "read
+      // `writable` rather than inferring writability from the posture name".
+      const d = description as any
+      const surfaceVersion = d?.version ?? (agent as any).version
+      const surfaceMajor =
+        surfaceVersion && typeof surfaceVersion === 'object' && typeof surfaceVersion.surface === 'string'
+          ? surfaceVersion.surface.split('.')[0]
+          : null
+      const versionWarning =
+        surfaceMajor !== null && surfaceMajor !== '1'
+          ? `${globalName} reports agent surface ${surfaceVersion.surface}; this haltija reads surface ` +
+            `1.x, so fields may be missing or misread. Update haltija.`
+          : undefined
+      const warning = [shapeWarning, versionWarning].filter(Boolean).join(' ') || undefined
+      // An app that exposes nothing is the tosijs default since 1.9.0 ('closed'), not a broken
+      // surface — say how its author turns it on, rather than leaving an empty map unexplained.
+      const closedHint =
+        d?.exposure === 'closed' && Array.isArray(wiring) && wiring.length === 0
+          ? `The app exposes no wiring: exposure is 'closed', the tosijs default. Its author enables ` +
+            `it with expose: { roots } (add write: true to allow write()). Use the DOM map meanwhile: ` +
+            `hj map on a page without ${globalName}.`
+          : undefined
+      const actions: string[] | undefined = Array.isArray(d?.actions) ? d.actions : undefined
+      const writeAdvice =
+        d?.writable === false
+          ? `This surface is READ-ONLY (describe().writable is false): ${globalName}.write() will be ` +
+            `refused, so act through actions or realistic input instead.`
+          : d?.writable === true
+            ? `${globalName}.write(path, value) for a ⟷ two-way binding.`
+            : `${globalName}.write(path, value) for a ⟷ two-way binding (writability not reported ` +
+              `by this surface; it may refuse).`
+      const callAdvice =
+        actions && actions.length === 0
+          ? `It exposes no actions.`
+          : `${globalName}.call(actionPath) for an action${actions ? ` (one of: ${actions.slice(0, 8).join(', ')}${actions.length > 8 ? ', …' : ''})` : ''}.`
       return {
         url: location.href,
         title: document.title,
         source: 'tosi-agent',
         global: globalName,
         // Surfaced so an agent (and a bug report) can tell WHICH surface produced this map, rather
-        // than inferring it from behaviour. Undefined until tosijs ships one — which is the ask.
-        agentSurfaceVersion: (agent as any).version ?? (description as any)?.version,
-        ...(shapeWarning ? { warning: shapeWarning } : {}),
+        // than inferring it from behaviour: `{ surface, tosijs, capabilities }` from tosijs 1.8 on.
+        agentSurfaceVersion: surfaceVersion,
+        ...(warning ? { warning } : {}),
+        ...(closedHint ? { hint: closedHint } : {}),
         // Pass the framework's records through UNCHANGED — reshaping them would be exactly the
         // lossy reconstruction this tier exists to avoid.
         ...description,
         act: {
           note:
-            `Act through the paths, not synthesized input: ${globalName}.write(path, value) for a ` +
-            `⟷ two-way binding, ${globalName}.call(actionPath) for an action. ` +
-            `Run them with: hj eval "${globalName}.write('some.path', 'value')"`,
+            `Act through the paths, not synthesized input. ${writeAdvice} ${callAdvice} ` +
+            `Run them with: hj eval "${globalName}.call('some.action')"`,
           legend: {
             '⟷': 'two-way binding — user-writable; writing the path updates the UI and app state',
             '⟵': 'bound to DOM — display only; it reflects the path, writing the DOM will not stick',

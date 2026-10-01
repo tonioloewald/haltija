@@ -334,6 +334,37 @@ test.describe('haltija-dev CLI', () => {
     await page.evaluate(() => { delete (globalThis as any).tosiAgent })
   })
 
+  test('reads the SHIPPED contract: writable, exposure, actions, surface version (#787)', async ({ page }) => {
+    // The shape tosijs 1.10 actually returns (src/agent.ts AgentDescription), not a guess.
+    await injectDevChannel(page)
+    const map = async (description: any) => {
+      await page.evaluate((d) => { ;(globalThis as any).tosiAgent = { describe: () => d } }, description)
+      return (await (await fetch(`${SERVER_URL}/map`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+      })).json()).data
+    }
+    const version = { surface: '1.0.0', tosijs: '1.10.6', capabilities: ['describe', 'read', 'call'] }
+
+    // A read-only manifest: telling the agent to write() would offer an affordance the surface refuses.
+    const ro = await map({ version, roots: { app: 'app' }, wiring: [{ tag: 'button', id: 'go', label: 'Go' }],
+      actions: ['app.go'], exposure: 'manifest', writable: false })
+    expect(ro.warning).toBeUndefined()
+    expect(ro.agentSurfaceVersion).toEqual(version)
+    expect(ro.act.note).toContain('READ-ONLY')
+    expect(ro.act.note).toContain('app.go')
+
+    // 'closed' (the tosijs default since 1.9.0) with no wiring is not a broken surface: say how to open it.
+    const closed = await map({ version, roots: {}, wiring: [], actions: [], exposure: 'closed', writable: false })
+    expect(closed.hint).toContain("exposure is 'closed'")
+    expect(closed.act.note).toContain('no actions')
+
+    // A surface whose shape contract moved on is called out, not silently misread.
+    const future = await map({ version: { ...version, surface: '2.0.0' }, wiring: [], actions: [], exposure: 'all', writable: true })
+    expect(future.warning).toContain('surface 2.0.0')
+
+    await page.evaluate(() => { delete (globalThis as any).tosiAgent })
+  })
+
   test('a well-shaped tosiAgent surface does NOT warn', async ({ page }) => {
     // The discriminating case — otherwise the assertion above would hold if we warned always.
     await injectDevChannel(page)

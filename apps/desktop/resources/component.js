@@ -1374,16 +1374,26 @@
         const description = agent.describe();
         const wiring = description?.wiring;
         const shapeWarning = wiring === undefined ? `${globalName}.describe() returned no 'wiring' — this haltija understands the agent ` + `surface as { wiring: [{ tag, id, label, on }] }. The map below is passed through ` + `unchanged and may be missing structure; the schematic will be empty. Check the ` + `tosijs version, or use hj map with the DOM fallback (a page without tosiAgent).` : !Array.isArray(wiring) ? `${globalName}.describe().wiring is ${typeof wiring}, expected an array — passing it ` + `through unchanged, but the schematic cannot render it.` : undefined;
+        const d = description;
+        const surfaceVersion = d?.version ?? agent.version;
+        const surfaceMajor = surfaceVersion && typeof surfaceVersion === "object" && typeof surfaceVersion.surface === "string" ? surfaceVersion.surface.split(".")[0] : null;
+        const versionWarning = surfaceMajor !== null && surfaceMajor !== "1" ? `${globalName} reports agent surface ${surfaceVersion.surface}; this haltija reads surface ` + `1.x, so fields may be missing or misread. Update haltija.` : undefined;
+        const warning = [shapeWarning, versionWarning].filter(Boolean).join(" ") || undefined;
+        const closedHint = d?.exposure === "closed" && Array.isArray(wiring) && wiring.length === 0 ? `The app exposes no wiring: exposure is 'closed', the tosijs default. Its author enables ` + `it with expose: { roots } (add write: true to allow write()). Use the DOM map meanwhile: ` + `hj map on a page without ${globalName}.` : undefined;
+        const actions = Array.isArray(d?.actions) ? d.actions : undefined;
+        const writeAdvice = d?.writable === false ? `This surface is READ-ONLY (describe().writable is false): ${globalName}.write() will be ` + `refused, so act through actions or realistic input instead.` : d?.writable === true ? `${globalName}.write(path, value) for a ⟷ two-way binding.` : `${globalName}.write(path, value) for a ⟷ two-way binding (writability not reported ` + `by this surface; it may refuse).`;
+        const callAdvice = actions && actions.length === 0 ? `It exposes no actions.` : `${globalName}.call(actionPath) for an action${actions ? ` (one of: ${actions.slice(0, 8).join(", ")}${actions.length > 8 ? ", …" : ""})` : ""}.`;
         return {
           url: location.href,
           title: document.title,
           source: "tosi-agent",
           global: globalName,
-          agentSurfaceVersion: agent.version ?? description?.version,
-          ...shapeWarning ? { warning: shapeWarning } : {},
+          agentSurfaceVersion: surfaceVersion,
+          ...warning ? { warning } : {},
+          ...closedHint ? { hint: closedHint } : {},
           ...description,
           act: {
-            note: `Act through the paths, not synthesized input: ${globalName}.write(path, value) for a ` + `⟷ two-way binding, ${globalName}.call(actionPath) for an action. ` + `Run them with: hj eval "${globalName}.write('some.path', 'value')"`,
+            note: `Act through the paths, not synthesized input. ${writeAdvice} ${callAdvice} ` + `Run them with: hj eval "${globalName}.call('some.action')"`,
             legend: {
               "⟷": "two-way binding — user-writable; writing the path updates the UI and app state",
               "⟵": "bound to DOM — display only; it reflects the path, writing the DOM will not stick",

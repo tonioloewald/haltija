@@ -10,6 +10,17 @@
   backgrounded tab still answers, just wrongly, so this matters even when nothing fails. Also in
   `--json` as `observability`.
 
+- **`hj map` reads tosijs's shipped agent-surface contract** (#787, GitHub #16). It reads
+  `describe().version`, `exposure` and `writable` instead of inferring them, and was verified
+  against real tosijs 1.10.6.
+  - A read-only surface (a manifest without `write: true`) is reported as read-only. The map used
+    to tell agents to call `write()`, which the surface refuses.
+  - The callable actions are listed.
+  - An empty `'closed'` surface, the tosijs default, comes with a hint on how the app's author
+    enables it.
+  - A surface version haltija doesn't read produces a warning.
+  - The tier is no longer marked experimental.
+
 ### Fixed
 
 - **`hj doctor` checks visibility on the tab commands actually go to**, not across all tabs. A

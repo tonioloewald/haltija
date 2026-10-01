@@ -90,7 +90,11 @@ audit surfacing a systemic backlog after haltija's console/contrast/map signals 
 
 ## tosijs — the `tosiAgent` surface has no version or capability marker
 
-**Status:** filed — https://github.com/tonioloewald/tosijs/issues/23
+**Status:** FIXED UPSTREAM — https://github.com/tonioloewald/tosijs/issues/23. tosijs 1.8.0 shipped
+`describe().version = { surface, tosijs, capabilities }` (surface `1.0.0` as of tosijs 1.10.6),
+plus `exposure` and `writable`. haltija reads them as of 1.13.0-beta.3 (#787): it checks the surface
+major version, reports read-only surfaces instead of advising `write()`, and explains an empty
+`'closed'` surface. Verified against real tosijs 1.10.6. Kept below as the record of the ask.
 
 haltija's `hj map` uses the app's own wiring records when a page exposes `globalThis.tosiAgent`, which
 is strictly better than reconstructing affordances from the DOM. But it **detects** that tier by
