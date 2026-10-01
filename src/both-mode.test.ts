@@ -30,7 +30,8 @@ let serverProcess: Subprocess | null = null
 beforeAll(async () => {
   // Start server in both mode
   serverProcess = spawn({
-    cmd: ['bun', 'run', 'bin/tosijs-dev.ts', '--both'],
+    // The SHIPPED launcher, not the unshipped bin/tosijs-dev.ts twin (#1080).
+    cmd: ['bun', 'bin/tosijs-dev.mjs', '--server', '--both'],
     cwd: import.meta.dir + '/..',
     env: { 
       ...process.env, 

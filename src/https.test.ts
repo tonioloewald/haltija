@@ -28,10 +28,14 @@ let serverProcess: Subprocess | null = null
 beforeAll(async () => {
   // Start server in HTTPS mode
   serverProcess = spawn({
-    cmd: ['bun', 'run', 'bin/tosijs-dev.ts', '--https'],
+    // The SHIPPED launcher (bin/tosijs-dev.mjs), not the unshipped bin/tosijs-dev.ts twin this used
+    // to run (#1080). It must get its own HTTP port: with none it checks 8700, finds a developer's
+    // live server and exits "already running" — the test would then talk to the wrong server.
+    cmd: ['bun', 'bin/tosijs-dev.mjs', '--server', '--https'],
     cwd: import.meta.dir + '/..',
     env: { 
       ...process.env, 
+      DEV_CHANNEL_PORT: String(uniqueTestPort()),
       DEV_CHANNEL_HTTPS_PORT: String(HTTPS_PORT),
     },
     stdout: 'pipe',

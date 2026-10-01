@@ -167,7 +167,7 @@ reverts you. Runtime files:
 - `hj.mjs` — CLI entry point, parses args and delegates to subcommands
 - `cli-subcommand.mjs` — Translates subcommand invocations (e.g., `hj click 42`) into REST API calls against the running server, using a `COMMAND_HINTS` registry generated from `api-schema.ts` at build time
 - `format-tree.mjs`, `format-events.mjs`, `format-test.mjs`, `format-network.mjs` — Render API responses for human-readable terminal output
-- `tosijs-dev.mjs` — Entry point for the `haltija` binary (server launcher); `tosijs-dev.ts` is the source compiled into `dist/`
+- `tosijs-dev.mjs` — Entry point for the `haltija` binary (server launcher). There is ONE launcher: an unshipped `tosijs-dev.ts` copy used to be what the HTTPS tests exercised, and its argument parsing had to be edited in lockstep (#1080).
 - `mcp-setup.mjs` — Entry point for `haltija-mcp-setup` / `bunx haltija --setup-mcp`
 - `build-bookmarklet.ts`, `server.ts` — Build-time helpers, not shipped runtime
 
