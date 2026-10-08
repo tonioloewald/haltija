@@ -22,7 +22,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 const REGISTRY_DIR = isolateTestMachineState()
 const REPO_ROOT = join(import.meta.dir, '..')
@@ -74,14 +74,8 @@ beforeAll(async () => {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  for (let i = 0; i < 40; i++) {
-    try {
-      if ((await fetch(`http://localhost:${PORT}/status`)).ok) return
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100))
-  }
-  throw new Error('parity-test server did not start')
-})
+  await waitForServer(`http://localhost:${PORT}`, server)
+}, SERVER_START_HOOK_MS)
 
 afterAll(() => {
   try { server?.kill() } catch {}

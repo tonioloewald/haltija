@@ -9,7 +9,7 @@ import { spawn, type Subprocess } from 'bun'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
@@ -34,18 +34,9 @@ beforeAll(async () => {
     stderr: 'pipe',
   })
 
-  // Wait for server to be ready — /status itself is gated, so probe with a token.
-  let ready = false
-  for (let i = 0; i < 30 && !ready; i++) {
-    try {
-      const res = await fetch(`${BASE_URL}/status`, { headers: { 'X-Haltija-Token': TOKEN } })
-      if (res.ok) ready = true
-    } catch {
-      await new Promise(r => setTimeout(r, 100))
-    }
-  }
-  if (!ready) throw new Error('Token-gated server failed to start')
-})
+  // /status itself is gated, so probe with a token.
+  await waitForServer(BASE_URL, serverProcess, { init: { headers: { 'X-Haltija-Token': TOKEN } } })
+}, SERVER_START_HOOK_MS)
 
 afterAll(() => {
   serverProcess?.kill()

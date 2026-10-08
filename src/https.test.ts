@@ -10,7 +10,7 @@ import { spawn, type Subprocess } from 'bun'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
@@ -42,24 +42,8 @@ beforeAll(async () => {
     stderr: 'pipe',
   })
   
-  // Wait for server to be ready (need to ignore cert errors)
-  let ready = false
-  for (let i = 0; i < 30 && !ready; i++) {
-    try {
-      const res = await fetch(`${HTTPS_URL}/status`, {
-        // @ts-ignore - Bun supports this
-        tls: { rejectUnauthorized: false }
-      })
-      if (res.ok) ready = true
-    } catch {
-      await new Promise(r => setTimeout(r, 200))
-    }
-  }
-  
-  if (!ready) {
-    throw new Error('HTTPS server failed to start')
-  }
-}, 15000) // Longer timeout for cert generation
+  await waitForServer(HTTPS_URL, serverProcess)
+}, SERVER_START_HOOK_MS)
 
 afterAll(() => {
   serverProcess?.kill()

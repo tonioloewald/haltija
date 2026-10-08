@@ -96,7 +96,9 @@ export async function startTestServer(
     }
   }
 
-  for (let i = 0; i < 50; i++) {
+  // 20s: a ceiling, not an estimate. Hand-guessed short deadlines are what #2499 was (see
+  // `waitForServer` in test-support.ts, which this Node-side helper cannot import).
+  for (let i = 0; i < 100; i++) {
     try {
       const status = await fetch(`${serverUrl}/status`)
       if (status.ok) {

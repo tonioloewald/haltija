@@ -17,7 +17,7 @@ import { X509Certificate } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 isolateTestMachineState()
 const REPO = join(import.meta.dir, '..')
@@ -51,14 +51,8 @@ async function start(certs: string, extraEnv: Record<string, string> = {}) {
     stderr: 'pipe',
   })
   procs.push(proc)
-  for (let i = 0; i < 50; i++) {
-    try {
-      const res = await fetch(`http://localhost:${port}/status`)
-      if (res.ok) return { status: await res.json(), log: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') }
-    } catch {}
-    await Bun.sleep(200)
-  }
-  throw new Error('server never answered')
+  const status = await waitForServer(`http://localhost:${port}`, proc)
+  return { status, log: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') }
 }
 
 const freshCertDir = () => {
@@ -78,7 +72,7 @@ describe('the machine-level certificate', () => {
     expect(status.transports.https.listening).toBe(true)
     expect(existsSync(join(certs, 'localhost.pem.bak'))).toBe(true)
     expect(log()).toContain('mismatched')
-  }, 30000)
+  }, SERVER_START_HOOK_MS)
 
   it('an EXPIRING cert is renewed, with a receipt', async () => {
     const certs = freshCertDir()
@@ -89,7 +83,7 @@ describe('the machine-level certificate', () => {
     expect(status.transports.https.listening).toBe(true)
     expect(after.getTime()).toBeGreaterThan(before.getTime())
     expect(log()).toContain('renewed')
-  }, 30000)
+  }, SERVER_START_HOOK_MS)
 
   it('with no way to write a cert, HTTP serves and /status names the real reason', async () => {
     // A cert dir under a read-only parent, so every route fails — generate AND adopt (a checkout
@@ -105,5 +99,5 @@ describe('the machine-level certificate', () => {
     } finally {
       chmodSync(parent, 0o755)
     }
-  }, 30000)
+  }, SERVER_START_HOOK_MS)
 })

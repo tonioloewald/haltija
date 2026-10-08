@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 // Redirect all machine-scope writes to a temp dir and disable reach-out actions — before any
 // spawn. See src/test-support.ts for why this matters on a shared machine.
@@ -31,21 +31,8 @@ beforeAll(async () => {
     stderr: 'pipe',
   })
   
-  // Wait for server to be ready
-  let ready = false
-  for (let i = 0; i < 20 && !ready; i++) {
-    try {
-      const res = await fetch(`${BASE_URL}/status`)
-      if (res.ok) ready = true
-    } catch {
-      await new Promise(r => setTimeout(r, 100))
-    }
-  }
-  
-  if (!ready) {
-    throw new Error('Server failed to start')
-  }
-})
+  await waitForServer(BASE_URL, serverProcess)
+}, SERVER_START_HOOK_MS)
 
 afterAll(() => {
   serverProcess?.kill()
@@ -473,21 +460,8 @@ describe('tosijs-dev custom docs', () => {
       stderr: 'pipe',
     })
     
-    // Wait for server to be ready
-    let ready = false
-    for (let i = 0; i < 20 && !ready; i++) {
-      try {
-        const res = await fetch(`${CUSTOM_URL}/status`)
-        if (res.ok) ready = true
-      } catch {
-        await new Promise(r => setTimeout(r, 100))
-      }
-    }
-    
-    if (!ready) {
-      throw new Error('Custom docs server failed to start')
-    }
-  })
+    await waitForServer(CUSTOM_URL, customServer)
+  }, SERVER_START_HOOK_MS)
   
   afterAll(() => {
     customServer?.kill()

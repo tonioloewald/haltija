@@ -4,14 +4,14 @@
  * removes the entry on shutdown.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { existsSync, readFileSync, rmSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
@@ -19,6 +19,8 @@ import { isolateTestMachineState, uniqueTestPort } from './test-support'
 // server on a cwd match, so `hj` in this repo silently drives a browserless test
 // server. Set before any spawn; sessions.ts resolves the dir per call.
 isolateTestMachineState()
+// Every hook and test here may start a server; Bun's 5s default is below the start deadline.
+setDefaultTimeout(SERVER_START_HOOK_MS)
 
 
 // The same throwaway dir the spawned servers write to (set above, inherited by
@@ -63,15 +65,8 @@ async function spawnNamedServer(name: string, port: number): Promise<Subprocess>
     stderr: 'pipe',
   })
   trackedProcs.add(proc)
-  // Wait for the server to be reachable.
-  for (let i = 0; i < 30; i++) {
-    try {
-      const res = await fetch(`http://localhost:${port}/status`)
-      if (res.ok) return proc
-    } catch {}
-    await new Promise(r => setTimeout(r, 100))
-  }
-  throw new Error(`Named server "${name}" failed to start on port ${port}`)
+  await waitForServer(`http://localhost:${port}`, proc)
+  return proc
 }
 
 describe('HALTIJA_NAME registration', () => {

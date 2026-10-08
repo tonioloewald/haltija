@@ -16,14 +16,16 @@
  * discipline is the subject of half these bugs).
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, it, expect, beforeAll, afterAll, setDefaultTimeout } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 const REGISTRY_DIR = isolateTestMachineState()
+// Every hook and test here may start a server; Bun's 5s default is below the start deadline.
+setDefaultTimeout(SERVER_START_HOOK_MS)
 const REPO_ROOT = join(import.meta.dir, '..')
 
 const spawned: Subprocess[] = []
@@ -49,14 +51,8 @@ async function startServer(port: number, opts: { cwd?: string; name?: string } =
   })
   spawned.push(proc)
 
-  for (let i = 0; i < 40; i++) {
-    try {
-      const res = await fetch(`http://localhost:${port}/status`)
-      if (res.ok) return proc
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100))
-  }
-  throw new Error(`server on ${port} did not start`)
+  await waitForServer(`http://localhost:${port}`, proc)
+  return proc
 }
 
 /** Connect a fake widget, exactly as the real one announces itself. */

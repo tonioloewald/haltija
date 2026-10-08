@@ -10,7 +10,7 @@ import { spawn, type Subprocess } from 'bun'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 // Spawned servers register themselves in the instance registry. Point them at a
 // throwaway dir: otherwise a transient test server lands in the developer's real
@@ -42,37 +42,9 @@ beforeAll(async () => {
     stderr: 'pipe',
   })
   
-  // Wait for both servers to be ready
-  let httpReady = false
-  let httpsReady = false
-  
-  for (let i = 0; i < 30 && (!httpReady || !httpsReady); i++) {
-    try {
-      if (!httpReady) {
-        const res = await fetch(`${HTTP_URL}/status`)
-        if (res.ok) httpReady = true
-      }
-    } catch {}
-    
-    try {
-      if (!httpsReady) {
-        const res = await fetch(`${HTTPS_URL}/status`, {
-          // @ts-ignore - Bun supports this
-          tls: { rejectUnauthorized: false }
-        })
-        if (res.ok) httpsReady = true
-      }
-    } catch {}
-    
-    if (!httpReady || !httpsReady) {
-      await new Promise(r => setTimeout(r, 200))
-    }
-  }
-  
-  if (!httpReady || !httpsReady) {
-    throw new Error(`Servers failed to start: HTTP=${httpReady}, HTTPS=${httpsReady}`)
-  }
-}, 15000)
+  await waitForServer(HTTP_URL, serverProcess)
+  await waitForServer(HTTPS_URL, serverProcess)
+}, SERVER_START_HOOK_MS)
 
 afterAll(() => {
   serverProcess?.kill()

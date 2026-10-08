@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { spawn, type Subprocess } from 'bun'
 import { statSync } from 'fs'
 import { join } from 'path'
-import { isolateTestMachineState, uniqueTestPort } from './test-support'
+import { isolateTestMachineState, uniqueTestPort, waitForServer, SERVER_START_HOOK_MS } from './test-support'
 
 const dir = isolateTestMachineState()
 const HTTP_PORT = uniqueTestPort()
@@ -42,14 +42,8 @@ beforeAll(async () => {
     const dec = new TextDecoder()
     for await (const chunk of proc!.stdout as ReadableStream<Uint8Array>) banner += dec.decode(chunk)
   })()
-  for (let i = 0; i < 50 && !status; i++) {
-    try {
-      const res = await fetch(`http://localhost:${HTTP_PORT}/status`)
-      if (res.ok) status = await res.json()
-    } catch {}
-    if (!status) await Bun.sleep(200)
-  }
-}, 20000)
+  status = await waitForServer(`http://localhost:${HTTP_PORT}`, proc)
+}, SERVER_START_HOOK_MS)
 
 afterAll(async () => {
   proc?.kill()
