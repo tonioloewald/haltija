@@ -61,9 +61,9 @@ Two first-party ways to run (plus embedding, below):
     (Chromium — the same engine the Haltija desktop app uses). Electron is fetched via
     `npx` if not already present; **no `playwright` needed.** This is the default CI path.
   - `haltija --headless` drives **Playwright Chromium**, which requires the `playwright`
-    package (`npm i playwright && npx playwright install chromium`). Reach for it when you
-    want multi-engine coverage (Firefox/WebKit) or a lighter single-engine run — not just
-    because it says "for CI". `--private` is an *isolation* modifier (ephemeral port), and
+    package (`npm i playwright && npx playwright install chromium`). It is Chromium only,
+    with no engine flag; for Firefox/WebKit launch Playwright yourself (see
+    docs/TEST-IN-BROWSER.md). `--private` is an *isolation* modifier (ephemeral port), and
     pairs with either engine: `--private --app` (Electron) or `--private --headless`
     (Playwright). See the CI guide below.
 

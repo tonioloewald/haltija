@@ -119,7 +119,7 @@ Choosing a CI engine ${dim('(both need one external browser, but a DIFFERENT one
   ${bold('Playwright')} Chromium — needs the 'playwright' package:
     npm i playwright && npx playwright install chromium
     haltija --headless             # single-engine; or --private --headless for isolation
-    ${dim("Pick this for MULTI-ENGINE coverage (Firefox/WebKit) — not just because it says \"CI\".")}
+    ${dim("Chromium only. For Firefox/WebKit, launch Playwright yourself: docs/TEST-IN-BROWSER.md.")}
 
 Examples:
   haltija                          # Desktop app (or server fallback)

@@ -55,12 +55,70 @@
  * how it earned this. So the point is scrolled into view first and the coordinate re-based, rather
  * than making every caller remember.
  */
-/** How this talks to a browser. Structural, so any haltija client satisfies it. */
+/**
+ * What `bridge.eval` may resolve to. Getting this wrong was the first outside adopter's first
+ * debugging cycle (tosijs-editor, virta #2415): the type was `Promise<any>`, the natural guess is a
+ * REST-style wrapper, and a wrapper made every probe fail while the probe itself ran perfectly.
+ *
+ * - the VALUE the code evaluated to (a returned Promise already resolved) — the normal case;
+ * - or `{ data: value }`, which is what haltija's own `/eval` answers;
+ * - or `{ success: false, error? }` when the code threw in the page.
+ *
+ * Nothing else. In particular NOT `{ success: true, value }` or `{ result }`.
+ */
+export type BridgeEvalResult = unknown | { data: unknown } | { success: false; error?: string }
+
+/** What `click` / `type` / `press` may resolve to: anything, or `{ success: false }` to fail. */
+export type BridgeActionResult = unknown | { success: false; error?: string }
+
+/**
+ * How this talks to a browser: four methods. Structural, so any haltija client satisfies it, and so
+ * does anything else that can run a string of JavaScript in a page — see `playwrightBridge` for
+ * Firefox and WebKit.
+ *
+ * A method may also reject; the rejection reaches the test unchanged.
+ */
 export interface BrowserBridge {
-  eval(code: string): Promise<any>
-  click(selector: string, options?: any): Promise<any>
-  type(selector: string, text: string): Promise<any>
-  press(key: string, modifiers?: any): Promise<any>
+  /** Run `code` (an expression, possibly an async IIFE) in the page. See `BridgeEvalResult`. */
+  eval(code: string): Promise<BridgeEvalResult>
+  click(selector: string, options?: any): Promise<BridgeActionResult>
+  type(selector: string, text: string): Promise<BridgeActionResult>
+  press(key: string, modifiers?: any): Promise<BridgeActionResult>
+}
+
+/** The part of a Playwright `Page` that `playwrightBridge` uses. Structural: no import needed. */
+export interface PlaywrightPageLike {
+  evaluate(expression: string): Promise<unknown>
+  locator(selector: string): {
+    click(): Promise<unknown>
+    pressSequentially(text: string): Promise<unknown>
+  }
+  keyboard: { press(key: string): Promise<unknown> }
+}
+
+/**
+ * A bridge over a Playwright page, for the engines haltija does not launch itself (virta #3088).
+ *
+ * `haltija --headless` is Chromium only, and for some questions Chromium is the engine that proves
+ * nothing: tosijs-editor needed WebKit's text shaping, where a Chromium run is all zeros by
+ * construction. They wrote this adapter by hand; three more adopters were about to.
+ *
+ *     const browser = await webkit.launch()
+ *     const page = createBrowserPage(playwrightBridge(await browser.newPage()))
+ *
+ * No haltija server or widget is involved on this path, and that has consequences worth knowing:
+ * `click` and `type` are Playwright's (real input, Playwright's actionability rules), not haltija's
+ * synthetic sequences, and selectors are Playwright's, so haltija's `:text()` extensions do not
+ * apply (Playwright has its own `:text()`). `read`, `clickAt` and `dragFrom` behave the same on
+ * every bridge, because they are plain JavaScript evaluated in the page.
+ */
+export function playwrightBridge(page: PlaywrightPageLike): BrowserBridge {
+  return {
+    eval: (code) => page.evaluate(code),
+    click: (selector) => page.locator(selector).click(),
+    type: (selector, text) => page.locator(selector).pressSequentially(text),
+    press: (key) => page.keyboard.press(key),
+  }
 }
 
 /**
@@ -165,7 +223,17 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
       if (!out || typeof out !== 'object') {
         throw new BrowserProbeError('probe returned no result — is a browser connected?', probe)
       }
-      if (!out.ok) throw new BrowserProbeError(out.error || 'probe threw', probe)
+      // The probe always answers `{ ok, … }`. Anything else means the BRIDGE reshaped the reply:
+      // the probe ran fine, and blaming it ("probe threw", with no message) sent the first outside
+      // adopter looking for a bug in a correct probe (#2415).
+      if (!('ok' in out)) {
+        throw new BrowserProbeError(
+          `bridge.eval returned an object without the probe's { ok } envelope (keys: ${Object.keys(out).join(', ') || 'none'}). ` +
+            'It must return the VALUE the code evaluated to, optionally as { data: value }, not a wrapper of its own.',
+          probe,
+        )
+      }
+      if (!out.ok) throw new BrowserProbeError(out.error || 'probe threw, with no message', probe)
       return out.value
     },
     // Same envelope check as eval. `BrowserBridge` is structural, and a raw-REST bridge reports a

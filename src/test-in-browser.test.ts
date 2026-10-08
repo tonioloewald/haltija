@@ -45,3 +45,35 @@ describe('selector actions honour the { success: false } envelope', () => {
     await ok.press('Enter')
   })
 })
+
+describe("bridge.eval's return contract (#2415)", () => {
+  const bridgeReturning = (reply: (code: string) => unknown): BrowserBridge => ({ ...accepting, eval: async (code) => reply(code) })
+  // What a correct bridge hands back for the probe wrapper `read()` sends.
+  const envelope = { ok: true, value: 42 }
+
+  it('accepts the raw value', async () => {
+    expect(await createBrowserPage(bridgeReturning(() => envelope)).read(() => 42)).toBe(42)
+  })
+
+  it('accepts { data: value }, the shape of haltija\'s own /eval', async () => {
+    expect(await createBrowserPage(bridgeReturning(() => ({ success: true, data: envelope }))).read(() => 42)).toBe(42)
+  })
+
+  it('names the bridge, not the probe, when the reply is wrapped some other way', async () => {
+    const wrapped = createBrowserPage(bridgeReturning(() => ({ success: true, value: envelope, result: envelope })))
+    const err = await wrapped.read(() => 42).catch((e) => e)
+    expect(err).toBeInstanceOf(BrowserProbeError)
+    expect(err.message).toContain('bridge.eval returned an object without')
+    expect(err.message).toContain('keys: success, value, result')
+    expect(err.message).not.toContain('probe threw')
+  })
+
+  it('still reports a probe that really threw, with its message', async () => {
+    const threw = createBrowserPage(bridgeReturning(() => ({ ok: false, error: 'boom' })))
+    await expect(threw.read(() => 42)).rejects.toThrow('boom')
+  })
+
+  it('still reports a reply that is not an object as no result', async () => {
+    await expect(createBrowserPage(bridgeReturning(() => undefined)).read(() => 42)).rejects.toThrow('no result')
+  })
+})

@@ -522,6 +522,7 @@ export type { DevChannelTest, TestRunResult, SuiteRunResult }
 // body-crossing proposal had to apologise for.
 export {
   createBrowserPage,
+  playwrightBridge,
   serializeProbe,
   BrowserProbeError,
   assertBrowserTierRan,
@@ -530,4 +531,7 @@ export {
   resetBrowserTestCount,
   type BrowserPage,
   type BrowserBridge,
+  type BridgeEvalResult,
+  type BridgeActionResult,
+  type PlaywrightPageLike,
 } from './test-in-browser'

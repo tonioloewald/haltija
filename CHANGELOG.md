@@ -21,7 +21,21 @@
   - A surface version haltija doesn't read produces a warning.
   - The tier is no longer marked experimental.
 
+- **`playwrightBridge(page)`** in `haltija/test`: runs `testInBrowser` probes in Firefox and WebKit
+  through a Playwright page you launch (virta #3088). Tested in all three engines. New
+  `docs/TEST-IN-BROWSER.md` covers it, the bridge contract, and which engine each route reaches.
+
 ### Fixed
+
+- **A bridge that wraps its `eval` reply is now named as the problem** (virta #2415).
+  `BrowserBridge.eval` was typed `Promise<any>` with no stated contract, and a bridge returning
+  `{ success: true, value }` made every `read()` fail with a bare "probe threw" although the probe
+  had run. The return shape is now typed and documented, and the error says the bridge returned no
+  `{ ok }` envelope and lists the keys it did return.
+
+- **The docs no longer say `--headless` gives Firefox/WebKit coverage.** It launches Chromium and
+  has no engine flag. `--help`, the CI guide, the skill and `/docs` all said to pick it for
+  multi-engine coverage.
 
 - **`hj doctor` checks visibility on the tab commands actually go to**, not across all tabs. A
   hidden target used to pass with a note as long as some other tab was visible, while every

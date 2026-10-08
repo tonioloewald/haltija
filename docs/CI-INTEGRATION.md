@@ -104,11 +104,11 @@ picking by the words "for CI" alone leads people to the wrong one:
 | --- | --- | --- | --- |
 | The default CI path | `--ci` | **Electron** (Chromium) | Electron (auto-fetched via `npx`) — **no Playwright** |
 | Isolated CI instance, own ephemeral port | `--private --app` | **Electron** (Chromium) | Electron (as above) |
-| Multi-engine coverage (Firefox/WebKit) or a lighter single-engine run | `--headless` | **Playwright** Chromium | the `playwright` package (`npm i playwright && npx playwright install`) |
+| A lighter single-engine run | `--headless` | **Playwright** Chromium (Chromium only) | the `playwright` package (`npm i playwright && npx playwright install`) |
 
 Neither engine is bundled in the npm package, so *something* is downloaded either way — the choice
-is **Electron vs. Playwright**, not "deps vs. no deps". The one genuine reason to reach for
-`--headless`/Playwright is engines Electron can't give you (Firefox, WebKit). For a straight
+is **Electron vs. Playwright**, not "deps vs. no deps". Both are Chromium: `--headless` does
+not give you Firefox or WebKit (see Option 3). For a straight
 Chromium CI lane, `--ci` (Electron) needs no separate `playwright` install. `--private` is an
 *isolation* modifier — it pairs with either engine (`--private --app` = Electron, `--private
 --headless` = Playwright).
@@ -133,7 +133,7 @@ xvfb-run --auto-servernum bunx haltija@latest --app &
 
 Same as `--ci` but doesn't wait for ready state. You'll need to poll `/status` yourself.
 
-### Option 3: Playwright headless (multi-engine)
+### Option 3: Playwright headless (Chromium)
 
 ```bash
 npm install playwright && npx playwright install chromium   # required — not bundled
@@ -142,9 +142,13 @@ bunx haltija@latest --headless &
 
 Uses **Playwright's** Chromium instead of Electron, so it needs the `playwright` package installed
 (the command above; without it, `--headless` exits with a "Playwright not installed" error that
-points you back to `--ci`). Choose this when you want a lighter single-engine run or, the real
-reason, **multi-engine coverage** — Playwright can also drive Firefox and WebKit, which Electron
-cannot. For a plain Chromium lane with no extra install, prefer Option 1 (`--ci`).
+points you back to `--ci`). Choose this when you want a lighter run than Electron. For a plain
+Chromium lane with no extra install, prefer Option 1 (`--ci`).
+
+**`--headless` is Chromium only; it has no engine flag.** Earlier versions of this page said to pick
+it for Firefox/WebKit coverage, which it has never provided. For those engines, launch Playwright
+yourself: host-side tests reach the page through `playwrightBridge`
+([TEST-IN-BROWSER.md](TEST-IN-BROWSER.md)), and no haltija server is involved.
 
 ### Option 4: Server-only mode (lighter weight)
 
