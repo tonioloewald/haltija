@@ -805,6 +805,10 @@ Four GitHub Actions workflows run on push/PR to main:
   `TODO.md`) and `docs/ROADMAP-HISTORY.md` (finished phases). `ROADMAP.md` keeps the
   longer-range plan and the ideas parking lot, and `docs/ROADMAP.md` is the vision doc.
 
+- Not applicable: "Prettier never touches markdown" (virta #2556) — haltija has no Prettier (no
+  config, no dependency, no script), so the markdown `requirePragma` override has no config to live in.
+  If Prettier is ever added, add that override with it.
+
 ## Related Docs
 
 - `COMPONENT-PATTERNS.md` — Required reading before editing `component.ts`, `task-board.ts`, or any custom element. Covers stable-by-default rendering, shadow DOM encapsulation, animation gotchas (transitions need start points; can't animate `left`↔`right`), drag handling, console interception, and WebSocket reconnection with kill flags.
