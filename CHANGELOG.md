@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.13.0-beta.3 (unreleased)
+## 1.13.0-beta.3 (2026-10-08)
 
 ### Added
 
