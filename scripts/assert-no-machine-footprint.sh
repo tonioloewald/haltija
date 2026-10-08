@@ -32,5 +32,17 @@ for d in screenshots schematics videos; do
   fi
 done
 
+# Processes are footprint too. For a week every run of the suite left two servers behind with
+# ppid 1 (the launcher did not stop its server child, and two tests killed only the launcher).
+# They were isolated, so every file check above stayed green while 34 of them accumulated.
+sleep 2 # a server that was just told to stop gets a moment to finish
+LEFT="$(pgrep -fl 'dist/server\.js|bin/server\.ts' || true)"
+if [ -n "$LEFT" ]; then
+  echo "FAIL: the test suite left haltija server processes running:"
+  echo "$LEFT" | sed 's/^/  /'
+  echo "A test stopped a launcher but not the server it started, or never stopped its server."
+  fail=1
+fi
+
 [ "$fail" = 0 ] && echo "No machine-scope footprint."
 exit "$fail"

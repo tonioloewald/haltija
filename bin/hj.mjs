@@ -79,7 +79,7 @@ function describeOrigins(windows) {
     return { line: yellow(msg), problem: msg }
   }
   const list = declared.origins.join(', ')
-  const routing = routeByDeclaredOrigin(declared.origins, windows || [], null)
+  const routing = routeByDeclaredOrigin(declared.origins, windows || [], (windows || []).find((w) => w.focused)?.id ?? null)
   if (routing.kind === 'matched') {
     return { line: `${list} ${dim(`(${declared.source}) → window ${routing.windowId}`)}`, problem: null }
   }
@@ -370,10 +370,21 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     // Reads `active` via the shared predicate: /status and /windows disagreed on polarity, and
     // keying on one endpoint's field name is what made this diverge from the origin router.
     const hidden = tabs.filter((w) => !isVisible(w))
-    // The tab untargeted commands go to: the focused one, as the server routes them. Judging
-    // visibility over ALL tabs passed a lane whose target was hidden as long as some OTHER tab was
-    // visible — every command still went to the hidden one.
-    const target = tabs.find((w) => w.focused) ?? tabs.find((w) => isVisible(w)) ?? tabs[0] ?? null
+    // The tab commands go to, resolved the way a command resolves it. Judging visibility over ALL
+    // tabs passed a lane whose target was hidden as long as some OTHER tab was visible — every
+    // command still went to the hidden one.
+    //
+    // A project with declared origins has its commands PINNED to the matching tab, wherever focus
+    // is. The first version of this looked only at focus, so for exactly the projects that
+    // declared their tabs it described another project's tab: a false pass when ours was hidden
+    // behind their visible one, a false failure the other way round (1.13.0-beta.3 review).
+    const focusedTab = tabs.find((w) => w.focused) ?? null
+    const declaredOrigins = findProjectOrigins(process.cwd(), process.env)
+    const routed = declaredOrigins?.origins.length
+      ? routeByDeclaredOrigin(declaredOrigins.origins, tabs, focusedTab?.id ?? null)
+      : null
+    const pinned = routed?.kind === 'matched' ? tabs.find((w) => w.id === routed.windowId) ?? null : null
+    const target = pinned ?? focusedTab ?? tabs.find((w) => isVisible(w)) ?? tabs[0] ?? null
     const targetLabel = target ? `${target.title && target.title !== '(untitled)' ? `"${target.title}" ` : ''}${target.url || target.id}` : ''
     // A tab that reported NEITHER field hasn't told us anything; `isVisible` had to assume. Say so
     // rather than counting the assumption as a passed check.
@@ -425,7 +436,8 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
         // socket that never answers `/eval` (a widget mid-teardown, or a test harness holding an
         // open WebSocket) made `hj doctor` block for the server's full browser timeout.
         const cancel = AbortSignal.timeout(3000)
-        const r = await fetch(`http://localhost:${port}/eval`, {
+        // Asked of the TARGET tab. Untargeted, it measured whichever tab had focus.
+        const r = await fetch(`http://localhost:${port}/eval${target ? `?window=${encodeURIComponent(target.id)}` : ''}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Haltija-Token': token } : {}) },
           body: JSON.stringify({ code: probe }),

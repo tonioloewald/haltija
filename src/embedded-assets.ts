@@ -1332,10 +1332,11 @@ Works with standard forms and most framework components (React, Vue, etc).
 
 Returns a map of the page's affordances. Two tiers, and the difference matters:
 
-**Native (\`source: "tosi-agent"\`) — EXPERIMENTAL.** haltija detects this tier by duck-typing one
-method and consumes a shape tosijs has not committed to (no version/capability marker yet — see
-tosijs#23). When the shape isn't what haltija expects it returns a \`warning\` and \`agentSurfaceVersion\`
-rather than passing a blank map off as a success, but treat the tier as best-effort. When the page
+**Native (\`source: "tosi-agent"\`).** haltija reads the contract tosijs ships: the surface's
+\`version\`, \`exposure\` and \`writable\`. A read-only surface is reported as read-only, an empty
+\`'closed'\` surface comes with a hint for the app's author, and a surface version haltija does not
+read produces a \`warning\` and \`agentSurfaceVersion\` rather than a blank map passed off as a
+success. When the page
 exposes an agent surface at
 \`globalThis.tosiAgent\` (a tosijs app calling \`enableAgentInterface()\`), the map is the app's OWN
 wiring records. That carries what the DOM cannot: which state path each control is bound to and in
@@ -4922,7 +4923,7 @@ export const COMPONENT_JS: string = `(() => {
         const surfaceMajor = surfaceVersion && typeof surfaceVersion === "object" && typeof surfaceVersion.surface === "string" ? surfaceVersion.surface.split(".")[0] : null;
         const versionWarning = surfaceMajor !== null && surfaceMajor !== "1" ? \`\${globalName} reports agent surface \${surfaceVersion.surface}; this haltija reads surface \` + \`1.x, so fields may be missing or misread. Update haltija.\` : undefined;
         const warning = [shapeWarning, versionWarning].filter(Boolean).join(" ") || undefined;
-        const closedHint = d?.exposure === "closed" && Array.isArray(wiring) && wiring.length === 0 ? \`The app exposes no wiring: exposure is 'closed', the tosijs default. Its author enables \` + \`it with expose: { roots } (add write: true to allow write()). Use the DOM map meanwhile: \` + \`hj map on a page without \${globalName}.\` : undefined;
+        const closedHint = d?.exposure === "closed" && Array.isArray(wiring) && wiring.length === 0 ? \`The app exposes no wiring: exposure is 'closed', the tosijs default. Its author enables \` + \`it with expose: { roots } (add write: true to allow write()). Until then, find controls \` + \`with hj tree and drive them with hj click / hj type.\` : undefined;
         const actions = Array.isArray(d?.actions) ? d.actions : undefined;
         const writeAdvice = d?.writable === false ? \`This surface is READ-ONLY (describe().writable is false): \${globalName}.write() will be \` + \`refused, so act through actions or realistic input instead.\` : d?.writable === true ? \`\${globalName}.write(path, value) for a ⟷ two-way binding.\` : \`\${globalName}.write(path, value) for a ⟷ two-way binding (writability not reported \` + \`by this surface; it may refuse).\`;
         const callAdvice = actions && actions.length === 0 ? \`It exposes no actions.\` : \`\${globalName}.call(actionPath) for an action\${actions ? \` (one of: \${actions.slice(0, 8).join(", ")}\${actions.length > 8 ? ", …" : ""})\` : ""}.\`;
@@ -4936,7 +4937,7 @@ export const COMPONENT_JS: string = `(() => {
           ...closedHint ? { hint: closedHint } : {},
           ...description,
           act: {
-            note: \`Act through the paths, not synthesized input. \${writeAdvice} \${callAdvice} \` + \`Run them with: hj eval "\${globalName}.call('some.action')"\`,
+            note: \`Act through the paths, not synthesized input. \${writeAdvice} \${callAdvice}\` + (actions && actions.length === 0 ? "" : \` Run one with: hj eval "\${globalName}.call('some.action')"\`),
             legend: {
               "⟷": "two-way binding — user-writable; writing the path updates the UI and app state",
               "⟵": "bound to DOM — display only; it reflects the path, writing the DOM will not stick",

@@ -1662,10 +1662,11 @@ export const map = endpoint({
   summary: 'Affordance map — what can be interacted with, and what it is wired to',
   description: `Returns a map of the page's affordances. Two tiers, and the difference matters:
 
-**Native (\`source: "tosi-agent"\`) — EXPERIMENTAL.** haltija detects this tier by duck-typing one
-method and consumes a shape tosijs has not committed to (no version/capability marker yet — see
-tosijs#23). When the shape isn't what haltija expects it returns a \`warning\` and \`agentSurfaceVersion\`
-rather than passing a blank map off as a success, but treat the tier as best-effort. When the page
+**Native (\`source: "tosi-agent"\`).** haltija reads the contract tosijs ships: the surface's
+\`version\`, \`exposure\` and \`writable\`. A read-only surface is reported as read-only, an empty
+\`'closed'\` surface comes with a hint for the app's author, and a surface version haltija does not
+read produces a \`warning\` and \`agentSurfaceVersion\` rather than a blank map passed off as a
+success. When the page
 exposes an agent surface at
 \`globalThis.tosiAgent\` (a tosijs app calling \`enableAgentInterface()\`), the map is the app's OWN
 wiring records. That carries what the DOM cannot: which state path each control is bound to and in

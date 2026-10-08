@@ -1906,8 +1906,8 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
       const closedHint =
         d?.exposure === 'closed' && Array.isArray(wiring) && wiring.length === 0
           ? `The app exposes no wiring: exposure is 'closed', the tosijs default. Its author enables ` +
-            `it with expose: { roots } (add write: true to allow write()). Use the DOM map meanwhile: ` +
-            `hj map on a page without ${globalName}.`
+            `it with expose: { roots } (add write: true to allow write()). Until then, find controls ` +
+            `with hj tree and drive them with hj click / hj type.`
           : undefined
       const actions: string[] | undefined = Array.isArray(d?.actions) ? d.actions : undefined
       const writeAdvice =
@@ -1937,8 +1937,8 @@ function buildAffordanceMap(opts: { global?: string; maxNodes?: number } = {}): 
         ...description,
         act: {
           note:
-            `Act through the paths, not synthesized input. ${writeAdvice} ${callAdvice} ` +
-            `Run them with: hj eval "${globalName}.call('some.action')"`,
+            `Act through the paths, not synthesized input. ${writeAdvice} ${callAdvice}` +
+            (actions && actions.length === 0 ? '' : ` Run one with: hj eval "${globalName}.call('some.action')"`),
           legend: {
             '⟷': 'two-way binding — user-writable; writing the path updates the UI and app state',
             '⟵': 'bound to DOM — display only; it reflects the path, writing the DOM will not stick',

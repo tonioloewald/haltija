@@ -5433,7 +5433,7 @@ function httpsLoaderHint(): string {
               blocks http://localhost from https, so they need the HTTPS transport.`
   }
   return `              On https pages load https://localhost:${HTTPS_PORT}/component.js?autoInject=true&serverUrl=wss://localhost:${HTTPS_PORT}/ws/browser
-              (this server's HTTPS port is ephemeral; pass --https-port for a stable one).`
+              (this server's HTTPS port is ephemeral; pass --https-port <a free port> for a stable one).`
 }
 
 console.log(`

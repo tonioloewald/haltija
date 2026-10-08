@@ -2608,7 +2608,7 @@ function describeOrigins(windows) {
     return { line: yellow2(msg), problem: msg };
   }
   const list = declared.origins.join(", ");
-  const routing = routeByDeclaredOrigin(declared.origins, windows || [], null);
+  const routing = routeByDeclaredOrigin(declared.origins, windows || [], (windows || []).find((w) => w.focused)?.id ?? null);
   if (routing.kind === "matched") {
     return { line: `${list} ${dim3(`(${declared.source}) → window ${routing.windowId}`)}`, problem: null };
   }
@@ -2792,7 +2792,11 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       problems.push(`the server on port ${port} is up but has NO connected browser tab — nothing to drive. ` + `Open a tab in the desktop app, or inject the widget into a page. ` + `("server is up" is not "server is drivable" — that's what this check exists for.)`);
     }
     const hidden = tabs.filter((w) => !isVisible2(w));
-    const target = tabs.find((w) => w.focused) ?? tabs.find((w) => isVisible2(w)) ?? tabs[0] ?? null;
+    const focusedTab = tabs.find((w) => w.focused) ?? null;
+    const declaredOrigins = findProjectOrigins(process.cwd(), process.env);
+    const routed = declaredOrigins?.origins.length ? routeByDeclaredOrigin(declaredOrigins.origins, tabs, focusedTab?.id ?? null) : null;
+    const pinned = routed?.kind === "matched" ? tabs.find((w) => w.id === routed.windowId) ?? null : null;
+    const target = pinned ?? focusedTab ?? tabs.find((w) => isVisible2(w)) ?? tabs[0] ?? null;
     const targetLabel = target ? `${target.title && target.title !== "(untitled)" ? `"${target.title}" ` : ""}${target.url || target.id}` : "";
     const silent = tabs.filter((w) => !visibilityKnown(w));
     if (ready && silent.length) {
@@ -2813,7 +2817,7 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       let raf = null;
       try {
         const cancel = AbortSignal.timeout(3000);
-        const r = await fetch(`http://localhost:${port}/eval`, {
+        const r = await fetch(`http://localhost:${port}/eval${target ? `?window=${encodeURIComponent(target.id)}` : ""}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...token ? { "X-Haltija-Token": token } : {} },
           body: JSON.stringify({ code: probe }),

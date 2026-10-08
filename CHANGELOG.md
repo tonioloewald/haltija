@@ -4,8 +4,9 @@
 
 ### Added
 
-- **`hj doctor` prints an `observability:` line on every run** (#821, GitHub #50). It says whether
-  the tab that commands go to is visible and painting, and how long ago it last drew a frame. When
+- **`hj doctor` prints an `observability:` line whenever a tab is connected** (#821, GitHub #50). It
+  says whether the tab that commands go to is visible and painting and, for widgets 1.12.6 or
+  newer, how long ago it last drew a frame. When
   it isn't, the line says what that invalidates: geometry, screenshots and anything rAF-driven. A
   backgrounded tab still answers, just wrongly, so this matters even when nothing fails. Also in
   `--json` as `observability`.
@@ -19,7 +20,7 @@
   - An empty `'closed'` surface, the tosijs default, comes with a hint on how the app's author
     enables it.
   - A surface version haltija doesn't read produces a warning.
-  - The tier is no longer marked experimental.
+  - The tier is no longer marked experimental, in the skill or in the `/map` API description.
 
 - **`playwrightBridge(page)`** in `haltija/test`: runs `testInBrowser` probes in Firefox and WebKit
   through a Playwright page you launch (virta #3088). Tested in all three engines. New
@@ -33,13 +34,23 @@
   had run. The return shape is now typed and documented, and the error says the bridge returned no
   `{ ok }` envelope and lists the keys it did return.
 
+  - Type change: `BrowserBridge.eval` now resolves to `unknown` rather than `any`. Bridges you
+    wrote still compile. Code that calls `.eval()` on a `BrowserBridge`-typed value and reads a
+    property off the result needs a cast.
+
+- **`haltija --server` no longer leaves its server running when the launcher is stopped.** The
+  server is a child process, and nothing passed a signal on, so a process manager (or a closed
+  terminal) that stopped the launcher left the server alive and holding its ports. SIGTERM, SIGINT
+  and SIGHUP now stop both.
+
 - **The docs no longer say `--headless` gives Firefox/WebKit coverage.** It launches Chromium and
-  has no engine flag. `--help`, the CI guide, the skill and `/docs` all said to pick it for
+  has no engine flag. `--help`, the CI guide, the skill and `/llms.txt` all said to pick it for
   multi-engine coverage.
 
 - **`hj doctor` checks visibility on the tab commands actually go to**, not across all tabs. A
   hidden target used to pass with a note as long as some other tab was visible, while every
-  command went to the hidden one.
+  command went to the hidden one. For a project with declared origins that is the tab its
+  commands are pinned to, whichever tab has focus.
 
 - **Freeing a busy HTTPS port is now deliberate.** It used to probe the HTTPS port with plain HTTP,
   which always failed, so the holder was refused as "a server we could not identify". That was the

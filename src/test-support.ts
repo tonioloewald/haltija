@@ -74,16 +74,24 @@ export async function waitForServer(
   let last = 'no answer'
   while (Date.now() < deadline && !exited) {
     try {
-      // @ts-ignore - `tls` is Bun's fetch extension, for the self-signed HTTPS listeners
-      const res = await fetch(`${baseUrl}/status`, { tls: { rejectUnauthorized: false }, ...opts.init })
-      if (res.ok) return await res.json()
+      const res = await fetch(`${baseUrl}/status`, {
+        // @ts-ignore - `tls` is Bun's fetch extension, for the self-signed HTTPS listeners
+        tls: { rejectUnauthorized: false },
+        // A port that accepts and never answers must not outlast the deadline.
+        signal: AbortSignal.timeout(2000),
+        ...opts.init,
+      })
+      // An answer only counts while OUR child is alive. Otherwise it came from something else on
+      // the port — a leftover server from an earlier run — and the test would pass against it.
+      if (res.ok && !exited) return await res.json()
       last = `HTTP ${res.status}`
     } catch (e) {
       last = String((e as Error)?.message || e)
     }
     await Bun.sleep(50)
   }
-  const what = exited ? `exited with code ${proc?.exitCode} before answering` : `did not answer within ${opts.timeoutMs ?? SERVER_START_DEADLINE_MS}ms (${last})`
+  const how = proc?.exitCode !== null && proc?.exitCode !== undefined ? `code ${proc.exitCode}` : `signal ${proc?.signalCode ?? 'unknown'}`
+  const what = exited ? `exited with ${how} before answering` : `did not answer within ${opts.timeoutMs ?? SERVER_START_DEADLINE_MS}ms (${last})`
   // Reading stderr to the end needs the child gone; it is useless to the test now anyway.
   let stderr = ''
   if (proc && proc.stderr && typeof proc.stderr !== 'number') {

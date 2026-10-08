@@ -54,7 +54,9 @@ Options:
   --snapshots-dir <path>  Save snapshots to disk (for CI artifacts)
   --docs-dir <path>       Directory with custom docs (*.md files)
   --port <n>      Set HTTP port (default: 8700)
-  --https-port <n> Set HTTPS port (default: 8701 for the server on 8700, else ephemeral)
+  --https-port <n> Set HTTPS port (default: 8701 for the server on 8700, else ephemeral).
+                  Like --port, naming a port CLAIMS it: a haltija server already holding
+                  it is asked to stop, which ends its HTTP side too. Pick a free port.
   --token <value> Require X-Haltija-Token header on REST and ?token= on WebSocket
                   (default: off; sets HALTIJA_TOKEN)
   --name <foo>    Register this server as <foo> in ~/.haltija/servers/ so
@@ -878,11 +880,30 @@ const startHeadlessBrowser = async (port) => {
       console.error('[tosijs-dev]   Or skip Playwright entirely and use the ELECTRON engine instead:')
       console.error('[tosijs-dev]     haltija --ci                 (Electron, waits for ready, sandbox off)')
       console.error('[tosijs-dev]     haltija --private --app      (Electron + isolated ephemeral instance)')
-      console.error('[tosijs-dev]   Reach for --headless (Playwright) when you need Firefox/WebKit coverage.')
+      console.error('[tosijs-dev]   (--headless is Chromium only. For Firefox/WebKit see docs/TEST-IN-BROWSER.md.)')
     } else {
       console.error('[tosijs-dev] Failed to start headless browser:', err.message)
     }
     process.exit(1)
+  }
+}
+
+/**
+ * The server is a CHILD of this launcher, and it must not outlive it.
+ *
+ * It used to: nothing forwarded a signal on the --server path, so `kill <launcher>` (a process
+ * manager, a test's afterAll, a closed terminal tab) left the server running with ppid 1, still
+ * holding its ports. A shared server has no idle timeout, so it stayed for good. Found when the
+ * HTTPS tests moved to this launcher (#1080) and each run of the suite left two servers behind.
+ *
+ * The 'exit' hook covers every path that ends in process.exit(), including the headless ones.
+ * A signal with no handler ends the process WITHOUT firing 'exit', so the non-headless path
+ * installs handlers; headless already has its own, which close the browser first.
+ */
+const superviseServer = (child) => {
+  process.on('exit', () => { try { child.kill('SIGTERM') } catch {} })
+  if (!headlessMode) {
+    for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => process.exit(0))
   }
 }
 
@@ -901,6 +922,7 @@ const tryBun = () => {
   bun.on('exit', code => {
     process.exit(code || 0)
   })
+  superviseServer(bun)
   
   // Start headless browser after server is ready
   if (headlessMode) {
@@ -940,6 +962,7 @@ const tryNode = () => {
   node.on('exit', code => {
     process.exit(code || 0)
   })
+  superviseServer(node)
   
   // Start headless browser after server is ready
   if (headlessMode) {

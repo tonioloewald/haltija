@@ -3249,14 +3249,14 @@ test.describe('text selectors prefer the element a human could act on', () => {
   })
 })
 
-function runDoctor(): string {
+function runDoctor(extraEnv: Record<string, string> = {}): string {
   // --port pins the target so this never auto-launches anything, and doctor exits non-zero when it
   // finds a problem — which is the point, so the non-zero case must still yield its JSON.
   const port = new URL(SERVER_URL).port
   try {
     return execFileSync('node', [pathJoin(__dirname, '../bin/hj.mjs'), 'doctor', '--json', '--port', port], {
       encoding: 'utf-8',
-      env: { ...process.env, HALTIJA_NO_LAUNCH: '1' },
+      env: { ...process.env, HALTIJA_NO_LAUNCH: '1', ...extraEnv },
     })
   } catch (err: any) {
     if (typeof err?.stdout === 'string' && err.stdout.trim()) return err.stdout
@@ -3386,5 +3386,80 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     expect(JSON.stringify(doc.problems)).toContain('the tab commands go to')
     expect(doc.observability).toMatchObject({ target: hiddenId, visible: false })
     await hiddenPage.close()
+  })
+
+  /**
+   * A project with declared origins has its commands pinned to the matching tab, whatever has
+   * focus. Doctor first looked only at focus, so for those projects it judged someone else's tab,
+   * and was wrong in both directions.
+   */
+  test.describe('with declared origins, the target is the pinned tab, not the focused one (#821)', () => {
+    // "Ours" lives on a real origin the project can declare; the other tab is the usual fixture.
+    const OURS = () => SERVER_URL.replace('localhost', '127.0.0.1')
+    const hide = (p: Page) => p.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true })
+      Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    const windows = async () => (await (await fetch(`${SERVER_URL}/windows`)).json()).windows as any[]
+    const focus = (id: string) => fetch(`${SERVER_URL}/tabs/focus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ window: id }),
+    })
+    async function openOurs(context: any): Promise<{ page: Page; id: string }> {
+      const ours: Page = await context.newPage()
+      await ours.goto(`${OURS()}/`)
+      await ours.addScriptTag({ url: `${SERVER_URL}/component.js` })
+      await ours.evaluate((wsUrl) => {
+        if (document.querySelector('haltija-dev')) return
+        const el = (window as any).DevChannel.elementCreator()()
+        el.setAttribute('server', wsUrl)
+        document.body.appendChild(el)
+      }, WS_URL)
+      for (let i = 0; i < 40; i++) {
+        const mine = (await windows()).find((w) => String(w.url).startsWith(OURS()))
+        if (mine) return { page: ours, id: mine.id }
+        await ours.waitForTimeout(200)
+      }
+      throw new Error('our tab never connected')
+    }
+    const until = async (cond: (ws: any[]) => boolean) => {
+      for (let i = 0; i < 40; i++) { if (cond(await windows())) return; await new Promise((r) => setTimeout(r, 100)) }
+      throw new Error('window state never settled')
+    }
+
+    test('our tab hidden behind a visible focused one FAILS', async ({ page, context }) => {
+      await injectDevChannel(page)
+      const ours = await openOurs(context)
+      await hide(ours.page)
+      await until((ws) => ws.find((w) => w.id === ours.id)?.active === false)
+      const other = (await windows()).find((w) => w.id !== ours.id)
+      await focus(other.id)
+
+      const doc = JSON.parse(runDoctor({ HALTIJA_ORIGINS: OURS() }))
+      expect(doc.observability).toMatchObject({ target: ours.id, visible: false })
+      expect(doc.ok).toBe(false)
+      // The control: without the declaration, commands follow focus, and that tab is fine.
+      expect(JSON.parse(runDoctor()).observability).toMatchObject({ target: other.id, visible: true })
+      await ours.page.close()
+    })
+
+    test('our tab visible while a hidden one has focus PASSES', async ({ page, context }) => {
+      await injectDevChannel(page)
+      const ours = await openOurs(context)
+      const other = (await windows()).find((w) => w.id !== ours.id)
+      await ours.page.bringToFront()
+      await hide(page)
+      await until((ws) => ws.find((w) => w.id === other.id)?.active === false)
+      await focus(other.id)
+
+      const doc = JSON.parse(runDoctor({ HALTIJA_ORIGINS: OURS() }))
+      expect(doc.observability).toMatchObject({ target: ours.id, visible: true, painting: true })
+      expect(JSON.stringify(doc.problems)).not.toContain('the tab commands go to')
+      // The control: following focus, the same world fails.
+      expect(JSON.parse(runDoctor()).observability).toMatchObject({ target: other.id, visible: false })
+      await ours.page.close()
+    })
   })
 })
