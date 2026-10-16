@@ -73,3 +73,14 @@ export function returnedWindow<W extends WindowLike>(
   )
   return candidate ? { window: candidate, confirmed: false } : undefined
 }
+
+/**
+ * The window a `tabs-open` (or a page's `window.open`) just produced, for the runner's
+ * `wait forWindow` step: one not in `known` that is a tab or popup. An iframe is part of a page
+ * that was already there, so a frame injecting its own widget is not the window being waited for
+ * (#2468). It takes commands as soon as it appears, since a window registers on its `connected`
+ * message, so no settle time is needed after this.
+ */
+export function newlyOpenedWindow<W extends WindowLike>(windows: Map<string, W>, known: Set<string>): W | undefined {
+  return Array.from(windows.values()).find((w) => !known.has(w.id) && (w.windowType || 'tab') !== 'iframe')
+}

@@ -23,6 +23,26 @@ export interface DesktopServerEnvOptions {
   portFile?: string
 }
 
+/**
+ * What to tell the user when `buildServerEnv` drops their explicit `DEV_CHANNEL_MODE` for the
+ * public child (#1078). The drop is deliberate (see the transports note below); doing it without a
+ * word is not. Null when there is nothing to say: unset, already `both`, or the internal child,
+ * which is pinned to `http` whatever was asked.
+ */
+export function overriddenModeNotice(
+  base: Record<string, string | undefined>,
+  role: DesktopServerEnvOptions['role'],
+): string | null {
+  const asked = base.DEV_CHANNEL_MODE?.trim()
+  if (role !== 'public' || !asked || asked.toLowerCase() === 'both') return null
+  return (
+    `[haltija] ignoring DEV_CHANNEL_MODE=${asked} for the desktop app's public server: it serves ` +
+    `HTTP and HTTPS ('both'), because it serves other projects' pages too and one project's ` +
+    `transport choice would decide for all of them whether https:// pages can connect (#32). For a ` +
+    `single-transport server of your own, run \`haltija --server\` with that mode instead.`
+  )
+}
+
 export function buildServerEnv(
   base: Record<string, string | undefined>,
   opts: DesktopServerEnvOptions,

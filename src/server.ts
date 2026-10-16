@@ -44,7 +44,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
-import { returnedWindow, clampPageWait, originOf, type PageTarget } from './page-wait'
+import { returnedWindow, newlyOpenedWindow, clampPageWait, originOf, type PageTarget } from './page-wait'
 import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
@@ -3194,22 +3194,15 @@ Run 'hj --help' for all commands.`
               const waitStart = Date.now()
               let newWindowId: string | null = null
               while (Date.now() - waitStart < stepTimeout) {
-                for (const id of windows.keys()) {
-                  if (!existingWindowIds.has(id)) {
-                    newWindowId = id
-                    break
-                  }
-                }
+                newWindowId = newlyOpenedWindow(windows, existingWindowIds)?.id ?? null
                 if (newWindowId) break
-                await new Promise(r => setTimeout(r, 100))
+                await new Promise(r => setTimeout(r, 25))
               }
               if (!newWindowId) {
                 stepPassed = false
                 error = 'Timeout waiting for new window to connect'
                 context = { existingWindows: Array.from(existingWindowIds) }
               } else {
-                // Give widget time to fully initialize
-                await new Promise(r => setTimeout(r, 300))
                 context = { newWindowId }
               }
             } else if (step.url) {

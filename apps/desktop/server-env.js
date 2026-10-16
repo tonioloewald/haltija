@@ -40,9 +40,16 @@ var __export = (target, all) => {
 // src/desktop-server-env.ts
 var exports_desktop_server_env = {};
 __export(exports_desktop_server_env, {
-  buildServerEnv: () => buildServerEnv
+  buildServerEnv: () => buildServerEnv,
+  overriddenModeNotice: () => overriddenModeNotice
 });
 module.exports = __toCommonJS(exports_desktop_server_env);
+function overriddenModeNotice(base, role) {
+  const asked = base.DEV_CHANNEL_MODE?.trim();
+  if (role !== "public" || !asked || asked.toLowerCase() === "both")
+    return null;
+  return `[haltija] ignoring DEV_CHANNEL_MODE=${asked} for the desktop app's public server: it serves ` + `HTTP and HTTPS ('both'), because it serves other projects' pages too and one project's ` + `transport choice would decide for all of them whether https:// pages can connect (#32). For a ` + `single-transport server of your own, run \`haltija --server\` with that mode instead.`;
+}
 function buildServerEnv(base, opts) {
   const port = String(opts.port);
   const env = {};

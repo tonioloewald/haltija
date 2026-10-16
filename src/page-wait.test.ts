@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { clampPageWait, MAX_PAGE_WAIT_MS, returnedWindow, type PageTarget, type WindowLike } from './page-wait'
+import { clampPageWait, MAX_PAGE_WAIT_MS, newlyOpenedWindow, returnedWindow, type PageTarget, type WindowLike } from './page-wait'
 
 const win = (id: string, browserId: string, url: string, windowType = 'tab'): WindowLike => ({ id, browserId, url, windowType })
 const map = (...ws: WindowLike[]) => new Map(ws.map((w) => [w.id, w]))
@@ -43,5 +43,19 @@ describe('clampPageWait — caller-supplied, reachable by any page (#44)', () =>
     expect(clampPageWait(1e12)).toBe(MAX_PAGE_WAIT_MS)
     expect(clampPageWait(-5)).toBe(0)
     expect(clampPageWait('nonsense')).toBe(10_000)
+  })
+})
+
+describe('newlyOpenedWindow — what wait forWindow waits for (#2468)', () => {
+  const known = new Set(['w1'])
+  it('a new tab or popup counts', () => {
+    expect(newlyOpenedWindow(map(win('w1', 'b1', 'a'), win('w2', 'b2', 'b')), known)?.id).toBe('w2')
+    expect(newlyOpenedWindow(map(win('w1', 'b1', 'a'), win('p1', 'b3', 'c', 'popup')), known)?.id).toBe('p1')
+  })
+  it('a new iframe does not: it is part of a page that was already there', () => {
+    expect(newlyOpenedWindow(map(win('w1', 'b1', 'a'), win('f1', 'b4', 'd', 'iframe')), known)).toBeUndefined()
+  })
+  it('a widget too old to report its type counts as a tab', () => {
+    expect(newlyOpenedWindow(map({ id: 'w3', browserId: null, url: 'e' }), known)?.id).toBe('w3')
   })
 })

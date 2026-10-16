@@ -41,6 +41,16 @@
   critical, 3 high), raising the SDK floor to `^1.32.1`, and docs-drift now type-checks `apps/mcp` so
   it cannot rot unnoticed again.
 
+- **The test runner's `wait` with `forWindow: true` no longer stops at an iframe, and returns as
+  soon as the window appears** (virta #2468). It accepted any new window, including a frame
+  injecting its own widget, and then slept a fixed 300 ms. A window registers on its `connected`
+  message, so it already takes commands at that point. The step now waits for a new tab or popup.
+
+- **The desktop app says when it ignores your `DEV_CHANNEL_MODE`** (virta #1078). Its public
+  server always serves both transports, because it serves other projects' pages too. That is
+  unchanged, but an explicit `http` or `https` used to be dropped without a word. It now prints one
+  line naming what was ignored and why.
+
 ## 1.13.0-beta.3 (2026-10-08)
 
 ### Added

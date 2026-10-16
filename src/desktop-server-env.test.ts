@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { buildServerEnv } from './desktop-server-env'
+import { buildServerEnv, overriddenModeNotice } from './desktop-server-env'
 
 describe('buildServerEnv — shared (non-private) children', () => {
   it('passes the port via the env the SERVER ACTUALLY READS', () => {
@@ -103,5 +103,15 @@ describe('transport mode per role (#32a)', () => {
     // project the desktop app serves.
     const env = buildServerEnv({ DEV_CHANNEL_MODE: 'http' }, { port: 8700, role: 'public' })
     expect(env.DEV_CHANNEL_MODE).toBeUndefined()
+  })
+
+  // Dropped deliberately, but not silently (#1078).
+  it('says so when it drops an explicit mode, and only then', () => {
+    const notice = overriddenModeNotice({ DEV_CHANNEL_MODE: 'http' }, 'public')
+    expect(notice).toContain('ignoring DEV_CHANNEL_MODE=http')
+    expect(notice).toContain('haltija --server')
+    expect(overriddenModeNotice({}, 'public')).toBeNull()
+    expect(overriddenModeNotice({ DEV_CHANNEL_MODE: 'both' }, 'public')).toBeNull()
+    expect(overriddenModeNotice({ DEV_CHANNEL_MODE: 'https' }, 'internal')).toBeNull()
   })
 })

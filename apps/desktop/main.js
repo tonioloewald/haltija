@@ -24,7 +24,7 @@ const os = require('os')
 const { spawn } = require('child_process')
 const http = require('http')
 const { attachNetwork, detachNetwork, getNetworkLog, getNetworkStats, clearNetwork, isMonitoring } = require('./cdp-network.js')
-const { buildServerEnv } = require('./server-env.js')
+const { buildServerEnv, overriddenModeNotice } = require('./server-env.js')
 const { DEFAULT_HTTP_PORT, DEFAULT_INTERNAL_PORT, internalPortConflict } = require('./ports.js')
 // The wire protocol, generated from src/machine-channel.ts — NOT re-declared here. main.js used to
 // hand-roll the prefixes, the line split and the parse; that copy is where the __NEED_WINDOW__
@@ -1384,6 +1384,8 @@ ipcMain.handle('machine-request', async (_evt, path, init) => {
   function spawnHaltijaServer({ port, role, serverPath, useCompiledBinary, componentDir, portFile }) {
   // Built by src/desktop-server-env.ts, whose contract is unit-tested without launching Electron —
   // getting this wrong is silent (a child that ignores its port, binds the parent's, and dies).
+  const modeNotice = overriddenModeNotice(process.env, role === 'public' ? 'public' : 'internal')
+  if (modeNotice) console.warn(modeNotice)
 const env = buildServerEnv(process.env, {
     port,
     role: role === 'public' ? 'public' : 'internal',
