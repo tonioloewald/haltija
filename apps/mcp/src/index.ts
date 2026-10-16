@@ -128,6 +128,16 @@ function jsonSchemaToZod(schema: object | undefined): z.ZodObject<z.ZodRawShape>
   return z.object(shape)
 }
 
+// The SDK infers the handler's argument type from the shape. For a shape built at runtime that
+// inference cannot terminate (TS2589, GitHub #47) and would buy nothing: args is a plain record
+// either way. Typing the call by hand stops tsc instantiating it.
+const registerToolWithShape = server.tool.bind(server) as unknown as (
+  name: string,
+  description: string,
+  shape: z.ZodRawShape,
+  cb: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }>,
+) => void
+
 // Register each endpoint as an MCP tool
 for (const endpoint of ALL_ENDPOINTS) {
   const toolName = pathToToolName(endpoint.path)
@@ -139,13 +149,13 @@ for (const endpoint of ALL_ENDPOINTS) {
     // Tool with parameters
     const zodSchema = jsonSchemaToZod(inputSchema)
     
-    server.tool(
+    registerToolWithShape(
       toolName,
       description,
       zodSchema.shape,
       async (args) => {
         try {
-          const result = await callHaltija(endpoint, args as Record<string, unknown>)
+          const result = await callHaltija(endpoint, args)
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
           }
