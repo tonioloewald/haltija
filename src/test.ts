@@ -23,6 +23,7 @@
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { DevChannelClient } from './client'
+import { GUARD_MUTATION } from './test-in-browser'
 import type { DevChannelTest } from './types'
 import type { TestRunResult, SuiteRunResult } from './test-formatters'
 import { formatTestHuman, formatSuiteHuman } from './test-formatters'
@@ -231,6 +232,11 @@ export class HaltijaTestClient {
   private refuseMutationOnSharedDefault(action: string): void {
     const message = sharedMutationRefusal(action, this.usingSharedDefault, process.env)
     if (message) throw new Error(message)
+  }
+
+  /** Asked by createBrowserPage before clickAt / dragFrom, which mutate through eval (#3120). */
+  [GUARD_MUTATION](action: string): void {
+    this.refuseMutationOnSharedDefault(action)
   }
 
 

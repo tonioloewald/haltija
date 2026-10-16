@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { HaltijaTestClient, sharedMutationRefusal } from './test'
+import { HaltijaTestClient, createBrowserPage, sharedMutationRefusal } from './test'
 
 /**
  * `haltija/test` must not drive a browser nobody chose (#42).
@@ -77,6 +77,41 @@ describe('the test runner is inside the #42 boundary', () => {
         expect(threw).toBe(true)
       }
       expect(networkCalls).toBe(0)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+/**
+ * `clickAt` / `dragFrom` mutate the page through `eval`, which this client keeps open for reads —
+ * so they ran against the shared default while `click` refused (#3120). Same no-network rule.
+ */
+describe('createBrowserPage coordinate actions are inside the #42 boundary (#3120)', () => {
+  it('clickAt and dragFrom refuse the shared default; read still runs', async () => {
+    for (const k of ['HALTIJA_URL', 'HALTIJA_PORT', 'DEV_CHANNEL_PORT', 'HALTIJA_TEST_ALLOW_SHARED']) {
+      delete process.env[k]
+    }
+    const original = globalThis.fetch
+    const urls: string[] = []
+    globalThis.fetch = (async (url: string) => {
+      urls.push(String(url))
+      return { ok: true, json: async () => ({ success: true, data: { ok: true, value: 7 } }) }
+    }) as unknown as typeof fetch
+    try {
+      const page = createBrowserPage(new HaltijaTestClient())
+      for (const call of [() => page.clickAt(10, 10), () => page.dragFrom(10, 10, 5, 0)]) {
+        let message = ''
+        try {
+          await call()
+        } catch (err: any) {
+          message = err.message
+        }
+        expect(message).toMatch(/refusing to (clickAt|dragFrom)/)
+      }
+      expect(urls).toEqual([]) // refused before anything left the process
+      expect(await page.read(() => 7)).toBe(7) // reads are not mutations
+      expect(urls.length).toBe(1)
     } finally {
       globalThis.fetch = original
     }

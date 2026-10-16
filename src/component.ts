@@ -12324,6 +12324,19 @@ export class DevChannel extends HTMLElement {
 
     const self = this
 
+    // Say so, on the page's own console, every time (#3274). A person using a page with the dev
+    // channel injected otherwise sees alert() do nothing at all, with no hint why — the tosijs owner
+    // concluded the page was broken. The original console is used so the note is not itself
+    // captured as page output.
+    const announce = (type: string, msg: string, outcome: string) => {
+      const info = self.originalConsole.info ?? console.info
+      const shown = msg.length > 80 ? msg.slice(0, 77) + '...' : msg
+      info.call(
+        console,
+        `[haltija] intercepted ${type}(${JSON.stringify(shown)}) and ${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. Policy: POST /dialog/configure; history: GET /dialog/history on the haltija server.`,
+      )
+    }
+
     window.alert = function (message?: any) {
       // Let Haltija's own UI use native dialogs
       if (self._inHaltijaUI) return self.originalDialogs.alert!(message)
@@ -12334,6 +12347,7 @@ export class DevChannel extends HTMLElement {
       if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
 
       self.send('dialog', 'opened', { type: 'alert', message: msg, windowId: self.windowId })
+      announce('alert', msg, 'did not show it')
       // Alert always dismisses (no return value)
     }
 
@@ -12349,6 +12363,7 @@ export class DevChannel extends HTMLElement {
       self.send('dialog', 'opened', {
         type: 'confirm', message: msg, response: accept, windowId: self.windowId,
       })
+      announce('confirm', msg, `answered ${accept ? 'OK' : 'Cancel'} without showing it`)
       return accept
     }
 
@@ -12365,6 +12380,7 @@ export class DevChannel extends HTMLElement {
       self.send('dialog', 'opened', {
         type: 'prompt', message: msg, defaultValue, response, windowId: self.windowId,
       })
+      announce('prompt', msg, `answered ${response === null ? 'Cancel' : JSON.stringify(response)} without showing it`)
       return response
     }
   }

@@ -106,6 +106,7 @@ hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRI
   frame. Results carry `paintAgeMs`; a stale one warns `HAS NOT PAINTED`, and `hj doctor` probes it
   (`requestAnimationFrame DID NOT FIRE`; *unchecked* ≠ pass). Believe either and raise the window.
 - Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand.
+  `/status` also reports `targetWindowId`: the window an untargeted command would reach right now.
 - Best of all, don't share: `haltija --private` (with `--app` or `--headless`) gives a lane its own
   isolated server + browser on an ephemeral port that nothing else can adopt. It exits after 8h
   idle so an ended session can't leak one (`HALTIJA_IDLE_TIMEOUT_HOURS`, 0 disables).

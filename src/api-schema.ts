@@ -2129,7 +2129,7 @@ export const testValidate = endpoint({
 
 Use this to pre-check tests before running. Returns validation errors without executing steps.
 
-Response: { valid: boolean, errors?: [{ step?, message }] }`,
+Response: { valid: boolean, issues: [{ step, selector, error }], stepCount }`,
   category: 'testing',
   input: s.object({
     test: s.any.describe('Test object to validate'),
@@ -2340,7 +2340,9 @@ export const status = endpoint({
   summary: 'Server status',
   description: `Returns server info and connected browser count.
 
-Response: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }
+Response: { serverVersion, ready, targetWindowId, windows: [...], browsers: n, desktopApp, pid, ... }
+
+\`targetWindowId\` is the window an untargeted command would go to right now (null with none).
 
 Use to verify the server is running — but gate a test lane on **\`ready\`**, not on the 200. A
 server can be up with zero connected tabs: /status answers fine and there is still nothing to

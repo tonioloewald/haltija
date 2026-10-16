@@ -28,7 +28,9 @@ curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
 
 Returns server info and connected browser count.
 
-Response: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }
+Response: { serverVersion, ready, targetWindowId, windows: [...], browsers: n, desktopApp, pid, ... }
+
+`targetWindowId` is the window an untargeted command would go to right now (null with none).
 
 Use to verify the server is running — but gate a test lane on **`ready`**, not on the 200. A
 server can be up with zero connected tabs: /status answers fine and there is still nothing to
@@ -1610,7 +1612,7 @@ Check that a test is well-formed and all selectors exist on the current page.
 
 Use this to pre-check tests before running. Returns validation errors without executing steps.
 
-Response: { valid: boolean, errors?: [{ step?, message }] }
+Response: { valid: boolean, issues: [{ step, selector, error }], stepCount }
 
 **Parameters:**
 

@@ -2796,7 +2796,8 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
     const declaredOrigins = findProjectOrigins(process.cwd(), process.env);
     const routed = declaredOrigins?.origins.length ? routeByDeclaredOrigin(declaredOrigins.origins, tabs, focusedTab?.id ?? null) : null;
     const pinned = routed?.kind === "matched" ? tabs.find((w) => w.id === routed.windowId) ?? null : null;
-    const target = pinned ?? focusedTab ?? tabs.find((w) => isVisible2(w)) ?? tabs[0] ?? null;
+    const serverTarget = status.targetWindowId ? tabs.find((w) => w.id === status.targetWindowId) ?? null : null;
+    const target = pinned ?? serverTarget ?? focusedTab ?? tabs.find((w) => isVisible2(w)) ?? tabs[0] ?? null;
     const targetLabel = target ? `${target.title && target.title !== "(untitled)" ? `"${target.title}" ` : ""}${target.url || target.id}` : "";
     const silent = tabs.filter((w) => !visibilityKnown(w));
     if (ready && silent.length) {

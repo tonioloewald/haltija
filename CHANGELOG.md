@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **An intercepted `alert`, `confirm` or `prompt` now says so on the page's console** (virta #3274).
+  The dev channel answers native dialogs so an agent driving the page is never blocked, but a person
+  using the same page saw `alert()` do nothing, with no hint why. Each intercepted dialog now logs
+  one `[haltija] intercepted …` line naming what it answered and where the policy lives. The line
+  goes to the real console only; it is not captured as page output in `/console`. Interception
+  itself is unchanged.
+
+- **`press` in `haltija/test` (and `DevChannelClient.press`) is a real key sequence at the focused
+  element** (virta #3121). It goes through `/key`, like `hj key`: the modifier keys go down, then
+  keydown → … → keyup for the key, then the modifiers come up. It used to be one `keydown` dispatched
+  at `body`, so a handler on a focused input, or one listening for `keyup`, never fired. A test that
+  relied on the event's target being `body` will now see the focused element instead.
+
+- **With nothing focused, `hj doctor` judges the tab commands actually reach** (virta #3123). It
+  picked the first visible tab, where the server picks the most recently seen active one, so its
+  `observability:` line could describe a tab no command goes to. `/status` now reports
+  `targetWindowId` (the server's own answer) and doctor reads it; against an older server it falls
+  back as before.
+
+- **`clickAt` and `dragFrom` refuse the shared default 8700 like `click` does** (virta #3120). They
+  act through `eval`, which `haltija/test` leaves open on the shared port so reads keep working, so
+  with no `HALTIJA_PORT` / `HALTIJA_URL` they dispatched pointer events into whatever tab was focused
+  there, possibly another project's. `read` and `hj.eval` are unchanged; `HALTIJA_TEST_ALLOW_SHARED=1`
+  still opts in.
+
+- **`hj test validate <file>` works** (GitHub #55). It returned HTTP 500 ("undefined is not an
+  object (evaluating 'test.steps.length')") for every file, because the CLI sends `{ test }` as the
+  schema documents and the server read only a bare test. Both shapes are accepted now; a body with
+  no `steps` array is a 400 that says so. The documented response shape is corrected to what the
+  endpoint returns: `{ valid, issues, stepCount }`.
+
+- **The MCP bridge (`apps/mcp`, repo-only) builds again and has no known advisories** (GitHub #46,
+  #47). `tsc` failed with TS2589 because the SDK tried to infer handler types from a shape built at
+  runtime; the registration is now typed by hand. An in-range update cleared ten advisories (1
+  critical, 3 high), raising the SDK floor to `^1.32.1`, and docs-drift now type-checks `apps/mcp` so
+  it cannot rot unnoticed again.
+
 ## 1.13.0-beta.3 (2026-10-08)
 
 ### Added

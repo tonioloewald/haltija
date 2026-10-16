@@ -944,7 +944,9 @@ curl -X POST localhost:8700/click -d '{"selector":"#submit"}'
 
 Returns server info and connected browser count.
 
-Response: { serverVersion, ready, windows: [...], browsers: n, desktopApp, pid, ... }
+Response: { serverVersion, ready, targetWindowId, windows: [...], browsers: n, desktopApp, pid, ... }
+
+\`targetWindowId\` is the window an untargeted command would go to right now (null with none).
 
 Use to verify the server is running — but gate a test lane on **\`ready\`**, not on the 200. A
 server can be up with zero connected tabs: /status answers fine and there is still nothing to
@@ -2526,7 +2528,7 @@ Check that a test is well-formed and all selectors exist on the current page.
 
 Use this to pre-check tests before running. Returns validation errors without executing steps.
 
-Response: { valid: boolean, errors?: [{ step?, message }] }
+Response: { valid: boolean, issues: [{ step, selector, error }], stepCount }
 
 **Parameters:**
 
@@ -12223,6 +12225,11 @@ export const COMPONENT_JS: string = `(() => {
       this.originalDialogs.confirm = window.confirm.bind(window);
       this.originalDialogs.prompt = window.prompt.bind(window);
       const self = this;
+      const announce = (type, msg2, outcome) => {
+        const info = self.originalConsole.info ?? console.info;
+        const shown = msg2.length > 80 ? msg2.slice(0, 77) + "..." : msg2;
+        info.call(console, \`[haltija] intercepted \${type}(\${JSON.stringify(shown)}) and \${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. Policy: POST /dialog/configure; history: GET /dialog/history on the haltija server.\`);
+      };
       window.alert = function(message) {
         if (self._inHaltijaUI)
           return self.originalDialogs.alert(message);
@@ -12232,6 +12239,7 @@ export const COMPONENT_JS: string = `(() => {
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
         self.send("dialog", "opened", { type: "alert", message: msg2, windowId: self.windowId });
+        announce("alert", msg2, "did not show it");
       };
       window.confirm = function(message) {
         if (self._inHaltijaUI)
@@ -12248,6 +12256,7 @@ export const COMPONENT_JS: string = `(() => {
           response: accept,
           windowId: self.windowId
         });
+        announce("confirm", msg2, \`answered \${accept ? "OK" : "Cancel"} without showing it\`);
         return accept;
       };
       window.prompt = function(message, defaultValue) {
@@ -12267,6 +12276,7 @@ export const COMPONENT_JS: string = `(() => {
           response,
           windowId: self.windowId
         });
+        announce("prompt", msg2, \`answered \${response === null ? "Cancel" : JSON.stringify(response)} without showing it\`);
         return response;
       };
     }

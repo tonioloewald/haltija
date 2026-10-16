@@ -164,18 +164,27 @@ export class DevChannelClient {
     await this.dispatch({ selector, event: 'blur' })
   }
   
+  /**
+   * A key press at the focused element, through `/key`: the full keydown → … → keyup lifecycle,
+   * like `click` and `type` use their realistic endpoints. It used to dispatch one `keydown` at
+   * `body`, so a handler on a focused input, or one listening for `keyup`, never fired (#3121).
+   */
   async press(key: string, modifiers?: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean }): Promise<void> {
-    await this.dispatch({
-      selector: 'body',
-      event: 'keydown',
-      options: {
+    const res = await fetch(`${this.baseUrl}/key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         key,
         altKey: modifiers?.alt,
         ctrlKey: modifiers?.ctrl,
         metaKey: modifiers?.meta,
         shiftKey: modifiers?.shift,
-      },
+      }),
     })
+    const response: DevResponse = await res.json()
+    if (!response.success) {
+      throw new Error(response.error || `Key press failed: ${key}`)
+    }
   }
   
   // ==========================================

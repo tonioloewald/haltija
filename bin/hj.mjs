@@ -384,7 +384,10 @@ async function runDoctor(port, portSource, portSourceKind, jsonOutput) {
       ? routeByDeclaredOrigin(declaredOrigins.origins, tabs, focusedTab?.id ?? null)
       : null
     const pinned = routed?.kind === 'matched' ? tabs.find((w) => w.id === routed.windowId) ?? null : null
-    const target = pinned ?? focusedTab ?? tabs.find((w) => isVisible(w)) ?? tabs[0] ?? null
+    // Unpinned, it is whatever the server says it would target (#3123); the local fallback is only
+    // for servers older than 1.13.0-beta.4, which don't report it.
+    const serverTarget = status.targetWindowId ? tabs.find((w) => w.id === status.targetWindowId) ?? null : null
+    const target = pinned ?? serverTarget ?? focusedTab ?? tabs.find((w) => isVisible(w)) ?? tabs[0] ?? null
     const targetLabel = target ? `${target.title && target.title !== '(untitled)' ? `"${target.title}" ` : ''}${target.url || target.id}` : ''
     // A tab that reported NEITHER field hasn't told us anything; `isVisible` had to assume. Say so
     // rather than counting the assumption as a passed check.

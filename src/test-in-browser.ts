@@ -191,7 +191,17 @@ const POINTER_KIT = `
   }
 `
 
+/**
+ * A bridge that knows it is aimed at a browser nobody named (HaltijaTestClient on the shared
+ * default 8700) refuses mutations there. `clickAt` and `dragFrom` mutate through `eval`, which
+ * that client must keep open for reads, so they ask the bridge directly before running (#3120).
+ * A registry symbol rather than a documented bridge method: it is an agreement between haltija's
+ * own client and this module, not something a hand-written bridge should implement.
+ */
+export const GUARD_MUTATION: unique symbol = Symbol.for('haltija.test.guardMutation') as any
+
 export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
+  const guard = (action: string) => (bridge as any)[GUARD_MUTATION]?.(action)
   const unwrap = (res: any) => (res && typeof res === 'object' && 'data' in res ? res.data : res)
 
   /**
@@ -242,6 +252,7 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
     async type(selector, text) { checked(await bridge.type(selector, text), `type into ${selector}`) },
     async press(key) { checked(await bridge.press(key), `press ${key}`) },
     async clickAt(x, y) {
+      guard('clickAt')
       await evalChecked(`(() => {${POINTER_KIT}
         const p = hjPoint(${x}, ${y})
         const el = document.elementFromPoint(p.x, p.y)
@@ -254,6 +265,7 @@ export function createBrowserPage(bridge: BrowserBridge): BrowserPage {
       })()`, 'clickAt')
     },
     async dragFrom(x, y, dx, dy, steps = 12) {
+      guard('dragFrom')
       await evalChecked(`(async () => {${POINTER_KIT}
         const p = hjPoint(${x}, ${y})
         const el = document.elementFromPoint(p.x, p.y)

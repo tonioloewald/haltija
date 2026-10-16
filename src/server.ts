@@ -1603,6 +1603,11 @@ async function handleRest(req: Request, viaMachineChannel = false): Promise<Resp
       // fails much later on a timeout. `ready` is the signal that actually predicts success: at
       // least one top-level TAB is connected. Mirrors /windows.
       ready: isDrivable(allWindows),
+      // The window an untargeted command goes to RIGHT NOW (pickTargetWindow — the one rule). hj
+      // doctor reads this instead of re-deriving it: its own fallback picked the first visible tab
+      // where the server picks the most recently seen active one, so with nothing focused it could
+      // describe a different tab than the one commands reach (#3123).
+      targetWindowId: pickTargetWindow()?.id ?? null,
       serverVersion: SERVER_VERSION,
       // Lets a newer server identify us without shelling out to lsof.
       pid: process.pid,
@@ -2661,7 +2666,18 @@ Run 'hj --help' for all commands.`
   
   // Validate a test (check all selectors exist without executing actions)
   if (path === '/test/validate' && req.method === 'POST') {
-    const test = await req.json() as DevChannelTest
+    // The schema (and `hj test validate`) send `{ test }`; DevChannelClient.validateTest sends the
+    // bare test. Reading only the bare form made every CLI validate a 500 — "undefined is not an
+    // object (evaluating 'test.steps.length')" — so suites could not be linted (GitHub #55).
+    const body = await req.json().catch(() => null) as any
+    const test = (body && typeof body === 'object' && body.test && typeof body.test === 'object' ? body.test : body) as DevChannelTest
+    if (!test || !Array.isArray(test.steps)) {
+      return Response.json({
+        valid: false,
+        issues: [{ step: -1, selector: '', error: 'no test to validate: expected { test: { steps: [...] } } (or the test object itself) with a steps array' }],
+        stepCount: 0,
+      }, { status: 400, headers })
+    }
     const issues: Array<{ step: number; selector: string; error: string }> = []
 
     for (let i = 0; i < test.steps.length; i++) {

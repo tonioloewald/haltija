@@ -689,6 +689,79 @@ test.describe('haltija-dev CLI', () => {
     expect(hit.ctrl).toBe(true) // the modifier survived the whole CLI → REST → widget path
   })
 
+  test('an intercepted dialog says so on the page console, and the note is not captured as page output (#3274)', async ({ page }) => {
+    // A person clicked a button that calls alert(), saw nothing, and concluded the page was broken.
+    await injectDevChannel(page)
+    const notes: string[] = []
+    page.on('console', (m) => { if (m.text().startsWith('[haltija]')) notes.push(m.text()) })
+    let nativeDialogs = 0
+    page.on('dialog', async (d) => { nativeDialogs++; await d.dismiss() })
+
+    const answers = await page.evaluate(() => {
+      alert('hello world')
+      return { confirm: confirm('Delete?'), prompt: prompt('Name?') }
+    })
+    await expect.poll(() => notes.length).toBe(3)
+
+    expect(nativeDialogs).toBe(0) // interception itself is unchanged
+    expect(answers).toEqual({ confirm: true, prompt: null })
+    expect(notes[0]).toContain('intercepted alert("hello world") and did not show it')
+    expect(notes[1]).toContain('intercepted confirm("Delete?") and answered OK')
+    expect(notes[2]).toContain('intercepted prompt("Name?") and answered Cancel')
+    expect(notes[0]).toContain('/dialog/configure') // a remedy that exists, not an `hj` command that doesn't
+
+    const captured = await (await fetch(`${SERVER_URL}/console`)).json()
+    expect(JSON.stringify(captured)).not.toContain('[haltija] intercepted')
+  })
+
+  test('client.press reaches the FOCUSED element with keydown AND keyup, modifiers intact (#3121)', async ({ page }) => {
+    // It was one keydown at body: a handler on a focused input, or one listening for keyup, never fired.
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', '<input id="field">')
+      const field = document.getElementById('field')!
+      ;(window as any).__seen = []
+      for (const type of ['keydown', 'keyup']) {
+        field.addEventListener(type, (e: any) => (window as any).__seen.push(`${type}:${e.key}:${e.ctrlKey}`))
+      }
+      field.focus()
+    })
+    const { DevChannelClient } = await import('./client')
+    await new DevChannelClient(SERVER_URL).press('k', { ctrl: true })
+    const seen = await page.evaluate(() => (window as any).__seen)
+    expect(seen).toEqual(['keydown:Control:true', 'keydown:k:true', 'keyup:k:true', 'keyup:Control:true'])
+  })
+
+  test('hj test validate lints a suite file instead of failing with a 500 (GitHub #55)', async ({ page }) => {
+    await injectDevChannel(page)
+    const { mkdtempSync, writeFileSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const file = pathJoin(mkdtempSync(pathJoin(tmpdir(), 'hj-validate-')), 'suite.json')
+    writeFileSync(file, JSON.stringify({
+      version: 1, name: 'lint me', url: SERVER_URL,
+      steps: [{ action: 'click', selector: 'h1' }, { action: 'click', selector: '#not-on-this-page' }],
+    }))
+    let out = ''
+    try {
+      out = execFileSync('bun', [pathJoin(__dirname, '..', 'dist', 'hj.js'), 'test', 'validate', file, '--json',
+        '--port', String(server.port), '--no-launch'], { encoding: 'utf-8', timeout: 20000 })
+    } catch (err: any) {
+      out = String(err.stdout) + String(err.stderr)
+    }
+    expect(out).not.toContain('test.steps')
+    const result = JSON.parse(out.slice(out.indexOf('{')))
+    expect(result.stepCount).toBe(2)
+    expect(result.valid).toBe(false)
+    expect(result.issues.map((i: any) => i.step)).toEqual([1]) // only the missing selector
+
+    // The typed client's bare-test body still works.
+    const { DevChannelClient } = await import('./client')
+    const bare = await new DevChannelClient(SERVER_URL).validateTest({
+      version: 1, name: 'bare', url: SERVER_URL, steps: [{ action: 'click', selector: 'h1' }],
+    } as any)
+    expect(bare).toMatchObject({ valid: true, stepCount: 1 })
+  })
+
   test('--canvas finds a shadow-DOM canvas hidden behind a light-DOM element of the same name', async ({ page }) => {
     // `resolveCanvasDeep` recorded a non-canvas light-DOM match with an explicit comment saying it
     // was "recorded rather than returned immediately, so the shadow-piercing attempts below still
@@ -3386,6 +3459,23 @@ test.describe('a tab that says "visible" but is not painting (issue #41)', () =>
     expect(JSON.stringify(doc.problems)).toContain('the tab commands go to')
     expect(doc.observability).toMatchObject({ target: hiddenId, visible: false })
     await hiddenPage.close()
+  })
+
+  test('with nothing focused, doctor judges the tab the SERVER would target (#3123)', async ({ page, context }) => {
+    // The server picks the most recently seen active tab; doctor used to pick the first visible one,
+    // so its observability line could name a tab commands never reach.
+    await injectDevChannel(page)
+    const later = await context.newPage()
+    await injectDevChannel(later)
+    await fetch(`${SERVER_URL}/windows/blur`, { method: 'POST' })
+    const status = await (await fetch(`${SERVER_URL}/status`)).json()
+    const [first, second] = status.windows.map((w: any) => w.id)
+    expect(status.windows.some((w: any) => w.focused)).toBe(false)
+    expect(status.targetWindowId).toBe(second) // the later one, not the first visible
+    const doc = JSON.parse(runDoctor())
+    expect(doc.observability.target).toBe(second)
+    expect(doc.observability.target).not.toBe(first)
+    await later.close()
   })
 
   /**

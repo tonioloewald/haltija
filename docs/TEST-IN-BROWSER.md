@@ -20,9 +20,10 @@ HALTIJA_PORT=<that port> bun test
 ```
 
 **Always name your server** (`HALTIJA_PORT`, `HALTIJA_URL`, or `createTestClient(url)`). With none
-of them, `hj` targets the machine's shared `localhost:8700`. There, `click`, `type`, `press` and
-`navigate` refuse to run, but `read`, `clickAt` and `dragFrom` do run, against whatever tab is
-focused, which may be someone else's.
+of them, `hj` targets the machine's shared `localhost:8700`. There, `click`, `type`, `press`,
+`navigate`, `clickAt` and `dragFrom` refuse to run. `read` (and `hj.eval`) do run, against whatever
+tab is focused, which may be someone else's. (Before 1.13.0-beta.4, `clickAt` and `dragFrom` ran
+there too.)
 
 ```ts
 import { test, expect, beforeAll, afterAll } from 'bun:test'
@@ -75,9 +76,10 @@ bridge. They drive handlers your code attached; they do not move a native contro
 | a haltija client (`hj`, `createTestClient(url)`) | whatever browser has the widget: the desktop app, `haltija --headless` (**Chromium only**), or any tab you injected it into | haltija's realistic synthetic sequences; haltija selectors, including `:text()` |
 | `playwrightBridge(page)` | Chromium, Firefox, **WebKit** | Playwright's real input and Playwright's selectors |
 
-`press` differs more than the others. Through a haltija client it is a single synthetic `keydown`
-dispatched at `body`: no `keyup`, and not aimed at the focused element. Through Playwright it is a
-real key press.
+`press` goes to the focused element on both. Through a haltija client it is haltija's synthetic
+keydown → keyup sequence (the same as `hj key`), so the browser runs no default action: a range
+input does not move and Enter does not submit a form. Through Playwright it is a real key press.
+(Before 1.13.0-beta.4, a haltija client's `press` was a single `keydown` at `body`.)
 
 `read`, `clickAt` and `dragFrom` run the same JavaScript in the page on both. Return values can
 differ at the edges: a haltija client returns JSON, while Playwright's own serialization also
