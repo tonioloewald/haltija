@@ -9,11 +9,16 @@
  *   haltija-mcp                    # Connect to localhost:8700
  *   haltija-mcp --port 8701        # Connect to custom port
  *   HALTIJA_URL=http://... haltija-mcp  # Full URL override
+ *   HALTIJA_TOKEN=secret haltija-mcp    # for a server started with --token
+ *
+ * Shipped as dist/mcp.js, one bundle with the SDK and zod inlined (`npx -p haltija haltija-mcp`).
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
+// Inlined by the bundle (scripts/build.ts → dist/mcp.js), so the server reports haltija's version.
+import { VERSION } from "../../../src/version"
 
 // Import generated endpoints JSON (built from api-schema.ts - single source of truth)
 import endpoints from "./endpoints.json" with { type: "json" }
@@ -45,7 +50,7 @@ const baseUrl = process.env.HALTIJA_URL || `http://localhost:${port}`
 // Create MCP server
 const server = new McpServer({
   name: "haltija",
-  version: "0.1.0",
+  version: VERSION,
 })
 
 // Helper to convert endpoint path to tool name
@@ -62,6 +67,8 @@ async function callHaltija(endpoint: EndpointDef, args: Record<string, unknown>)
     method: endpoint.method,
     headers: {
       'Content-Type': 'application/json',
+      // A server started with --token refuses every request without it.
+      ...(process.env.HALTIJA_TOKEN ? { 'X-Haltija-Token': process.env.HALTIJA_TOKEN } : {}),
     },
   }
   

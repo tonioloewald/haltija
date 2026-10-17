@@ -159,30 +159,26 @@ describe('docs coverage: headline capabilities are described, not just listed', 
 
 describe('the MCP server ships the endpoints it claims', () => {
   /**
-   * `apps/mcp/build/endpoints.json` is what the committed MCP server imports at runtime, and it had
-   * drifted SEVEN MONTHS behind the generated `src/` copy — 43 entries against 63 — so anyone using
-   * the MCP path got a haltija with no `/map`, `/find`, `/wait`, `/key` or `/call`.
-   *
-   * `docs-drift.yml` could not catch it: that gate asserts the build leaves the tree clean, and
-   * nothing in the build wrote this file at all. A drift gate only covers what the build produces —
-   * which is exactly the blind spot the pre-release review named.
+   * The committed `apps/mcp/build/endpoints.json` the MCP server used to import had drifted SEVEN
+   * MONTHS behind the generated copy (43 entries against 63), so the MCP path had no `/map`,
+   * `/find`, `/wait`, `/key` or `/call`. Nothing in the build wrote it, so docs-drift could not see
+   * it. The runtime artifact is now `dist/mcp.js`, which the build bundles from the generated copy;
+   * assert every generated endpoint is in it.
    */
   const mcpSrc = join(ROOT, 'apps/mcp/src/endpoints.json')
-  const mcpBuild = join(ROOT, 'apps/mcp/build/endpoints.json')
+  const mcpBundle = join(ROOT, 'dist/mcp.js')
 
-  it('the runtime copy matches the generated one', () => {
-    const count = (p: string) => {
-      const j = JSON.parse(readFileSync(p, 'utf-8'))
-      return Array.isArray(j) ? j.length : Object.keys(j).length
-    }
-    expect(count(mcpBuild)).toBe(count(mcpSrc))
-    expect(readFileSync(mcpBuild, 'utf-8')).toBe(readFileSync(mcpSrc, 'utf-8'))
+  it('the shipped bundle carries every generated endpoint', () => {
+    const bundle = readFileSync(mcpBundle, 'utf-8')
+    const paths = (JSON.parse(readFileSync(mcpSrc, 'utf-8')) as Array<{ path: string }>).map((e) => e.path)
+    expect(paths.length).toBeGreaterThan(50)
+    expect(paths.filter((p) => !bundle.includes(`"${p}"`))).toEqual([])
   })
 
   it('carries the endpoints that were missing — not a vacuous count check', () => {
-    const body = readFileSync(mcpBuild, 'utf-8')
+    const bundle = readFileSync(mcpBundle, 'utf-8')
     for (const p of ['/map', '/find', '/wait', '/key', '/call']) {
-      expect(body).toContain(`"${p}"`)
+      expect(bundle).toContain(`"${p}"`)
     }
   })
 })

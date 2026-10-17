@@ -9,6 +9,8 @@ import { writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'fs
 import { HJ_MARKER } from '../src/hj-install'
 import { stepActionsInline as stepActionsInlineForDocs } from '../src/test-actions'
 import { loaderSnippetHtml } from '../src/loader-snippet'
+import { builtinModules } from 'module'
+const BUILTIN_MODULES = new Set(builtinModules)
 
 // The committed bundles (dist copies in apps/desktop/resources, src/embedded-assets.ts) are Bun's
 // OUTPUT, and that output changes between Bun releases for identical source — 1.4.2 renames locals
@@ -234,12 +236,10 @@ const mcpEndpoints = ALL_ENDPOINTS
     description: ep.description,
     inputSchema: getInputSchema(ep),
   }))
+// The MCP server imports this, and dist/mcp.js (step 6) inlines it. A committed tsc output used to
+// carry its own copy, which drifted SEVEN MONTHS behind (43 entries against 63, no /map, /find,
+// /wait, /key or /call) because nothing rebuilt it. Now the only copy is this one and the bundle.
 writeFileSync('apps/mcp/src/endpoints.json', JSON.stringify(mcpEndpoints, null, 2))
-// ...and the COMMITTED copy the MCP server actually imports. `apps/mcp/build/endpoints.json` had
-// drifted SEVEN MONTHS behind — 43 entries against 63 — so the shipped MCP server offered no /map,
-// /find, /wait, /key or /call. Nothing in the build or release loop ran tsc inside apps/mcp, and
-// docs-drift could not see it because it only checks what the build writes. Now the build writes it.
-writeFileSync('apps/mcp/build/endpoints.json', readFileSync('apps/mcp/src/endpoints.json', 'utf-8'))
 
 // Generate CLI hints from schema (path -> hint)
 const cliHints: Record<string, string> = {}
@@ -1042,6 +1042,27 @@ if (!readFileSync('dist/hj.js').includes(HJ_MARKER)) {
   console.error('Without it the server cannot tell its own hj from a user\'s file, and will')
   console.error('either refuse to repair its own CLI or overwrite someone else\'s. See src/hj-install.ts.')
   process.exit(1)
+}
+
+// 6b. Bundle the MCP server (`haltija-mcp`) with its SDK and zod inlined (GitHub #47). npm never
+// installs a nested package's dependencies, so an unbundled apps/mcp could not import its SDK in
+// an installed package, and it was not in `files` at all. The SDK and zod are root devDependencies
+// so CI's build bundles exactly what a local build does (attestation compares shipped bytes).
+await $`bun build ./apps/mcp/src/index.ts --outfile=dist/mcp.js --target=node --format=esm`
+{
+  const mcp = readFileSync('dist/mcp.js', 'utf-8')
+  // bun build keeps the source's `#!/usr/bin/env node`; npm links the bin, so it must stay first.
+  if (!mcp.startsWith('#!/usr/bin/env node')) {
+    console.error('\nBuild FAILED — dist/mcp.js lost its node shebang; `haltija-mcp` would not run.')
+    process.exit(1)
+  }
+  // The point of the bundle: nothing left for an installed package to resolve.
+  const external = [...mcp.matchAll(/^import .* from ["']([^"']+)["']/gm)]
+    .map((m) => m[1]).filter((spec) => !spec.startsWith('node:') && !BUILTIN_MODULES.has(spec))
+  if (external.length) {
+    console.error(`\nBuild FAILED — dist/mcp.js still imports ${external.join(', ')}; it must be self-contained.`)
+    process.exit(1)
+  }
 }
 
 // Syntax-check every shipped .mjs. These are the actual entry points (`haltija`,

@@ -49,11 +49,22 @@
   no `steps` array is a 400 that says so. The documented response shape is corrected to what the
   endpoint returns: `{ valid, issues, stepCount }`.
 
-- **The MCP bridge (`apps/mcp`, repo-only) builds again and has no known advisories** (GitHub #46,
-  #47). `tsc` failed with TS2589 because the SDK tried to infer handler types from a shape built at
-  runtime; the registration is now typed by hand. An in-range update cleared ten advisories (1
-  critical, 3 high), raising the SDK floor to `^1.32.1`, and docs-drift now type-checks `apps/mcp` so
-  it cannot rot unnoticed again.
+- **The MCP server works from npm** (GitHub #46, #47). `haltija --setup-mcp` (Claude Desktop) and
+  `haltija-mcp-setup` (Claude Code) both exited 1 for every npm user: they looked for
+  `apps/mcp/build/index.js`, which the package never contained. Even if it had been shipped, that
+  file imported an SDK npm never installs for a nested package. The server now ships as
+  `dist/mcp.js` (bin `haltija-mcp`), one bundle with its dependencies inlined, about 170 KB gzipped,
+  and adds no dependencies to an install.
+  - Both setup commands write a command that starts it. When the package runs from an npx/bunx
+    cache, they write a version-pinned `npx -p haltija@<version> haltija-mcp` instead of a path the
+    cache will delete.
+  - The server sends `HALTIJA_TOKEN`, so it works against a server started with `--token`, and it
+    reports haltija's version instead of `0.1.0`.
+  - It compiles again: `tsc` failed with TS2589 on handler types inferred from a runtime-built shape.
+    In-range updates cleared ten advisories (1 critical, 3 high).
+  - Tested the way a user gets it: a new test packs the tarball, extracts it with no `node_modules`
+    above it, runs each setup command, and calls a tool through the written config against a live,
+    token-protected server.
 
 - **The test runner's `wait` with `forWindow: true` no longer stops at an iframe, and returns as
   soon as the window appears** (virta #2468). It accepted any new window, including a frame

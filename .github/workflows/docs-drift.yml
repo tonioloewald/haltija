@@ -28,11 +28,10 @@ jobs:
       - name: Rebuild generated docs
         run: bun run build
 
-      # apps/mcp does not ship and no other lane builds it, so it sat failing tsc (TS2589) with
-      # nothing noticing (GitHub #47). Type-check it here, where its endpoints.json is regenerated.
+      # The build bundles apps/mcp without type-checking it, and it once sat failing tsc (TS2589)
+      # with nothing noticing (GitHub #47). It uses the root's dependencies, so no install here.
       - name: Type-check apps/mcp
-        working-directory: apps/mcp
-        run: bun install --frozen-lockfile && bunx tsc --noEmit
+        run: bunx tsc --noEmit -p apps/mcp
 
       - name: Check every generated artifact is in sync
         run: |

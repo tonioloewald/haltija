@@ -18,6 +18,7 @@ import { homedir, platform, tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { stalePrivateEntries, pidIsAlive } from './private-state.mjs'
+import { mcpServerPath, mcpServerCommand } from './mcp-locate.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const serverPath = join(__dirname, '../dist/server.js')
@@ -154,26 +155,12 @@ function getClaudeDesktopConfigPath() {
   }
 }
 
-/** Find the Haltija MCP server entry point */
-function findMcpServerPath() {
-  const candidates = [
-    join(__dirname, '../apps/mcp/build/index.js'),
-    join(__dirname, 'mcp/build/index.js'),
-    join(process.cwd(), 'node_modules/haltija/apps/mcp/build/index.js'),
-  ]
-  
-  for (const p of candidates) {
-    if (existsSync(p)) return p
-  }
-  return null
-}
-
 /** Check MCP configuration status */
 function checkMcpConfig() {
   console.log(bold('\nHaltija MCP Configuration Status\n'))
   
   const configPath = getClaudeDesktopConfigPath()
-  const mcpPath = findMcpServerPath()
+  const mcpPath = mcpServerPath()
   
   // Check Claude Desktop
   if (existsSync(dirname(configPath))) {
@@ -208,7 +195,7 @@ function checkMcpConfig() {
     console.log(dim(`  Path: ${mcpPath}`))
   } else {
     console.log(red('✗') + ' MCP server not found')
-    console.log(dim(`  Run from haltija directory or rebuild`))
+    console.log(dim(`  In a haltija checkout, run: bun run build`))
   }
   
   // Check if server is running
@@ -228,10 +215,10 @@ function checkMcpConfig() {
 
 /** Setup Claude Desktop MCP integration */
 function setupMcp() {
-  const mcpPath = findMcpServerPath()
+  const mcpPath = mcpServerPath()
   if (!mcpPath) {
     console.log(red('Error:') + ' Could not find Haltija MCP server.')
-    console.log('Make sure you run this from the haltija directory or have it installed.')
+    console.log('In a haltija checkout, run `bun run build` first; an installed package always has it.')
     process.exit(1)
   }
   
@@ -269,10 +256,7 @@ function setupMcp() {
   }
   
   // Add Haltija
-  config.mcpServers.haltija = {
-    command: 'node',
-    args: [mcpPath]
-  }
+  config.mcpServers.haltija = mcpServerCommand(mcpPath)
   
   try {
     writeFileSync(configPath, JSON.stringify(config, null, 2))

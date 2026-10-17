@@ -13,7 +13,8 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { execSync, spawnSync } from 'child_process'
+import { execSync } from 'child_process'
+import { mcpServerPath, mcpServerCommand } from './mcp-locate.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
@@ -48,34 +49,6 @@ ${bold('After setup:')}
   Restart Claude Code to load the new MCP server.
 `)
   process.exit(0)
-}
-
-// Find the MCP server path
-function findMcpServerPath() {
-  // Check if we're in the haltija package
-  const localPath = join(__dirname, '../apps/mcp/build/index.js')
-  if (existsSync(localPath)) {
-    return localPath
-  }
-
-  // Check for globally installed package
-  try {
-    const result = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' })
-    if (result.status === 0) {
-      const globalPath = join(result.stdout.trim(), 'haltija/apps/mcp/build/index.js')
-      if (existsSync(globalPath)) {
-        return globalPath
-      }
-    }
-  } catch {}
-
-  // Check node_modules in current directory
-  const nodeModulesPath = join(process.cwd(), 'node_modules/haltija/apps/mcp/build/index.js')
-  if (existsSync(nodeModulesPath)) {
-    return nodeModulesPath
-  }
-
-  return null
 }
 
 // Check if Claude Code is installed
@@ -125,13 +98,13 @@ function checkConfig() {
   }
 
   // Check MCP server build
-  const mcpPath = findMcpServerPath()
+  const mcpPath = mcpServerPath()
   if (mcpPath) {
     console.log(green('✓') + ' MCP server found')
     console.log(dim(`  Path: ${mcpPath}`))
   } else {
     console.log(red('✗') + ' MCP server not found')
-    console.log(dim('  Run from haltija directory or install globally'))
+    console.log(dim('  In a haltija checkout, run: bun run build'))
   }
 
   // Check if Haltija server is running
@@ -148,10 +121,10 @@ function checkConfig() {
 
 // Create or update .mcp.json
 function setupProjectConfig() {
-  const mcpPath = findMcpServerPath()
+  const mcpPath = mcpServerPath()
   if (!mcpPath) {
     console.log(red('Error:') + ' Could not find Haltija MCP server.')
-    console.log('Make sure you run this from the haltija directory or have it installed.')
+    console.log('In a haltija checkout, run `bun run build` first; an installed package always has it.')
     process.exit(1)
   }
 
@@ -179,10 +152,7 @@ function setupProjectConfig() {
   }
 
   // Add Haltija configuration
-  config.mcpServers.haltija = {
-    command: 'node',
-    args: [mcpPath]
-  }
+  config.mcpServers.haltija = mcpServerCommand(mcpPath)
 
   writeFileSync(projectMcpPath, JSON.stringify(config, null, 2) + '\n')
 
@@ -198,15 +168,17 @@ function setupProjectConfig() {
 
 // Add to global Claude Code config
 function setupGlobalConfig() {
-  const mcpPath = findMcpServerPath()
+  const mcpPath = mcpServerPath()
   if (!mcpPath) {
     console.log(red('Error:') + ' Could not find Haltija MCP server.')
     process.exit(1)
   }
 
+  const { command, args: commandArgs } = mcpServerCommand(mcpPath)
+  const addCommand = `claude mcp add --scope user haltija -- ${[command, ...commandArgs].map((a) => JSON.stringify(a)).join(' ')}`
   // Try using claude CLI first
   try {
-    execSync(`claude mcp add haltija node "${mcpPath}" --scope user`, {
+    execSync(addCommand, {
       encoding: 'utf8',
       stdio: 'inherit'
     })
@@ -232,10 +204,10 @@ function setupGlobalConfig() {
 
   console.log(yellow('Note:') + ' Could not use claude CLI, please add manually:')
   console.log('')
-  console.log('Run: ' + bold(`claude mcp add haltija node "${mcpPath}" --scope user`))
+  console.log('Run: ' + bold(addCommand))
   console.log('')
   console.log('Or add to ~/.claude.json under your project\'s mcpServers:')
-  console.log(dim(JSON.stringify({ haltija: { command: 'node', args: [mcpPath] } }, null, 2)))
+  console.log(dim(JSON.stringify({ haltija: mcpServerCommand(mcpPath) }, null, 2)))
   console.log('')
 }
 

@@ -1,25 +1,9 @@
 {
   "name": "@haltija/mcp",
-  "version": "0.1.0",
-  "description": "MCP bridge for Haltija - browser control for AI agents",
+  "private": true,
+  "description": "Source of haltija's MCP server. Not published on its own: scripts/build.ts bundles it into dist/mcp.js, shipped as `haltija-mcp` in the haltija package. Its dependencies are the root package's devDependencies.",
   "type": "module",
-  "main": "build/index.js",
-  "bin": {
-    "haltija-mcp": "./build/index.js"
-  },
   "scripts": {
-    "build": "tsc && chmod 755 build/index.js",
-    "dev": "tsc --watch"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
-    "zod": "^3.25.76"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.43",
-    "typescript": "^5.9.3"
-  },
-  "files": [
-    "build"
-  ]
+    "typecheck": "tsc --noEmit -p ."
+  }
 }

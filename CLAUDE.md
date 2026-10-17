@@ -168,7 +168,7 @@ reverts you. Runtime files:
 - `cli-subcommand.mjs` — Translates subcommand invocations (e.g., `hj click 42`) into REST API calls against the running server, using a `COMMAND_HINTS` registry generated from `api-schema.ts` at build time
 - `format-tree.mjs`, `format-events.mjs`, `format-test.mjs`, `format-network.mjs` — Render API responses for human-readable terminal output
 - `tosijs-dev.mjs` — Entry point for the `haltija` binary (server launcher). There is ONE launcher: an unshipped `tosijs-dev.ts` copy used to be what the HTTPS tests exercised, and its argument parsing had to be edited in lockstep (#1080).
-- `mcp-setup.mjs` — Entry point for `haltija-mcp-setup` / `bunx haltija --setup-mcp`
+- `mcp-setup.mjs` — Entry point for `haltija-mcp-setup` (Claude Code). `bunx haltija --setup-mcp` (Claude Desktop) lives in `tosijs-dev.mjs`; both locate the server via `mcp-locate.mjs`
 - `build-bookmarklet.ts`, `server.ts` — Build-time helpers, not shipped runtime
 
 ### Request Flow
@@ -451,10 +451,18 @@ Located in `apps/desktop/`. The Electron shell:
 
 ## MCP Integration
 
-Located in `apps/mcp/`. Provides Model Context Protocol tools for Claude Desktop:
-- Generates tool definitions from `api-schema.ts`
-- Translates MCP JSON-RPC to REST API calls
-- Setup: `bunx haltija --setup-mcp`
+Source in `apps/mcp/src/`; shipped as **`dist/mcp.js`** (bin `haltija-mcp`), one bundle with the
+SDK and zod inlined. Exposes every public endpoint as an MCP tool, translating JSON-RPC to REST;
+honours `HALTIJA_URL` / `HALTIJA_PORT` / `--port` and sends `HALTIJA_TOKEN`.
+- Setup: `bunx haltija --setup-mcp` (Claude Desktop) or `npx -p haltija haltija-mcp-setup` (Claude
+  Code, writes `.mcp.json`). Both find the server through `bin/mcp-locate.mjs`, which writes a
+  version-pinned `npx` command when the package is running from an npx/bunx cache.
+- **Why a bundle:** npm never installs a nested package's dependencies (the same trap as
+  `electron-store`), and `apps/mcp` was not in `files` either, so setup failed for every npm user
+  while every check passed in the repo, where `apps/mcp/node_modules` existed (GitHub #47). The SDK
+  and zod are root **devDependencies** so CI bundles exactly what a local build does, and
+  `src/mcp-package.test.ts` packs the tarball and drives the server from an extracted copy with no
+  `node_modules` anywhere above it. docs-drift type-checks `apps/mcp`; the build does not.
 
 ## Build Artifacts
 
@@ -465,7 +473,7 @@ The build script (`scripts/build.ts`) generates:
 4. `dist/server.js`, `dist/client.js`, `dist/index.js`, `dist/test.js` - Bun runtime modules. `server.js` embeds `dist/component.js` (via `embed-assets`) so it can serve `/component.js` even when no on-disk copy exists.
 5. `dist/*.d.ts` - TypeScript declarations for every entry point, emitted by `tsc -p tsconfig.build.json --emitDeclarationOnly` (bun build does not emit types). `tsconfig.build.json` excludes `*.test.ts`. **The build is gated on this type check — any type error fails `bun run build`.** Run `bunx tsc -p tsconfig.build.json --emitDeclarationOnly` to see errors during development.
 6. `apps/desktop/resources/component.js` - Synced copy for desktop app
-7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema
+7. `apps/mcp/src/endpoints.json` - MCP endpoint definitions from schema, and `dist/mcp.js` - the bundled MCP server (fails the build if it keeps any non-builtin import)
 8. `bin/hints.json` - CLI command hints generated from schema endpoints
 9. `dist/hj.js` - Standalone hj CLI bundle (all deps inlined, shebang rewritten to `#!/usr/bin/env bun`). Carries an ownership marker (`HJ_MARKER`, see `src/hj-install.ts`) stamped by the build — **the build fails if it's missing**, because without it a server cannot tell its own `hj` from a file a developer happens to have named `hj`, and will either refuse to repair its own CLI or overwrite someone else's. Also copied to `apps/desktop/resources/hj.mjs`, which the desktop app installs via a ~400-byte shim rather than a compiled binary (see below).
 10. `bin/cli-commands.mjs`, `bin/window-state.mjs`, `bin/tab-liveness.mjs`, `apps/desktop/machine-channel.js`, `apps/desktop/machine-response.global.js`, `apps/desktop/renderer/machine-response.js`, `bin/project-origins.mjs`, `bin/server-list.mjs`, `bin/hints.mjs`, `apps/desktop/server-env.js` - compiled twins of the `src/` modules above, so `bin/` and `apps/desktop/` share ONE implementation instead of hand-copies that drift. **These are committed, and they are what npm ships** (`files` includes `bin` and `apps/desktop/*.js`). Never hand-edit them — the next build reverts it. `docs-drift.yml` gates them by asserting `bun run build` leaves the tree clean, which is why it names no file list: a list can only ever omit the next generated file.

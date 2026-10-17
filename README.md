@@ -31,7 +31,9 @@ Paste this into your agent conversation:
 
 > I have the `hj` browser tool. Run `hj tree` to see the page, `hj click <id>` to interact, and `hj docs` for help.
 
-Or for Claude Code with MCP: `bunx haltija --setup-mcp`
+Or as MCP tools: `npx -p haltija haltija-mcp-setup` in a project (Claude Code, writes `.mcp.json`), or
+`bunx haltija --setup-mcp` (Claude Desktop). Claude Code can load the haltija skill instead:
+`/plugin marketplace add tonioloewald/haltija`, then `/plugin install haltija-skill@haltija`.
 
 ---
 
