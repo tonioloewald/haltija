@@ -2162,7 +2162,7 @@
     "path": "/dialog/configure",
     "method": "POST",
     "summary": "Configure native dialog auto-response policy",
-    "description": "Set how native browser dialogs (alert, confirm, prompt) are handled.\n\nBy default, Haltija intercepts all native dialogs and auto-responds:\n- alert: dismissed immediately\n- confirm: accepted (returns true)\n- prompt: dismissed (returns null)\n\nConfigure the policy **before** triggering actions that cause dialogs.\nEach dialog is logged and reported via the dialog/opened push event.\n\nResponse: { policy: { alert, confirm, prompt, beforeunload } }",
+    "description": "Set how native browser dialogs (alert, confirm, prompt) are handled.\n\nBy default, Haltija intercepts all native dialogs and auto-responds:\n- alert: dismissed immediately\n- confirm: accepted (returns true)\n- prompt: dismissed (returns null)\n\n\"show\" (any of the three) passes the dialog through to the person at the page instead: it is still\nrecorded and reported, with the person's answer. Use it when a human is using a page the dev channel\nis injected into. Do not use it while an agent drives the page: a native modal blocks the page, and\nthe agent cannot see or answer it. Unknown values are refused, not ignored. The policy lives in the\ntab and resets when the page reloads.\n\nConfigure the policy **before** triggering actions that cause dialogs.\nEach dialog is logged and reported via the dialog/opened push event.\n\nResponse: { success, data: { policy: { alert, confirm, prompt, beforeunload } } }; an unknown value is { success: false, error }",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2171,17 +2171,17 @@
             "string",
             "null"
           ],
-          "description": "\"dismiss\" (only option for alerts)"
+          "description": "\"dismiss\" or \"show\" (pass through to the person)"
         },
         "confirm": {
           "type": [
             "string",
             "null"
           ],
-          "description": "\"accept\" or \"dismiss\""
+          "description": "\"accept\", \"dismiss\" or \"show\""
         },
         "prompt": {
-          "description": "\"dismiss\" or { \"response\": \"text\" } to auto-fill"
+          "description": "\"dismiss\", \"show\", or { \"response\": \"text\" } to auto-fill"
         },
         "beforeunload": {
           "type": [
@@ -2206,7 +2206,7 @@
     "path": "/dialog/history",
     "method": "GET",
     "summary": "Get recent dialog history",
-    "description": "Returns a list of recently intercepted native dialogs.\n\nEach entry includes: type (alert/confirm/prompt), message, response given, timestamp.\nBuffer holds the last 50 dialogs.\n\nResponse: { history: [{ type, message, defaultValue?, response, timestamp }] }"
+    "description": "Returns a list of recently intercepted native dialogs.\n\nEach entry includes: type (alert/confirm/prompt), message, response given, shown (true when the\npolicy was \"show\" and the person answered), timestamp.\nBuffer holds the last 50 dialogs.\n\nResponse: { success, data: { history: [{ type, message, defaultValue?, response, shown, timestamp }] } }"
   },
   {
     "path": "/status",

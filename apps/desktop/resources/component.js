@@ -228,6 +228,29 @@
     return { width: W, height: H };
   }
 
+  // src/dialog-policy.ts
+  var DIALOG_POLICY_VALUES = {
+    alert: ["dismiss", "show"],
+    confirm: ["accept", "dismiss", "show"],
+    prompt: ["dismiss", "show", '{ "response": "text" }'],
+    beforeunload: ["allow", "block"]
+  };
+  function dialogPolicyError(payload2) {
+    if (!payload2)
+      return null;
+    for (const key of ["alert", "confirm", "beforeunload"]) {
+      const v = payload2[key];
+      if (v !== undefined && !DIALOG_POLICY_VALUES[key].includes(v)) {
+        return `dialog ${key} must be one of ${DIALOG_POLICY_VALUES[key].map((x) => `"${x}"`).join(", ")}; got ${JSON.stringify(v)}`;
+      }
+    }
+    const p = payload2.prompt;
+    if (p !== undefined && p !== "dismiss" && p !== "show" && !(p && typeof p === "object" && typeof p.response === "string")) {
+      return `dialog prompt must be "dismiss", "show" or { "response": "text" }; got ${JSON.stringify(p)}`;
+    }
+    return null;
+  }
+
   // src/component.ts
   var VERSION2 = VERSION;
   var PRODUCT_NAME = "Haltija";
@@ -6465,6 +6488,11 @@ ${elementSummary}${moreText}`;
     handleDialogMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
       if (action2 === "configure") {
+        const bad = dialogPolicyError(payload2);
+        if (bad) {
+          this.respond(msg2.id, false, undefined, bad);
+          return;
+        }
         if (payload2.alert !== undefined)
           this.dialogPolicy.alert = payload2.alert;
         if (payload2.confirm !== undefined)
@@ -8682,25 +8710,29 @@ ${elementSummary}${moreText}`;
       const announce = (type, msg2, outcome) => {
         const info = self.originalConsole.info ?? console.info;
         const shown = msg2.length > 80 ? msg2.slice(0, 77) + "..." : msg2;
-        info.call(console, `[haltija] intercepted ${type}(${JSON.stringify(shown)}) and ${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. Policy: POST /dialog/configure; history: GET /dialog/history on the haltija server.`);
+        info.call(console, `[haltija] intercepted ${type}(${JSON.stringify(shown)}) and ${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. To show dialogs instead: hj dialog-configure --alert show (or --confirm / --prompt show).`);
       };
       window.alert = function(message) {
         if (self._inHaltijaUI)
           return self.originalDialogs.alert(message);
         const msg2 = String(message ?? "");
-        const entry = { type: "alert", message: msg2, response: undefined, timestamp: Date.now() };
+        const shown = self.dialogPolicy.alert === "show";
+        const entry = { type: "alert", message: msg2, response: undefined, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
-        self.send("dialog", "opened", { type: "alert", message: msg2, windowId: self.windowId });
+        self.send("dialog", "opened", { type: "alert", message: msg2, shown, windowId: self.windowId });
+        if (shown)
+          return self.originalDialogs.alert(message);
         announce("alert", msg2, "did not show it");
       };
       window.confirm = function(message) {
         if (self._inHaltijaUI)
           return self.originalDialogs.confirm(message);
         const msg2 = String(message ?? "");
-        const accept = self.dialogPolicy.confirm === "accept";
-        const entry = { type: "confirm", message: msg2, response: accept, timestamp: Date.now() };
+        const shown = self.dialogPolicy.confirm === "show";
+        const accept = shown ? self.originalDialogs.confirm(message) : self.dialogPolicy.confirm === "accept";
+        const entry = { type: "confirm", message: msg2, response: accept, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
@@ -8708,8 +8740,11 @@ ${elementSummary}${moreText}`;
           type: "confirm",
           message: msg2,
           response: accept,
+          shown,
           windowId: self.windowId
         });
+        if (shown)
+          return accept;
         announce("confirm", msg2, `answered ${accept ? "OK" : "Cancel"} without showing it`);
         return accept;
       };
@@ -8718,8 +8753,9 @@ ${elementSummary}${moreText}`;
           return self.originalDialogs.prompt(message, defaultValue);
         const msg2 = String(message ?? "");
         const policy = self.dialogPolicy.prompt;
-        const response = policy === "dismiss" ? null : policy.response;
-        const entry = { type: "prompt", message: msg2, defaultValue, response, timestamp: Date.now() };
+        const shown = policy === "show";
+        const response = shown ? self.originalDialogs.prompt(message, defaultValue) : policy === "dismiss" ? null : policy.response;
+        const entry = { type: "prompt", message: msg2, defaultValue, response, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
@@ -8728,8 +8764,11 @@ ${elementSummary}${moreText}`;
           message: msg2,
           defaultValue,
           response,
+          shown,
           windowId: self.windowId
         });
+        if (shown)
+          return response;
         announce("prompt", msg2, `answered ${response === null ? "Cancel" : JSON.stringify(response)} without showing it`);
         return response;
       };

@@ -2,12 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- **Dialogs can be let through to a person: `hj dialog-configure --alert show`** (virta #3274).
+  `show` is a new policy value for `alert`, `confirm` and `prompt` (also `POST /dialog/configure
+  {"alert":"show"}`). The dialog reaches the person at the page, and it is still recorded and
+  reported with their answer (`shown: true` in `/dialog/history`). It is opt-in: interception stays
+  the default, because a native modal blocks the page and an agent driving it cannot see or answer
+  one. The policy lives in the tab and resets on reload.
+  - `hj dialog-configure` and `hj dialog-history` are now real commands. Both endpoints declared
+    those CLI names, but neither was ever invokable.
+  - An unknown policy value is refused with the valid ones named. It used to answer success and
+    change nothing; for `prompt`, every prompt then returned `undefined`.
+  - The documented response shapes of both endpoints are corrected to `{ success, data: … }`.
+
 ### Fixed
 
 - **An intercepted `alert`, `confirm` or `prompt` now says so on the page's console** (virta #3274).
   The dev channel answers native dialogs so an agent driving the page is never blocked, but a person
   using the same page saw `alert()` do nothing, with no hint why. Each intercepted dialog now logs
-  one `[haltija] intercepted …` line naming what it answered and where the policy lives. The line
+  one `[haltija] intercepted …` line naming what it answered and how to show dialogs instead. The line
   goes to the real console only; it is not captured as page output in `/console`. Interception
   itself is unchanged.
 

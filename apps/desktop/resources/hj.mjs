@@ -855,6 +855,8 @@ var ROUTED_COMMANDS = [
   "network-watch",
   "network-unwatch",
   "network-stats",
+  "dialog-configure",
+  "dialog-history",
   "recording",
   "recording-start",
   "recording-stop",
@@ -1093,7 +1095,9 @@ var COMPOUND_PATHS = {
   "send-recording": "/send/recording",
   "network-watch": "/network/watch",
   "network-unwatch": "/network/unwatch",
-  "network-stats": "/network/stats"
+  "network-stats": "/network/stats",
+  "dialog-configure": "/dialog/configure",
+  "dialog-history": "/dialog/history"
 };
 var GET_COMPOUND = new Set([
   "mutations-status",
@@ -1101,7 +1105,8 @@ var GET_COMPOUND = new Set([
   "select-status",
   "select-result",
   "video-status",
-  "network-stats"
+  "network-stats",
+  "dialog-history"
 ]);
 function presetArg(args, fallback) {
   const i = args.indexOf("--preset");
@@ -1347,6 +1352,13 @@ var ARG_MAPS = {
     return body;
   },
   "video-stop": () => ({}),
+  "dialog-configure": (args) => {
+    const { flags } = takeFlags(args, { "--alert": "str", "--confirm": "str", "--prompt": "str", "--beforeunload": "str" });
+    if (typeof flags.prompt === "string" && flags.prompt !== "dismiss" && flags.prompt !== "show") {
+      flags.prompt = { response: flags.prompt };
+    }
+    return flags;
+  },
   "events-watch": (args) => ({ preset: presetArg(args, "interactive") }),
   "mutations-watch": (args) => ({ preset: presetArg(args, "smart") }),
   "network-watch": (args) => ({ preset: presetArg(args, "standard") }),
@@ -1914,6 +1926,7 @@ var KNOWN_FLAGS = {
   refresh: ["--soft", "--no-wait", "--timeout"],
   navigate: ["--no-wait", "--timeout"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
+  "dialog-configure": ["--alert", "--confirm", "--prompt", "--beforeunload"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page", "--layout"],
@@ -2386,6 +2399,8 @@ function listSubcommands() {
     refresh [--soft] [--no-wait]      Reload page; waits for it to come back
     tabs ${dim2("open|close|focus")}            Tab management (default: list)
     eval <code>                       Run JS in browser
+    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered)
+    dialog-history                    Dialogs the page opened, and how each was answered
 
   ${bold("Test")}
     test ${dim2("run|suite|validate")} <file>   Run tests (default: run)

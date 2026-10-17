@@ -2068,18 +2068,24 @@ By default, Haltija intercepts all native dialogs and auto-responds:
 - confirm: accepted (returns true)
 - prompt: dismissed (returns null)
 
+"show" (any of the three) passes the dialog through to the person at the page instead: it is still
+recorded and reported, with the person's answer. Use it when a human is using a page the dev channel
+is injected into. Do not use it while an agent drives the page: a native modal blocks the page, and
+the agent cannot see or answer it. Unknown values are refused, not ignored. The policy lives in the
+tab and resets when the page reloads.
+
 Configure the policy **before** triggering actions that cause dialogs.
 Each dialog is logged and reported via the dialog/opened push event.
 
-Response: { policy: { alert, confirm, prompt, beforeunload } }
+Response: { success, data: { policy: { alert, confirm, prompt, beforeunload } } }; an unknown value is { success: false, error }
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `alert` | string,null | "dismiss" (only option for alerts) |
-| `confirm` | string,null | "accept" or "dismiss" |
-| `prompt` | any | "dismiss" or { "response": "text" } to auto-fill |
+| `alert` | string,null | "dismiss" or "show" (pass through to the person) |
+| `confirm` | string,null | "accept", "dismiss" or "show" |
+| `prompt` | any | "dismiss", "show", or { "response": "text" } to auto-fill |
 | `beforeunload` | string,null | "allow" or "block" — controls page unload |
 | `window` | string,null | Target window ID |
 
@@ -2097,6 +2103,10 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }
   ```json
   {"prompt":{"response":"my answer"}}
   ```
+- **show-alerts**: Let alerts through to a person using the page
+  ```json
+  {"alert":"show"}
+  ```
 
 ---
 
@@ -2106,10 +2116,11 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }
 
 Returns a list of recently intercepted native dialogs.
 
-Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Each entry includes: type (alert/confirm/prompt), message, response given, shown (true when the
+policy was "show" and the person answered), timestamp.
 Buffer holds the last 50 dialogs.
 
-Response: { history: [{ type, message, defaultValue?, response, timestamp }] }
+Response: { success, data: { history: [{ type, message, defaultValue?, response, shown, timestamp }] } }
 
 ---
 

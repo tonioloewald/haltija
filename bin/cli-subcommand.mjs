@@ -112,12 +112,14 @@ export const COMPOUND_PATHS = {
   'network-watch': '/network/watch',
   'network-unwatch': '/network/unwatch',
   'network-stats': '/network/stats',
+  'dialog-configure': '/dialog/configure',
+  'dialog-history': '/dialog/history',
 }
 
 // GET compound endpoints
 export const GET_COMPOUND = new Set([
   'mutations-status', 'events-stats', 'select-status', 'select-result', 'video-status',
-  'network-stats'
+  'network-stats', 'dialog-history'
 ])
 
 // How to map positional args to body fields for each endpoint
@@ -344,6 +346,14 @@ export const ARG_MAPS = {
     return body
   },
   'video-stop': () => ({}),
+  // `--prompt` takes "dismiss", "show", or the text to answer with — any other word is the answer.
+  'dialog-configure': (args) => {
+    const { flags } = takeFlags(args, { '--alert': 'str', '--confirm': 'str', '--prompt': 'str', '--beforeunload': 'str' })
+    if (typeof flags.prompt === 'string' && flags.prompt !== 'dismiss' && flags.prompt !== 'show') {
+      flags.prompt = { response: flags.prompt }
+    }
+    return flags
+  },
   'events-watch': (args) => ({ preset: presetArg(args, 'interactive') }),
   // These two had the ORIGINAL args[0] bug still in them, one line below the comment describing the
   // fix — `hj mutations-watch --preset smart` sent preset:'--preset', `FILTER_PRESETS[preset]` came
@@ -952,6 +962,7 @@ export const KNOWN_FLAGS = {
   refresh: ['--soft', '--no-wait', '--timeout'],
   navigate: ['--no-wait', '--timeout'],
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
+  'dialog-configure': ['--alert', '--confirm', '--prompt', '--beforeunload'],
   'test-validate': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   'test-suite': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   // Added after an invariant test derived them from the parsers themselves. Missing entries are
@@ -1623,6 +1634,8 @@ export function listSubcommands() {
     refresh [--soft] [--no-wait]      Reload page; waits for it to come back
     tabs ${dim('open|close|focus')}            Tab management (default: list)
     eval <code>                       Run JS in browser
+    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered)
+    dialog-history                    Dialogs the page opened, and how each was answered
 
   ${bold('Test')}
     test ${dim('run|suite|validate')} <file>   Run tests (default: run)

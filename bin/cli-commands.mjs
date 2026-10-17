@@ -47,6 +47,8 @@ var ROUTED_COMMANDS = [
   "network-watch",
   "network-unwatch",
   "network-stats",
+  "dialog-configure",
+  "dialog-history",
   "recording",
   "recording-start",
   "recording-stop",

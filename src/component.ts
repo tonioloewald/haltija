@@ -747,6 +747,7 @@ import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from '
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
 import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schematic-size'
+import { dialogPolicyError } from './dialog-policy'
 
 /** Get visible text from element, excluding SVG internals */
 function getVisibleText(el: Element): string {
@@ -4215,13 +4216,16 @@ export class DevChannel extends HTMLElement {
     confirm?: typeof window.confirm
     prompt?: typeof window.prompt
   } = {}
+  // 'show' (#3274) passes the dialog through to the person at the page — still recorded and
+  // reported — for when a human is using a page the dev channel is injected into. Opt-in: an agent
+  // waiting on a page cannot see a native modal, so interception stays the default.
   private dialogPolicy: {
-    alert: 'dismiss'
-    confirm: 'accept' | 'dismiss'
-    prompt: { response: string } | 'dismiss'
+    alert: 'dismiss' | 'show'
+    confirm: 'accept' | 'dismiss' | 'show'
+    prompt: { response: string } | 'dismiss' | 'show'
     beforeunload: 'allow' | 'block'
   } = { alert: 'dismiss', confirm: 'accept', prompt: 'dismiss', beforeunload: 'allow' }
-  private dialogHistory: Array<{ type: string; message: string; defaultValue?: string; response: any; timestamp: number }> = []
+  private dialogHistory: Array<{ type: string; message: string; defaultValue?: string; response: any; shown: boolean; timestamp: number }> = []
   private _inHaltijaUI = false // Flag to bypass dialog overrides for Haltija's own UI
   // Video capture state lives in the Electron renderer (renderer.js)
   // Component just forwards messages via IPC
@@ -9035,7 +9039,13 @@ export class DevChannel extends HTMLElement {
     const { action, payload } = msg
 
     if (action === 'configure') {
-      // Update dialog policy
+      // Refuse a value we would not act on. Assigned unchecked, `{alert: 'shwo'}` answered success
+      // and changed nothing — or, for prompt, made every prompt return undefined.
+      const bad = dialogPolicyError(payload)
+      if (bad) {
+        this.respond(msg.id, false, undefined, bad)
+        return
+      }
       if (payload.alert !== undefined) this.dialogPolicy.alert = payload.alert
       if (payload.confirm !== undefined) this.dialogPolicy.confirm = payload.confirm
       if (payload.prompt !== undefined) this.dialogPolicy.prompt = payload.prompt
@@ -12333,7 +12343,7 @@ export class DevChannel extends HTMLElement {
       const shown = msg.length > 80 ? msg.slice(0, 77) + '...' : msg
       info.call(
         console,
-        `[haltija] intercepted ${type}(${JSON.stringify(shown)}) and ${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. Policy: POST /dialog/configure; history: GET /dialog/history on the haltija server.`,
+        `[haltija] intercepted ${type}(${JSON.stringify(shown)}) and ${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. To show dialogs instead: hj dialog-configure --alert show (or --confirm / --prompt show).`,
       )
     }
 
@@ -12342,11 +12352,13 @@ export class DevChannel extends HTMLElement {
       if (self._inHaltijaUI) return self.originalDialogs.alert!(message)
 
       const msg = String(message ?? '')
-      const entry = { type: 'alert' as const, message: msg, response: undefined, timestamp: Date.now() }
+      const shown = self.dialogPolicy.alert === 'show'
+      const entry = { type: 'alert' as const, message: msg, response: undefined, shown, timestamp: Date.now() }
       self.dialogHistory.push(entry)
       if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
 
-      self.send('dialog', 'opened', { type: 'alert', message: msg, windowId: self.windowId })
+      self.send('dialog', 'opened', { type: 'alert', message: msg, shown, windowId: self.windowId })
+      if (shown) return self.originalDialogs.alert!(message)
       announce('alert', msg, 'did not show it')
       // Alert always dismisses (no return value)
     }
@@ -12355,14 +12367,17 @@ export class DevChannel extends HTMLElement {
       if (self._inHaltijaUI) return self.originalDialogs.confirm!(message)
 
       const msg = String(message ?? '')
-      const accept = self.dialogPolicy.confirm === 'accept'
-      const entry = { type: 'confirm' as const, message: msg, response: accept, timestamp: Date.now() }
+      const shown = self.dialogPolicy.confirm === 'show'
+      // Shown, the person answers — and the answer is what gets recorded and reported.
+      const accept = shown ? self.originalDialogs.confirm!(message) : self.dialogPolicy.confirm === 'accept'
+      const entry = { type: 'confirm' as const, message: msg, response: accept, shown, timestamp: Date.now() }
       self.dialogHistory.push(entry)
       if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
 
       self.send('dialog', 'opened', {
-        type: 'confirm', message: msg, response: accept, windowId: self.windowId,
+        type: 'confirm', message: msg, response: accept, shown, windowId: self.windowId,
       })
+      if (shown) return accept
       announce('confirm', msg, `answered ${accept ? 'OK' : 'Cancel'} without showing it`)
       return accept
     }
@@ -12372,14 +12387,18 @@ export class DevChannel extends HTMLElement {
 
       const msg = String(message ?? '')
       const policy = self.dialogPolicy.prompt
-      const response = policy === 'dismiss' ? null : policy.response
-      const entry = { type: 'prompt' as const, message: msg, defaultValue, response, timestamp: Date.now() }
+      const shown = policy === 'show'
+      const response = shown
+        ? self.originalDialogs.prompt!(message, defaultValue)
+        : policy === 'dismiss' ? null : (policy as { response: string }).response
+      const entry = { type: 'prompt' as const, message: msg, defaultValue, response, shown, timestamp: Date.now() }
       self.dialogHistory.push(entry)
       if (self.dialogHistory.length > 50) self.dialogHistory = self.dialogHistory.slice(-25)
 
       self.send('dialog', 'opened', {
-        type: 'prompt', message: msg, defaultValue, response, windowId: self.windowId,
+        type: 'prompt', message: msg, defaultValue, response, shown, windowId: self.windowId,
       })
+      if (shown) return response
       announce('prompt', msg, `answered ${response === null ? 'Cancel' : JSON.stringify(response)} without showing it`)
       return response
     }

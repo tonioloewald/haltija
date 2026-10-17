@@ -28,6 +28,7 @@ export const ROUTED_COMMANDS = [
   'windows', 'tabs-open', 'tabs-close', 'tabs-focus',
   'video-start', 'video-stop', 'video-status',
   'network', 'network-watch', 'network-unwatch', 'network-stats',
+  'dialog-configure', 'dialog-history',
   'recording', 'recording-start', 'recording-stop', 'recording-generate', 'recordings',
   'test-run', 'test-validate', 'test-suite',
   // Session mirror (#37) — read-only by design; there is deliberately no session-write.

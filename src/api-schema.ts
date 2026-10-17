@@ -2273,15 +2273,21 @@ By default, Haltija intercepts all native dialogs and auto-responds:
 - confirm: accepted (returns true)
 - prompt: dismissed (returns null)
 
+"show" (any of the three) passes the dialog through to the person at the page instead: it is still
+recorded and reported, with the person's answer. Use it when a human is using a page the dev channel
+is injected into. Do not use it while an agent drives the page: a native modal blocks the page, and
+the agent cannot see or answer it. Unknown values are refused, not ignored. The policy lives in the
+tab and resets when the page reloads.
+
 Configure the policy **before** triggering actions that cause dialogs.
 Each dialog is logged and reported via the dialog/opened push event.
 
-Response: { policy: { alert, confirm, prompt, beforeunload } }`,
+Response: { success, data: { policy: { alert, confirm, prompt, beforeunload } } }; an unknown value is { success: false, error }`,
   category: 'dialog',
   input: s.object({
-    alert: s.string.describe('"dismiss" (only option for alerts)').optional,
-    confirm: s.string.describe('"accept" or "dismiss"').optional,
-    prompt: s.any.describe('"dismiss" or { "response": "text" } to auto-fill').optional,
+    alert: s.string.describe('"dismiss" or "show" (pass through to the person)').optional,
+    confirm: s.string.describe('"accept", "dismiss" or "show"').optional,
+    prompt: s.any.describe('"dismiss", "show", or { "response": "text" } to auto-fill').optional,
     beforeunload: s.string.describe('"allow" or "block" — controls page unload').optional,
     window: s.string.describe('Target window ID').optional,
   }),
@@ -2301,11 +2307,16 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }`,
       input: { prompt: { response: 'my answer' } },
       description: 'Auto-fill prompt dialogs with text',
     },
+    {
+      name: 'show-alerts',
+      input: { alert: 'show' },
+      description: 'Let alerts through to a person using the page',
+    },
   ],
   cli: {
     name: 'dialog-configure',
     args: [],
-    flags: ['--confirm', '--prompt', '--beforeunload'],
+    flags: ['--alert', '--confirm', '--prompt', '--beforeunload'],
   },
 })
 
@@ -2315,10 +2326,11 @@ export const dialogHistory = endpoint({
   summary: 'Get recent dialog history',
   description: `Returns a list of recently intercepted native dialogs.
 
-Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Each entry includes: type (alert/confirm/prompt), message, response given, shown (true when the
+policy was "show" and the person answered), timestamp.
 Buffer holds the last 50 dialogs.
 
-Response: { history: [{ type, message, defaultValue?, response, timestamp }] }`,
+Response: { success, data: { history: [{ type, message, defaultValue?, response, shown, timestamp }] } }`,
   category: 'dialog',
   cli: {
     name: 'dialog-history',

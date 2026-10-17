@@ -2984,18 +2984,24 @@ By default, Haltija intercepts all native dialogs and auto-responds:
 - confirm: accepted (returns true)
 - prompt: dismissed (returns null)
 
+"show" (any of the three) passes the dialog through to the person at the page instead: it is still
+recorded and reported, with the person's answer. Use it when a human is using a page the dev channel
+is injected into. Do not use it while an agent drives the page: a native modal blocks the page, and
+the agent cannot see or answer it. Unknown values are refused, not ignored. The policy lives in the
+tab and resets when the page reloads.
+
 Configure the policy **before** triggering actions that cause dialogs.
 Each dialog is logged and reported via the dialog/opened push event.
 
-Response: { policy: { alert, confirm, prompt, beforeunload } }
+Response: { success, data: { policy: { alert, confirm, prompt, beforeunload } } }; an unknown value is { success: false, error }
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| \`alert\` | string,null | "dismiss" (only option for alerts) |
-| \`confirm\` | string,null | "accept" or "dismiss" |
-| \`prompt\` | any | "dismiss" or { "response": "text" } to auto-fill |
+| \`alert\` | string,null | "dismiss" or "show" (pass through to the person) |
+| \`confirm\` | string,null | "accept", "dismiss" or "show" |
+| \`prompt\` | any | "dismiss", "show", or { "response": "text" } to auto-fill |
 | \`beforeunload\` | string,null | "allow" or "block" — controls page unload |
 | \`window\` | string,null | Target window ID |
 
@@ -3013,6 +3019,10 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }
   \`\`\`json
   {"prompt":{"response":"my answer"}}
   \`\`\`
+- **show-alerts**: Let alerts through to a person using the page
+  \`\`\`json
+  {"alert":"show"}
+  \`\`\`
 
 ---
 
@@ -3022,10 +3032,11 @@ Response: { policy: { alert, confirm, prompt, beforeunload } }
 
 Returns a list of recently intercepted native dialogs.
 
-Each entry includes: type (alert/confirm/prompt), message, response given, timestamp.
+Each entry includes: type (alert/confirm/prompt), message, response given, shown (true when the
+policy was "show" and the person answered), timestamp.
 Buffer holds the last 50 dialogs.
 
-Response: { history: [{ type, message, defaultValue?, response, timestamp }] }
+Response: { success, data: { history: [{ type, message, defaultValue?, response, shown, timestamp }] } }
 
 ---
 
@@ -3772,6 +3783,29 @@ export const COMPONENT_JS: string = `(() => {
         H--;
     }
     return { width: W, height: H };
+  }
+
+  // src/dialog-policy.ts
+  var DIALOG_POLICY_VALUES = {
+    alert: ["dismiss", "show"],
+    confirm: ["accept", "dismiss", "show"],
+    prompt: ["dismiss", "show", '{ "response": "text" }'],
+    beforeunload: ["allow", "block"]
+  };
+  function dialogPolicyError(payload2) {
+    if (!payload2)
+      return null;
+    for (const key of ["alert", "confirm", "beforeunload"]) {
+      const v = payload2[key];
+      if (v !== undefined && !DIALOG_POLICY_VALUES[key].includes(v)) {
+        return \`dialog \${key} must be one of \${DIALOG_POLICY_VALUES[key].map((x) => \`"\${x}"\`).join(", ")}; got \${JSON.stringify(v)}\`;
+      }
+    }
+    const p = payload2.prompt;
+    if (p !== undefined && p !== "dismiss" && p !== "show" && !(p && typeof p === "object" && typeof p.response === "string")) {
+      return \`dialog prompt must be "dismiss", "show" or { "response": "text" }; got \${JSON.stringify(p)}\`;
+    }
+    return null;
   }
 
   // src/component.ts
@@ -10011,6 +10045,11 @@ export const COMPONENT_JS: string = `(() => {
     handleDialogMessage(msg2) {
       const { action: action2, payload: payload2 } = msg2;
       if (action2 === "configure") {
+        const bad = dialogPolicyError(payload2);
+        if (bad) {
+          this.respond(msg2.id, false, undefined, bad);
+          return;
+        }
         if (payload2.alert !== undefined)
           this.dialogPolicy.alert = payload2.alert;
         if (payload2.confirm !== undefined)
@@ -12228,25 +12267,29 @@ export const COMPONENT_JS: string = `(() => {
       const announce = (type, msg2, outcome) => {
         const info = self.originalConsole.info ?? console.info;
         const shown = msg2.length > 80 ? msg2.slice(0, 77) + "..." : msg2;
-        info.call(console, \`[haltija] intercepted \${type}(\${JSON.stringify(shown)}) and \${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. Policy: POST /dialog/configure; history: GET /dialog/history on the haltija server.\`);
+        info.call(console, \`[haltija] intercepted \${type}(\${JSON.stringify(shown)}) and \${outcome}: the dev channel answers native dialogs so an agent driving the page is never blocked by one. To show dialogs instead: hj dialog-configure --alert show (or --confirm / --prompt show).\`);
       };
       window.alert = function(message) {
         if (self._inHaltijaUI)
           return self.originalDialogs.alert(message);
         const msg2 = String(message ?? "");
-        const entry = { type: "alert", message: msg2, response: undefined, timestamp: Date.now() };
+        const shown = self.dialogPolicy.alert === "show";
+        const entry = { type: "alert", message: msg2, response: undefined, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
-        self.send("dialog", "opened", { type: "alert", message: msg2, windowId: self.windowId });
+        self.send("dialog", "opened", { type: "alert", message: msg2, shown, windowId: self.windowId });
+        if (shown)
+          return self.originalDialogs.alert(message);
         announce("alert", msg2, "did not show it");
       };
       window.confirm = function(message) {
         if (self._inHaltijaUI)
           return self.originalDialogs.confirm(message);
         const msg2 = String(message ?? "");
-        const accept = self.dialogPolicy.confirm === "accept";
-        const entry = { type: "confirm", message: msg2, response: accept, timestamp: Date.now() };
+        const shown = self.dialogPolicy.confirm === "show";
+        const accept = shown ? self.originalDialogs.confirm(message) : self.dialogPolicy.confirm === "accept";
+        const entry = { type: "confirm", message: msg2, response: accept, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
@@ -12254,8 +12297,11 @@ export const COMPONENT_JS: string = `(() => {
           type: "confirm",
           message: msg2,
           response: accept,
+          shown,
           windowId: self.windowId
         });
+        if (shown)
+          return accept;
         announce("confirm", msg2, \`answered \${accept ? "OK" : "Cancel"} without showing it\`);
         return accept;
       };
@@ -12264,8 +12310,9 @@ export const COMPONENT_JS: string = `(() => {
           return self.originalDialogs.prompt(message, defaultValue);
         const msg2 = String(message ?? "");
         const policy = self.dialogPolicy.prompt;
-        const response = policy === "dismiss" ? null : policy.response;
-        const entry = { type: "prompt", message: msg2, defaultValue, response, timestamp: Date.now() };
+        const shown = policy === "show";
+        const response = shown ? self.originalDialogs.prompt(message, defaultValue) : policy === "dismiss" ? null : policy.response;
+        const entry = { type: "prompt", message: msg2, defaultValue, response, shown, timestamp: Date.now() };
         self.dialogHistory.push(entry);
         if (self.dialogHistory.length > 50)
           self.dialogHistory = self.dialogHistory.slice(-25);
@@ -12274,8 +12321,11 @@ export const COMPONENT_JS: string = `(() => {
           message: msg2,
           defaultValue,
           response,
+          shown,
           windowId: self.windowId
         });
+        if (shown)
+          return response;
         announce("prompt", msg2, \`answered \${response === null ? "Cancel" : JSON.stringify(response)} without showing it\`);
         return response;
       };

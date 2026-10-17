@@ -105,8 +105,8 @@ hj --strict <cmd>  # turn advisory warnings into non-zero exits (or HALTIJA_STRI
   so **a missing element is not evidence of an application bug**, and a screenshot can be a stale
   frame. Results carry `paintAgeMs`; a stale one warns `HAS NOT PAINTED`, and `hj doctor` probes it
   (`requestAnimationFrame DID NOT FIRE`; *unchecked* ≠ pass). Believe either and raise the window.
-- Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand.
-  `/status` also reports `targetWindowId`: the window an untargeted command would reach right now.
+- Gate on **`ready`** (in `/windows` and `/status`), not on the HTTP 200, if you're checking by hand;
+  its `targetWindowId` is where commands go.
 - Best of all, don't share: `haltija --private` (with `--app` or `--headless`) gives a lane its own
   isolated server + browser on an ephemeral port that nothing else can adopt. It exits after 8h
   idle so an ended session can't leak one (`HALTIJA_IDLE_TIMEOUT_HOURS`, 0 disables).
@@ -358,8 +358,9 @@ hj console                             # console output + uncaught errors and re
 ```
 
 Use these when "did my click actually do anything?" matters: watch, act, then read. `hj click`/`hj
-type` also accept `--diff` to return a semantic before/after diff of that single action.
+type` also accept `--diff` to return a before/after DOM diff of the action.
 
+Dialogs never block you (`hj dialog-history`); `hj dialog-configure --alert show` is for humans.
 
 ## Recording a flow into a test
 

@@ -708,10 +708,42 @@ test.describe('haltija-dev CLI', () => {
     expect(notes[0]).toContain('intercepted alert("hello world") and did not show it')
     expect(notes[1]).toContain('intercepted confirm("Delete?") and answered OK')
     expect(notes[2]).toContain('intercepted prompt("Name?") and answered Cancel')
-    expect(notes[0]).toContain('/dialog/configure') // a remedy that exists, not an `hj` command that doesn't
+    expect(notes[0]).toContain('hj dialog-configure --alert show') // a remedy that exists (the command is tested below)
 
     const captured = await (await fetch(`${SERVER_URL}/console`)).json()
     expect(JSON.stringify(captured)).not.toContain('[haltija] intercepted')
+  })
+
+  test('hj dialog-configure ... show passes dialogs through to the person, still recorded (#3274)', async ({ page }) => {
+    await injectDevChannel(page)
+    const hj = (...args: string[]) => execFileSync('bun', [pathJoin(__dirname, '..', 'dist', 'hj.js'), ...args,
+      '--port', String(server.port), '--no-launch'], { encoding: 'utf-8', timeout: 20000 })
+    hj('dialog-configure', '--alert', 'show', '--confirm', 'show', '--prompt', 'show')
+    const notes: string[] = []
+    page.on('console', (m) => { if (m.text().startsWith('[haltija]')) notes.push(m.text()) })
+    const seen: string[] = []
+    page.on('dialog', async (d) => {
+      seen.push(`${d.type()}:${d.message()}`)
+      if (d.type() === 'prompt') await d.accept('Ada')
+      else if (d.type() === 'confirm') await d.dismiss() // the person says Cancel
+      else await d.accept()
+    })
+    const answers = await page.evaluate(() => {
+      alert('hello world')
+      return { confirm: confirm('Delete?'), prompt: prompt('Name?') }
+    })
+    expect(seen).toEqual(['alert:hello world', 'confirm:Delete?', 'prompt:Name?'])
+    expect(answers).toEqual({ confirm: false, prompt: 'Ada' }) // the person's answers, not a policy's
+    expect(notes).toEqual([]) // nothing was intercepted, so nothing to explain
+
+    const history = JSON.parse(hj('dialog-history', '--json')).data.history
+    expect(history.slice(-3).map((h: any) => [h.type, h.shown, h.response ?? null]))
+      .toEqual([['alert', true, null], ['confirm', true, false], ['prompt', true, 'Ada']])
+
+    // A typo is refused, not accepted and ignored.
+    let refused = ''
+    try { hj('dialog-configure', '--alert', 'shwo') } catch (err: any) { refused = String(err.stdout) + String(err.stderr) }
+    expect(refused).toContain('alert must be one of')
   })
 
   test('client.press reaches the FOCUSED element with keydown AND keyup, modifiers intact (#3121)', async ({ page }) => {
