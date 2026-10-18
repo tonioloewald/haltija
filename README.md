@@ -333,10 +333,16 @@ app also exists but isn't required for either.
 
 - Widget is always visible (no silent snooping)
 - User can pause or kill connection anytime
-- **Not localhost-only.** The server listens on all interfaces (HTTP 8700 and HTTPS 8701 by
-  default), and without `--token` any page you visit, or anything on your network, can call its
-  REST API — including `/eval` in your connected tabs. Use `--token <secret>` (or
-  `HALTIJA_TOKEN`) on any network you don't trust, and don't leave a server running you aren't
+- **Other machines need `--token`.** The server listens on all interfaces (HTTP 8700 and HTTPS
+  8701 by default), but without a token it refuses every connection that doesn't come from this
+  machine. To use haltija from another device (a phone, a headset, a second computer), start it
+  with `--token <secret>` (or `HALTIJA_TOKEN`) and send the same value as `X-Haltija-Token`,
+  `?token=`, or the widget's `token` option.
+- **On this machine, any page you visit can call it.** The widget is injected into arbitrary
+  pages, so the REST API answers any origin, `/eval` in your connected tabs included. That is by
+  design for a local dev tool, and `--token` closes it too. A tunnel or reverse proxy on this
+  machine (ngrok, cloudflared, `ssh -R`) connects from localhost and so counts as this machine:
+  if you expose haltija through one, pass `--token`. Don't leave a server running you aren't
   using.
 - Machine-level HTTPS certificate in `~/.haltija/certs`, auto-generated (mkcert if installed,
   otherwise openssl) and renewed before it expires

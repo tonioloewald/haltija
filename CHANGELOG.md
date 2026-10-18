@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Without `--token`, haltija refuses connections from other machines** (virta #815, GitHub #44).
+  The server listens on every interface, and anything on your network could drive your browser,
+  `/eval` included, unless you had thought to pass `--token`. Now a request or socket whose peer
+  address is not loopback gets a 403 that says to restart with `--token`. Same-machine use is
+  unchanged. To keep using haltija from another device (a phone, a headset, a second computer), start
+  it with `--token <secret>` and send the token as before. The check uses the connection's address,
+  never a header the caller writes.
+  - What it does not change, now said plainly in the README: a page you visit on this machine can
+    still call the API (the widget's whole job), and a tunnel or reverse proxy on this machine
+    connects from localhost, so it counts as local. Use `--token` for either.
+
 ## 1.13.0-beta.4 (2026-10-17)
 
 ### Added

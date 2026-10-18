@@ -37,6 +37,7 @@ import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
 import { mayOpenMachineSocket, requiresLocalOrigin } from './ws-origin'
+import { refusesRemoteCaller, REMOTE_REFUSAL } from './remote-gate'
 import {
   formatResponse,
   machineChannelEnabled,
@@ -4407,6 +4408,12 @@ const serverConfig = {
   // was meant to dodge. The restart/TIME_WAIT case is handled by retrying the bind below.
   fetch(req: Request, server: any) {
     const url = new URL(req.url)
+
+    // Another machine needs a token (#815). Before everything else, sockets included: the peer
+    // address is the one fact here the caller cannot write. See src/remote-gate.ts.
+    if (refusesRemoteCaller(server.requestIP(req)?.address, REQUIRED_TOKEN)) {
+      return Response.json({ error: REMOTE_REFUSAL }, { status: 403, headers: jsonHeaders() })
+    }
 
     // WebSocket upgrade — gated by token if REQUIRED_TOKEN is set
     if (url.pathname === '/ws/browser' || url.pathname === '/ws/agent' || url.pathname === '/ws/terminal') {

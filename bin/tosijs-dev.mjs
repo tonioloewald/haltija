@@ -59,7 +59,8 @@ Options:
                   Like --port, naming a port CLAIMS it: a haltija server already holding
                   it is asked to stop, which ends its HTTP side too. Pick a free port.
   --token <value> Require X-Haltija-Token header on REST and ?token= on WebSocket
-                  (default: off; sets HALTIJA_TOKEN)
+                  (default: off; sets HALTIJA_TOKEN). Without it, connections from
+                  other machines are refused; this machine needs no token.
   --name <foo>    Register this server as <foo> in ~/.haltija/servers/ so
                   HALTIJA_NAME=foo hj <cmd> can resolve back to its port
   --force, -f     Restart even if server already running
@@ -91,7 +92,7 @@ Environment Variables:
   HALTIJA_PORT             HTTP port (default: try 8700, else ephemeral)
   HALTIJA_NAME             Register this server under <name> for hj resolution
   HALTIJA_TOKEN            Shared-secret required on every REST + WebSocket request
-                           (default: unset = no auth; suitable for local dev)
+                           (default: unset = this machine only, no auth)
   HALTIJA_NO_RETIRE        Set to 1: do not stop pre-1.4.0 haltija servers
   HALTIJA_NO_INSTALL       Set to 1: do not install hj into ~/.local/bin
   HALTIJA_NO_SKEW_WARN     Set to 1: silence hj's version-skew warning

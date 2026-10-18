@@ -701,6 +701,16 @@ When it *can't* kill something harmful (EPERM, no discoverable pid), it complain
 
 Legacy servers don't register themselves, so they're invisible to the registry and can only be found by probing: well-known defaults (8700, 8701), our own port, plus registry ports. It is deliberately **not** a port scan. Set `HALTIJA_NO_RETIRE=1` to disable the sweep entirely.
 
+## Other machines need a token (#815)
+
+Without `HALTIJA_TOKEN`, `serverConfig.fetch` refuses (403) any request or socket whose **peer
+address** is not loopback, before routing (`src/remote-gate.ts`). It keys on
+`server.requestIP(req)`, never on `Host`/`Origin`/`X-Forwarded-For`, which the caller writes. LAN
+use keeps working with `--token`. It deliberately does NOT cover pages in a browser on this machine
+(the REST surface answers any origin; that is the widget's job) or a tunnel running on this machine,
+which connects from loopback. `src/remote-gate-live.test.ts` reaches a real server through this
+machine's own LAN address, so the peer is non-loopback exactly as a LAN client's would be.
+
 ## Machine control is not on the network (#40)
 
 `/terminal/*` and `/files/*` are **refused with 410**, by a prefix check at the top of
