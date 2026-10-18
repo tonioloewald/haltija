@@ -310,6 +310,32 @@ test.describe('haltija-dev CLI', () => {
     expect(map.data.layout).toBe('geometric')
   })
 
+  test('a narrow geometric schematic is at least as wide as its banner, and a page with no controls carries no blind-spot note (#3388)', async ({ page }) => {
+    // Narrower than the banner (about 280px), so the old frame, sized to the content, would cut it.
+    await page.setViewportSize({ width: 220, height: 480 })
+    await injectDevChannel(page)
+    await page.evaluate(() => {
+      for (const el of [...document.body.children]) if (el.tagName !== 'HALTIJA-DEV') el.remove()
+      const p = document.createElement('p')
+      p.style.cssText = 'margin:8px;width:120px'
+      p.textContent = 'Just some text, no controls.'
+      document.body.appendChild(p)
+    })
+    const shot = await (await fetch(`${SERVER_URL}/screenshot`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: false, schematic: true }),
+    })).json()
+    expect(shot.data.layout).toBe('geometric')
+    const bannerW = await page.evaluate(() => {
+      const ctx = document.createElement('canvas').getContext('2d')!
+      ctx.font = 'bold 11px ui-monospace, Menlo, monospace'
+      return Math.ceil(ctx.measureText('SCHEMATIC — requested (not a screenshot)').width) + 16
+    })
+    expect(shot.data.width).toBeGreaterThanOrEqual(bannerW)
+    // haltija checked every element, so "no controls" is a finding, not floorplan's "couldn't tell".
+    expect(shot.data.note).toBeUndefined()
+  })
+
   test('REST drag and the drag step move a POINTER-only control (1.13.0 review)', async ({ page }) => {
     await injectDevChannel(page)
     // Listens to pointer events only and requires the button held, as sliders, resize handles and

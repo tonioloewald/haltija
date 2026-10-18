@@ -748,7 +748,7 @@ import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
 import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schematic-size'
 import { schematic as floorplanSchematic } from 'tosijs-floorplan'
-import { toFloorplanRecords, neutralizeArrows, refPill, PAGE_TEXT_FIELDS } from './floorplan-records'
+import { toFloorplanRecords, neutralizeArrows, PAGE_TEXT_FIELDS } from './floorplan-records'
 import { dialogPolicyError } from './dialog-policy'
 
 /** Get visible text from element, excluding SVG internals */
@@ -2226,7 +2226,7 @@ function renderMapSchematic(
   banner?: string,
   fullPage = false,
   layoutMode: 'auto' | 'geometric' | 'structural' = 'auto',
-): { svg: string; width: number; height: number; layout: 'geometric' | 'structural'; boundsCoverage: string } {
+): { svg: string; width: number; height: number; layout: 'geometric' | 'structural'; boundsCoverage: string; note?: string } {
   const PAD = 8
   const esc = (s: string) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -2265,13 +2265,24 @@ function renderMapSchematic(
     // targetSize 0: the target-size audit is haltija's, computed with DOM access (the inline
     // exception needs computed display and sibling text nodes), and rides each record as a flag.
     // maxCaption 200: the default 36 truncated paragraphs in boxes wide enough for the whole line.
-    const result = floorplanSchematic({ wiring: records }, { within, targetSize: 0, pad: PAD, maxCaption: 200, decorate: refPill })
+    // refStyle 'pill': the ref is the token you retype into `hj click`, so it is drawn as a solid
+    // pill, not floorplan's recessive grey stamp (floorplan 0.6.0 draws haltija's design itself).
+    // introspected: the DOM tier's records are haltija's own assertions about every element, so a
+    // page with no controls is a finding, not a blind spot. The tosi-agent tier is tosijs's
+    // description, so haltija asserts nothing about it.
+    const result = floorplanSchematic(
+      { wiring: records, ...(map.source === 'tosi-agent' ? {} : { introspected: true }) },
+      { within, targetSize: 0, pad: PAD, maxCaption: 200, refStyle: 'pill' },
+    )
     const w = Number(/\bwidth="([\d.]+)"/.exec(result.svg)?.[1] || 0)
     const h = Number(/\bheight="([\d.]+)"/.exec(result.svg)?.[1] || 0)
     if (w > 0 && h > 0) {
-      const width = Math.ceil(w)
-      const height = Math.ceil(h + BANNER_H)
       // The banner is the one line that must never be cut off, so the frame is at least as wide.
+      const bannerCtx = banner ? document.createElement('canvas').getContext('2d') : null
+      if (bannerCtx) bannerCtx.font = 'bold 11px ui-monospace, Menlo, monospace'
+      const bannerW = bannerCtx ? Math.ceil(bannerCtx.measureText(banner!).width) + PAD * 2 : 0
+      const width = Math.max(Math.ceil(w), bannerW)
+      const height = Math.ceil(h + BANNER_H)
       const svg =
         `<?xml version="1.0" encoding="UTF-8"?>` +
         `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
@@ -2279,10 +2290,9 @@ function renderMapSchematic(
         bannerSvg(width) +
         result.svg.replace('<svg ', `<svg x="0" y="${BANNER_H}" `) +
         `</svg>`
-      // floorplan's `note` ("the producer couldn't tell what is actionable") is deliberately NOT
-      // passed on: haltija does introspect, so on a page with no controls the note would be false.
-      // The format has no encoding yet for "looked and found nothing"; raised with floorplan.
-      return { svg, width, height, layout: 'geometric', boundsCoverage }
+      // floorplan's `note` is what the drawing can't be trusted to say. With `introspected` asserted
+      // on the DOM tier it no longer fires falsely there, so it is passed on as-is.
+      return { svg, width, height, layout: 'geometric', boundsCoverage, ...(result.note ? { note: result.note } : {}) }
     }
     // Nothing intersected the region: fall through to the stacked outline rather than an empty image.
   }
@@ -2447,7 +2457,7 @@ async function buildSchematicResponse(
   banner?: string,
 ): Promise<Record<string, unknown>> {
   const canvases = collectCanvasThumbnails()
-  const { svg, width, height, layout, boundsCoverage } = renderMapSchematic(map, canvases, banner, payload?.fullPage === true, payload?.layout || 'auto')
+  const { svg, width, height, layout, boundsCoverage, note } = renderMapSchematic(map, canvases, banner, payload?.fullPage === true, payload?.layout || 'auto')
   const format = payload?.format || 'png'
   const raster = await rasterizeSchematic(svg, width, height, payload?.scale || 1, {
     maxWidth: payload?.maxWidth,
@@ -2465,6 +2475,7 @@ async function buildSchematicResponse(
     // them apart is the complaint that produced this field.
     layout,
     boundsCoverage,
+    ...(note ? { note } : {}),
     legend: buildLegend(map),
     canvasesRendered: canvases.filter((c) => c.image).length,
     map,

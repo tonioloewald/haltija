@@ -287,7 +287,6 @@
     return width < targetSize || height < targetSize ? `${width}×${height} — below ${targetSize}×${targetSize} (WCAG 2.5.8)` : null;
   };
   var finiteBounds = (b) => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height);
-  var printable = (value) => value == null || typeof value === "number";
   var intersects = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   var contains = (outer, inner) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
   var esc = (s) => typeof s !== "string" ? "" : s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -331,8 +330,8 @@
   };
   var schematic = (description, options = {}) => {
     const {
-      minLabelHeight = 14,
-      maxCaption = 36,
+      minLabelHeight: minLabelHeightIn = 14,
+      maxCaption: maxCaptionIn = 36,
       within: withinIn,
       index: showIndex = false,
       targetSize = TARGET_SIZE_DEFAULT,
@@ -340,9 +339,12 @@
       decorate
     } = options;
     const padIn = options.pad;
-    const pad = padIn === undefined || !printable(padIn) ? 8 : padIn;
+    const pad = padIn === null || typeof padIn === "number" && Number.isFinite(padIn) && padIn >= 0 ? padIn : 8;
     const fontSizeIn = options.fontSize;
-    const fontSize = fontSizeIn === undefined || !printable(fontSizeIn) ? 11 : fontSizeIn;
+    const fontSize = fontSizeIn === null || typeof fontSizeIn === "number" && Number.isFinite(fontSizeIn) && fontSizeIn > 0 ? fontSizeIn : 11;
+    const minLabelHeight = Number.isNaN(minLabelHeightIn) ? 14 : minLabelHeightIn;
+    const maxCaption = typeof maxCaptionIn === "number" && (Number.isNaN(maxCaptionIn) || maxCaptionIn < 1) ? 36 : maxCaptionIn;
+    const refStyle = options.refStyle === "pill" ? "pill" : "stamp";
     const legend = [];
     const within = withinIn == null ? undefined : {
       x: withinIn.x,
@@ -350,7 +352,7 @@
       width: withinIn.width,
       height: withinIn.height
     };
-    const withinOk = within == null || printable(within.x) && printable(within.y) && printable(within.width) && printable(within.height);
+    const withinOk = within == null || finiteBounds(within);
     const geometry = new Map;
     const snapshotOf = (w) => {
       if (geometry.has(w))
@@ -370,22 +372,38 @@
       return g.width > 0 && g.height > 0 && (w.viewportFixed === true || g.x + g.width > 0 && g.y + g.height > 0) && (within == null || w.viewportFixed === true || intersects(g, within));
     });
     const flow = boxes.filter((w) => w.viewportFixed !== true);
-    if (boxes.length === 0) {
-      return {
-        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 0 0"></svg>',
-        legend
-      };
+    const emptyMap = (why) => why == null ? {
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 0 0"></svg>',
+      legend
+    } : {
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 0 0">' + `<desc>${esc(why)}</desc></svg>`,
+      legend,
+      note: why
+    };
+    if (!withinOk) {
+      return emptyMap("nothing drawn: `within` is not a usable region (a field is not a " + "finite number) — this is not an empty region");
     }
+    if (boxes.length === 0)
+      return emptyMap();
     const fitBoxes = flow.length > 0 ? flow : boxes;
-    const minX = within != null ? within.x - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).x)) - pad;
-    const minY = within != null ? within.y - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).y)) - pad;
-    const maxX = within != null ? within.x + within.width + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).x + geometry.get(w).width)) + pad;
-    const maxY = within != null ? within.y + within.height + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).y + geometry.get(w).height)) + pad;
+    const minXRaw = within != null ? within.x - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).x)) - pad;
+    const minYRaw = within != null ? within.y - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).y)) - pad;
+    const maxXRaw = within != null ? within.x + within.width + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).x + geometry.get(w).width)) + pad;
+    const maxYRaw = within != null ? within.y + within.height + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).y + geometry.get(w).height)) + pad;
+    const overflow = ![
+      minXRaw,
+      minYRaw,
+      maxXRaw,
+      maxYRaw,
+      maxXRaw - minXRaw,
+      maxYRaw - minYRaw
+    ].every(Number.isFinite);
+    const [minX, minY, maxX, maxY] = overflow ? [0, 0, 0, 0] : [minXRaw, minYRaw, maxXRaw, maxYRaw];
     const parts = [
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" width="${maxX - minX}" height="${maxY - minY}">`
     ];
     const drawOrder = [...boxes].sort((a, b) => Number(isGround(b)) - Number(isGround(a)));
-    const blind = boxes.some((w) => !isGround(w)) && !description.wiring.some(isInteractive) && !description.wiring.some(hasCapabilityEvidence);
+    const blind = description.introspected !== true && boxes.some((w) => !isGround(w)) && !description.wiring.some(isInteractive) && !description.wiring.some(hasCapabilityEvidence);
     const note = blind ? "no record carries affordance evidence (on, href, contentEditable, " + "a two-way binding, or an interactive/editable assertion), and none " + "shows the producer can see wiring at all (no handler, assertion, " + 'or provenance arrow anywhere) — "nothing here is actionable" is ' + "NOT established; a producer that cannot introspect handlers " + "should assert `interactive`/`editable` per record (see README)" : undefined;
     const boxGeometry = boxes.map((b) => geometry.get(b));
     for (const w of drawOrder) {
@@ -535,9 +553,13 @@
       if (showIndex || w.ref != null || inLegend) {
         const shown = w.ref != null ? String(w.ref) : String(index);
         const indexX = toggle ? x - 3 : x + width - 2;
-        parts.push(`<rect x="${indexX - shown.length * 5 - 1}" y="${y + 1}" ` + `width="${shown.length * 5 + 2}" height="8" fill="white" ` + `opacity="0.85" data-index-backdrop="true"/>`, `<text x="${indexX}" y="${y + 8}" font-size="8" ` + `text-anchor="end" font-family="monospace" fill="black" ` + `opacity="0.8">${esc(shown)}</text>`);
+        if (refStyle === "pill") {
+          parts.push(`<rect x="${indexX - shown.length * 5 - 2}" y="${y + 1}" ` + `width="${shown.length * 5 + 3}" height="9" rx="2" ` + `fill="#0f172a" data-index-backdrop="true"/>`, `<text x="${indexX - 1}" y="${y + 8}" font-size="8" ` + `text-anchor="end" font-family="monospace" font-weight="bold" ` + `fill="white">${esc(shown)}</text>`);
+        } else {
+          parts.push(`<rect x="${indexX - shown.length * 5 - 1}" y="${y + 1}" ` + `width="${shown.length * 5 + 2}" height="8" fill="white" ` + `opacity="0.85" data-index-backdrop="true"/>`, `<text x="${indexX}" y="${y + 8}" font-size="8" ` + `text-anchor="end" font-family="monospace" fill="black" ` + `opacity="0.8">${esc(shown)}</text>`);
+        }
       }
-      if (decorate != null) {
+      if (decorate != null && !overflow) {
         decorate({
           record: w,
           index,
@@ -550,6 +572,9 @@
         });
       }
       parts.push("</g>");
+    }
+    if (overflow) {
+      return emptyMap("nothing drawn: the map's extent overflows a finite number (a " + "coordinate, size or pad near Number.MAX_VALUE); the legend still " + "carries every record's facts");
     }
     const footerExtra = legendNote && legend.length > 0 ? 14 : 0;
     if (footerExtra > 0) {
@@ -576,16 +601,6 @@
   var PAGE_TEXT_FIELDS = ["label", "placeholder", "text", "value"];
   function isPureLayout(n) {
     return !!n.children?.length && !n.label && !n.text && n.value === undefined && !n.href && !n.placeholder && !n.contrastFail && !n.interactive && !n.ownBg && !n.ownBorder;
-  }
-  function refPill(ctx) {
-    const ref = ctx.record.ref;
-    if (ref == null)
-      return;
-    const shown = String(ref).replace(/[&<>"]/g, "");
-    const toggle = ctx.record.type === "checkbox" || ctx.record.type === "radio";
-    const right = toggle ? ctx.x - 3 : ctx.x + ctx.width - 2;
-    const w = shown.length * 5 + 3;
-    ctx.emit(`<rect x="${right - w + 1}" y="${ctx.y + 1}" width="${w}" height="9" rx="2" fill="#0f172a" opacity="0.9"/>` + `<text x="${right}" y="${ctx.y + 8.5}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8" font-weight="bold" fill="#ffffff">${shown}</text>`);
   }
   var STRUCTURAL_TAGS = new Set([
     "main",
@@ -2045,14 +2060,18 @@
     const bannerSvg = (width) => banner ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` + `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>` : "";
     if (geometric) {
       const within = fullPage ? undefined : { x: window.scrollX, y: window.scrollY, width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight) };
-      const result = schematic({ wiring: records }, { within, targetSize: 0, pad: PAD, maxCaption: 200, decorate: refPill });
+      const result = schematic({ wiring: records, ...map.source === "tosi-agent" ? {} : { introspected: true } }, { within, targetSize: 0, pad: PAD, maxCaption: 200, refStyle: "pill" });
       const w = Number(/\bwidth="([\d.]+)"/.exec(result.svg)?.[1] || 0);
       const h = Number(/\bheight="([\d.]+)"/.exec(result.svg)?.[1] || 0);
       if (w > 0 && h > 0) {
-        const width = Math.ceil(w);
+        const bannerCtx = banner ? document.createElement("canvas").getContext("2d") : null;
+        if (bannerCtx)
+          bannerCtx.font = "bold 11px ui-monospace, Menlo, monospace";
+        const bannerW = bannerCtx ? Math.ceil(bannerCtx.measureText(banner).width) + PAD * 2 : 0;
+        const width = Math.max(Math.ceil(w), bannerW);
         const height = Math.ceil(h + BANNER_H);
         const svg = `<?xml version="1.0" encoding="UTF-8"?>` + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` + `<rect width="${width}" height="${height}" fill="#ffffff"/>` + bannerSvg(width) + result.svg.replace("<svg ", `<svg x="0" y="${BANNER_H}" `) + `</svg>`;
-        return { svg, width, height, layout: "geometric", boundsCoverage };
+        return { svg, width, height, layout: "geometric", boundsCoverage, ...result.note ? { note: result.note } : {} };
       }
     }
     const ROW = 22;
@@ -2193,7 +2212,7 @@
   }
   async function buildSchematicResponse(map, payload2, banner) {
     const canvases = collectCanvasThumbnails();
-    const { svg, width, height, layout, boundsCoverage } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true, payload2?.layout || "auto");
+    const { svg, width, height, layout, boundsCoverage, note } = renderMapSchematic(map, canvases, banner, payload2?.fullPage === true, payload2?.layout || "auto");
     const format = payload2?.format || "png";
     const raster = await rasterizeSchematic(svg, width, height, payload2?.scale || 1, {
       maxWidth: payload2?.maxWidth,
@@ -2209,6 +2228,7 @@
       source: "schematic",
       layout,
       boundsCoverage,
+      ...note ? { note } : {},
       legend: buildLegend(map),
       canvasesRendered: canvases.filter((c) => c.image).length,
       map

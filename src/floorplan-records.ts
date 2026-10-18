@@ -105,29 +105,6 @@ function isPureLayout(n: MapNode): boolean {
   )
 }
 
-/**
- * haltija's ref, drawn as a dark pill over floorplan's stamp (a `decorate` plugin).
- *
- * floorplan stamps the ref in 8px grey text. The ref is the token you retype into `hj click`, so it
- * is the one thing on the image that must never be misread, and haltija has drawn it as a solid pill
- * since 1.x for that reason. Same slot floorplan uses (top-right; left of a toggle), drawn after its
- * stamp so it covers it. Only digits and `@` reach the markup, and it is escaped regardless.
- */
-export function refPill(ctx: { record: SchematicRecord; x: number; y: number; width: number; emit: (svg: string) => void }): void {
-  const ref = ctx.record.ref
-  if (ref == null) return
-  const shown = String(ref).replace(/[&<>"]/g, '')
-  const toggle = ctx.record.type === 'checkbox' || ctx.record.type === 'radio'
-  // floorplan's own stamp footprint (8px type, 5px a character, right edge at x+width-2), so the
-  // room its caption layout leaves for the stamp is exactly the room the pill takes.
-  const right = toggle ? ctx.x - 3 : ctx.x + ctx.width - 2
-  const w = shown.length * 5 + 3
-  ctx.emit(
-    `<rect x="${right - w + 1}" y="${ctx.y + 1}" width="${w}" height="9" rx="2" fill="#0f172a" opacity="0.9"/>` +
-    `<text x="${right}" y="${ctx.y + 8.5}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8" font-weight="bold" fill="#ffffff">${shown}</text>`,
-  )
-}
-
 const STRUCTURAL_TAGS = new Set([
   'main', 'nav', 'header', 'footer', 'aside', 'section', 'form', 'dialog',
 ])

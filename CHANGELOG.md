@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Schematics use tosijs-floorplan 0.6.0** (virta #3388). Floorplan now draws haltija's ref pill
+  itself (`refStyle: 'pill'`), so haltija's own pill plugin is gone; the picture is unchanged.
+- **A schematic can carry floorplan's `note`**, which says what the drawing can't be trusted to say:
+  nothing could be drawn for the region, or (on the tosi-agent tier) no record carries affordance
+  evidence. haltija now tells floorplan that its DOM map checked every element (`introspected`), so
+  a page with no controls is reported as having none rather than as a blind spot.
+
+### Fixed
+
+- **The "SCHEMATIC" banner is no longer cut off on narrow viewports** (virta #3381). The geometric
+  frame was sized to the page content alone; it is now at least as wide as the banner, as the
+  stacked layout's always was.
+
 ## 1.13.0 (2026-10-18)
 
 The 1.13 betas, released. Read **Security** and **Upgrading from 1.12** before moving off 1.12.x.

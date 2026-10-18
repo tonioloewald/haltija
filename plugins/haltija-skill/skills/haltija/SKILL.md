@@ -215,11 +215,11 @@ Map nodes can carry **`smallTarget`** (an interactive control below the WCAG 24�
 **`zeroSize: true`** (operable but occupying no box — the accessible file-input pattern; click its
 `<label>`, not the input). Both are spelled out in `hj api map`.
 
-`hj map --image` instead **saves a rasterized schematic PNG and prints only its path** — one labeled
-box per control, nested by structure, each showing its handle (`@ref` or `#index`) so the picture is
-an index you can glance at and then act on. Sizing and encoding take the same flags as a screenshot:
-`--max-width`, `--max-height`, `--format png|webp|jpeg`, `--quality`, `--scale`. Pass `--data-url`
-for an inline base64 string, or `--json` if you want the map JSON *and* the image together.
+`hj map --image` **saves a rasterized schematic PNG and prints only its path**: boxes at their real
+positions, each `@ref` in a dark pill, findings as coloured bars (full text in the legend). A `note`
+in the result is what the picture can't be trusted to say: read it. Screenshot flags apply
+(`--max-width`, `--max-height`, `--format`, `--quality`, `--scale`); `--data-url` inlines base64,
+`--json` adds the map JSON.
 
 **`nodes` is a TREE; the legend is FLAT.** This bites, so it is worth stating plainly:
 
