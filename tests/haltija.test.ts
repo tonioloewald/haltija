@@ -8,7 +8,9 @@
 
 import { describe, test, expect } from 'bun:test'
 import { HaltijaTestClient, resolveTestServerUrl } from '../src/test'
-import { existsSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { basename, join } from 'path'
 
 const hj = new HaltijaTestClient()
 
@@ -31,6 +33,22 @@ const hj = new HaltijaTestClient()
  */
 const target = resolveTestServerUrl()
 const explicitlyTargeted = target.source !== 'default'
+const base = target.url.replace(/\/$/, '')
+
+/**
+ * The JSON fixtures name http://localhost:8700, because the CI QA lane POSTs them as-is to an app
+ * on 8700. Run here against any other server, they would load the SHARED server's page, whose own
+ * widget then connects this lane's browser to someone else's server. So this lane runs copies
+ * rewritten to the server it was pointed at.
+ */
+function fixturesFor(names: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'haltija-fixtures-'))
+  for (const name of names) {
+    const text = readFileSync(join(import.meta.dir, name), 'utf8').replaceAll('http://localhost:8700', base)
+    writeFileSync(join(dir, basename(name)), text)
+  }
+  return dir
+}
 
 /**
  * Probed at MODULE LOAD, not in `beforeAll`, so `describe.skipIf` can see it.
@@ -76,11 +94,11 @@ describe.skipIf(!serverAvailable)('haltija/test helper', () => {
   })
 
   test('navigate and getLocation', async () => {
-    await hj.navigate('http://localhost:8700/test')
+    await hj.navigate(`${base}/test`)
     // Small delay for navigation
     await new Promise(r => setTimeout(r, 500))
     const loc = await hj.getLocation()
-    expect(loc.url).toContain('localhost:8700')
+    expect(loc.url).toContain(new URL(base).host)
   })
 
   test('eval runs JavaScript in browser', async () => {
@@ -89,7 +107,7 @@ describe.skipIf(!serverAvailable)('haltija/test helper', () => {
   })
 
   test('query finds DOM elements', async () => {
-    await hj.navigate('http://localhost:8700/test')
+    await hj.navigate(`${base}/test`)
     await new Promise(r => setTimeout(r, 500))
     const el = await hj.query('h1')
     expect(el).not.toBeNull()
@@ -128,7 +146,7 @@ describe.skipIf(!serverAvailable)('haltija/test helper', () => {
 
 describe.skipIf(!serverAvailable)('JSON test suite runner', () => {
   test('runFile executes a single test', async () => {
-    const result = await hj.runFile('tests/playground.json')
+    const result = await hj.runFile(join(fixturesFor(['playground.json']), 'playground.json'))
     expect(result.passed).toBe(true)
     expect(result.summary.failed).toBe(0)
   }, 60_000)
@@ -136,7 +154,7 @@ describe.skipIf(!serverAvailable)('JSON test suite runner', () => {
   test('runFile throws HaltijaTestError on failure', async () => {
     const { HaltijaTestError } = await import('../src/test')
     try {
-      await hj.runFile('tests/fixtures/will-fail.json')
+      await hj.runFile(join(fixturesFor(['fixtures/will-fail.json']), 'will-fail.json'))
       throw new Error('Expected HaltijaTestError')
     } catch (err) {
       if (err instanceof HaltijaTestError) {
@@ -153,7 +171,10 @@ describe.skipIf(!serverAvailable)('JSON test suite runner', () => {
   test('suite runs all tests in a directory', async () => {
     const { HaltijaTestError } = await import('../src/test')
     try {
-      const result = await hj.suite('tests', {
+      // The fixtures this server can serve. dev-server.json needs a dev server on :3000 and
+      // tosijs-ui-spa.json an external site; neither says anything about haltija's runner.
+      const dir = fixturesFor(['playground.json', 'homepage.json', 'step-actions.json', 'test-page-actions.json', 'test-recording-capture.json'])
+      const result = await hj.suite(dir, {
         stopOnFailure: false,
         patience: 3,
       })

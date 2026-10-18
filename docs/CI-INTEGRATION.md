@@ -386,6 +386,15 @@ hj screenshot              # Visual capture
 
 ## Platform Notes
 
+### Containers, VMs and other machines
+
+Without a token, haltija refuses every connection that doesn't come from its own machine (since
+1.13.0). When haltija and the browser or test runner share a container, nothing changes. When
+they don't, for example haltija in a container with the runner on the host connecting through a
+published port, the connection arrives from a bridge address and gets a 403. Start the server with
+`--token <secret>` (or `HALTIJA_TOKEN`), and give clients the same value (`HALTIJA_TOKEN` for `hj`
+and `haltija/test`). The server's stderr names each refused address once.
+
 ### Linux (GitHub Actions)
 
 Requires xvfb and Electron dependencies. In container environments:

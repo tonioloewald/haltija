@@ -5,6 +5,7 @@ import { join } from 'path'
 import { mkdtempSync } from 'fs'
 import { networkInterfaces, tmpdir } from 'os'
 import { isolatedServerEnv } from './test-ports'
+import { DevChannelClient } from './client'
 
 /**
  * The #815 gate against a REAL server: a caller from another machine needs the token.
@@ -18,7 +19,7 @@ const lanAddress = Object.values(networkInterfaces())
   .flat()
   .find((i) => i && i.family === 'IPv4' && !i.internal)?.address
 
-function startServer(env: Record<string, string>): Promise<{ proc: ChildProcess; port: number }> {
+function startServer(env: Record<string, string>): Promise<{ proc: ChildProcess; port: number; stderr: () => string }> {
   const proc = spawn('bun', [join(import.meta.dir, '../bin/server.ts')], {
     env: {
       ...process.env,
@@ -28,11 +29,13 @@ function startServer(env: Record<string, string>): Promise<{ proc: ChildProcess;
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
+  let err = ''
+  proc.stderr!.on('data', (d) => { err += String(d) })
   return new Promise((resolve, reject) => {
     const done = setTimeout(() => reject(new Error('server did not report its port in 15s')), 15000)
     proc.stdout!.on('data', (d) => {
       const m = String(d).match(/"port":(\d+)/)
-      if (m) { clearTimeout(done); resolve({ proc, port: Number(m[1]) }) }
+      if (m) { clearTimeout(done); resolve({ proc, port: Number(m[1]), stderr: () => err }) }
     })
   })
 }
@@ -64,7 +67,8 @@ it('this machine has a non-loopback IPv4 address to test from', () => {
 describe('without --token, another machine is refused (#815)', () => {
   let proc: ChildProcess | null = null
   let port = 0
-  beforeAll(async () => ({ proc, port } = await startServer({})))
+  let stderr = () => ''
+  beforeAll(async () => ({ proc, port, stderr } = await startServer({})))
   afterAll(() => proc?.kill())
 
   it('same-machine REST works unchanged', async () => {
@@ -82,6 +86,17 @@ describe('without --token, another machine is refused (#815)', () => {
   it('a forged Host or X-Forwarded-For changes nothing', async () => {
     expect(await get(lanAddress!, port, '/status', { Host: 'localhost', 'X-Forwarded-For': '127.0.0.1' })).toBe(403)
   })
+
+  // The page cannot read why a handshake failed, so the server's terminal must say it, or a
+  // containerised browser retries forever with nothing pointing at --token.
+  it('the server says why on stderr, naming the peer and --token, once per peer', async () => {
+    await get(lanAddress!, port, '/ws/browser', UPGRADE)
+    await new Promise((r) => setTimeout(r, 200))
+    const lines = stderr().split('\n').filter((l) => l.includes('refused a connection from'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain(lanAddress!)
+    expect(lines[0]).toContain('--token')
+  })
 })
 
 describe('with --token, another machine is admitted by the token (#815)', () => {
@@ -97,5 +112,21 @@ describe('with --token, another machine is admitted by the token (#815)', () => 
 
   it("no token from the LAN address is the token check's 401, not this gate's 403", async () => {
     expect(await get(lanAddress!, port, '/status')).toBe(401)
+  })
+
+  // hj and the MCP bridge always sent the token; DevChannelClient and haltija/test did not, so a
+  // suite on another machine could not reach a --token server at all.
+  it('DevChannelClient sends HALTIJA_TOKEN, so a suite on another machine gets through', async () => {
+    const client = new DevChannelClient(`http://${lanAddress}:${port}`)
+    const saved = process.env.HALTIJA_TOKEN
+    try {
+      delete process.env.HALTIJA_TOKEN
+      expect(await client.status().catch(() => null)).not.toHaveProperty('browsers')
+      process.env.HALTIJA_TOKEN = TOKEN
+      expect(await client.status()).toHaveProperty('browsers')
+    } finally {
+      if (saved === undefined) delete process.env.HALTIJA_TOKEN
+      else process.env.HALTIJA_TOKEN = saved
+    }
   })
 })

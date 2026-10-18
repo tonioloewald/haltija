@@ -18,7 +18,7 @@ import { homedir, platform, tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { stalePrivateEntries, pidIsAlive } from './private-state.mjs'
-import { mcpServerPath, mcpServerCommand } from './mcp-locate.mjs'
+import { mcpServerPath, mcpServerCommand, staleMcpEntry } from './mcp-locate.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const serverPath = join(__dirname, '../dist/server.js')
@@ -171,7 +171,11 @@ function checkMcpConfig() {
     if (existsSync(configPath)) {
       try {
         const config = JSON.parse(readFileSync(configPath, 'utf8'))
-        if (config.mcpServers?.haltija) {
+        const stale = config.mcpServers?.haltija && staleMcpEntry(config.mcpServers.haltija)
+        if (stale) {
+          console.log(red('✗') + ` Haltija's Claude Desktop entry is stale: ${stale}`)
+          console.log(dim(`  Run: haltija --setup-mcp (it replaces the entry)`))
+        } else if (config.mcpServers?.haltija) {
           console.log(green('✓') + ' Haltija is configured in Claude Desktop')
           console.log(dim(`  Command: ${config.mcpServers.haltija.command} ${config.mcpServers.haltija.args?.join(' ') || ''}`))
         } else {
@@ -248,7 +252,10 @@ function setupMcp() {
   }
   
   // Check if already configured
-  if (config.mcpServers.haltija) {
+  const stale = config.mcpServers.haltija && staleMcpEntry(config.mcpServers.haltija)
+  if (stale) {
+    console.log(yellow('Replacing a stale Haltija entry:') + ` ${stale}`)
+  } else if (config.mcpServers.haltija) {
     console.log(green('✓') + ' Haltija is already configured in Claude Desktop')
     console.log(dim(`  Config: ${configPath}`))
     console.log('')
@@ -310,6 +317,7 @@ function removeMcp() {
 // ============================================
 
 import { isSubcommand, runSubcommand } from './cli-subcommand.mjs'
+import { normalizeLauncherArgs } from './launcher-args.mjs'
 
 // Check if first positional arg is a subcommand (not a flag, not a port number)
 const firstNonFlag = args.find(a => !a.startsWith('-'))
@@ -347,6 +355,16 @@ if (args.includes('--setup-mcp-check')) {
 if (args.includes('--setup-mcp-remove')) {
   removeMcp()
   process.exit(0)
+}
+
+// Launcher mode from here on (subcommands took their own flags above). `--flag=value` is split
+// in place, so every `args.indexOf('--flag')` below sees it; an unknown flag is said out loud.
+{
+  const { args: normalized, unknown } = normalizeLauncherArgs(args)
+  args.splice(0, args.length, ...normalized)
+  for (const flag of unknown) {
+    console.error(yellow(`[haltija] unknown option ${flag} is ignored (see haltija --help)`))
+  }
 }
 
 // Set up environment from args

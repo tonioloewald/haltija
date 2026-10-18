@@ -37,16 +37,16 @@ import { hiddenTabWarning, stalePaintWarning } from './tab-liveness'
 import { countsAsActivity, resolveIdlePolicy, isExpired, expiryMessage } from './idle-timeout'
 import { isRefusedMachineControlPath, machineControlRefusal } from './machine-control'
 import { mayOpenMachineSocket, requiresLocalOrigin } from './ws-origin'
-import { refusesRemoteCaller, REMOTE_REFUSAL } from './remote-gate'
+import { refusesRemoteCaller, refusalLogLine, REMOTE_REFUSAL } from './remote-gate'
 import {
   formatResponse,
   machineChannelEnabled,
   parseRequestLine,
   splitLines,
 } from './machine-channel'
-import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
+import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT, PUBLIC_PORTS } from './ports'
 import { returnedWindow, newlyOpenedWindow, clampPageWait, originOf, type PageTarget } from './page-wait'
-import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor } from './transports'
+import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor, mayReclaimHttpsPort } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
 import { cliNameForEndpoint } from './cli-commands'
@@ -357,6 +357,8 @@ const windows = new Map<string, TrackedWindow>()
 // exact text → when it was last emitted, so an identical repeat within the cooldown is suppressed
 // (see warning-dedupe.ts). `HALTIJA_NO_TAB_WARN=1` turns the warnings off entirely.
 const recentTabWarnings = new Map<string, number>()
+/** Peers already told, on stderr, why the #815 gate refused them (once each; see refusalLogLine). */
+const remotePeersTold = new Set<string>()
 const TAB_WARN_COOLDOWN_MS = 15_000
 const TAB_WARN_DISABLED = process.env.HALTIJA_NO_TAB_WARN === '1'
 
@@ -4411,7 +4413,10 @@ const serverConfig = {
 
     // Another machine needs a token (#815). Before everything else, sockets included: the peer
     // address is the one fact here the caller cannot write. See src/remote-gate.ts.
-    if (refusesRemoteCaller(server.requestIP(req)?.address, REQUIRED_TOKEN)) {
+    const peer = server.requestIP(req)?.address
+    if (refusesRemoteCaller(peer, REQUIRED_TOKEN)) {
+      const line = refusalLogLine(peer, remotePeersTold)
+      if (line) console.warn(`${LOG_PREFIX} ${line}`)
       return Response.json({ error: REMOTE_REFUSAL }, { status: 403, headers: jsonHeaders() })
     }
 
@@ -4839,7 +4844,7 @@ async function retireLegacyServers(): Promise<void> {
   if (IS_PRIVATE) return
 
   const registryPorts = listInstances().map((e) => e.port)
-  const ports = candidatePorts({ defaults: [8700, 8701, PORT], registryPorts })
+  const ports = candidatePorts({ defaults: [...PUBLIC_PORTS, PORT], registryPorts })
   let stopped = false
 
   for (const port of ports) {
@@ -4982,7 +4987,7 @@ if (USE_HTTPS) {
       // nothing about the HTTPS one, and stopping a server's HTTPS listener stops its whole
       // process — HTTP included, for every project using that channel (#32a). Probed over TLS, so
       // a holder is identified rather than declined as unknown by accident (#1079).
-      if (HTTPS_PORT_EXPLICIT !== null && await freePort(wantedHttpsPort, 'https')) {
+      if (mayReclaimHttpsPort({ explicitHttpsPort: HTTPS_PORT_EXPLICIT, httpPortIsStrict: PORT_IS_STRICT }) && await freePort(wantedHttpsPort, 'https')) {
         httpsServer = bindHttps()
       } else {
         for (let attempt = 0; attempt < 5 && !httpsServer; attempt++) {
@@ -5438,6 +5443,13 @@ if (httpsUrl) {
 if (INSTANCE_NAME) {
   console.log(`  NAME:      ${INSTANCE_NAME}   (use HALTIJA_NAME=${INSTANCE_NAME} hj <cmd>)`)
 }
+// Whether a token is in force, said where it can be checked: a mistyped `--token` used to start an
+// open server with nothing on screen to tell it from a protected one (1.13.0 review).
+console.log(
+  REQUIRED_TOKEN
+    ? `  AUTH:      token required (X-Haltija-Token / ?token=), from any machine`
+    : `  AUTH:      none; this machine only (other machines are refused without --token)`,
+)
 
 // The /docs loader hardcodes the shared channel's 8700/8701. Recommending it from a server that
 // does not hold 8701 (a --port/--name project server, whose HTTPS is ephemeral) would send https

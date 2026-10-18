@@ -3,18 +3,18 @@
  * haltija-mcp-setup - Configure Claude Code to use Haltija
  *
  * Usage:
- *   npx haltija-mcp-setup          # Create .mcp.json in current directory
- *   npx haltija-mcp-setup --global # Add to user's Claude Code config
- *   npx haltija-mcp-setup --check  # Check if Haltija MCP is configured
- *   npx haltija-mcp-setup --help   # Show help
+ *   npx -p haltija haltija-mcp-setup          # Create .mcp.json in current directory
+ *   npx -p haltija haltija-mcp-setup --global # Add to user's Claude Code config
+ *   npx -p haltija haltija-mcp-setup --check  # Check if Haltija MCP is configured
+ *   npx -p haltija haltija-mcp-setup --help   # Show help
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { execSync } from 'child_process'
-import { mcpServerPath, mcpServerCommand } from './mcp-locate.mjs'
+import { execFileSync } from 'child_process'
+import { mcpServerPath, mcpServerCommand, staleMcpEntry } from './mcp-locate.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
@@ -31,11 +31,11 @@ if (args.includes('--help') || args.includes('-h')) {
 ${bold('haltija-mcp-setup')} - Configure Claude Code to use Haltija
 
 ${bold('Usage:')}
-  npx haltija-mcp-setup          Create .mcp.json in current directory (recommended)
-  npx haltija-mcp-setup --global Add to user's global Claude Code config
-  npx haltija-mcp-setup --check  Check current MCP configuration status
-  npx haltija-mcp-setup --remove Remove Haltija from MCP configuration
-  npx haltija-mcp-setup --help   Show this help
+  npx -p haltija haltija-mcp-setup          Create .mcp.json in current directory (recommended)
+  npx -p haltija haltija-mcp-setup --global Add to user's global Claude Code config
+  npx -p haltija haltija-mcp-setup --check  Check current MCP configuration status
+  npx -p haltija haltija-mcp-setup --remove Remove Haltija from MCP configuration
+  npx -p haltija haltija-mcp-setup --help   Show this help
 
 ${bold('What this does:')}
   Configures Claude Code to connect to the Haltija server, giving Claude
@@ -84,7 +84,11 @@ function checkConfig() {
   if (existsSync(projectMcpPath)) {
     try {
       const config = JSON.parse(readFileSync(projectMcpPath, 'utf8'))
-      if (config.mcpServers?.haltija) {
+      const stale = config.mcpServers?.haltija && staleMcpEntry(config.mcpServers.haltija)
+      if (stale) {
+        console.log(red('✗') + ` Project .mcp.json has a stale Haltija entry: ${stale}`)
+        console.log(dim('  Run setup again to replace it: npx -p haltija haltija-mcp-setup'))
+      } else if (config.mcpServers?.haltija) {
         console.log(green('✓') + ` Project .mcp.json has Haltija configured`)
         console.log(dim(`  Path: ${projectMcpPath}`))
       } else {
@@ -108,9 +112,10 @@ function checkConfig() {
   }
 
   // Check if Haltija server is running
+  const port = process.env.HALTIJA_PORT || '8700'
   try {
-    execSync('curl -s http://localhost:8700/status', { encoding: 'utf8', timeout: 2000 })
-    console.log(green('✓') + ' Haltija server is running on port 8700')
+    execFileSync('curl', ['-sf', `http://localhost:${port}/status`], { encoding: 'utf8', timeout: 2000 })
+    console.log(green('✓') + ` Haltija server is running on port ${port}`)
   } catch {
     console.log(yellow('○') + ' Haltija server not running')
     console.log(dim('  Start with: bunx haltija'))
@@ -145,7 +150,10 @@ function setupProjectConfig() {
   }
 
   // Check if already configured
-  if (config.mcpServers.haltija) {
+  const stale = config.mcpServers.haltija && staleMcpEntry(config.mcpServers.haltija)
+  if (stale) {
+    console.log(yellow('Replacing a stale Haltija entry in .mcp.json:') + ` ${stale}`)
+  } else if (config.mcpServers.haltija) {
     console.log(yellow('Haltija is already configured in .mcp.json'))
     console.log(dim('Use --remove to remove it, or delete .mcp.json manually'))
     process.exit(0)
@@ -178,7 +186,9 @@ function setupGlobalConfig() {
   const addCommand = `claude mcp add --scope user haltija -- ${[command, ...commandArgs].map((a) => JSON.stringify(a)).join(' ')}`
   // Try using claude CLI first
   try {
-    execSync(addCommand, {
+    // An argv, not a shell string: the install path is in the args, and a shell would run any
+    // `$()` or backtick in it.
+    execFileSync('claude', ['mcp', 'add', '--scope', 'user', 'haltija', '--', command, ...commandArgs], {
       encoding: 'utf8',
       stdio: 'inherit'
     })

@@ -41,6 +41,8 @@
  *    const recording = await devChannel.stopRecording()
  */
 
+import { DEFAULT_HTTP_PORT } from './ports'
+
 // Types
 export type {
   DevMessage,
@@ -66,4 +68,4 @@ export { server as devChannelServer } from './server.js'
 export { DevChannelClient, devChannel } from './client.js'
 
 // Re-export default port
-export const DEFAULT_PORT = 8700
+export const DEFAULT_PORT = DEFAULT_HTTP_PORT

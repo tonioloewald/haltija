@@ -28,13 +28,15 @@
  * Node-safe (no Bun APIs): the Playwright suite imports it.
  */
 
+import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT } from './ports'
+
 export interface LoaderSnippetOptions {
   httpPort?: number
   httpsPort?: number
 }
 
 /** The body of the `<script>` (no tags), as lines. */
-export function loaderSnippetLines({ httpPort = 8700, httpsPort = 8701 }: LoaderSnippetOptions = {}): string[] {
+export function loaderSnippetLines({ httpPort = DEFAULT_HTTP_PORT, httpsPort = DEFAULT_HTTPS_PORT }: LoaderSnippetOptions = {}): string[] {
   return [
     `;(() => {`,
     `  const host = location.hostname   // NOT localhost — works over LAN/Bonjour too`,

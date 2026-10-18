@@ -7,7 +7,7 @@
  * 
  * Usage:
  *   haltija-mcp                    # Connect to localhost:8700
- *   haltija-mcp --port 8701        # Connect to custom port
+ *   haltija-mcp --port 9000        # Connect to custom port
  *   HALTIJA_URL=http://... haltija-mcp  # Full URL override
  *   HALTIJA_TOKEN=secret haltija-mcp    # for a server started with --token
  *
@@ -19,6 +19,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 // Inlined by the bundle (scripts/build.ts → dist/mcp.js), so the server reports haltija's version.
 import { VERSION } from "../../../src/version"
+import { DEFAULT_HTTP_PORT } from "../../../src/ports"
 
 // Import generated endpoints JSON (built from api-schema.ts - single source of truth)
 import endpoints from "./endpoints.json" with { type: "json" }
@@ -42,7 +43,7 @@ function getInputSchema(ep: EndpointDef): EndpointDef['inputSchema'] {
 }
 
 // Configuration
-const DEFAULT_PORT = 8700
+const DEFAULT_PORT = DEFAULT_HTTP_PORT
 const portArg = process.argv.indexOf('--port')
 const port = process.env.HALTIJA_PORT || (portArg !== -1 ? process.argv[portArg + 1] : DEFAULT_PORT)
 const baseUrl = process.env.HALTIJA_URL || `http://localhost:${port}`

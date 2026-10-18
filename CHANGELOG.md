@@ -1,5 +1,84 @@
 # Changelog
 
+## 1.13.0 (2026-10-18)
+
+The 1.13 betas, released. Read **Security** and **Upgrading from 1.12** before moving off 1.12.x.
+The beta sections below have the detail and the reasoning; this section is the list. The changes
+made after beta.5 are at the end.
+
+### Security
+
+- **Through 1.12.9, anything on your network could drive your browser.** The server listens on
+  every interface and, without `--token`, answered any machine, `/eval` included. Affected: every
+  release through **1.12.9** (the previous `latest`) and **1.13.0-beta.1 to beta.4**. In 1.13.0 a
+  connection from another machine is refused (403) unless the server has a token (virta #815,
+  GitHub #44; first shipped in beta.5). If you stay on 1.12.x, start the server with `--token
+  <secret>` on any network you don't trust.
+- **Pages on this machine can still call the API, and that is by design.** beta.1 listed this as a
+  known issue with "an origin gate planned before 1.13.0". That gate is not coming: the widget is
+  injected into arbitrary pages, so the REST surface must answer any origin, and an origin check
+  would break exactly the pages haltija exists for. `--token` closes it, as it closes a tunnel or
+  reverse proxy running on this machine (which connects from localhost). The README's Security
+  section says what is and isn't covered.
+
+### Upgrading from 1.12
+
+Each of these changes something that worked before. Before → after:
+
+- **Other machines need a token.** Phones, headsets, other computers, and browsers in a container,
+  VM or WSL2 that reach haltija through a forwarded port: they connected freely, and now get a 403
+  until the server has `--token <secret>` and the client sends it (beta.5).
+- **Both transports by default.** `DEV_CHANNEL_MODE` was `http`; it is `both`, so HTTPS 8701 comes
+  up too. `--http` opts out, and says what that costs other projects (beta.1).
+- **The certificate lives in `~/.haltija/certs`.** It was per-install; an existing one is copied
+  forward, so trust you already granted survives (beta.1).
+- **The desktop app's internal server moved from 8701 to 8710.** `HALTIJA_PORT=8701 hj tree`
+  (inspecting the app's own UI) is now `HALTIJA_PORT=8710 hj tree` (beta.1).
+- **Only the server on 8700 takes HTTPS 8701.** A `--port` / `--name` server's HTTPS is now
+  ephemeral, shown in its banner and `/status`, unless you pass `--https-port` (beta.1).
+- **`server` from `haltija/server` is the HTTP listener**, and `server`, `httpServer` and
+  `httpsServer` are typed `ListeningServer` (`port`, `hostname`, `url`, `stop()`) instead of
+  Bun's server type. Code that used other Bun server methods on them needs a cast (beta.1).
+- **Navigate and refresh wait for the page's widget.** They returned at once; now they block until
+  the widget reconnects, up to `--timeout` (default 10 s). A page that doesn't load the widget
+  itself (a bookmarklet tab) waits that long every time: pass `--no-wait` there. `navigate()` and
+  `refresh()` in `DevChannelClient` / `haltija/test` now return `{ reconnected, warning? }` (beta.2).
+- **The widget writes `window.name` while navigating**, and restores the page's own value after.
+  An app that keeps state in `window.name` can see the marker briefly (beta.2).
+- **`press` acts at the focused element.** In `haltija/test` and `DevChannelClient.press` it was one
+  `keydown` at `body`; now it is the full key sequence at the focused element, like `hj key`
+  (beta.4).
+- **Schematics are drawn by tosijs-floorplan.** Same response fields; the picture looks different
+  (beta.5).
+
+### Fixed after beta.5
+
+From the 1.13.0 release review (`reviews/1.13.0-*.md`):
+
+- **A refused connection from another machine is now logged on the server**, once per address, with
+  the `--token` remedy. A browser cannot read why a WebSocket handshake failed, so a widget in a
+  container or VM retried forever while the server said nothing.
+- **`DevChannelClient` and `haltija/test` send `HALTIJA_TOKEN`.** `hj` and the MCP bridge always
+  did; these two never did, so a test suite could not reach a `--token` server at all, which since
+  beta.5 is the setup for any runner on another machine.
+- **`haltija --token=<secret>` sets a token.** The launcher read only `--token <secret>`, so the `=`
+  form, like a misspelled flag, started a server with no token and no complaint. `--flag=value` now
+  works for every launcher flag that takes a value, an unknown flag is reported, and the banner has
+  an `AUTH:` line saying whether a token is in force.
+- **`/drag`, `hj drag` and the `drag` step move pointer-driven controls.** They sent bare mouse
+  events (some of them `CustomEvent`s with no coordinates), so a slider, resize handle or orbit
+  camera that listens for pointer events didn't move while the drag reported success. They now use
+  the same pointer-and-mouse sequence as `dragFrom`, with `buttons` set while pressed.
+- **MCP setup replaces a stale entry.** Before 1.13 setup wrote `node …/apps/mcp/build/index.js`,
+  which no longer exists. `--check` reported such an entry as configured, and re-running setup said
+  "already configured". Both now call it stale, and setup rewrites it. The help named
+  `npx haltija-mcp-setup`, a package that does not exist; it is `npx -p haltija haltija-mcp-setup`.
+- **The `test:integration` lane runs its tests.** It needed a server it was never given, so every
+  1.13 beta attested "0 pass, 11 skip" as a pass. It now starts its own private headless instance,
+  and a lane that only skipped fails.
+- Docs: the README no longer shows a demo image that doesn't exist, and links the API reference and
+  the browser-test guide (`docs/TEST-IN-BROWSER.md`).
+
 ## 1.13.0-beta.5 (2026-10-18)
 
 ### Changed

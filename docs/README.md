@@ -25,6 +25,7 @@
 - **[API Reference](../API.md)** - Complete endpoint documentation (auto-generated from schema)
 - **[Agent Prompt](agent-prompt.md)** - System prompt for AI agents using Haltija
 - **[UX Crimes](UX-CRIMES.md)** - Anti-patterns Haltija detects automatically
+- **[Browser tests from your test runner](TEST-IN-BROWSER.md)** - `createBrowserPage` / `playwrightBridge` from `haltija/test`
 
 ## Architecture
 

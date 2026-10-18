@@ -277,3 +277,16 @@ export function httpsPortFor(opts: {
   if (opts.boundHttpPort === null) return DEFAULT_HTTPS_PORT
   return opts.boundHttpPort === DEFAULT_HTTP_PORT ? DEFAULT_HTTPS_PORT : 0
 }
+
+/**
+ * Whether a held HTTPS port may be taken from the haltija holding it (`freePort`), rather than
+ * retried and then reported as held (#1079).
+ *
+ * Only when THIS port was asked for by name. Being strict about the HTTP port (`--port`) says
+ * nothing about the HTTPS one, and stopping a server's HTTPS listener stops its whole process, HTTP
+ * included, for every project using that channel (#32a). The rule was `PORT_IS_STRICT` until
+ * #1079; nothing failed when it was reverted (1.13.0 review), so it lives here, where a test pins it.
+ */
+export function mayReclaimHttpsPort(opts: { explicitHttpsPort: number | null; httpPortIsStrict: boolean }): boolean {
+  return opts.explicitHttpsPort !== null
+}

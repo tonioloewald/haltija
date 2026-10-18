@@ -7,6 +7,8 @@
  * reasoning that put `semver` and `project-origins` here rather than hand-copying them.
  */
 
+import { PUBLIC_PORTS } from './ports'
+
 export interface RegistryEntry {
   name: string
   port: number
@@ -53,7 +55,7 @@ export interface ServerRow extends ServerCandidate {
 export function collectCandidates(
   instances: RegistryEntry[],
   resolvedPort: string | number,
-  defaults: Array<string | number> = [8700, 8701],
+  defaults: Array<string | number> = [...PUBLIC_PORTS],
 ): ServerCandidate[] {
   const byPort = new Map<string, ServerCandidate>()
   for (const e of instances) {

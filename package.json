@@ -60,7 +60,7 @@
     "electron:quick": "cd apps/desktop && npx electron .",
     "start": "bun run electron",
     "test": "bun test src/",
-    "test:integration": "bun test tests/",
+    "test:integration": "bun scripts/integration.ts",
     "test:server": "bun test src/server.test.ts",
     "test:https": "bun test src/https.test.ts",
     "test:both": "bun test src/both-mode.test.ts",
@@ -68,7 +68,7 @@
     "test:engines": "bunx playwright test -c playwright.engines.config.ts",
     "typecheck": "bunx tsc -p tsconfig.build.json --emitDeclarationOnly",
     "typecheck:playwright": "bunx tsc -p tsconfig.playwright.json",
-    "test:all": "bun test src/ && bun test tests/ && bunx playwright test"
+    "test:all": "bun test src/ && bun scripts/integration.ts && bunx playwright test"
   },
   "keywords": [
     "devtools",

@@ -8,9 +8,6 @@
 
 Unlike screenshot-based tools, Haltija works with the actual DOM. Unlike Playwright, it connects to your real browser — already logged in, same cookies, same bug you're looking at.
 
-<!-- TODO: Replace with actual GIF showing: 1) bunx haltija launches app, 2) agent queries tree, 3) agent clicks something, 4) highlight shows result -->
-![Haltija in action](docs/assets/demo.gif)
-
 > *Haltija* (Finnish): a guardian spirit that watches over a place. In this case, your DOM.
 
 ---
@@ -337,7 +334,9 @@ app also exists but isn't required for either.
   8701 by default), but without a token it refuses every connection that doesn't come from this
   machine. To use haltija from another device (a phone, a headset, a second computer), start it
   with `--token <secret>` (or `HALTIJA_TOKEN`) and send the same value as `X-Haltija-Token`,
-  `?token=`, or the widget's `token` option.
+  `?token=`, or the widget's `token` option. A browser in a container, VM or WSL2 that reaches
+  haltija through a forwarded port also counts as another machine. The server's terminal names
+  each refused address once.
 - **On this machine, any page you visit can call it.** The widget is injected into arbitrary
   pages, so the REST API answers any origin, `/eval` in your connected tabs included. That is by
   design for a local dev tool, and `--token` closes it too. A tunnel or reverse proxy on this
@@ -411,10 +410,11 @@ hj api                        # Full API reference (markdown)
 hj --help                     # CLI subcommand reference
 ```
 
-- [Full API Reference](./API.md) (auto-generated from schema)
+- [Full API Reference](https://github.com/tonioloewald/haltija/blob/main/API.md) (auto-generated from schema)
 - [Agent Prompt](docs/agent-prompt.md) — Copy-paste prompt for any AI agent
 - [Recipes](docs/recipes.md) — Common workflows
 - [CI Integration](docs/CI-INTEGRATION.md) — E2E testing with Haltija in GitHub Actions
+- [Browser tests from your test runner](docs/TEST-IN-BROWSER.md) — `createBrowserPage` from `haltija/test`: assertions on the host, probes in a real browser
 - [Roadmap](docs/ROADMAP.md)
 
 ---

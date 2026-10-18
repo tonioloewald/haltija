@@ -23,6 +23,7 @@
  */
 
 import { isOlderThan, parseVersion } from './semver'
+import { PUBLIC_PORTS } from './ports'
 
 /** The release that added the hj-install guards. Servers below this are harmful. */
 export const GUARDS_VERSION = '1.4.0'
@@ -147,7 +148,7 @@ export function candidatePorts(opts: {
   registryPorts?: number[]
   exclude?: number[]
 } = {}): number[] {
-  const defaults = opts.defaults ?? [8700, 8701]
+  const defaults = opts.defaults ?? [...PUBLIC_PORTS]
   const all = [...defaults, ...(opts.registryPorts ?? [])]
   const exclude = new Set(opts.exclude ?? [])
   return [...new Set(all)].filter((p) => !exclude.has(p)).sort((a, b) => a - b)

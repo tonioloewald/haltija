@@ -23,6 +23,7 @@
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { DevChannelClient } from './client'
+import { authedFetch as fetch } from './client-auth'
 import { GUARD_MUTATION } from './test-in-browser'
 import type { DevChannelTest } from './types'
 import type { TestRunResult, SuiteRunResult } from './test-formatters'

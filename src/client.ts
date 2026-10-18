@@ -11,6 +11,7 @@
  * This is what Claude Code or other agents would use.
  */
 
+import { authedFetch as fetch } from './client-auth'
 import type {
   DevResponse,
   DomElement,

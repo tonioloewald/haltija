@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import {
   httpsPortFor,
+  mayReclaimHttpsPort,
   resolveTransportMode,
   sharedChannelDegradedWarning,
   resolveCertDir,
@@ -214,5 +215,17 @@ describe('httpsPortFor — only the 8700 holder may claim 8701', () => {
 
   it('private is always ephemeral, even with an explicit port or 8700', () => {
     expect(httpsPortFor({ isPrivate: true, explicitHttpsPort: 9443, boundHttpPort: 8700 })).toBe(0)
+  })
+})
+
+describe('mayReclaimHttpsPort — strict about HTTP is not a claim on HTTPS (#1079)', () => {
+  it('a strict --port with no named HTTPS port never takes the HTTPS port from its holder', () => {
+    // Taking it stops the holder's whole process, HTTP included, for every project on that channel.
+    expect(mayReclaimHttpsPort({ explicitHttpsPort: null, httpPortIsStrict: true })).toBe(false)
+  })
+
+  it('naming the HTTPS port claims it, whatever the HTTP side asked for', () => {
+    expect(mayReclaimHttpsPort({ explicitHttpsPort: 9443, httpPortIsStrict: false })).toBe(true)
+    expect(mayReclaimHttpsPort({ explicitHttpsPort: 9443, httpPortIsStrict: true })).toBe(true)
   })
 })

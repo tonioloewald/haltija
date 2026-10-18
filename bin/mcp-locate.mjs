@@ -31,3 +31,20 @@ export function mcpServerCommand(serverPath, root = PACKAGE_ROOT) {
   }
   return { command: 'node', args: [serverPath] }
 }
+
+/**
+ * Why an existing `haltija` MCP entry can no longer start, or null when it looks runnable.
+ *
+ * Before 1.13.0 setup wrote `node …/apps/mcp/build/index.js`, a path the package no longer has, and
+ * `--check` reported such an entry as configured while re-running setup said "already configured",
+ * so nothing short of hand-editing the config could fix it. An entry that names a server file which
+ * is not there is stale, whatever else it says; one that runs a command (`npx …`) is left alone.
+ */
+export function staleMcpEntry(entry) {
+  const args = Array.isArray(entry?.args) ? entry.args : []
+  const script = args.find((a) => typeof a === 'string' && /\.(m?js|ts)$/.test(a))
+  if (!script) return null
+  if (/[\\/]apps[\\/]mcp[\\/]build[\\/]/.test(script)) return `it runs ${script}, the pre-1.13 server location`
+  if (!existsSync(script)) return `it runs ${script}, which does not exist`
+  return null
+}

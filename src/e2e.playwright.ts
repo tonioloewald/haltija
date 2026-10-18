@@ -310,6 +310,39 @@ test.describe('haltija-dev CLI', () => {
     expect(map.data.layout).toBe('geometric')
   })
 
+  test('REST drag and the drag step move a POINTER-only control (1.13.0 review)', async ({ page }) => {
+    await injectDevChannel(page)
+    // Listens to pointer events only and requires the button held, as sliders, resize handles and
+    // orbit cameras do. The REST drag used to send CustomEvents and bare MouseEvents, so this moved
+    // nothing while the drag reported success.
+    await page.evaluate(() => {
+      const knob = document.createElement('div')
+      knob.id = 'pknob'
+      knob.style.cssText = 'position:fixed;left:20px;top:200px;width:40px;height:40px;background:#c3f'
+      document.body.appendChild(knob)
+      const w = window as any
+      w.pk = { dx: 0, down: false, start: 0 }
+      knob.addEventListener('pointerdown', (e: PointerEvent) => { w.pk.down = true; w.pk.start = e.clientX })
+      document.addEventListener('pointermove', (e: PointerEvent) => {
+        if (w.pk.down && e.buttons & 1) w.pk.dx = e.clientX - w.pk.start
+      })
+      document.addEventListener('pointerup', () => { w.pk.down = false })
+    })
+    const post = (path: string, body: unknown) =>
+      fetch(`${SERVER_URL}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json())
+
+    const res = await post('/drag', { selector: '#pknob', deltaX: 60, deltaY: 0, duration: 100 })
+    expect(res.success).toBe(true)
+    expect(await page.evaluate(() => (window as any).pk.dx)).toBeGreaterThan(50)
+
+    await page.evaluate(() => { (window as any).pk.dx = 0 })
+    const run = await post('/test/run', {
+      test: { version: 1, name: 'pointer drag', url: page.url(), steps: [{ action: 'drag', selector: '#pknob', deltaX: 40, duration: 100 }] },
+    })
+    expect(run.passed).toBe(true)
+    expect(await page.evaluate(() => (window as any).pk.dx)).toBeGreaterThan(30)
+  })
+
   test('map surfaces contrast failures with the page\'s real colours and a WCAG verdict', async ({ page }) => {
     await injectDevChannel(page)
     await page.evaluate(() => {

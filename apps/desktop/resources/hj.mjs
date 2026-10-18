@@ -2533,7 +2533,10 @@ function routeByDeclaredOrigin(declared, tabs, focusedWindowId) {
 }
 
 // bin/server-list.mjs
-function collectCandidates(instances, resolvedPort, defaults = [8700, 8701]) {
+var DEFAULT_HTTP_PORT = 8700;
+var DEFAULT_HTTPS_PORT = 8701;
+var PUBLIC_PORTS = [DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT];
+function collectCandidates(instances, resolvedPort, defaults = [...PUBLIC_PORTS]) {
   const byPort = new Map;
   for (const e of instances) {
     byPort.set(String(e.port), { port: String(e.port), name: e.name, cwd: e.cwd ?? null });

@@ -61,6 +61,9 @@ listens, and the real reason if not (port held, bad cert). HTTP-only leaves http
 while looking healthy (Safari blocks http://localhost from https). Only the 8700 server takes
 HTTPS 8701; a `--port`/`--name` server's is ephemeral. Cert writes log to stderr.
 
+**403 "…other machines only with a token"**: you came from another device or a container/VM/WSL2
+port-forward. Restart with `--token <secret>`; send it via `hj --token` / `HALTIJA_TOKEN`.
+
 **Both diagnostics report what routing will actually do.** `hj where` and `hj doctor` each print an
 `origins:` line — what you declared, where the declaration was found, and which connected window it
 resolves to (or that none matches yet, so commands still follow focus). A `.haltija.json` that
@@ -412,15 +415,13 @@ seeded data) so the render set can run as a quick gate.
 Also available (see [CI integration](../../../../docs/CI-INTEGRATION.md#test-step-actions)): `check`, `select-text`, `cut`, `copy`, `paste`, `drag`, `verify`, `tabs-open`, `tabs-close`, `tabs-focus`.
 <!-- END:step-actions -->
 
-  **`select` is deprecated — use `select-text`.** It still runs, and a step that uses it now comes
-  back with a `warning` naming the replacement (shown in the test report, and on `step.warning` in
-  `--json`). `select` is being freed to mean what everyone expects — pick an option from a
+  **`select` is deprecated — use `select-text`.** It still runs, with a `warning` (`step.warning` in
+  `--json`) naming the replacement. `select` is being freed to mean what everyone expects — pick an option from a
   `<select>` — which haltija cannot do yet; until then, set one with an `eval` step.
 
-  **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, which
-  is a superset — `/drag` was documented there for releases while the runner had no `drag` case, so
-  a reasonable-looking suite failed with `Unsupported step action: drag`. `hj test validate` rejects
-  an unknown action (with a "did you mean") before the suite runs.
+  **An HTTP endpoint existing does NOT make it a step.** `hj api` documents the REST surface, a
+  superset of the step actions above. `hj test validate` rejects an unknown action (with a "did you
+  mean") before the suite runs.
 - **Assertion types:** `exists`, `visible`, `hidden`, `text`, `value`, `attribute`, `url`.
 - **Selectors — prefer user-centric:** `button:has-text("Submit")`, `a:has-text("Settings")`,
   `input[type='email']`, `[data-testid='user-menu']`. Avoid brittle structural selectors.

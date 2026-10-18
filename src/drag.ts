@@ -8,10 +8,13 @@
  * two implementations of a single idea with only one of them updated.
  *
  * Dragging is not a single message to the widget (which is what a reasonable reader assumes from
- * the outside): it scrolls into view, measures the element, then dispatches a mouseenter/over/move
- * → mousedown → N interpolated mousemoves → mouseup sequence. That is far too much behaviour to
- * have two copies of, so it lives here and both callers call it.
+ * the outside): it scrolls into view, measures the element, then dispatches an over/move → down →
+ * N interpolated moves → up sequence, each as a PointerEvent plus its MouseEvent twin
+ * (src/pointer-kit.ts, shared with `dragFrom`). That is far too much behaviour to have two copies
+ * of, so it lives here and both callers call it.
  */
+
+import { POINTER_KIT } from './pointer-kit'
 
 /** How a caller talks to the browser widget. Both call sites already have one of these. */
 export type BrowserRequest = (
@@ -119,54 +122,47 @@ export async function performDrag(
       `handles — which listen for mousemove on document — are unaffected.`
     : undefined
 
-  // mouseenter, mouseover, mousemove to start
-  for (const event of ['mouseenter', 'mouseover', 'mousemove']) {
-    await request(
-      'events',
-      'dispatch',
-      { ref, selector, event, options: { clientX: startX, clientY: startY } },
-      5000,
-      windowId,
-    )
-  }
-
-  // mousedown
-  await request(
-    'events',
-    'dispatch',
-    { ref, selector, event: 'mousedown', options: { clientX: startX, clientY: startY } },
-    5000,
-    windowId,
-  )
-
-  // mousemove steps
+  // One in-page sequence, through the same kit as `dragFrom`: a PointerEvent and its MouseEvent
+  // twin at every point, with real coordinates and `buttons: 1` while pressed. This used to send
+  // mouseenter/over/move as CustomEvents (`events/dispatch` builds a MouseEvent only for click,
+  // mousedown and mouseup), then bare MouseEvents with no `buttons` and no pointer events at all.
+  // A control that listens for pointer events (sliders, resize handles, orbit cameras) moved
+  // nothing and the step reported success (1.13.0 review). `dragFrom` had already been fixed for
+  // exactly this in the beta.1 review; two implementations of one gesture had drifted apart.
+  const target = ref
+    ? `window.__haltija_refRegistry?.resolve(${JSON.stringify(ref)})`
+    : qs(selector!)
   const stepDelay = duration / steps
-  for (let i = 1; i <= steps; i++) {
-    const progress = i / steps
-    const x = startX + deltaX * progress
-    const y = startY + deltaY * progress
-    await request(
-      'eval',
-      'exec',
-      {
-        code: `document.dispatchEvent(new MouseEvent('mousemove', { clientX: ${x}, clientY: ${y}, bubbles: true }))`,
-      },
-      5000,
-      windowId,
-    )
-    await sleep(stepDelay)
-  }
-
-  // mouseup
-  await request(
+  const res = await request(
     'eval',
     'exec',
     {
-      code: `document.dispatchEvent(new MouseEvent('mouseup', { clientX: ${startX + deltaX}, clientY: ${startY + deltaY}, bubbles: true }))`,
+      code: `(async () => {${POINTER_KIT}
+        const el = ${target}
+        if (!el) throw new Error('the drag target disappeared before the drag started')
+        const x0 = ${startX}, y0 = ${startY}
+        hjSend(el, 'over', x0, y0, 0)
+        hjSend(el, 'move', x0, y0, 0)
+        hjSend(el, 'down', x0, y0, 1)
+        // Moves go to whatever is under the pointer, falling back to the pressed element; they
+        // bubble, so a document-level handler sees them too.
+        let last = el
+        for (let i = 1; i <= ${steps}; i++) {
+          const px = x0 + (${deltaX} * i) / ${steps}, py = y0 + (${deltaY} * i) / ${steps}
+          last = document.elementFromPoint(px, py) || el
+          hjSend(last, 'move', px, py, 1)
+          await new Promise((r) => setTimeout(r, ${stepDelay}))
+        }
+        hjSend(last, 'up', x0 + ${deltaX}, y0 + ${deltaY}, 0)
+        return true
+      })()`,
     },
-    5000,
+    duration + 5000,
     windowId,
   )
+  if (!res?.success) {
+    return { success: false, error: `Drag failed on ${targetDesc}: ${res?.error || 'no response from the page'}` }
+  }
 
   return {
     success: true,

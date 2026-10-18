@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { isLoopbackAddress, refusesRemoteCaller } from './remote-gate'
+import { isLoopbackAddress, refusalLogLine, refusesRemoteCaller } from './remote-gate'
 
 describe('isLoopbackAddress (#815)', () => {
   it('accepts every loopback spelling Bun reports', () => {
@@ -29,5 +29,24 @@ describe('refusesRemoteCaller (#815)', () => {
 
   it('with a token, leaves the decision to the token check', () => {
     expect(refusesRemoteCaller('192.168.1.20', 'secret')).toBe(false)
+  })
+})
+
+describe('refusalLogLine (#815 review)', () => {
+  it('names the peer and the remedy, once per peer', () => {
+    const told = new Set<string>()
+    const line = refusalLogLine('172.17.0.1', told)!
+    expect(line).toContain('172.17.0.1')
+    expect(line).toContain('--token')
+    expect(line).toContain('container')
+    expect(refusalLogLine('172.17.0.1', told)).toBeNull()
+    expect(refusalLogLine('10.0.0.5', told)).toContain('10.0.0.5')
+  })
+
+  it('an unknown address is still reported, and the set stays bounded', () => {
+    const told = new Set<string>()
+    expect(refusalLogLine(null, told)).toContain('unknown address')
+    for (let i = 0; i < 1000; i++) refusalLogLine(`10.0.${i >> 8}.${i & 255}`, told)
+    expect(told.size).toBeLessThanOrEqual(256)
   })
 })
