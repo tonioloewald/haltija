@@ -82,6 +82,8 @@ export interface CanvasThumb {
  * page whose button reads `confirmed ⟷ app.status` would be drawn, and reported, as a writable
  * binding. The renderer can't tell a forged suffix arrow from a real one; only the producer can,
  * by never letting one in.
+ *
+ * A hand copy of floorplan's policy until floorplan exports one (virta #3387, UPSTREAM.md).
  */
 export function neutralizeArrows(s: string): string {
   return s.replaceAll('⟷', '<->').replaceAll('⟵', '<-')

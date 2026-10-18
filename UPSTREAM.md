@@ -3,6 +3,14 @@
 Cross-repo work surfaced by haltija reviews. **We file, we don't fix** — never edit another repo
 directly. Each entry links the issue once filed.
 
+## tosijs-floorplan — export the provenance-arrow neutralizer (virta #3387)
+
+**Status:** filed on the virta board (project:tosijs-floorplan), 2026-10-18, from the 1.13.0 review.
+
+floorplan's spec says every DOM producer MUST neutralize `⟷`/`⟵` in page text, and haltija's
+`neutralizeArrows` (`src/floorplan-records.ts`) is a hand copy of that policy. Asked floorplan to
+export `neutralizeProvenance(text)` and its token list; haltija switches to it once it ships.
+
 ## tosijs-ui#66 — doc/build system should afford drift control (PROPOSAL)
 
 https://github.com/tonioloewald/tosijs-ui/issues/66
