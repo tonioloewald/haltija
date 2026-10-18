@@ -228,6 +228,455 @@
     return { width: W, height: H };
   }
 
+  // node_modules/tosijs-floorplan/dist/index.js
+  var BOUND_TO_DOM = "⟵";
+  var BOUND_TWO_WAY = "⟷";
+  var shownValue = (v) => {
+    if (typeof v !== "string")
+      return;
+    const at = Math.max(v.lastIndexOf(BOUND_TWO_WAY), v.lastIndexOf(BOUND_TO_DOM));
+    return neutralizeArrows(at >= 0 ? v.slice(0, at).trim() : v);
+  };
+  var neutralizeArrows = (s) => s.replaceAll(BOUND_TWO_WAY, "<->").replaceAll(BOUND_TO_DOM, "<-");
+  var boundTwoWay = (v) => {
+    if (typeof v !== "string")
+      return false;
+    const at = v.lastIndexOf(BOUND_TWO_WAY);
+    return at >= 0 && at > v.lastIndexOf(BOUND_TO_DOM);
+  };
+  var NEVER_BOUND = new Set([
+    "tag",
+    "id",
+    "part",
+    "role",
+    "label",
+    "placeholder",
+    "type",
+    "description",
+    "href",
+    "ref",
+    "image"
+  ]);
+  var hasTwoWayBinding = (w) => Object.entries(w).some(([key, v]) => !NEVER_BOUND.has(key) && boundTwoWay(v));
+  var hasActEvidence = (w) => w.on != null || w.interactive === true || typeof w.href === "string" && w.href !== "";
+  var hasEditEvidence = (w) => w.editable === true || w.contentEditable === true || hasTwoWayBinding(w);
+  var hasCapabilityEvidence = (w) => w.on != null || w.interactive === true || w.editable === true || Object.entries(w).some(([key, v]) => !NEVER_BOUND.has(key) && typeof v === "string" && (v.includes(BOUND_TWO_WAY) || v.includes(BOUND_TO_DOM)));
+  var isGround = (w) => w.structural === true || w.list != null && !hasActEvidence(w) && !hasEditEvidence(w);
+  var isInteractive = (w) => !isGround(w) && (hasActEvidence(w) || hasEditEvidence(w));
+  var TARGET_SIZE_DEFAULT = 24;
+  var TARGET_FLAG_KINDS = new Set([
+    "target",
+    "target-size",
+    "targetsize",
+    "target_size",
+    "smalltarget"
+  ]);
+  var sizeFinding = (w, width, height, targetSize = TARGET_SIZE_DEFAULT, { honorProducerFlags = false } = {}) => {
+    if (targetSize <= 0 || !isInteractive(w))
+      return null;
+    if (width <= 0 || height <= 0)
+      return null;
+    if (w.type === "checkbox" || w.type === "radio")
+      return null;
+    if (w.tag === "a" && typeof w.text === "string" && w.text !== "" && width > height) {
+      return null;
+    }
+    if (honorProducerFlags && Array.isArray(w.flags) && w.flags.some((f) => typeof f?.kind === "string" && TARGET_FLAG_KINDS.has(f.kind.toLowerCase()))) {
+      return null;
+    }
+    return width < targetSize || height < targetSize ? `${width}×${height} — below ${targetSize}×${targetSize} (WCAG 2.5.8)` : null;
+  };
+  var finiteBounds = (b) => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height);
+  var printable = (value) => value == null || typeof value === "number";
+  var intersects = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  var contains = (outer, inner) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+  var esc = (s) => typeof s !== "string" ? "" : s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  var TRANSPARENT = "rgba(0, 0, 0, 0)";
+  var styleColor = (style, key, fallback) => {
+    const value = style != null && typeof style === "object" ? style[key] : undefined;
+    return typeof value === "string" ? value : fallback;
+  };
+  var FLAG_COLORS = {
+    error: "#d32f2f",
+    warn: "#e6a700",
+    info: "#888888"
+  };
+  var flagColor = (severity) => typeof severity === "string" && Object.hasOwn(FLAG_COLORS, severity) ? FLAG_COLORS[severity] : FLAG_COLORS.warn;
+  var wrapCaption = (caption, maxChars, maxLines) => {
+    if (maxLines <= 1 || caption.length <= maxChars) {
+      return [caption.slice(0, maxChars + 2)];
+    }
+    const words = caption.split(" ");
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const candidate = line === "" ? word : `${line} ${word}`;
+      if (candidate.length <= maxChars) {
+        line = candidate;
+      } else {
+        if (line !== "")
+          lines.push(line);
+        line = word.length > maxChars ? word.slice(0, maxChars) : word;
+        if (lines.length === maxLines)
+          break;
+      }
+    }
+    if (lines.length < maxLines && line !== "")
+      lines.push(line);
+    if (lines.length > maxLines || lines.length === maxLines && line !== "" && !lines.includes(line)) {
+      lines.length = maxLines;
+      lines[maxLines - 1] = lines[maxLines - 1].slice(0, maxChars - 1) + "…";
+    }
+    return lines;
+  };
+  var schematic = (description, options = {}) => {
+    const {
+      minLabelHeight = 14,
+      maxCaption = 36,
+      within: withinIn,
+      index: showIndex = false,
+      targetSize = TARGET_SIZE_DEFAULT,
+      legendNote = true,
+      decorate
+    } = options;
+    const padIn = options.pad;
+    const pad = padIn === undefined || !printable(padIn) ? 8 : padIn;
+    const fontSizeIn = options.fontSize;
+    const fontSize = fontSizeIn === undefined || !printable(fontSizeIn) ? 11 : fontSizeIn;
+    const legend = [];
+    const within = withinIn == null ? undefined : {
+      x: withinIn.x,
+      y: withinIn.y,
+      width: withinIn.width,
+      height: withinIn.height
+    };
+    const withinOk = within == null || printable(within.x) && printable(within.y) && printable(within.width) && printable(within.height);
+    const geometry = new Map;
+    const snapshotOf = (w) => {
+      if (geometry.has(w))
+        return geometry.get(w);
+      const b = w.bounds;
+      const g = b == null ? null : { x: b.x, y: b.y, width: b.width, height: b.height };
+      const usable = g != null && finiteBounds(g) ? g : null;
+      geometry.set(w, usable);
+      return usable;
+    };
+    const boxes = description.wiring.filter((w) => {
+      if (!withinOk)
+        return false;
+      const g = snapshotOf(w);
+      if (g == null)
+        return false;
+      return g.width > 0 && g.height > 0 && (w.viewportFixed === true || g.x + g.width > 0 && g.y + g.height > 0) && (within == null || w.viewportFixed === true || intersects(g, within));
+    });
+    const flow = boxes.filter((w) => w.viewportFixed !== true);
+    if (boxes.length === 0) {
+      return {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 0 0"></svg>',
+        legend
+      };
+    }
+    const fitBoxes = flow.length > 0 ? flow : boxes;
+    const minX = within != null ? within.x - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).x)) - pad;
+    const minY = within != null ? within.y - pad : Math.min(...fitBoxes.map((w) => geometry.get(w).y)) - pad;
+    const maxX = within != null ? within.x + within.width + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).x + geometry.get(w).width)) + pad;
+    const maxY = within != null ? within.y + within.height + pad : Math.max(...fitBoxes.map((w) => geometry.get(w).y + geometry.get(w).height)) + pad;
+    const parts = [
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" width="${maxX - minX}" height="${maxY - minY}">`
+    ];
+    const drawOrder = [...boxes].sort((a, b) => Number(isGround(b)) - Number(isGround(a)));
+    const blind = boxes.some((w) => !isGround(w)) && !description.wiring.some(isInteractive) && !description.wiring.some(hasCapabilityEvidence);
+    const note = blind ? "no record carries affordance evidence (on, href, contentEditable, " + "a two-way binding, or an interactive/editable assertion), and none " + "shows the producer can see wiring at all (no handler, assertion, " + 'or provenance arrow anywhere) — "nothing here is actionable" is ' + "NOT established; a producer that cannot introspect handlers " + "should assert `interactive`/`editable` per record (see README)" : undefined;
+    const boxGeometry = boxes.map((b) => geometry.get(b));
+    for (const w of drawOrder) {
+      const index = description.wiring.indexOf(w);
+      const pinOffsetX = w.viewportFixed === true ? minX + pad : 0;
+      const pinOffsetY = w.viewportFixed === true ? minY + pad : 0;
+      const own = geometry.get(w);
+      const x = own.x + pinOffsetX;
+      const y = own.y + pinOffsetY;
+      const { width, height } = own;
+      let isContainer = false;
+      if (w.viewportFixed !== true)
+        for (let j = 0;j < boxes.length && !isContainer; j++)
+          isContainer = boxes[j] !== w && boxes[j].viewportFixed !== true && contains(own, boxGeometry[j]);
+      const toggle = w.type === "checkbox" || w.type === "radio";
+      const secret = Boolean(w.secret);
+      const image = w.image;
+      let caption;
+      let hint = false;
+      if (secret) {
+        caption = `<${w.tag}> [withheld]`;
+      } else if (isContainer) {
+        caption = String(w.label ?? "");
+      } else if (toggle) {
+        caption = String(w.label ?? "");
+      } else if (w.tag === "input" || w.tag === "textarea" || w.tag === "select" || w.contentEditable === true) {
+        const value = shownValue(w.value);
+        if (value) {
+          caption = w.label != null ? `${w.label}: ${value}` : value;
+        } else if (w.placeholder != null && w.placeholder !== "") {
+          caption = String(w.placeholder);
+          hint = true;
+        } else {
+          caption = String(w.label ?? w.text ?? `<${w.tag}>`);
+        }
+      } else {
+        caption = String(w.label ?? shownValue(w.text) ?? shownValue(w.value) ?? w.href ?? `<${w.tag}>`);
+      }
+      caption = neutralizeArrows(caption);
+      const structural = isGround(w);
+      const actable = !structural && hasActEvidence(w);
+      const editable = !structural && hasEditEvidence(w);
+      const fill = structural ? "none" : styleColor(w.style, "background", "transparent");
+      const border = styleColor(w.style, "borderColor", "currentColor");
+      const stroke = !structural && border !== TRANSPARENT ? border : "currentColor";
+      const color = styleColor(w.style, "color", "currentColor");
+      const drawImage = !structural && !secret && typeof image === "string" && image.startsWith("data:");
+      const cramped = !structural && (height < minLabelHeight || width < fontSize * 3);
+      const undersized = sizeFinding(w, width, height, targetSize, {
+        honorProducerFlags: true
+      });
+      const emphasis = structural ? ' stroke-dasharray="1 3" stroke-linecap="round" opacity="0.45"' : w.disabled === true ? ' opacity="0.4"' : actable ? ' stroke-width="2"' : "";
+      parts.push(`<g data-record="${index}"${w.ref != null ? ` data-ref="${esc(String(w.ref))}"` : ""}>`);
+      if (w.type === "radio") {
+        const r = Math.min(width, height) / 2;
+        const cx = x + width / 2;
+        const cy = y + height / 2;
+        parts.push(`<circle cx="${cx}" cy="${cy}" r="${r - 0.5}" fill="${esc(fill)}" ` + `stroke="${esc(stroke)}"${emphasis}/>`);
+        if (w.checked === true) {
+          parts.push(`<circle cx="${cx}" cy="${cy}" r="${Math.max(2, r * 0.45)}" ` + `fill="${esc(color)}"/>`);
+        }
+      } else {
+        parts.push(`<rect x="${x}" y="${y}" width="${width}" height="${height}" ` + `fill="${esc(fill)}" stroke="${esc(stroke)}"${emphasis}/>`);
+        if (drawImage) {
+          parts.push(`<image x="${x + 1}" y="${y + 1}" width="${width - 2}" ` + `height="${height - 2}" href="${esc(image)}" ` + `preserveAspectRatio="xMidYMid meet"/>`);
+        }
+        if (w.type === "checkbox" && w.checked === true) {
+          const inset = 3;
+          parts.push(`<line x1="${x + inset}" y1="${y + inset}" x2="${x + width - inset}" ` + `y2="${y + height - inset}" stroke="${esc(color)}" stroke-width="1.5"/>`, `<line x1="${x + inset}" y1="${y + height - inset}" ` + `x2="${x + width - inset}" y2="${y + inset}" ` + `stroke="${esc(color)}" stroke-width="1.5"/>`);
+        }
+      }
+      if (!cramped && !structural && Array.isArray(w.flags) && w.flags.length > 0) {
+        w.flags.forEach((flag, at) => {
+          parts.push(`<rect x="${x + at * 3}" y="${y}" width="3" height="${height}" ` + `fill="${flagColor(flag?.severity)}" ` + `data-flag="${esc(typeof flag?.kind === "string" ? flag.kind : "")}"/>`);
+        });
+        const first = w.flags[0];
+        if (typeof first?.label === "string" && first.label !== "" && height >= minLabelHeight) {
+          parts.push(`<rect x="${x + w.flags.length * 3 + 1}" y="${y + height - 9}" ` + `width="${first.label.length * 4.5 + 2}" height="8" ` + `fill="white" opacity="0.85"/>`, `<text x="${x + w.flags.length * 3 + 2}" y="${y + height - 2}" ` + `font-size="7" font-family="monospace" ` + `fill="${flagColor(first.severity)}">` + `${esc(neutralizeArrows(first.label))}</text>`);
+        }
+      }
+      if (undersized != null) {
+        parts.push(`<rect x="${x}" y="${y}" width="3" height="${height}" ` + `fill="${FLAG_COLORS.warn}" data-flag="target-size"/>`);
+      }
+      if (w.invalid === true && !structural) {
+        const flagSize = Math.min(7, Math.floor(Math.min(width, height) / 2));
+        parts.push(`<path d="M${x} ${y} l${flagSize} 0 l-${flagSize} ${flagSize} z" ` + `fill="#d32f2f"/>`);
+      }
+      if (w.focused === true && !structural) {
+        parts.push(`<rect x="${x - 2.5}" y="${y - 2.5}" width="${width + 5}" ` + `height="${height + 5}" fill="none" stroke="${esc(stroke)}" ` + `stroke-width="1.5"/>`);
+      }
+      if (editable && !toggle && !cramped) {
+        parts.push(`<text x="${x + width - 3}" y="${y + height - 4}" ` + `font-size="${fontSize}" text-anchor="end" ` + `font-family="monospace" fill="${esc(color)}">↔</text>`);
+      }
+      let drawnCaption = null;
+      const shownCaption = w.required === true && !structural && caption !== "" ? `${caption} *` : caption;
+      if (toggle) {
+        if (shownCaption !== "") {
+          parts.push(`<text x="${x + width + 4}" ` + `y="${y + height / 2 + fontSize / 2 - 1}" ` + `font-size="${fontSize}" font-family="monospace" ` + `fill="${esc(color)}">` + `${esc(shownCaption.slice(0, maxCaption + 2))}</text>`);
+        }
+      } else if (!cramped && height >= minLabelHeight && shownCaption !== "") {
+        const lineHeight = fontSize + 2;
+        const maxLines = Math.max(1, Math.floor((height - 6) / lineHeight));
+        const perLine = Math.min(maxCaption, Math.max(8, Math.floor((width - 8) / (fontSize * 0.6))));
+        const lines = wrapCaption(shownCaption, perLine, maxLines);
+        drawnCaption = lines.join(" ");
+        const styleAttrs = `font-size="${fontSize}" font-family="monospace" fill="${esc(color)}"` + `${hint ? ' font-style="italic" opacity="0.6"' : ""}`;
+        if (lines.length === 1) {
+          parts.push(`<text x="${x + 4}" y="${y + Math.min(height - 4, fontSize + 2)}" ` + `${styleAttrs}>${esc(lines[0])}</text>`);
+        } else {
+          parts.push(`<text x="${x + 4}" y="${y + fontSize + 2}" ${styleAttrs}>` + lines.map((line, at) => `<tspan x="${x + 4}"${at > 0 ? ` dy="${lineHeight}"` : ""}>` + `${esc(line)}</tspan>`).join("") + "</text>");
+        }
+      }
+      const truncated = drawnCaption != null && drawnCaption.length < shownCaption.split(" ").filter(Boolean).join(" ").length;
+      const elided = { index, tag: w.tag };
+      if (w.ref != null)
+        elided.ref = String(w.ref);
+      if (typeof w.href === "string" && w.href !== "" && !structural && !secret) {
+        elided.href = w.href;
+      }
+      if (cramped || truncated) {
+        if (shownCaption !== "" && !toggle)
+          elided.caption = caption;
+        const heldValue = secret ? undefined : shownValue(w.value);
+        if (heldValue)
+          elided.value = heldValue;
+        if (cramped) {
+          if (editable)
+            elided.editable = true;
+          if (w.required === true)
+            elided.required = true;
+          if (Array.isArray(w.flags) && w.flags.length > 0) {
+            elided.flags = w.flags;
+          }
+        }
+      }
+      if (w.invalid === true && cramped)
+        elided.invalid = true;
+      if (w.disabled === true && cramped)
+        elided.disabled = true;
+      if (undersized != null)
+        elided.undersized = undersized;
+      if (secret)
+        elided.redacted = true;
+      const inLegend = elided.redacted != null || elided.caption != null || elided.href != null || elided.value != null || elided.editable != null || elided.required != null || elided.flags != null || elided.invalid != null || elided.disabled != null || elided.undersized != null;
+      if (inLegend)
+        legend.push(elided);
+      if (showIndex || w.ref != null || inLegend) {
+        const shown = w.ref != null ? String(w.ref) : String(index);
+        const indexX = toggle ? x - 3 : x + width - 2;
+        parts.push(`<rect x="${indexX - shown.length * 5 - 1}" y="${y + 1}" ` + `width="${shown.length * 5 + 2}" height="8" fill="white" ` + `opacity="0.85" data-index-backdrop="true"/>`, `<text x="${indexX}" y="${y + 8}" font-size="8" ` + `text-anchor="end" font-family="monospace" fill="black" ` + `opacity="0.8">${esc(shown)}</text>`);
+      }
+      if (decorate != null) {
+        decorate({
+          record: w,
+          index,
+          x,
+          y,
+          width,
+          height,
+          structural,
+          emit: (svg) => parts.push(svg)
+        });
+      }
+      parts.push("</g>");
+    }
+    const footerExtra = legendNote && legend.length > 0 ? 14 : 0;
+    if (footerExtra > 0) {
+      parts.push(`<text x="${minX + pad}" y="${maxY + 10}" font-size="8" ` + `font-family="monospace" fill="currentColor" opacity="0.75">` + `${legend.length} element${legend.length === 1 ? "" : "s"} with ` + `details in legend — match by stamped number</text>`);
+    }
+    const descBits = [];
+    if (legend.length > 0) {
+      descBits.push(`${description.wiring.length} records; ${legend.length} ` + "legend entries carry metadata the drawing could not — pair this " + "image with its legend JSON (schematic().legend), matched by the " + "stamped number / data-record index.");
+    }
+    if (note != null)
+      descBits.push(note);
+    parts[0] = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY + footerExtra}" width="${maxX - minX}" height="${maxY - minY + footerExtra}">` + (descBits.length > 0 ? `<desc>${esc(descBits.join(" "))}</desc>` : "");
+    parts.push("</svg>");
+    const result = { svg: parts.join(""), legend };
+    if (note != null)
+      result.note = note;
+    return result;
+  };
+
+  // src/floorplan-records.ts
+  function neutralizeArrows2(s) {
+    return s.replaceAll("⟷", "<->").replaceAll("⟵", "<-");
+  }
+  var PAGE_TEXT_FIELDS = ["label", "placeholder", "text", "value"];
+  function isPureLayout(n) {
+    return !!n.children?.length && !n.label && !n.text && n.value === undefined && !n.href && !n.placeholder && !n.contrastFail && !n.interactive && !n.ownBg && !n.ownBorder;
+  }
+  function refPill(ctx) {
+    const ref = ctx.record.ref;
+    if (ref == null)
+      return;
+    const shown = String(ref).replace(/[&<>"]/g, "");
+    const toggle = ctx.record.type === "checkbox" || ctx.record.type === "radio";
+    const right = toggle ? ctx.x - 3 : ctx.x + ctx.width - 2;
+    const w = shown.length * 5 + 3;
+    ctx.emit(`<rect x="${right - w + 1}" y="${ctx.y + 1}" width="${w}" height="9" rx="2" fill="#0f172a" opacity="0.9"/>` + `<text x="${right}" y="${ctx.y + 8.5}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8" font-weight="bold" fill="#ffffff">${shown}</text>`);
+  }
+  var STRUCTURAL_TAGS = new Set([
+    "main",
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "section",
+    "form",
+    "dialog"
+  ]);
+  function toRecord(n) {
+    const r = { tag: n.tag };
+    if (n.ref)
+      r.ref = n.ref;
+    if (n.id)
+      r.id = n.id;
+    if (n.role)
+      r.role = n.role;
+    if (n.label)
+      r.label = n.label;
+    if (n.placeholder)
+      r.placeholder = n.placeholder;
+    if (n.text)
+      r.text = n.text;
+    if (n.value !== undefined && n.value !== "")
+      r.value = String(n.value);
+    if (n.href)
+      r.href = n.href;
+    if (n.type && n.type !== "text" && n.type !== "submit" && n.type !== "button")
+      r.type = n.type;
+    if (n.checked)
+      r.checked = true;
+    if (n.disabled)
+      r.disabled = true;
+    if (n.focused)
+      r.focused = true;
+    if (n.interactive)
+      r.interactive = true;
+    if (n.editable) {
+      r.editable = true;
+      r.contentEditable = true;
+    }
+    if (STRUCTURAL_TAGS.has(n.tag) && !n.interactive && !n.ownBg && !n.ownBorder)
+      r.structural = true;
+    if (n.svgImage)
+      r.image = n.svgImage;
+    if (n.colors && (n.colors.bg || n.colors.fg || n.colors.border)) {
+      const border = n.colors.border || (n.interactive ? "#334155" : "rgba(0,0,0,.18)");
+      r.style = {
+        ...n.colors.bg ? { background: n.colors.bg } : {},
+        borderColor: border,
+        ...n.colors.fg ? { color: n.colors.fg } : {}
+      };
+    }
+    const flags = [];
+    if (n.contrastFail)
+      flags.push({ kind: "contrast", label: `contrast ${n.contrastFail.split(" ")[0]}`, severity: "error" });
+    if (n.smallTarget)
+      flags.push({ kind: "target", label: `target ${n.smallTarget.split(" ")[0]}`, severity: "warn" });
+    if (flags.length)
+      r.flags = flags;
+    if (n.rect) {
+      const { x, y, w, h } = n.rect;
+      r.bounds = { x: Number(x), y: Number(y), width: Number(w), height: Number(h) };
+    }
+    return r;
+  }
+  function toFloorplanRecords(nodes, canvases = []) {
+    const out = [];
+    const visit = (n) => {
+      if (n.ref && !isPureLayout(n))
+        out.push(toRecord(n));
+      for (const c of n.children || [])
+        visit(c);
+    };
+    nodes.forEach(visit);
+    for (const c of canvases) {
+      if (!c.rect)
+        continue;
+      out.push({
+        tag: "canvas",
+        ref: c.ref,
+        label: c.error ? `${c.label} — ${c.error}` : c.label,
+        ...c.image ? { image: c.image } : {},
+        bounds: { x: c.rect.x, y: c.rect.y, width: c.rect.w, height: c.rect.h }
+      });
+    }
+    return out;
+  }
+
   // src/dialog-policy.ts
   var DIALOG_POLICY_VALUES = {
     alert: ["dismiss", "show"],
@@ -1570,34 +2019,53 @@
       const h = Math.max(1, Math.round(c.height * scale));
       const label = `canvas${c.id ? "#" + c.id : ""} ${c.width}×${c.height}`;
       const ref = refRegistry.assign(c);
+      const r0 = c.getBoundingClientRect();
+      const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) };
       try {
         const tmp = document.createElement("canvas");
         tmp.width = w;
         tmp.height = h;
         tmp.getContext("2d").drawImage(c, 0, 0, w, h);
-        const r0 = c.getBoundingClientRect();
-        const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) };
         out.push({ ref, label, image: tmp.toDataURL("image/png"), w, h, rect });
       } catch (err) {
-        out.push({ ref, label, w, h: 24, error: /security|tainted/i.test(err?.message || err?.name || "") ? "cross-origin: pixels unreadable" : "unreadable" });
+        out.push({ ref, label, w, h: 24, rect, error: /security|tainted/i.test(err?.message || err?.name || "") ? "cross-origin: pixels unreadable" : "unreadable" });
       }
     }
     return out;
   }
   function renderMapSchematic(map, canvases = [], banner, fullPage = false, layoutMode = "auto") {
     const PAD = 8;
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const records = map.source === "tosi-agent" ? map.wiring || [] : toFloorplanRecords(map.nodes || [], canvases).map((r) => r.ref ? { ...r, ref: `@${r.ref}` } : r);
+    const finite = (b) => !!b && [b.x, b.y, b.width, b.height].every((v) => typeof v === "number" && Number.isFinite(v));
+    const withRect = records.filter((r) => finite(r.bounds)).length;
+    const boundsCoverage = `${withRect}/${records.length}`;
+    const geometric = layoutMode === "geometric" ? withRect > 0 : layoutMode === "structural" ? false : records.length > 0 && withRect / records.length >= 0.5;
+    const BANNER_H = banner ? 26 : 0;
+    const bannerSvg = (width) => banner ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` + `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>` : "";
+    if (geometric) {
+      const within = fullPage ? undefined : { x: window.scrollX, y: window.scrollY, width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight) };
+      const result = schematic({ wiring: records }, { within, targetSize: 0, pad: PAD, maxCaption: 200, decorate: refPill });
+      const w = Number(/\bwidth="([\d.]+)"/.exec(result.svg)?.[1] || 0);
+      const h = Number(/\bheight="([\d.]+)"/.exec(result.svg)?.[1] || 0);
+      if (w > 0 && h > 0) {
+        const width = Math.ceil(w);
+        const height = Math.ceil(h + BANNER_H);
+        const svg = `<?xml version="1.0" encoding="UTF-8"?>` + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` + `<rect width="${width}" height="${height}" fill="#ffffff"/>` + bannerSvg(width) + result.svg.replace("<svg ", `<svg x="0" y="${BANNER_H}" `) + `</svg>`;
+        return { svg, width, height, layout: "geometric", boundsCoverage };
+      }
+    }
     const ROW = 22;
     const FONT = "11px ui-monospace, Menlo, monospace";
     const measureCtx = document.createElement("canvas").getContext("2d");
     measureCtx.font = FONT;
     const textW = (s) => measureCtx.measureText(s).width;
-    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const toBoxes = () => {
       if (map.source === "tosi-agent") {
         return (map.wiring || []).map((w, i) => {
           const bound = [];
           for (const [k, v] of Object.entries(w)) {
-            if (["tag", "id", "part", "role", "label", "text", "on", "list", "detail"].includes(k))
+            if (["tag", "id", "part", "role", "label", "text", "on", "list", "detail", "bounds"].includes(k))
               continue;
             if (typeof v === "string")
               bound.push(`${k}: ${v}`);
@@ -1619,267 +2087,34 @@
         detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : "", n.href].filter(Boolean).join("  ").slice(0, 200),
         colors: n.colors,
         contrastFail: n.contrastFail,
-        rect: n.rect,
-        placeholder: n.placeholder,
-        interactive: n.interactive,
-        disabled: n.disabled,
-        focused: n.focused,
-        checked: n.checked,
-        inputType: n.type,
-        ownBg: n.ownBg,
-        ownBorder: n.ownBorder,
-        editable: n.editable,
-        empty: n.empty,
-        smallTarget: n.smallTarget,
-        svgImage: n.svgImage,
         children: (n.children || []).map(walk)
       });
       return (map.nodes || []).map(walk);
     };
     const headOf = (b) => `${b.handle ? b.handle + " " : ""}${b.label}`;
     const GAP = 12;
-    const detailOf = (b) => [b.detail, b.contrastFail ? `⚠ contrast ${b.contrastFail}` : ""].filter(Boolean).join("   ");
     const measure = (b) => {
-      const own = PAD * 2 + textW(headOf(b)) + (detailOf(b) ? GAP + textW(detailOf(b)) : 0);
+      const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0);
       if (!b.children.length)
         return { w: Math.max(120, Math.ceil(own)), h: ROW };
       const kids = b.children.map(measure);
-      const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2;
-      const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD;
-      return { w, h };
-    };
-    let boundsCoverage = { withRect: 0, total: 0 };
-    const laidOut = (roots) => {
-      let withRect = 0;
-      let total = 0;
-      const count = (b) => {
-        total++;
-        if (b.rect)
-          withRect++;
-        b.children.forEach(count);
-      };
-      roots.forEach(count);
-      boundsCoverage = { withRect, total };
-      if (layoutMode === "structural")
-        return null;
-      if (layoutMode === "geometric") {
-        if (!total)
-          return null;
-      } else if (!total || withRect / total < 0.5) {
-        return null;
-      }
-      if (fullPage) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        const bounds = (b) => {
-          if (b.rect) {
-            minX = Math.min(minX, b.rect.x);
-            minY = Math.min(minY, b.rect.y);
-            maxX = Math.max(maxX, b.rect.x + b.rect.w);
-            maxY = Math.max(maxY, b.rect.y + b.rect.h);
-          }
-          b.children.forEach(bounds);
-        };
-        roots.forEach(bounds);
-        if (!Number.isFinite(minX))
-          return null;
-        return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), nodes: withRect };
-      }
       return {
-        x: window.scrollX,
-        y: window.scrollY,
-        w: Math.max(1, window.innerWidth),
-        h: Math.max(1, window.innerHeight),
-        nodes: withRect
+        w: Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2,
+        h: ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD
       };
-    };
-    const stripHandle = (sIn, handle) => handle && sIn.startsWith(handle) ? sIn.slice(handle.length).trim() : sIn;
-    const refChip = (handle, x, y, size = 9) => {
-      if (!handle)
-        return { svg: "", w: 0 };
-      const pad = 2.5;
-      const cw = Math.ceil(textW(handle) * (size / 11)) + pad * 2;
-      const ch = size + 4;
-      return {
-        svg: `<rect x="${x}" y="${y - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` + `<text x="${x + pad}" y="${y}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
-        w: cw
-      };
-    };
-    const visibleIn = (b, g) => !!b.rect && b.rect.x < g.x + g.w && b.rect.x + b.rect.w > g.x && b.rect.y < g.y + g.h && b.rect.y + b.rect.h > g.y;
-    const isPureLayout = (b) => b.children.length > 0 && !detailOf(b) && !b.placeholder && !b.contrastFail && !b.interactive && !b.ownBg && !b.ownBorder;
-    const drawPlaced = (b, g, yOff) => {
-      if (visibleIn(b, g) && b.rect && !isPureLayout(b)) {
-        const x = b.rect.x - g.x + PAD;
-        const y = b.rect.y - g.y + PAD + yOff;
-        const w = Math.max(2, b.rect.w);
-        const h = Math.max(2, b.rect.h);
-        const kind = (b.inputType || "").toLowerCase();
-        if (kind === "checkbox" || kind === "radio") {
-          const s = Math.max(6, Math.min(w, h));
-          const cx = x + s / 2;
-          const cy = y + s / 2;
-          const stroke = b.disabled ? "#94a3b8" : "#334155";
-          const fill = b.checked ? b.disabled ? "#94a3b8" : "#2563eb" : "#ffffff";
-          if (kind === "radio") {
-            parts.push(`<circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
-            if (b.checked)
-              parts.push(`<circle cx="${cx}" cy="${cy}" r="${Math.max(1, s / 6)}" fill="#ffffff"/>`);
-          } else {
-            parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${s - 2}" height="${s - 2}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
-            if (b.checked) {
-              const p1 = `${x + s * 0.25},${y + s * 0.5}`;
-              const p2 = `${x + s * 0.45},${y + s * 0.7}`;
-              const p3 = `${x + s * 0.78},${y + s * 0.28}`;
-              parts.push(`<polyline points="${p1} ${p2} ${p3}" fill="none" stroke="#ffffff" stroke-width="${Math.max(1.5, s / 8)}" stroke-linecap="round" stroke-linejoin="round"/>`);
-            }
-          }
-          if (b.focused)
-            parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${s + 4}" height="${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
-          return;
-        }
-        const fill = b.colors?.bg || "rgba(148,163,184,0.10)";
-        const stroke = b.disabled ? "#94a3b8" : b.interactive ? b.colors?.border || "#334155" : b.colors?.border || (b.colors ? "rgba(0,0,0,.18)" : "#cbd5e1");
-        const strokeW = b.interactive && !b.disabled ? 1.5 : 1;
-        const dash = b.disabled ? ' stroke-dasharray="3 2"' : "";
-        parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`);
-        if (b.disabled) {
-          parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="rgba(148,163,184,0.35)"/>`);
-        }
-        if (b.focused) {
-          parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`);
-        }
-        if (b.contrastFail)
-          parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`);
-        if (b.smallTarget)
-          parts.push(`<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`);
-        if (b.svgImage) {
-          parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`);
-        }
-        const fg = b.colors?.fg || "#0f172a";
-        const head = headOf(b);
-        const detail = detailOf(b);
-        let capX = b.rect.x + 3;
-        for (let pass = 0;pass < 4; pass++) {
-          let moved = false;
-          for (const c of b.children) {
-            if (!c.rect)
-              continue;
-            const vOverlap = c.rect.y < b.rect.y + b.rect.h && c.rect.y + c.rect.h > b.rect.y;
-            if (vOverlap && c.rect.x <= capX && c.rect.x + c.rect.w > capX) {
-              capX = c.rect.x + c.rect.w + 3;
-              moved = true;
-            }
-          }
-          if (!moved)
-            break;
-        }
-        const inset = capX - (b.rect.x + 3);
-        const tx = x + 3 + inset;
-        const avail = w - 6 - inset;
-        const chipW = b.handle ? refChip(b.handle, 0, 0).w + 3 : 0;
-        const textAvail = avail - chipW;
-        const fits = (s) => textW(stripHandle(s, b.handle)) <= textAvail && h >= 12;
-        const fitsSmall = (s) => textW(stripHandle(s, b.handle)) * 0.85 <= textAvail && h >= 10;
-        const emitCaption = (full, opts = {}) => {
-          const size = opts.size ?? 10;
-          const cid = `x${parts.length}`;
-          const baseY = y + Math.min(h - 3, 11);
-          const style = `font-family="ui-monospace,Menlo,monospace" font-size="${size}" fill="${fg}"` + (opts.italic ? ' font-style="italic"' : "") + (opts.opacity ? ` opacity="${opts.opacity}"` : "");
-          const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`;
-          const chip = b.handle ? refChip(b.handle, tx, baseY) : { svg: "", w: 0 };
-          const textX = tx + (chip.w ? chip.w + 3 : 0);
-          if (opts.lines) {
-            const spans = opts.lines.map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y + 11 + i * 12}">${esc(ln)}</tspan>`).join("");
-            parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}<text ${style}>${spans}</text></g>`);
-            return;
-          }
-          const rest = stripHandle(full, b.handle);
-          parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}` + (rest ? `<text x="${textX}" y="${baseY}" ${style}>${esc(rest)}</text>` : "") + `</g>`);
-        };
-        if (!detail && !b.placeholder && b.editable && b.empty) {
-          emitCaption(`${b.handle} (editable, empty)`, { italic: true, opacity: 0.55 });
-          for (const c of b.children)
-            drawPlaced(c, g, yOff);
-          return;
-        }
-        if (!detail && b.placeholder) {
-          const ph = `${b.handle} ${b.placeholder}`;
-          emitCaption(fits(ph) ? ph : b.handle, { italic: true, opacity: 0.55 });
-          for (const c of b.children)
-            drawPlaced(c, g, yOff);
-          return;
-        }
-        const firstWords = detail ? detail.split(/\s+/) : [];
-        const candidates = [
-          [head, detail].filter(Boolean).join("  "),
-          detail ? `${b.handle} ${detail}`.trim() : "",
-          firstWords.length > 1 ? `${b.handle} ${firstWords.slice(0, 2).join(" ")}` : "",
-          firstWords.length ? `${b.handle} ${firstWords[0]}` : "",
-          head,
-          b.handle
-        ].filter(Boolean);
-        let label = candidates.find((c) => fits(c)) || "";
-        let fontSize = 10;
-        if (!label) {
-          const small = candidates.find((c) => fitsSmall(c));
-          if (small) {
-            label = small;
-            fontSize = 8.5;
-          }
-        }
-        const LINE = 12;
-        const maxLines = Math.floor((h - 4) / LINE);
-        const fullText = [head, detail].filter(Boolean).join("  ");
-        if (maxLines >= 2 && detail && !fits(fullText)) {
-          const words = stripHandle(fullText, b.handle).split(/\s+/);
-          const lines = [];
-          let cur = "";
-          for (const word of words) {
-            const next = cur ? `${cur} ${word}` : word;
-            if (textW(next) <= avail || !cur)
-              cur = next;
-            else {
-              lines.push(cur);
-              cur = word;
-              if (lines.length >= maxLines)
-                break;
-            }
-          }
-          if (cur && lines.length < maxLines)
-            lines.push(cur);
-          if (lines.length) {
-            if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
-              lines[lines.length - 1] = lines[lines.length - 1].replace(/\S+$/, "…");
-            }
-            emitCaption("", { lines });
-            for (const c of b.children)
-              drawPlaced(c, g, yOff);
-            return;
-          }
-        }
-        if (label) {
-          emitCaption(label, { size: fontSize });
-        } else if (b.handle && w >= 14 && h >= 10) {
-          emitCaption(b.handle);
-        }
-      }
-      for (const c of b.children)
-        drawPlaced(c, g, yOff);
     };
     const parts = [];
     let uniformW = 0;
     const draw = (b, x, y, depth) => {
       const m = measure(b);
       const w = depth === 0 && uniformW ? uniformW : m.w;
-      const h = m.h;
       const fill = b.colors?.bg || ["#f8fafc", "#eef2f7", "#e6ecf3", "#dde5ee"][Math.min(depth, 3)];
       const stroke = b.colors?.border || (b.colors ? "rgba(0,0,0,.15)" : "#94a3b8");
-      const strokeW = b.colors?.border ? 1.5 : 1;
-      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`);
-      if (b.contrastFail) {
-        parts.push(`<rect x="${x}" y="${y}" width="4" height="${h}" fill="#dc2626"/>`);
-      }
-      const head = headOf(b);
+      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${m.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`);
+      if (b.contrastFail)
+        parts.push(`<rect x="${x}" y="${y}" width="4" height="${m.h}" fill="#dc2626"/>`);
       const fg = b.colors?.fg || "#0f172a";
+      const head = headOf(b);
       parts.push(`<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`);
       let dx = x + PAD + textW(head) + GAP;
       if (b.detail) {
@@ -1890,10 +2125,9 @@
         parts.push(`<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc("⚠ contrast " + b.contrastFail)}</text>`);
       }
       let cy = y + ROW;
-      for (const c of b.children) {
+      for (const c of b.children)
         cy += draw(c, x + PAD, cy, depth + 1) + 4;
-      }
-      return h;
+      return m.h;
     };
     const boxes = toBoxes();
     let maxW = 0;
@@ -1907,66 +2141,22 @@
       measureCtx.font = FONT;
     }
     uniformW = maxW;
-    const BANNER_H = banner ? 26 : 0;
     let y = PAD + BANNER_H;
-    const geoPre = laidOut(boxes);
-    for (const c of geoPre ? canvases.filter((k) => !k.rect) : canvases) {
+    for (const c of canvases) {
       const boxH = (c.image ? c.h : 20) + 18;
       parts.push(`<rect x="${PAD}" y="${y}" width="${maxW}" height="${boxH}" rx="4" fill="#0f172a" stroke="#334155"/>`);
       parts.push(`<text x="${PAD + 6}" y="${y + 13}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">@${esc(c.ref)} ${esc(c.label)}${c.error ? " — " + esc(c.error) : ""}</text>`);
-      if (c.image) {
+      if (c.image)
         parts.push(`<image x="${PAD + 6}" y="${y + 16}" width="${c.w}" height="${c.h}" href="${c.image}" preserveAspectRatio="xMinYMin meet"/>`);
-      }
       y += boxH + 6;
     }
-    const geo = geoPre;
-    let width;
-    let height;
-    if (geo) {
-      for (const b of boxes)
-        drawPlaced(b, geo, BANNER_H);
-      for (const c of canvases) {
-        if (!c.rect)
-          continue;
-        const cx = c.rect.x - geo.x + PAD;
-        const cy = c.rect.y - geo.y + PAD + BANNER_H;
-        const cw = Math.max(2, c.rect.w);
-        const ch = Math.max(2, c.rect.h);
-        if (c.rect.x >= geo.x + geo.w || c.rect.x + cw <= geo.x)
-          continue;
-        if (c.rect.y >= geo.y + geo.h || c.rect.y + ch <= geo.y)
-          continue;
-        if (c.image) {
-          parts.push(`<image x="${cx}" y="${cy}" width="${cw}" height="${ch}" href="${c.image}" preserveAspectRatio="xMidYMid slice"/>`);
-          parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="none" stroke="#0f172a" stroke-width="1"/>`);
-        } else {
-          parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="#0f172a" stroke="#334155"/>`);
-        }
-        const cap = `@${c.ref} ${c.label}${c.error ? " — " + c.error : ""}`;
-        if (textW(cap) + 6 <= cw) {
-          parts.push(`<text x="${cx + 3}" y="${cy + 12}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">${esc(cap)}</text>`);
-        }
-      }
-      width = Math.ceil(geo.w + PAD * 2);
-      height = Math.ceil(geo.h + PAD * 2 + BANNER_H);
-      y = height - PAD;
-    } else {
-      for (const b of boxes) {
-        y += draw(b, PAD, y, 0) + 6;
-      }
-      width = Math.ceil(Math.max(320, maxW + PAD * 2));
-      height = Math.ceil(y + PAD);
-    }
+    for (const b of boxes)
+      y += draw(b, PAD, y, 0) + 6;
+    const width = Math.ceil(Math.max(320, maxW + PAD * 2));
+    const height = Math.ceil(y + PAD);
     const title = `${map.source === "tosi-agent" ? "wiring" : "dom"} · ${esc(map.title || "")}`;
-    const bannerSvg = banner ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` + `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>` : "";
-    const svg = `<?xml version="1.0" encoding="UTF-8"?>` + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` + `<rect width="${width}" height="${height}" fill="#ffffff"/>` + bannerSvg + parts.join("") + `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` + `</svg>`;
-    return {
-      svg,
-      width,
-      height,
-      layout: geo ? "geometric" : "structural",
-      boundsCoverage: `${boundsCoverage.withRect}/${boundsCoverage.total}`
-    };
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>` + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` + `<rect width="${width}" height="${height}" fill="#ffffff"/>` + bannerSvg(width) + parts.join("") + `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` + `</svg>`;
+    return { svg, width, height, layout: "structural", boundsCoverage };
   }
   function buildLegend(map) {
     const legend = {};
@@ -2302,6 +2492,10 @@
           h: Math.round(r.height)
         };
       } catch {}
+      for (const k of PAGE_TEXT_FIELDS) {
+        if (typeof node[k] === "string" && /[⟷⟵]/.test(node[k]))
+          node[k] = neutralizeArrows2(node[k]);
+      }
       return node;
     };
     const walk = (el) => {

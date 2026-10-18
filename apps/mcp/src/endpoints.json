@@ -1609,7 +1609,7 @@
             "string",
             "null"
           ],
-          "description": "Schematic layout: 'auto' (default), 'geometric' (boxes at true page coordinates) or 'structural' (nested stacked boxes). 'auto' picks geometric when most nodes carry bounds — which they do for a DOM map, but never for the tosi-agent tier, which describes wiring and has no geometry. The response reports which was used in `layout` and the evidence in `boundsCoverage`."
+          "description": "Schematic layout: 'auto' (default), 'geometric' (boxes at true page coordinates) or 'structural' (nested stacked boxes). 'auto' picks geometric when most nodes carry bounds — which they do for a DOM map, but never for the tosi-agent tier, which describes wiring and has no geometry. The response reports which was used in `layout` and the evidence in `boundsCoverage`. Geometric schematics are drawn by tosijs-floorplan from haltija's map."
         },
         "fullPage": {
           "type": [

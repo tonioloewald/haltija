@@ -747,6 +747,8 @@ import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from '
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
 import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schematic-size'
+import { schematic as floorplanSchematic } from 'tosijs-floorplan'
+import { toFloorplanRecords, neutralizeArrows, refPill, PAGE_TEXT_FIELDS } from './floorplan-records'
 import { dialogPolicyError } from './dialog-policy'
 
 /** Get visible text from element, excluding SVG internals */
@@ -2199,22 +2201,20 @@ function collectCanvasThumbnails(maxEdge = 320): Array<{ ref: string; label: str
     const h = Math.max(1, Math.round(c.height * scale))
     const label = `canvas${c.id ? '#' + c.id : ''} ${c.width}×${c.height}`
     const ref = refRegistry.assign(c)
+    // WHERE the canvas is, so the layout-faithful renderer can put its pixels (or its "unreadable"
+    // box) in the right place. Measured before the read, so a tainted canvas still has a position.
+    const r0 = c.getBoundingClientRect()
+    const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) }
     try {
       const tmp = document.createElement('canvas')
       tmp.width = w
       tmp.height = h
       tmp.getContext('2d')!.drawImage(c, 0, 0, w, h)
-      // WHERE the canvas is, so the layout-faithful renderer can put its pixels in the right
-      // place. Without this the thumbnail was drawn in the stacked pre-amble at the top-left,
-      // landing on top of the sidebar — the one element whose real content we CAN show,
-      // shown in the wrong place.
-      const r0 = c.getBoundingClientRect()
-      const rect = { x: Math.round(r0.left + window.scrollX), y: Math.round(r0.top + window.scrollY), w: Math.round(r0.width), h: Math.round(r0.height) }
       out.push({ ref, label, image: tmp.toDataURL('image/png'), w, h, rect })
     } catch (err: any) {
       // Tainted by cross-origin content — say so in the picture instead of omitting the canvas,
       // which would read as "there is no canvas here".
-      out.push({ ref, label, w, h: 24, error: /security|tainted/i.test(err?.message || err?.name || '') ? 'cross-origin: pixels unreadable' : 'unreadable' })
+      out.push({ ref, label, w, h: 24, rect, error: /security|tainted/i.test(err?.message || err?.name || '') ? 'cross-origin: pixels unreadable' : 'unreadable' })
     }
   }
   return out
@@ -2228,29 +2228,79 @@ function renderMapSchematic(
   layoutMode: 'auto' | 'geometric' | 'structural' = 'auto',
 ): { svg: string; width: number; height: number; layout: 'geometric' | 'structural'; boundsCoverage: string } {
   const PAD = 8
-  const ROW = 22
-  const FONT = '11px ui-monospace, Menlo, monospace'
-  // MEASURE the text rather than estimating from character count. An estimate that runs short makes
-  // labels overflow their boxes and collide with the next field — a picture that misreads, which is
-  // worse than no picture. The canvas 2D context measures the exact font we render with.
-  const measureCtx = document.createElement('canvas').getContext('2d')!
-  measureCtx.font = FONT
-  const textW = (s: string) => measureCtx.measureText(s).width
   const esc = (s: string) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string;
-    rect?: { x: number; y: number; w: number; h: number }; placeholder?: string; interactive?: boolean;
-    disabled?: boolean; focused?: boolean; checked?: boolean; inputType?: string; ownBg?: boolean; ownBorder?: boolean;
-    editable?: boolean; empty?: boolean; svgImage?: string; smallTarget?: string }
+  // The tosi-agent tier is already in the record format (tosijs's describe() is floorplan's input);
+  // the DOM tier is translated by src/floorplan-records.ts (#873).
+  const records: any[] = map.source === 'tosi-agent'
+    ? (map.wiring || [])
+    : toFloorplanRecords(map.nodes || [], canvases).map((r) => (r.ref ? { ...r, ref: `@${r.ref}` } : r))
+  const finite = (b: any) => !!b && [b.x, b.y, b.width, b.height].every((v) => typeof v === 'number' && Number.isFinite(v))
+  const withRect = records.filter((r) => finite(r.bounds)).length
+  const boundsCoverage = `${withRect}/${records.length}`
 
-  // Both tiers reduce to the same box shape — the tosi tier just has far more to say per box.
+  // `layoutMode` lets a caller pin the choice. This used to be an invisible automatic switch — a
+  // page would render geometrically or as stacked boxes with nothing in the response saying which,
+  // or why. An automatic decision the caller cannot see, explain or override is indistinguishable
+  // from a bug. A map that mostly lacks geometry is undrawable at real coordinates, so it stacks.
+  const geometric =
+    layoutMode === 'geometric' ? withRect > 0
+      : layoutMode === 'structural' ? false
+        : records.length > 0 && withRect / records.length >= 0.5
+
+  const BANNER_H = banner ? 26 : 0
+  const bannerSvg = (width: number) => banner
+    ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` +
+      `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>`
+    : ''
+
+  if (geometric) {
+    // **Viewport by default, whole document only on request.** A full-page schematic of a long page
+    // is a tall thin strip: 1126x22304 is a 1:20 aspect ratio no pixel budget can rescue. What is on
+    // screen is also what the question is usually about.
+    const within = fullPage
+      ? undefined
+      : { x: window.scrollX, y: window.scrollY, width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight) }
+    // targetSize 0: the target-size audit is haltija's, computed with DOM access (the inline
+    // exception needs computed display and sibling text nodes), and rides each record as a flag.
+    // maxCaption 200: the default 36 truncated paragraphs in boxes wide enough for the whole line.
+    const result = floorplanSchematic({ wiring: records }, { within, targetSize: 0, pad: PAD, maxCaption: 200, decorate: refPill })
+    const w = Number(/\bwidth="([\d.]+)"/.exec(result.svg)?.[1] || 0)
+    const h = Number(/\bheight="([\d.]+)"/.exec(result.svg)?.[1] || 0)
+    if (w > 0 && h > 0) {
+      const width = Math.ceil(w)
+      const height = Math.ceil(h + BANNER_H)
+      // The banner is the one line that must never be cut off, so the frame is at least as wide.
+      const svg =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+        `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
+        bannerSvg(width) +
+        result.svg.replace('<svg ', `<svg x="0" y="${BANNER_H}" `) +
+        `</svg>`
+      // floorplan's `note` ("the producer couldn't tell what is actionable") is deliberately NOT
+      // passed on: haltija does introspect, so on a page with no controls the note would be false.
+      // The format has no encoding yet for "looked and found nothing"; raised with floorplan.
+      return { svg, width, height, layout: 'geometric', boundsCoverage }
+    }
+    // Nothing intersected the region: fall through to the stacked outline rather than an empty image.
+  }
+
+  // STACKED, for maps with no geometry. The tosi-agent tier describes an app's own wiring and may
+  // have no DOM bounds; floorplan draws nothing for a record without them, by contract.
+  const ROW = 22
+  const FONT = '11px ui-monospace, Menlo, monospace'
+  const measureCtx = document.createElement('canvas').getContext('2d')!
+  measureCtx.font = FONT
+  const textW = (s: string) => measureCtx.measureText(s).width
+  type Box = { label: string; handle: string; detail?: string; children: Box[]; colors?: any; contrastFail?: string }
   const toBoxes = (): Box[] => {
     if (map.source === 'tosi-agent') {
       return (map.wiring || []).map((w: any, i: number) => {
         const bound: string[] = []
         for (const [k, v] of Object.entries(w)) {
-          if (['tag', 'id', 'part', 'role', 'label', 'text', 'on', 'list', 'detail'].includes(k)) continue
+          if (['tag', 'id', 'part', 'role', 'label', 'text', 'on', 'list', 'detail', 'bounds'].includes(k)) continue
           if (typeof v === 'string') bound.push(`${k}: ${v}`)
         }
         if (w.text && /[⟷⟵]/.test(w.text)) bound.push(String(w.text))
@@ -2268,552 +2318,82 @@ function renderMapSchematic(
     const walk = (n: any): Box => ({
       handle: n.ref ? `@${n.ref}` : '',
       label: `${n.tag}${n.role ? `[${n.role}]` : ''}`,
-      // 200, not 60: the renderer measures the box and clips to it, so a hard pre-truncation only
-      // throws away text that a wide box could have shown. A full-width paragraph has room for far
-      // more than sixty characters.
-      detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : '', n.href]
-        .filter(Boolean).join('  ').slice(0, 200),
+      detail: [n.label, n.text, n.value !== undefined ? `= ${n.value}` : '', n.href].filter(Boolean).join('  ').slice(0, 200),
       colors: n.colors,
       contrastFail: n.contrastFail,
-      rect: n.rect,
-      placeholder: n.placeholder,
-      interactive: n.interactive,
-      disabled: n.disabled,
-      focused: n.focused,
-      checked: n.checked,
-      inputType: n.type,
-      ownBg: n.ownBg,
-      ownBorder: n.ownBorder,
-      editable: n.editable,
-      empty: n.empty,
-      smallTarget: n.smallTarget,
-      svgImage: n.svgImage,
       children: (n.children || []).map(walk),
     })
     return (map.nodes || []).map(walk)
   }
-
-  // Measure bottom-up, then place top-down — a plain nested-box layout, no engine needed.
   const headOf = (b: Box) => `${b.handle ? b.handle + ' ' : ''}${b.label}`
-  const GAP = 12 // keeps the detail column clear of the head, so they can never run together
-
-  const detailOf = (b: Box) =>
-    [b.detail, b.contrastFail ? `⚠ contrast ${b.contrastFail}` : ''].filter(Boolean).join('   ')
-
+  const GAP = 12
   const measure = (b: Box): { w: number; h: number } => {
-    const own = PAD * 2 + textW(headOf(b)) + (detailOf(b) ? GAP + textW(detailOf(b)) : 0)
+    const own = PAD * 2 + textW(headOf(b)) + (b.detail ? GAP + textW(b.detail) : 0)
     if (!b.children.length) return { w: Math.max(120, Math.ceil(own)), h: ROW }
     const kids = b.children.map(measure)
-    const w = Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2
-    const h = ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD
-    return { w, h }
-  }
-
-  /**
-   * The region to draw, and whether we have the geometry to draw it.
-   *
-   * **Viewport by default, whole document only on request.** A full-page schematic of a long page
-   * is a tall thin strip: 1126x22304 is a 1:20 aspect ratio no pixel budget can rescue — capped to
-   * 8 Mpx it is 636 wide, and a vision encoder then downsamples the long edge to 1568, leaving it
-   * 79px across. Unreadable to human and model alike. What is on screen is also what the question
-   * is usually about.
-   */
-  let boundsCoverage = { withRect: 0, total: 0 }
-  const laidOut = (
-    roots: Box[],
-  ): { x: number; y: number; w: number; h: number; nodes: number } | null => {
-    let withRect = 0
-    let total = 0
-    const count = (b: Box) => {
-      total++
-      if (b.rect) withRect++
-      b.children.forEach(count)
-    }
-    roots.forEach(count)
-    boundsCoverage = { withRect, total }
-    // The tosi-agent tier reports an app's own wiring and has no DOM rects at all; a DOM map whose
-    // nodes mostly lack them is equally undrawable. Either way, say so by returning null rather
-    // than producing a diagram that is mostly empty space.
-    //
-    // `layoutMode` lets a caller pin the choice. This used to be an invisible automatic switch —
-    // a page would render geometrically or as stacked boxes with nothing in the response saying
-    // which, or why, and a reporter who ruled out node count, page height AND element visibility
-    // still could not find the switch. An automatic decision the caller cannot see, explain or
-    // override is indistinguishable from a bug.
-    if (layoutMode === 'structural') return null
-    if (layoutMode === 'geometric') {
-      if (!total) return null
-    } else if (!total || withRect / total < 0.5) {
-      return null
-    }
-
-    if (fullPage) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      const bounds = (b: Box) => {
-        if (b.rect) {
-          minX = Math.min(minX, b.rect.x); minY = Math.min(minY, b.rect.y)
-          maxX = Math.max(maxX, b.rect.x + b.rect.w); maxY = Math.max(maxY, b.rect.y + b.rect.h)
-        }
-        b.children.forEach(bounds)
-      }
-      roots.forEach(bounds)
-      if (!Number.isFinite(minX)) return null
-      return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), nodes: withRect }
-    }
     return {
-      x: window.scrollX,
-      y: window.scrollY,
-      w: Math.max(1, window.innerWidth),
-      h: Math.max(1, window.innerHeight),
-      nodes: withRect,
+      w: Math.ceil(Math.max(own, ...kids.map((k) => k.w))) + PAD * 2,
+      h: ROW + kids.reduce((a, k) => a + k.h + 4, 0) + PAD,
     }
   }
-
-  /**
-   * The ref, drawn so it is ALWAYS readable.
-   *
-   * The handle is the one thing in this picture you act on — `hj click 42` — so it is the one thing
-   * that must never be ambiguous. Rendering it as plain text in the page's own colours meant it
-   * inherited the page's contrast problems and, once artwork started rendering underneath, sat on
-   * top of a pink robot and a row of icons. A ref you have to squint at is a ref you might mistype,
-   * and mistyping it drives the wrong element while reporting success.
-   *
-   * So: a solid dark pill with light text, independent of whatever is behind it. Small, but never
-   * competing with the content it labels. The descriptive text after it stays in the page's colours,
-   * because THAT is where seeing the real palette matters (it is how the contrast audit is legible).
-   */
-  /** Drop a leading `@42 ` from a candidate — the chip renders it, so the text must not repeat it. */
-  const stripHandle = (sIn: string, handle: string) =>
-    handle && sIn.startsWith(handle) ? sIn.slice(handle.length).trim() : sIn
-
-  const refChip = (handle: string, x: number, y: number, size = 9): { svg: string; w: number } => {
-    if (!handle) return { svg: '', w: 0 }
-    const pad = 2.5
-    const cw = Math.ceil(textW(handle) * (size / 11)) + pad * 2
-    const ch = size + 4
-    return {
-      svg:
-        `<rect x="${x}" y="${y - ch + 3}" width="${cw}" height="${ch}" rx="2.5" fill="#0f172a" opacity="0.88"/>` +
-        `<text x="${x + pad}" y="${y}" font-family="ui-monospace,Menlo,monospace" font-size="${size}" font-weight="bold" fill="#ffffff">${esc(handle)}</text>`,
-      w: cw,
-    }
-  }
-
-  /** Does this box overlap the region we're drawing? */
-  const visibleIn = (b: Box, g: { x: number; y: number; w: number; h: number }) =>
-    !!b.rect &&
-    b.rect.x < g.x + g.w && b.rect.x + b.rect.w > g.x &&
-    b.rect.y < g.y + g.h && b.rect.y + b.rect.h > g.y
-
-  /**
-   * Draw one box where it actually is, then its children on top.
-   *
-   * Pre-order, so a child paints over its parent exactly as the browser stacks them. Labels appear
-   * only where they fit: a 40x16 button cannot hold "@17 button Details", and text spilling out of
-   * its box is the "picture that misreads" the measuring code above already warns about. The handle
-   * alone is the graceful degradation — it is the part you act on.
-   */
-  /**
-   * An element whose only contribution is layout — draw nothing, recurse into its children.
-   *
-   * Once boxes sit at real coordinates, a wrapper's rectangle carries no information the children's
-   * own positions don't already show: you can SEE that the two cards are side by side without a
-   * `@20 section` outline around them. Drawing it anyway costs a box, a label, and the tokens for
-   * both, and buries the affordances under nested chrome — which is precisely the "wall of text
-   * with extra steps" a diagram is supposed to beat.
-   *
-   * "Only layout" means: nothing of its own to say (no text, value, href or contrast finding) AND
-   * nothing of its own to show (no background it painted, no border). A `<header>` with a real dark
-   * background stays — that background is content, it's why the contrast audit can work, and it is
-   * how you recognise the region. The ref stays addressable in the JSON map either way; this is
-   * about what earns pixels.
-   */
-  const isPureLayout = (b: Box) =>
-    b.children.length > 0 &&
-    !detailOf(b) &&
-    !b.placeholder &&
-    !b.contrastFail &&
-    !b.interactive &&
-    !b.ownBg &&
-    !b.ownBorder
-
-  const drawPlaced = (
-    b: Box,
-    g: { x: number; y: number; w: number; h: number },
-    yOff: number,
-  ): void => {
-    if (visibleIn(b, g) && b.rect && !isPureLayout(b)) {
-      const x = b.rect.x - g.x + PAD
-      const y = b.rect.y - g.y + PAD + yOff
-      // A zero-size box would vanish; keep a hairline so "it is here and it is tiny" stays visible —
-      // exactly the accessible 0x0 input pattern that `zeroSize` exists to report.
-      const w = Math.max(2, b.rect.w)
-      const h = Math.max(2, b.rect.h)
-      const kind = (b.inputType || '').toLowerCase()
-
-      // Checkboxes and radios as GEOMETRY, not glyphs. A unicode ☑/◉ at 10px is a smudge, and
-      // "= on" is a string you have to decode — the state of a toggle is the fastest thing in a UI
-      // to read visually and was the slowest thing to read here. Drawn to the control's real box,
-      // so a 0x0 accessible input still shows up as the hairline it is.
-      if (kind === 'checkbox' || kind === 'radio') {
-        const s = Math.max(6, Math.min(w, h))
-        const cx = x + s / 2
-        const cy = y + s / 2
-        const stroke = b.disabled ? '#94a3b8' : '#334155'
-        const fill = b.checked ? (b.disabled ? '#94a3b8' : '#2563eb') : '#ffffff'
-        if (kind === 'radio') {
-          parts.push(`<circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`)
-          if (b.checked) parts.push(`<circle cx="${cx}" cy="${cy}" r="${Math.max(1, s / 6)}" fill="#ffffff"/>`)
-        } else {
-          parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${s - 2}" height="${s - 2}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`)
-          if (b.checked) {
-            const p1 = `${x + s * 0.25},${y + s * 0.5}`
-            const p2 = `${x + s * 0.45},${y + s * 0.7}`
-            const p3 = `${x + s * 0.78},${y + s * 0.28}`
-            parts.push(`<polyline points="${p1} ${p2} ${p3}" fill="none" stroke="#ffffff" stroke-width="${Math.max(1.5, s / 8)}" stroke-linecap="round" stroke-linejoin="round"/>`)
-          }
-        }
-        if (b.focused) parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${s + 4}" height="${s + 4}" rx="3" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
-        return // its own box IS the control; no generic rect or caption
-      }
-
-      const fill = b.colors?.bg || 'rgba(148,163,184,0.10)'
-      // Interactive elements get a solid, darker outline; everything else a hairline. "Can I click
-      // this?" is the question the map exists to answer, and it was encoded nowhere in the picture.
-      const stroke = b.disabled
-        ? '#94a3b8'
-        : b.interactive
-          ? (b.colors?.border || '#334155')
-          : (b.colors?.border || (b.colors ? 'rgba(0,0,0,.18)' : '#cbd5e1'))
-      const strokeW = b.interactive && !b.disabled ? 1.5 : 1
-      // Disabled reads as "greyed out and struck through" the way it does in a real UI: dashed
-      // outline plus a wash. Distinguishable at a glance from an enabled control, which is the
-      // whole point — an agent that clicks a disabled button and reports success is the failure.
-      const dash = b.disabled ? ' stroke-dasharray="3 2"' : ''
-      parts.push(
-        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`,
-      )
-      if (b.disabled) {
-        parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="rgba(148,163,184,0.35)"/>`)
-      }
-      // Focus last, so it sits above the fill — same reason a focus ring is drawn outside the
-      // control in every real design system.
-      if (b.focused) {
-        parts.push(`<rect x="${x - 2}" y="${y - 2}" width="${w + 4}" height="${h + 4}" rx="4" fill="none" stroke="#f59e0b" stroke-width="2"/>`)
-      }
-      if (b.contrastFail) parts.push(`<rect x="${x}" y="${y}" width="3" height="${h}" fill="#dc2626"/>`)
-      // A too-small target gets its own edge marker, amber rather than red: it is a real finding
-      // but a weaker one than a contrast failure, and it is frequently the SAME box that was too
-      // small to caption — so the marker is often the only thing the picture can say about it.
-      if (b.smallTarget) parts.push(`<rect x="${x}" y="${y + h - 3}" width="${w}" height="3" fill="#f59e0b"/>`)
-      // The actual artwork, where we could serialise it.
-      if (b.svgImage) {
-        parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="${b.svgImage}" preserveAspectRatio="xMidYMid meet"/>`)
-      }
-
-      const fg = b.colors?.fg || '#0f172a'
-      const head = headOf(b)
-      const detail = detailOf(b)
-      // Start the caption AFTER any child control sitting on this box's left edge. The accessible
-      // pattern `<label><input type=checkbox> Text</label>` puts the control exactly where the
-      // caption begins, so the checkbox painted over "@11" and left a stray "1" floating next to
-      // the text — a ref that reads as a different ref is worse than no ref.
-      //
-      // Asks the exact question — "is a child drawn where the caption would start?" — rather than
-      // guessing a left-edge threshold. The guess was `c.x <= b.x + 4`, and a radio sits at x=310
-      // inside a label at x=305 while a checkbox sits at 309: the same pattern, one pixel of
-      // browser default margin apart, so checkboxes were fixed and radios were not. Iterates,
-      // because clearing one control can land the caption on the next.
-      let capX = b.rect.x + 3
-      for (let pass = 0; pass < 4; pass++) {
-        let moved = false
-        for (const c of b.children) {
-          if (!c.rect) continue
-          const vOverlap = c.rect.y < b.rect.y + b.rect.h && c.rect.y + c.rect.h > b.rect.y
-          if (vOverlap && c.rect.x <= capX && c.rect.x + c.rect.w > capX) {
-            capX = c.rect.x + c.rect.w + 3
-            moved = true
-          }
-        }
-        if (!moved) break
-      }
-      const inset = capX - (b.rect.x + 3)
-      const tx = x + 3 + inset
-      const avail = w - 6 - inset
-      // Try the normal size, then one size down before giving up on a candidate. A 70px button
-      // holding "Details" is the common case, and dropping to the bare ref there loses the only
-      // word that says what it does.
-      // The chip is drawn first and the descriptive text flows after it, so the ref never competes
-      // with page colours or artwork for legibility, and the space calculations account for it.
-      const chipW = b.handle ? refChip(b.handle, 0, 0).w + 3 : 0
-      const textAvail = avail - chipW
-      const fits = (s: string) => textW(stripHandle(s, b.handle)) <= textAvail && h >= 12
-      const fitsSmall = (s: string) => textW(stripHandle(s, b.handle)) * 0.85 <= textAvail && h >= 10
-
-      /**
-       * Emit a caption: ref chip, then the rest in the page's own colours.
-       *
-       * Both clipped to the box. The ref must be readable against anything — that is the one token
-       * you retype into a command — while the descriptive text stays in the page's palette, which
-       * is what makes a contrast problem visible rather than merely reported.
-       */
-      const emitCaption = (
-        full: string,
-        opts: { size?: number; italic?: boolean; opacity?: number; lines?: string[] } = {},
-      ) => {
-        const size = opts.size ?? 10
-        const cid = `x${parts.length}`
-        const baseY = y + Math.min(h - 3, 11)
-        const style = `font-family="ui-monospace,Menlo,monospace" font-size="${size}" fill="${fg}"` +
-          (opts.italic ? ' font-style="italic"' : '') +
-          (opts.opacity ? ` opacity="${opts.opacity}"` : '')
-        const clip = `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`
-        const chip = b.handle ? refChip(b.handle, tx, baseY) : { svg: '', w: 0 }
-        const textX = tx + (chip.w ? chip.w + 3 : 0)
-        if (opts.lines) {
-          const spans = opts.lines
-            .map((ln, i) => `<tspan x="${i === 0 ? textX : tx}" y="${y + 11 + i * 12}">${esc(ln)}</tspan>`)
-            .join('')
-          parts.push(`${clip}<g clip-path="url(#${cid})">${chip.svg}<text ${style}>${spans}</text></g>`)
-          return
-        }
-        const rest = stripHandle(full, b.handle)
-        parts.push(
-          `${clip}<g clip-path="url(#${cid})">${chip.svg}` +
-            (rest ? `<text x="${textX}" y="${baseY}" ${style}>${esc(rest)}</text>` : '') +
-            `</g>`,
-        )
-      }
-      // Candidates worst-case-last, and note the SECOND one drops the tag name rather than the
-      // content. A nav link rendered as "@2 a" fits where "@2 a Home /home" doesn't, and tells you
-      // nothing you couldn't guess — "@2 Home" fits the same space and is the thing you were
-      // looking for. Content outranks taxonomy when space is short.
-      // A placeholder is rendered as a placeholder: italic and faded, never as content. On the real
-      // page you can see at a glance that a field is empty; the schematic said `@9 input Q3 revenue`
-      // for an input containing nothing, which is the same shape of lie as a green doctor check.
-      if (!detail && !b.placeholder && b.editable && b.empty) {
-        // Say "editable, empty" rather than drawing an anonymous box. This is where typing goes.
-        emitCaption(`${b.handle} (editable, empty)`, { italic: true, opacity: 0.55 })
-        for (const c of b.children) drawPlaced(c, g, yOff)
-        return
-      }
-      if (!detail && b.placeholder) {
-        const ph = `${b.handle} ${b.placeholder}`
-        emitCaption(fits(ph) ? ph : b.handle, { italic: true, opacity: 0.55 })
-        for (const c of b.children) drawPlaced(c, g, yOff)
-        return
-      }
-
-      // Progressive truncation, dropping the least informative part first. A nav link shown as
-      // "@2 a" fits where "@2 a Home /home" doesn't and tells you nothing — "@2 Home" fits the same
-      // space and is what you were looking for. Content outranks taxonomy when space is short.
-      const firstWords = detail ? detail.split(/\s+/) : []
-      const candidates = [
-        [head, detail].filter(Boolean).join('  '),
-        detail ? `${b.handle} ${detail}`.trim() : '',
-        firstWords.length > 1 ? `${b.handle} ${firstWords.slice(0, 2).join(' ')}` : '',
-        firstWords.length ? `${b.handle} ${firstWords[0]}` : '',
-        head,
-        b.handle,
-      ].filter(Boolean)
-      let label = candidates.find((c) => fits(c)) || ''
-      let fontSize = 10
-      if (!label) {
-        const small = candidates.find((c) => fitsSmall(c))
-        if (small) { label = small; fontSize = 8.5 }
-      }
-      // WRAP when the box is tall enough to hold more than one line. A paragraph or list item that
-      // wraps on the real page has the vertical room here too, and a single clipped line threw away
-      // most of it — "@108 snap-duration (number," where the box could comfortably hold the whole
-      // sentence. Only for genuinely multi-line boxes, so a 20px control keeps its single tight
-      // caption and nothing shifts.
-      const LINE = 12
-      const maxLines = Math.floor((h - 4) / LINE)
-      const fullText = [head, detail].filter(Boolean).join('  ')
-      if (maxLines >= 2 && detail && !fits(fullText)) {
-        const words = stripHandle(fullText, b.handle).split(/\s+/)
-        const lines: string[] = []
-        let cur = ''
-        for (const word of words) {
-          const next = cur ? `${cur} ${word}` : word
-          if (textW(next) <= avail || !cur) cur = next
-          else { lines.push(cur); cur = word; if (lines.length >= maxLines) break }
-        }
-        if (cur && lines.length < maxLines) lines.push(cur)
-        if (lines.length) {
-          // Mark a caption we had to cut, so "this is all of it" and "there is more" are different
-          // pictures. The full string is always in the JSON map.
-          if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
-            lines[lines.length - 1] = lines[lines.length - 1].replace(/\S+$/, '…')
-          }
-          emitCaption('', { lines })
-          for (const c of b.children) drawPlaced(c, g, yOff)
-          return
-        }
-      }
-
-      if (label) {
-        emitCaption(label, { size: fontSize })
-      } else if (b.handle && w >= 14 && h >= 10) {
-        // Nothing described fits — but the REF still must. It is the token you retype into a
-        // command, and a box you cannot address is a box you cannot use. The chip is ~14px wide, so
-        // it fits where a caption never could: the header icon row, the carousel dots.
-        emitCaption(b.handle)
-      }
-    }
-    for (const c of b.children) drawPlaced(c, g, yOff)
-  }
-
   const parts: string[] = []
-  // Every top-level box gets the SAME width. Letting each size itself makes a run-to-run diff noisy
-  // (one longer label rewidens some rows and not others), and a schematic's value as a regression
-  // artifact depends on only *real* changes moving pixels.
   let uniformW = 0
   const draw = (b: Box, x: number, y: number, depth: number): number => {
     const m = measure(b)
     const w = depth === 0 && uniformW ? uniformW : m.w
-    const h = m.h
-    // Paint in the PAGE's colours when we have them: background as fill, border as stroke, text
-    // colour for the caption. A control the user can't read is then a box you can't read — the
-    // contrast bug shows itself. Fall back to a neutral palette only when colours are unknown, and
-    // keep a hairline outline when an element has no border so structure stays locatable.
     const fill = b.colors?.bg || ['#f8fafc', '#eef2f7', '#e6ecf3', '#dde5ee'][Math.min(depth, 3)]
     const stroke = b.colors?.border || (b.colors ? 'rgba(0,0,0,.15)' : '#94a3b8')
-    const strokeW = b.colors?.border ? 1.5 : 1
-    parts.push(
-      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`,
-    )
-    if (b.contrastFail) {
-      // Flag it unmissably — the whole point is that this is easy to miss in the real UI.
-      parts.push(`<rect x="${x}" y="${y}" width="4" height="${h}" fill="#dc2626"/>`)
-    }
-    const head = headOf(b)
+    parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${m.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`)
+    if (b.contrastFail) parts.push(`<rect x="${x}" y="${y}" width="4" height="${m.h}" fill="#dc2626"/>`)
     const fg = b.colors?.fg || '#0f172a'
-    parts.push(
-      `<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`,
-    )
+    const head = headOf(b)
+    parts.push(`<text x="${x + PAD}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}">${esc(head)}</text>`)
     let dx = x + PAD + textW(head) + GAP
     if (b.detail) {
-      parts.push(
-        `<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}" opacity="0.85">${esc(b.detail)}</text>`,
-      )
+      parts.push(`<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="${fg}" opacity="0.85">${esc(b.detail)}</text>`)
       dx += textW(b.detail) + GAP
     }
+    // Fixed red on purpose: the caption is in the page's colours so you can SEE the problem; the
+    // diagnosis must stay readable or the warning shares the bug it is reporting.
     if (b.contrastFail) {
-      // Fixed, high-contrast red ON PURPOSE. The caption above is rendered in the page's own colours
-      // so you can SEE the problem; the diagnosis must stay readable or the warning shares the bug
-      // it is reporting.
-      parts.push(
-        `<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc('⚠ contrast ' + b.contrastFail)}</text>`,
-      )
+      parts.push(`<text x="${dx}" y="${y + 15}" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#b91c1c">${esc('⚠ contrast ' + b.contrastFail)}</text>`)
     }
     let cy = y + ROW
-    for (const c of b.children) {
-      cy += draw(c, x + PAD, cy, depth + 1) + 4
-    }
-    return h
+    for (const c of b.children) cy += draw(c, x + PAD, cy, depth + 1) + 4
+    return m.h
   }
-
   const boxes = toBoxes()
   let maxW = 0
   for (const b of boxes) maxW = Math.max(maxW, measure(b).w)
   for (const c of canvases) maxW = Math.max(maxW, c.w + PAD * 2)
-  // The banner is often the widest thing on the page — size for it, or the warning gets cut off,
-  // which is the one line that must never be truncated.
   if (banner) {
     measureCtx.font = `bold ${FONT}`
     maxW = Math.max(maxW, Math.ceil(measureCtx.measureText(banner).width) + PAD * 2)
     measureCtx.font = FONT
   }
   uniformW = maxW
-
-  const BANNER_H = banner ? 26 : 0
   let y = PAD + BANNER_H
-
-  // Canvases FIRST: where the page has one, that's the real visual content, and we can read its
-  // pixels without any permission — so the "substitute for a screenshot" actually shows the thing.
-  const geoPre = laidOut(boxes)
-  for (const c of geoPre ? canvases.filter((k) => !k.rect) : canvases) {
+  // Canvases first: where the page has one it is the real visual content, readable with no permission.
+  for (const c of canvases) {
     const boxH = (c.image ? c.h : 20) + 18
     parts.push(`<rect x="${PAD}" y="${y}" width="${maxW}" height="${boxH}" rx="4" fill="#0f172a" stroke="#334155"/>`)
-    parts.push(
-      `<text x="${PAD + 6}" y="${y + 13}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">@${esc(c.ref)} ${esc(c.label)}${c.error ? ' — ' + esc(c.error) : ''}</text>`,
-    )
-    if (c.image) {
-      parts.push(`<image x="${PAD + 6}" y="${y + 16}" width="${c.w}" height="${c.h}" href="${c.image}" preserveAspectRatio="xMinYMin meet"/>`)
-    }
+    parts.push(`<text x="${PAD + 6}" y="${y + 13}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">@${esc(c.ref)} ${esc(c.label)}${c.error ? ' — ' + esc(c.error) : ''}</text>`)
+    if (c.image) parts.push(`<image x="${PAD + 6}" y="${y + 16}" width="${c.w}" height="${c.h}" href="${c.image}" preserveAspectRatio="xMinYMin meet"/>`)
     y += boxH + 6
   }
-
-  // LAYOUT-FAITHFUL when the nodes carry geometry, stacked when they don't.
-  //
-  // Layout is the high-information part of a schematic and the whole reason a rendered diagram
-  // beats the same facts as text: a right-aligned nav, a two-column grid and a sidebar are three
-  // different pictures and one identical outline. Draw at real page coordinates and they stay
-  // three different pictures.
-  //
-  // The stacked path below is NOT dead code — the `tosi-agent` tier describes an app's own wiring
-  // and has no DOM geometry to report, so it keeps the outline. Falling back on a per-render check
-  // (rather than on the tier name) also means a page whose nodes somehow lack rects degrades to
-  // something readable instead of collapsing to a point.
-  const geo = geoPre
-  let width: number
-  let height: number
-  if (geo) {
-    for (const b of boxes) drawPlaced(b, geo, BANNER_H)
-    // Canvas pixels LAST and in place: a <canvas> is usually the actual content of the page that
-    // has one (a 3D scene, a chart, a render-to-texture UI), and it needs no permission to read.
-    // Drawn after the boxes so the real image sits on top of the outline of the element holding it.
-    for (const c of canvases) {
-      if (!c.rect) continue
-      const cx = c.rect.x - geo.x + PAD
-      const cy = c.rect.y - geo.y + PAD + BANNER_H
-      const cw = Math.max(2, c.rect.w)
-      const ch = Math.max(2, c.rect.h)
-      if (c.rect.x >= geo.x + geo.w || c.rect.x + cw <= geo.x) continue
-      if (c.rect.y >= geo.y + geo.h || c.rect.y + ch <= geo.y) continue
-      if (c.image) {
-        parts.push(`<image x="${cx}" y="${cy}" width="${cw}" height="${ch}" href="${c.image}" preserveAspectRatio="xMidYMid slice"/>`)
-        parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="none" stroke="#0f172a" stroke-width="1"/>`)
-      } else {
-        parts.push(`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="#0f172a" stroke="#334155"/>`)
-      }
-      const cap = `@${c.ref} ${c.label}${c.error ? ' — ' + c.error : ''}`
-      if (textW(cap) + 6 <= cw) {
-        parts.push(`<text x="${cx + 3}" y="${cy + 12}" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#93c5fd">${esc(cap)}</text>`)
-      }
-    }
-    width = Math.ceil(geo.w + PAD * 2)
-    height = Math.ceil(geo.h + PAD * 2 + BANNER_H)
-    y = height - PAD
-  } else {
-    for (const b of boxes) {
-      y += draw(b, PAD, y, 0) + 6
-    }
-    width = Math.ceil(Math.max(320, maxW + PAD * 2))
-    height = Math.ceil(y + PAD)
-  }
-
+  for (const b of boxes) y += draw(b, PAD, y, 0) + 6
+  const width = Math.ceil(Math.max(320, maxW + PAD * 2))
+  const height = Math.ceil(y + PAD)
   const title = `${map.source === 'tosi-agent' ? 'wiring' : 'dom'} · ${esc(map.title || '')}`
-  const bannerSvg = banner
-    ? `<rect x="0" y="0" width="${width}" height="${BANNER_H}" fill="#7f1d1d"/>` +
-      `<text x="${PAD}" y="17" font-family="ui-monospace,Menlo,monospace" font-size="11" font-weight="bold" fill="#fee2e2">${esc(banner)}</text>`
-    : ''
   const svg =
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
-    bannerSvg +
+    bannerSvg(width) +
     parts.join('') +
     `<text x="${PAD}" y="${height - 4}" font-family="ui-monospace,Menlo,monospace" font-size="9" fill="#94a3b8">${title}</text>` +
     `</svg>`
-  return {
-    svg,
-    width,
-    height,
-    layout: geo ? 'geometric' : 'structural',
-    boundsCoverage: `${boundsCoverage.withRect}/${boundsCoverage.total}`,
-  }
+  return { svg, width, height, layout: 'structural', boundsCoverage }
 }
 
 /**
@@ -3405,6 +2985,12 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
         h: Math.round(r.height),
       }
     } catch {}
+    // Page text never carries a provenance arrow into a record (#816; floorplan's spec says MUST for
+    // DOM extractors). `⟷` in a record means "two-way bound", so a page could otherwise dress its own
+    // text as a writable binding. `href` stays verbatim: it is a destination, and the spec keeps it so.
+    for (const k of PAGE_TEXT_FIELDS) {
+      if (typeof node[k] === 'string' && /[⟷⟵]/.test(node[k])) node[k] = neutralizeArrows(node[k])
+    }
     return node
   }
 

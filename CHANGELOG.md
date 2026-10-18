@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **Schematics are drawn by tosijs-floorplan** (virta #873). `hj map --image`, `hj screenshot
+  --schematic` and the no-capture fallback used haltija's own ~600-line renderer. haltija now emits
+  floorplan's record format and floorplan draws it, so haltija and tosijs share one renderer and one
+  affordance grammar. The response is unchanged: same fields, same `legend`, and refs still drawn as
+  dark pills. What looks different: captions show content instead of tag names (`Place order`, not
+  `@18 button Place order`), long text wraps to the box, checkboxes and radios are drawn as
+  geometry, an editable region wears a `↔` badge, and findings are short coloured bars on the left
+  edge (`contrast 1.1:1`, `target 16x16`) with the full text in the legend. A map with no geometry,
+  or `layout: 'structural'`, is still drawn as stacked boxes by haltija, since floorplan draws only
+  what has bounds. The widget is about 3 KB larger gzipped.
+- **Page text can no longer pose as a binding** (virta #816). In the record format, `text ⟷ path`
+  means "two-way bound to path", and haltija copied page text into its map verbatim, so a page
+  could make its own text read as a writable binding. The `⟷` and `⟵` arrows in page text, labels,
+  values and placeholders now become `<->` and `<-` as the map is built. Link destinations are kept
+  verbatim.
 - **Without `--token`, haltija refuses connections from other machines** (virta #815, GitHub #44).
   The server listens on every interface, and anything on your network could drive your browser,
   `/eval` included, unless you had thought to pass `--token`. Now a request or socket whose peer
