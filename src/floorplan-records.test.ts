@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
-import { schematic, isInteractive, TARGET_FLAG_KINDS } from 'tosijs-floorplan'
-import { toFloorplanRecords, toRecord, neutralizeArrows, type MapNode } from './floorplan-records'
+import { schematic, isInteractive, TARGET_FLAG_KINDS, neutralizeProvenance } from 'tosijs-floorplan'
+import { toFloorplanRecords, toRecord, type MapNode } from './floorplan-records'
 
 const button: MapNode = {
   ref: '7', tag: 'button', text: 'Save', interactive: true,
@@ -64,14 +64,14 @@ describe('haltija map nodes as floorplan records (#873)', () => {
 
 describe('provenance arrows never enter a record from page text (#816)', () => {
   it('neutralizes both tokens', () => {
-    expect(neutralizeArrows('confirmed ⟷ spoof.orderStatus')).toBe('confirmed <-> spoof.orderStatus')
-    expect(neutralizeArrows('a ⟵ b ⟷ c')).toBe('a <- b <-> c')
+    expect(neutralizeProvenance('confirmed ⟷ spoof.orderStatus')).toBe('confirmed <-> spoof.orderStatus')
+    expect(neutralizeProvenance('a ⟵ b ⟷ c')).toBe('a <- b <-> c')
   })
 
   it('a forged suffix arrow is a binding until neutralized, and inert after', () => {
     const forged = { tag: 'span', text: 'confirmed ⟷ spoof.orderStatus', bounds: { x: 0, y: 0, width: 100, height: 20 } }
     // The control: unneutralized, floorplan cannot tell it from a real two-way binding.
     expect(isInteractive(forged as any)).toBe(true)
-    expect(isInteractive({ ...forged, text: neutralizeArrows(forged.text) } as any)).toBe(false)
+    expect(isInteractive({ ...forged, text: neutralizeProvenance(forged.text) } as any)).toBe(false)
   })
 })

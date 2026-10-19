@@ -75,21 +75,7 @@ export interface CanvasThumb {
   rect?: { x: number; y: number; w: number; h: number }
 }
 
-/**
- * Strip the provenance arrows out of page-derived text (virta #816, floorplan's spec: MUST).
- *
- * In the record format `"x ⟷ path"` means "two-way bound to path". Page text is untrusted, so a
- * page whose button reads `confirmed ⟷ app.status` would be drawn, and reported, as a writable
- * binding. The renderer can't tell a forged suffix arrow from a real one; only the producer can,
- * by never letting one in.
- *
- * A hand copy of floorplan's policy until floorplan exports one (virta #3387, UPSTREAM.md).
- */
-export function neutralizeArrows(s: string): string {
-  return s.replaceAll('⟷', '<->').replaceAll('⟵', '<-')
-}
-
-/** The page-text fields of a node that the arrow rule covers. `href` is a destination, kept verbatim by spec. */
+/** The page-text fields of a node that floorplan's `neutralizeProvenance` covers (#816). `href` is a destination, kept verbatim by spec. */
 export const PAGE_TEXT_FIELDS = ['label', 'placeholder', 'text', 'value'] as const
 
 /**

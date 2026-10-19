@@ -237,7 +237,15 @@
     const at = Math.max(v.lastIndexOf(BOUND_TWO_WAY), v.lastIndexOf(BOUND_TO_DOM));
     return neutralizeArrows(at >= 0 ? v.slice(0, at).trim() : v);
   };
-  var neutralizeArrows = (s) => s.replaceAll(BOUND_TWO_WAY, "<->").replaceAll(BOUND_TO_DOM, "<-");
+  var PROVENANCE_REWRITES = [
+    [BOUND_TWO_WAY, "<->"],
+    [BOUND_TO_DOM, "<-"]
+  ];
+  var neutralizeArrows = (s) => PROVENANCE_REWRITES.reduce((out, [token, neutral]) => out.replaceAll(token, neutral), s);
+  var PROVENANCE_TOKENS = Object.freeze(PROVENANCE_REWRITES.map(([token]) => token));
+  function neutralizeProvenance(text) {
+    return typeof text === "string" ? neutralizeArrows(text) : text;
+  }
   var boundTwoWay = (v) => {
     if (typeof v !== "string")
       return false;
@@ -595,9 +603,6 @@
   };
 
   // src/floorplan-records.ts
-  function neutralizeArrows2(s) {
-    return s.replaceAll("⟷", "<->").replaceAll("⟵", "<-");
-  }
   var PAGE_TEXT_FIELDS = ["label", "placeholder", "text", "value"];
   function isPureLayout(n) {
     return !!n.children?.length && !n.label && !n.text && n.value === undefined && !n.href && !n.placeholder && !n.contrastFail && !n.interactive && !n.ownBg && !n.ownBorder;
@@ -2089,7 +2094,7 @@
             if (typeof v === "string")
               bound.push(`${k}: ${v}`);
           }
-          if (w.text && /[⟷⟵]/.test(w.text))
+          if (typeof w.text === "string" && PROVENANCE_TOKENS.some((t) => w.text.includes(t)))
             bound.push(String(w.text));
           const handlers = w.on ? Object.entries(w.on).map(([ev, path]) => `${ev} → ${Array.isArray(path) ? path.join(",") : path}`) : [];
           return {
@@ -2512,10 +2517,9 @@
           h: Math.round(r.height)
         };
       } catch {}
-      for (const k of PAGE_TEXT_FIELDS) {
-        if (typeof node[k] === "string" && /[⟷⟵]/.test(node[k]))
-          node[k] = neutralizeArrows2(node[k]);
-      }
+      for (const k of PAGE_TEXT_FIELDS)
+        if (typeof node[k] === "string")
+          node[k] = neutralizeProvenance(node[k]);
       return node;
     };
     const walk = (el) => {

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- **Page text is neutralized by floorplan's own `neutralizeProvenance`** (tosijs-floorplan 0.7.0,
+  virta #3387), replacing haltija's hand copy of that policy. Output is identical.
 - **Schematics use tosijs-floorplan 0.6.0** (virta #3388). Floorplan now draws haltija's ref pill
   itself (`refStyle: 'pill'`), so haltija's own pill plugin is gone; the picture is unchanged.
 - **A schematic can carry floorplan's `note`**, which says what the drawing can't be trusted to say:

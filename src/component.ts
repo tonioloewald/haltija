@@ -747,8 +747,8 @@ import { TEXT_PSEUDO_RE, parseTextSelector, textMatches as _textMatches } from '
 import type { ParsedTextSelector } from './text-selector'
 import { keyToCode } from './key-codes'
 import { fitSchematicSize, approxVisionTokens, normalizeQuality } from './schematic-size'
-import { schematic as floorplanSchematic } from 'tosijs-floorplan'
-import { toFloorplanRecords, neutralizeArrows, PAGE_TEXT_FIELDS } from './floorplan-records'
+import { schematic as floorplanSchematic, neutralizeProvenance, PROVENANCE_TOKENS } from 'tosijs-floorplan'
+import { toFloorplanRecords, PAGE_TEXT_FIELDS } from './floorplan-records'
 import { dialogPolicyError } from './dialog-policy'
 
 /** Get visible text from element, excluding SVG internals */
@@ -2313,7 +2313,7 @@ function renderMapSchematic(
           if (['tag', 'id', 'part', 'role', 'label', 'text', 'on', 'list', 'detail', 'bounds'].includes(k)) continue
           if (typeof v === 'string') bound.push(`${k}: ${v}`)
         }
-        if (w.text && /[⟷⟵]/.test(w.text)) bound.push(String(w.text))
+        if (typeof w.text === 'string' && PROVENANCE_TOKENS.some((t) => w.text.includes(t))) bound.push(String(w.text))
         const handlers = w.on
           ? Object.entries(w.on).map(([ev, path]) => `${ev} → ${Array.isArray(path) ? path.join(',') : path}`)
           : []
@@ -2999,9 +2999,8 @@ function buildDomAffordances(maxNodes = 400): { nodes: any[]; truncated?: boolea
     // Page text never carries a provenance arrow into a record (#816; floorplan's spec says MUST for
     // DOM extractors). `⟷` in a record means "two-way bound", so a page could otherwise dress its own
     // text as a writable binding. `href` stays verbatim: it is a destination, and the spec keeps it so.
-    for (const k of PAGE_TEXT_FIELDS) {
-      if (typeof node[k] === 'string' && /[⟷⟵]/.test(node[k])) node[k] = neutralizeArrows(node[k])
-    }
+    // This runs on raw page data only: neutralizing a finished bound value would erase the binding too.
+    for (const k of PAGE_TEXT_FIELDS) if (typeof node[k] === 'string') node[k] = neutralizeProvenance(node[k])
     return node
   }
 
