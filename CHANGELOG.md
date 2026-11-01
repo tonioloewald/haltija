@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.13.1 (2026-11-01)
 
 ### Changed
 
@@ -18,6 +18,13 @@
 - **The "SCHEMATIC" banner is no longer cut off on narrow viewports** (virta #3381). The geometric
   frame was sized to the page content alone; it is now at least as wide as the banner, as the
   stacked layout's always was.
+
+### Security
+
+- **Dependencies updated for open advisories.** `fast-uri` 3.1.9 (four advisories; it reaches the
+  shipped `dist/mcp.js` through the MCP SDK's `ajv`, and the desktop app through `electron-store`),
+  and, for the desktop app's development install, `electron` 43.8.6 (compromised eMudhra
+  intermediate certificates) and `undici` 7.30.1. Lockfile updates only; no other dependency moved.
 
 ## 1.13.0 (2026-10-18)
 
