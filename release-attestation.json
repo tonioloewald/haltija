@@ -1,36 +1,36 @@
 {
-  "version": "1.13.0",
-  "tree": "93d5e1ab606ee74de06be2cd4fe9bfd1e71dba01",
-  "commit": "58a742fc6a725d9e8db7b0337285f4650118d8b4",
+  "version": "1.13.1",
+  "tree": "a9a0706898f014cecdc25ebb9051b2783deaeefb",
+  "commit": "5aa426ec23507706d3f049b170ddee1f261f5793",
   "bun": "1.4.2",
   "lanes": {
     "test:integration": {
       "command": "bun scripts/integration.ts",
       "exitCode": 0,
-      "durationMs": 45545,
-      "tail": "\n 11 pass\n 0 fail\n 21 expect() calls\nRan 11 tests across 1 file. [44.43s]\n$ bun scripts/integration.ts"
+      "durationMs": 44933,
+      "tail": "\n 11 pass\n 0 fail\n 21 expect() calls\nRan 11 tests across 1 file. [43.85s]\n$ bun scripts/integration.ts"
     },
     "test:e2e": {
       "command": "bunx playwright test",
       "exitCode": 0,
-      "durationMs": 87478,
-      "tail": "  ✓  170 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (1ms)\n  ✓  171 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  171 passed (1.5m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
+      "durationMs": 83176,
+      "tail": "  ✓  171 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (1ms)\n  ✓  172 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  172 passed (1.4m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     },
     "test:engines": {
       "command": "bunx playwright test -c playwright.engines.config.ts",
       "exitCode": 0,
-      "durationMs": 8730,
-      "tail": "  ✓  25 [webkit] › src/playwright-bridge.playwright.ts:45:3 › playwrightBridge › type, click and press drive the page (235ms)\n  ✓  26 [webkit] › src/playwright-bridge.playwright.ts:54:3 › playwrightBridge › clickAt and dragFrom dispatch at a coordinate (144ms)\n  ✓  27 [webkit] › src/playwright-bridge.playwright.ts:69:3 › playwrightBridge › a missing coordinate target fails instead of passing (137ms)\n\n  27 passed (8.3s)\n$ bunx playwright test -c playwright.engines.config.ts"
+      "durationMs": 7363,
+      "tail": "  ✓  25 [webkit] › src/playwright-bridge.playwright.ts:45:3 › playwrightBridge › type, click and press drive the page (180ms)\n  ✓  26 [webkit] › src/playwright-bridge.playwright.ts:54:3 › playwrightBridge › clickAt and dragFrom dispatch at a coordinate (110ms)\n  ✓  27 [webkit] › src/playwright-bridge.playwright.ts:69:3 › playwrightBridge › a missing coordinate target fails instead of passing (111ms)\n\n  27 passed (7.1s)\n$ bunx playwright test -c playwright.engines.config.ts"
     },
     "test:all": {
       "command": "bun test src/ && bun scripts/integration.ts && bunx playwright test",
       "exitCode": 0,
-      "durationMs": 177781,
-      "tail": "\n 1146 pass\n 0 fail\n 2399 expect() calls\nRan 1146 tests across 80 files. [44.52s]\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
+      "durationMs": 171507,
+      "tail": "\n 1146 pass\n 0 fail\n 2400 expect() calls\nRan 1146 tests across 80 files. [41.34s]\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     }
   },
   "shipped": {
-    "CHANGELOG.md": "29b13299e657188542c64713b736994f242b2f873a3c873c4148362139447412",
+    "CHANGELOG.md": "7a557411dba85d1a725e0641f76011257331be0c08d75c4969d98e4208ca19e3",
     "LICENSE": "c3d99a22e17fbf4d5e412cb2d071d5f5095208995408bd1665f7231efe3567c4",
     "README.md": "979e26ccfc39c69b0936e26aa8d69ab39aec3529b288b1422c99f8797f4be69e",
     "apps/desktop/artifacts.js": "9597a07af0e5cce20c65b6d32a9f51ba394031b4de38e0554c41b96a76f5bf3c",
@@ -40,7 +40,7 @@
     "apps/desktop/machine-channel.js": "bf04ee86dd00d197a59c1370133e733856fdd228089af4e7b8e049a42446c3c1",
     "apps/desktop/machine-response.global.js": "a1c9c001d8f0f5adefcb8d7167b51f922e7d4e7ef7c70d8203c5c102b6d1c2da",
     "apps/desktop/main.js": "f0e20b11e69395ea58d6e4aacc98eb7973da309892dd6d96134409a81f7c1684",
-    "apps/desktop/package.json": "c474ca1e13928037357544c98860c79179e28781632cd5eccd5829f8e21f2f88",
+    "apps/desktop/package.json": "fccace6720480384a56908821fa0427db17e1259e2ca349076c8e540eb86696e",
     "apps/desktop/ports.js": "4f000871b37ce7ff8d4ad91ed7681efc29776d28bdd1ed530b6b470f92b7607b",
     "apps/desktop/preload.js": "27732002688e155d8e645fa0400e22bf3456916cdd60d5185960f482774f2c8f",
     "apps/desktop/renderer.js": "c867283acde36dd3e29832b959518ca6b33d05be7bd10357b80a84d9cdbea354",
@@ -56,7 +56,7 @@
     "apps/desktop/renderer/video-capture.js": "495428d5c0bafa5358cfc52b05185f047714e42995b44a05320e27132e2fc4b3",
     "apps/desktop/renderer/webview-events.js": "f601ebc2528a856a203ea4cadf2304ca6e9b6de081fa112c2a3cb9afce934546",
     "apps/desktop/renderer/widget-status.js": "4fb3b40da6905397cf29ef4a81e91887c4f63170afff54dcc63d70f993f33dec",
-    "apps/desktop/resources/component.js": "c05780c5b33f36d9110f143d488cb0cd85da55b0a7853621d39ecf2d959ceaaf",
+    "apps/desktop/resources/component.js": "194322465d4b93504e6eb805d637fc4636599a7d68166b48b74dcfa925720256",
     "apps/desktop/resources/icon.svg": "2d5fc212cad5daae158d5cc3ae6bd5dfbeca961645f3662660b73a1394b5ce6d",
     "apps/desktop/server-env.js": "fa4447f6c585e3e7ceafff8df4b8e577e3d16a0e3d938ff6788c01f2ad3bcf36",
     "apps/desktop/styles.css": "3e8737d12e2ecf1850864f43e20f5cad62a3478f3b73cadd59f6cde573a9f576",
@@ -83,7 +83,7 @@
     "bin/test-data.mjs": "b32b56997fe01f370197a76fd19aefd3269f2ea9369e118c05ddb034558e028b",
     "bin/tmux-session.mjs": "6cf243cf162083e6057393c17fae4d2c3686eba5fd64170826220a3345c7b7b5",
     "bin/tosijs-dev.mjs": "042bf63a994df69f023bc23ffab02bc298be6713bb5c4a5882c7c6f56ccefebe",
-    "bin/version.mjs": "64495f27cc5963a96ef32ea7600b1c94e8cb267d07a8d8c17e281dd7517ca3f7",
+    "bin/version.mjs": "eac56b46740c9d23db336d0a182fe157498c7700bf71733232c2314d43112bc6",
     "bin/window-state.mjs": "05fa836164e1aa93affa188b4d16e556c4b8dd08939414c9014dca78b81f4d3d",
     "dist/agent-message-format.d.ts": "d610c212be3b1f03dabda34f7bba94f31374d3fec01145fe39b2a194094ed284",
     "dist/agent-shell.d.ts": "2095868f3f1868d4567c7865ea9abadaf7a102b76a5f5f3067316740e748bcd2",
@@ -100,21 +100,21 @@
     "dist/codemirror-bundle.d.ts": "17c52560690ccf87282e8a6bbe1ac975cdd54b8853a5f399f9a603bd9bb31ad2",
     "dist/codemirror-raw.js": "b6ccf4b4797fd37d31c6237839266d37374e0d99cb56c0eaa76ea7dd3fe24c1b",
     "dist/codemirror.js": "7047eafca919f5651c67667ec5b1d96c7f3b08c987bb520cf12d9d9b572d0d07",
-    "dist/component.d.ts": "445182bd54e6d0ed929d85d1e9490c746757490fae782089e2445237a532db75",
-    "dist/component.esm.js": "10aff8247aa7d738ae65f1881796414a31a6fd1a70b2825ba6b63507c529eef4",
-    "dist/component.js": "c05780c5b33f36d9110f143d488cb0cd85da55b0a7853621d39ecf2d959ceaaf",
+    "dist/component.d.ts": "f5d006a1d793d6d1690c35697c997e330fd0b8fa8570cd714cdc09705affc0c2",
+    "dist/component.esm.js": "5507b56bc639c614adefad7b28fd51ef7b7367a5025d274db190826e30554481",
+    "dist/component.js": "194322465d4b93504e6eb805d637fc4636599a7d68166b48b74dcfa925720256",
     "dist/desktop-isolation.d.ts": "5606d64442d6094fc18d26f824cd7ff4a08c01680507dead9152fdcce830ba2e",
     "dist/desktop-server-env.d.ts": "90adffde188deed2dbe5c4e9dce25e9e07710479e58f84090e2375b8097cb813",
     "dist/dialog-policy.d.ts": "3f8fd22bde9be45114da61f90fec058f0f6f6bdf0c98305060b91f8cefb938c2",
     "dist/drag.d.ts": "cb566fad3e9434e7be143ce58bc5739cd7a7f876f42787b29568f4dfa4953eeb",
     "dist/embedded-assets.d.ts": "b188ae7251d466ba0760f80843656c962434caa1b610cf92326cdf0c6e6e4fca",
-    "dist/floorplan-records.d.ts": "136f75f895a1e2ac755d77c8bc55a660fcad1e9af44c6fa8f4f8cbda2f5bfe98",
+    "dist/floorplan-records.d.ts": "804ef7997e0dde5fb102a9fb329b72d5a0f046fafde2b8dd8af1ab9c0c45fad7",
     "dist/focus-ambiguity.d.ts": "5d7c7b5bff294023a8ab11a60f2d881b09fbf28026bb5797d49a3d487983da29",
     "dist/hj-install.d.ts": "473daab90cad18bcc9ca563fecaa182456cf90fe1116fc75577ecbae17bf0ab9",
-    "dist/hj.js": "41325a0cfe12bd97a18f0de06fe0d3ff4bd09191ac0eee4488b8a4b71d55f658",
+    "dist/hj.js": "8a543afc476b360acb9715898c269560ff08cf9cd767adf31ad50efd89b838f4",
     "dist/idle-timeout.d.ts": "5a66c97516a305062e4b3899ed0e7b18ce1e0ce531151a2d0d67931640e4590c",
     "dist/index.d.ts": "508b99b2d6ebfb70c2f2f51df7a4343b41962c1a3901678eac23701ac2b71d4c",
-    "dist/index.js": "68c70d0146f365feb94cc1f90903734cdddd615e424b7f69617e778288c49662",
+    "dist/index.js": "b8abd6350445506a2033a16c46c2a4b7117b204661a0336007c6f73da611b0e0",
     "dist/key-codes.d.ts": "91232471d5ea718709a632bedab57911327cb5827eb36a6cd5050db7e7db8a61",
     "dist/legacy-servers.d.ts": "8cca518d794bcc0f2b519cf6cbbfe1765df7a4d92a378d74f24767a7df46c1b6",
     "dist/loader-snippet.d.ts": "5079ed5fa4057bf105a76a6956dd116860cc8d955968517e4706f2d092eccb1b",
@@ -123,7 +123,7 @@
     "dist/machine-log.d.ts": "04e8fd46955c0018306a39bbe100cffc9584596c285b54617a1405bbe66a1c08",
     "dist/machine-response.d.ts": "bbe303a07f102164c568d548f39dbbeda86eeccf8955fb71b7151529e9cdf192",
     "dist/mcp-config.d.ts": "fab5faa015b1be573d1a9e0fbcbcc7a7f133d2aab140865846814f46e4872119",
-    "dist/mcp.js": "3dc3d929af24953c87e77a474024c0b7da1cc9c73922d4a2c6a5c1765546ce9c",
+    "dist/mcp.js": "9073a3b3d12c8fe6ece4a8a5755f6c8fb1235306d4d16b09e4ba394c694d320f",
     "dist/naming-probe.d.ts": "557204ee936bd2bdec67ef23f2f1a029cd1f7fd2a3e80e2f26240613444a2948",
     "dist/navigation-url.d.ts": "e466fe40505cba164b8cf2e0bf08aa4a958c27583a21bda0d21790bbfc4c65cc",
     "dist/page-wait.d.ts": "d81d297af248f168aecb0a206ae573bfc6a4a8c7a76ee55e41a5c6692b8c3aa9",
@@ -138,7 +138,7 @@
     "dist/semver.d.ts": "a429d14b5122ccac751b7bfddc84f4fbbcf7e931fd236bb588fa49a1a772d21c",
     "dist/server-list.d.ts": "0fa3165a2e679ccb7d7bf12a319b6cf13cf65a29a596e3d3d6152584031eca12",
     "dist/server.d.ts": "5f7f1d2b6028388ac4045e702610630c55eb02f9b2190ddd1a457a0a65c0659d",
-    "dist/server.js": "ccf4cb0b4287cdb9fb5d969ce360ed98e6462439d15a9d4d52a56221bc94035f",
+    "dist/server.js": "7254deb80e0524cc853cf066201a55a1100c8f95747b03e3aa2b11b6eca7f98c",
     "dist/sessions.d.ts": "55d278f0648f1b825de645af11133f29114789496d5f2d729b465155903830ca",
     "dist/tab-liveness.d.ts": "b2654df54792a90c3d9de45bddae7837709b7d38611d940784c0cc3cbd1f1e5c",
     "dist/task-board.d.ts": "3057991b3f977fee0490607b39861289308b35115c9e7fab84ed5febe3574ed7",
@@ -157,7 +157,7 @@
     "dist/tmux-session.d.ts": "7bfd16956d5fe76305765ff92b6e8d44bd96a115486f43afc9ab8b8635534e2e",
     "dist/transports.d.ts": "d2869b08c86d0245cefa9d7deb88066d3db1333a5ce3bf75d4273d7aa87c7ce1",
     "dist/types.d.ts": "d3ee6d62530081ccdbc7fe2e64fe41b4bae1c1f782e19c7966d8809f977673a2",
-    "dist/version.d.ts": "1a117a3fb15bb30aefc3d81301d75ec7e2d6108fa571919bdd849188f6414bc7",
+    "dist/version.d.ts": "ef981c8465fe069dafc8bf15b7c123c4abffd4c534271111a8290a023ca431ae",
     "dist/warning-dedupe.d.ts": "3dc7ee3a78843b403050df6f6d9dabee9a17dac829958655cd2152aa0a22addf",
     "dist/window-state.d.ts": "2d93b241328ac4e5264494d60c9b63ed4fd0838f0f6fc3c15660de53b57b123a",
     "dist/ws-origin.d.ts": "2b052f1843900636de90c2743d4131fa3df087e1249d25b399eb6e15e40fce42",
@@ -179,6 +179,6 @@
     "docs/recipes.md": "7ef16bb603f3d2885471d50258e5410299eaf54bbc56c979835c4f3719a6dc1a",
     "haltija-icon.svg": "2d5fc212cad5daae158d5cc3ae6bd5dfbeca961645f3662660b73a1394b5ce6d",
     "llms.txt": "bed6b76422bd306b9a1fca26ae0b83a7e85c7c25dc62943d8ef4ee28f2260bb3",
-    "package.json": "f4b7709059208cb013a3aa78cceaee79b111179a496c7b3f027ce5066c6f26f4"
+    "package.json": "cfb88a50574221feca0369555fc02b55c767e01e0f8720b9a99cd606cc006eaa"
   }
 }
