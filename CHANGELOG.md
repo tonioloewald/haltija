@@ -15,16 +15,25 @@
 
 ### Fixed
 
+- **MCP tools now tell the agent their argument types.** Every optional argument is typed
+  `["string", "null"]` in the API schema, and the MCP server's converter matched none of those, so
+  `click`'s `selector`, `ref`, `text` and every other optional field reached the agent untyped.
 - **The "SCHEMATIC" banner is no longer cut off on narrow viewports** (virta #3381). The geometric
   frame was sized to the page content alone; it is now at least as wide as the banner, as the
   stacked layout's always was.
 
 ### Security
 
-- **Dependencies updated for open advisories.** `fast-uri` 3.1.9 (four advisories; it reaches the
-  shipped `dist/mcp.js` through the MCP SDK's `ajv`, and the desktop app through `electron-store`),
-  and, for the desktop app's development install, `electron` 43.8.6 (compromised eMudhra
-  intermediate certificates) and `undici` 7.30.1. Lockfile updates only; no other dependency moved.
+- **The bundled MCP server (`dist/mcp.js`) carried two vulnerable libraries.** Affected: haltija
+  **1.13.0-beta.4 to 1.13.0**, the releases that ship that bundle. `fast-uri` 3.1.8 (via the MCP
+  SDK's `ajv`; GHSA-333x-w4r6-6crp, GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h)
+  is now 3.1.9, and `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized
+  collections; no 3.x fix) is now 4.6.7. The MCP server's only caller is the local MCP client over
+  stdio, so neither was reachable from the network.
+- **Development installs only, nothing shipped:** the desktop app's `electron` 43.8.6
+  (GHSA-jr5w-w6x2-84p9, compromised eMudhra intermediate certificates), its `undici` 7.30.1
+  (GHSA-xjj6-f33q-929c), and `body-parser` 2.4.0 (GHSA-27r3-jxmh-p828, via the MCP SDK's express,
+  which the bundle does not include). Lockfile updates; no other dependency moved.
 
 ## 1.13.0 (2026-10-18)
 

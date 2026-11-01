@@ -98,13 +98,16 @@ function jsonSchemaToZod(schema: object | undefined): z.ZodObject<z.ZodRawShape>
     return z.object({})
   }
   
-  const shape: z.ZodRawShape = {}
+  const shape: Record<string, z.ZodTypeAny> = {}
   
   for (const [key, prop] of Object.entries(s.properties)) {
-    const p = prop as { type?: string; description?: string; items?: { type?: string } }
+    const p = prop as { type?: string | string[]; description?: string; items?: { type?: string } }
     let zodType: z.ZodTypeAny
-    
-    switch (p.type) {
+    // An optional field is typed ["string", "null"]; switching on the array matched nothing, so every
+    // optional argument reached the agent as untyped.
+    const type = Array.isArray(p.type) ? p.type.find((t) => t !== 'null') : p.type
+
+    switch (type) {
       case 'string':
         zodType = z.string()
         break
@@ -121,6 +124,8 @@ function jsonSchemaToZod(schema: object | undefined): z.ZodObject<z.ZodRawShape>
         zodType = z.any()
     }
     
+    if (Array.isArray(p.type) && p.type.includes('null')) zodType = zodType.nullable()
+
     if (p.description) {
       zodType = zodType.describe(p.description)
     }

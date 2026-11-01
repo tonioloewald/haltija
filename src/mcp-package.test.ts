@@ -122,9 +122,14 @@ describe('the MCP server works from the packed package (GitHub #47)', () => {
     const mcp = await mcpSession(entry, { HALTIJA_PORT: String(PORT), HALTIJA_TOKEN: TOKEN })
     try {
       expect(mcp.init.result.serverInfo).toEqual({ name: 'haltija', version })
-      const tools = (await mcp.request('tools/list')).result.tools.map((t: any) => t.name)
+      const listed = (await mcp.request('tools/list')).result.tools
+      const tools = listed.map((t: any) => t.name)
       expect(tools).toContain('status')
       expect(tools).toContain('click')
+      // Argument types reach the agent. An optional field is ["string", "null"] in the schema, and that
+      // used to arrive untyped; zod moved 3 -> 4 in 1.13.1, so this also covers the conversion.
+      const click = listed.find((t: any) => t.name === 'click')
+      expect(click.inputSchema.properties.selector.type).toEqual(['string', 'null'])
       // A real round trip: the tool reached the server, which demands the token.
       const call = await mcp.request('tools/call', { name: 'status', arguments: {} })
       expect(call.result.isError).toBeFalsy()
