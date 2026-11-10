@@ -1,11 +1,11 @@
 {
-  "version": "1.13.1",
+  "version": "1.13.2",
   "gzip": {
-    "component.js": 75679,
-    "component.esm.js": 74544,
-    "index.js": 223648,
-    "server.js": 221307,
-    "hj.js": 32358,
-    "mcp.js": 156170
+    "component.js": 75798,
+    "component.esm.js": 74659,
+    "index.js": 224389,
+    "server.js": 222041,
+    "hj.js": 32595,
+    "mcp.js": 156712
   }
 }
