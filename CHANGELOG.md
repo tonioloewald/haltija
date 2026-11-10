@@ -23,6 +23,13 @@
   mouse twin, as in a browser, and a cancelled `pointerdown` suppresses the compatibility
   `mousedown`/`mouseup` but not `click`. This applies to `hj click`, `POST /click` and the `click`
   and `check` steps.
+- **Stopping the server that holds a port you asked for no longer crashes on a slow teardown**
+  (virta #3122). A `/status` that timed out was taken to mean the server had gone, and the bind
+  that followed was not retried, so a peer still shutting down crashed startup. A timeout now
+  keeps waiting, and the bind retries briefly. This path now has a spawned test: a strict
+  `--port`, and an explicit HTTPS port over TLS (#1079), each stop a haltija holder, and a holder
+  that is not haltija is left alone. `HALTIJA_NO_LEGACY_SWEEP=1` (new) turns off only the
+  startup sweep for pre-1.4.0 servers, so that test can run without probing 8700/8701.
 - **A refusal whose socket had already closed is no longer logged as a container misconfiguration.**
   The #815 gate refuses a request with no readable address (the socket is gone), and its log line
   used to give the other-machine `--token` advice, which a local widget's reconnect storm could

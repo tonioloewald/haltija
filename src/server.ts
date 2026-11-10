@@ -4676,6 +4676,21 @@ const serverConfig = {
  * to make every HTTPS holder "a server we could not identify" — a refusal that was right only by
  * accident, with a message that misled (#1079).
  */
+/**
+ * Bind a port we just freed. The peer has stopped answering, but its listener can outlive that by a
+ * moment, so retry EADDRINUSE briefly rather than crash on the first attempt (#3122).
+ */
+function bindRetrying<T>(bind: () => T, attempts = 10, delayMs = 200): T {
+  for (let i = 1; ; i++) {
+    try {
+      return bind()
+    } catch (err: any) {
+      if (err?.code !== 'EADDRINUSE' || i >= attempts) throw err
+      Bun.sleepSync(delayMs)
+    }
+  }
+}
+
 async function freePort(port: number, scheme: 'http' | 'https' = 'http'): Promise<boolean> {
   // freePort reaches out and stops ANOTHER server — a machine-scope action, exactly what
   // HALTIJA_NO_RETIRE governs. The test suite sets NO_RETIRE, and on a shared machine (CI, or
@@ -4775,8 +4790,10 @@ async function requestShutdown(port: number, timeoutMs = 3000, scheme: 'http' | 
         signal: AbortSignal.timeout(500),
         ...selfSigned(scheme),
       })
-    } catch {
-      return true // nothing is answering: it's gone
+    } catch (err: any) {
+      // Refused: nothing is listening, it's gone. A TIMEOUT is not that: a server busy tearing down
+      // answers slowly, and calling it gone sent us straight into a bind that crashed (#3122).
+      if (err?.name !== 'TimeoutError') return true
     }
     await new Promise((r) => setTimeout(r, 100))
   }
@@ -4839,6 +4856,9 @@ async function probePort(port: number, scheme: 'http' | 'https' = 'http'): Promi
  */
 async function retireLegacyServers(): Promise<void> {
   if (process.env.HALTIJA_NO_RETIRE === '1') return
+  // The sweep alone. It probes the well-known 8700/8701, so a test that exercises freePort (which
+  // only ever touches the port it was told to bind) must be able to leave the sweep off (#3122).
+  if (process.env.HALTIJA_NO_LEGACY_SWEEP === '1') return
   // A private instance is isolated by construction — it must never reach out to another server,
   // even if the launcher didn't set NO_RETIRE. Defense in depth for issue #1's whole point.
   if (IS_PRIVATE) return
@@ -4903,7 +4923,7 @@ if (USE_HTTP) {
       if (PORT_IS_STRICT) {
         // User asked for a specific port — try to free it and retry.
         if (await freePort(PORT)) {
-          httpServer = Bun.serve({ port: PORT, ...serverConfig })
+          httpServer = bindRetrying(() => Bun.serve({ port: PORT, ...serverConfig }))
         } else {
           // Fail with a legible message, not a raw EADDRINUSE stack — a caller (or human)
           // needs to know WHICH port and WHY, especially since spawn stderr is often ignored.
@@ -4988,7 +5008,7 @@ if (USE_HTTPS) {
       // process — HTTP included, for every project using that channel (#32a). Probed over TLS, so
       // a holder is identified rather than declined as unknown by accident (#1079).
       if (mayReclaimHttpsPort({ explicitHttpsPort: HTTPS_PORT_EXPLICIT, httpPortIsStrict: PORT_IS_STRICT }) && await freePort(wantedHttpsPort, 'https')) {
-        httpsServer = bindHttps()
+        httpsServer = bindRetrying(bindHttps)
       } else {
         for (let attempt = 0; attempt < 5 && !httpsServer; attempt++) {
           Bun.sleepSync(400)

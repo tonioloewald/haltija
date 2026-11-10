@@ -541,7 +541,8 @@ Specific to haltija:
 | `HALTIJA_TOKEN` | Shared-secret required on every REST + WebSocket request (off when unset) | — |
 | `HALTIJA_SESSION_KEY` | Write capability handle for `hj session write`, returned once by `session attach --allow-input` (or pass `--key`) | — |
 | `HALTIJA_DESKTOP` | Set by the Electron desktop app when it spawns the server (enables `__NEED_WINDOW__`) | — |
-| `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup | — |
+| `HALTIJA_NO_RETIRE` | Set to `1` to stop the server retiring pre-1.4.0 haltija servers on startup, and to stop it freeing an explicitly requested port held by another haltija server | — |
+| `HALTIJA_NO_LEGACY_SWEEP` | Set to `1` to skip only the startup sweep for pre-1.4.0 servers (which probes 8700/8701), leaving port freeing on. For tests of `freePort` (`src/free-port-live.test.ts`) | — |
 | `HALTIJA_NO_INSTALL` | Set to `1` to stop the server installing `hj` into `~/.local/bin` | — |
 | `HALTIJA_NO_SKEW_WARN` | Set to `1` to silence `hj`'s client/server version-skew warning | — |
 | `HALTIJA_NO_TRANSPORT_WARN` | Set to `1` to silence the #32d warning that an explicit single-transport mode degrades the shared channel for other projects | — |
