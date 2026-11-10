@@ -24,6 +24,15 @@
 
 ### Changed
 
+- **`/navigate`, `/refresh` and the `navigate` step share one rule for "did the page come back"**
+  (virta #3384). They had two copies that differed: `/navigate` did not resolve a relative URL
+  against the page it left, the step sent the widget an unclamped wait, and their messages
+  disagreed. A step that times out waiting now says which (no widget came back, or a different tab
+  appeared).
+- **The launcher and the desktop renderer take their port defaults from `src/ports.ts`** through
+  compiled twins (`bin/ports.mjs`, `apps/desktop/renderer/ports.js`), and a test fails if either
+  declares its own again. A new test also fails if a shipped entry point imports a package that
+  installing haltija does not provide.
 - **Dependencies:** minor and patch updates in every tree, including Playwright 1.57 → 1.65 and
   tosijs-schema 1.9 → 1.14 (no generated output changed). CI's actions moved to their Node 24
   releases, pinned by SHA.

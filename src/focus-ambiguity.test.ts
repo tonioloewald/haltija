@@ -1,21 +1,21 @@
 import { describe, it, expect } from 'bun:test'
-import { originOf, ambiguousFocusWarning } from './focus-ambiguity'
+import { originBucket, ambiguousFocusWarning } from './focus-ambiguity'
 
-describe('originOf', () => {
+describe('originBucket', () => {
   it('returns the origin for a normal URL', () => {
-    expect(originOf('https://localhost:8787/rating/')).toBe('https://localhost:8787')
+    expect(originBucket('https://localhost:8787/rating/')).toBe('https://localhost:8787')
   })
   it('distinguishes ports as distinct origins', () => {
-    expect(originOf('https://localhost:8030/b3d/')).not.toBe(originOf('https://localhost:8787/x/'))
+    expect(originBucket('https://localhost:8030/b3d/')).not.toBe(originBucket('https://localhost:8787/x/'))
   })
   it('falls back to the raw string for unparseable / opaque URLs', () => {
-    expect(originOf('about:blank')).toBe('about:blank')
-    expect(originOf('not a url')).toBe('not a url')
+    expect(originBucket('about:blank')).toBe('about:blank')
+    expect(originBucket('not a url')).toBe('not a url')
   })
   it('returns null for empty / missing', () => {
-    expect(originOf('')).toBeNull()
-    expect(originOf(undefined)).toBeNull()
-    expect(originOf(null)).toBeNull()
+    expect(originBucket('')).toBeNull()
+    expect(originBucket(undefined)).toBeNull()
+    expect(originBucket(null)).toBeNull()
   })
 })
 

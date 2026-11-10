@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { clampPageWait, MAX_PAGE_WAIT_MS, newlyOpenedWindow, returnedWindow, type PageTarget, type WindowLike } from './page-wait'
+import { clampPageWait, MAX_PAGE_WAIT_MS, newlyOpenedWindow, returnedWindow, type PageTarget, type WindowLike, expectedOriginAfter, notBackMessage } from './page-wait'
 
 const win = (id: string, browserId: string, url: string, windowType = 'tab'): WindowLike => ({ id, browserId, url, windowType })
 const map = (...ws: WindowLike[]) => new Map(ws.map((w) => [w.id, w]))
@@ -57,5 +57,20 @@ describe('newlyOpenedWindow — what wait forWindow waits for (#2468)', () => {
   })
   it('a widget too old to report its type counts as a tab', () => {
     expect(newlyOpenedWindow(map({ id: 'w3', browserId: null, url: 'e' }), known)?.id).toBe('w3')
+  })
+})
+
+describe('expectedOriginAfter / notBackMessage: one rule for /navigate, /refresh and the step (#3384)', () => {
+  const target = { url: 'http://localhost:3000/app/' }
+  it('prefers what the widget loaded, then the request resolved against the page left, then that page', () => {
+    expect(expectedOriginAfter('http://b.test/x', '/y', target)).toBe('http://b.test')
+    expect(expectedOriginAfter(undefined, '/login', target)).toBe('http://localhost:3000')
+    expect(expectedOriginAfter(undefined, undefined, target)).toBe('http://localhost:3000')
+    expect(expectedOriginAfter(undefined, undefined, null)).toBeNull()
+  })
+  it('says nothing when the tab came back, and names a candidate when one appeared', () => {
+    expect(notBackMessage({ reconnected: true }, 100)).toBeNull()
+    expect(notBackMessage({ reconnected: false }, 100)).toContain('within 100 ms')
+    expect(notBackMessage({ reconnected: false, candidate: { windowId: 'w2', url: 'http://b.test/' } }, 100)).toContain('window w2')
   })
 })

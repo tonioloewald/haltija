@@ -42,13 +42,38 @@ export interface WindowLike {
   url: string
 }
 
-export function originOf(url: string, base?: string): string | null {
+/** An origin a returning window can be MATCHED against. Opaque and unparseable URLs give null,
+ * because two `about:blank` tabs are not evidence of the same page (contrast `originBucket` in
+ * focus-ambiguity.ts, which keeps them as a distinct grouping bucket). */
+export function matchableOrigin(url: string, base?: string): string | null {
   try {
     const o = new URL(url, base).origin
     return o === 'null' ? null : o
   } catch {
     return null
   }
+}
+
+/**
+ * The origin a navigation should come back on: what the widget says it loaded, else what was asked
+ * for, resolved against the page it left (a relative step URL), else that page (a reload). One rule
+ * for the /navigate and /refresh endpoints and the runner's `navigate` step, which once had two.
+ */
+export function expectedOriginAfter(loadedUrl: string | undefined, requestedUrl: string | undefined, target: { url: string } | null): string | null {
+  return matchableOrigin(loadedUrl ?? requestedUrl ?? target?.url ?? '', target?.url)
+}
+
+/** What a caller is told when the navigated tab did not come back as itself. null when it did. */
+export function notBackMessage(
+  back: { reconnected: boolean; candidate?: { windowId: string; url: string } },
+  timeoutMs: number,
+): string | null {
+  if (back.reconnected) return null
+  return back.candidate
+    ? `The page changed, but the tab did not come back as itself: a new tab appeared at ` +
+        `${back.candidate.url} (window ${back.candidate.windowId}). Outside the desktop app a ` +
+        `cross-site navigation resets a tab's identity.`
+    : `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms.`
 }
 
 export type PageReturn<W> = { window: W; confirmed: true } | { window: W; confirmed: false } | undefined
@@ -69,7 +94,7 @@ export function returnedWindow<W extends WindowLike>(
   if (windows.has(target.id)) return undefined // still the old page, or not back yet
   const kind = (w: { windowType?: string }) => w.windowType || 'tab'
   const candidate = Array.from(windows.values()).find(
-    (w) => !known.has(w.id) && kind(w) === kind(target) && expectedOrigin !== null && originOf(w.url) === expectedOrigin,
+    (w) => !known.has(w.id) && kind(w) === kind(target) && expectedOrigin !== null && matchableOrigin(w.url) === expectedOrigin,
   )
   return candidate ? { window: candidate, confirmed: false } : undefined
 }

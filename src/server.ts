@@ -45,7 +45,7 @@ import {
   splitLines,
 } from './machine-channel'
 import { DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT, PUBLIC_PORTS } from './ports'
-import { returnedWindow, newlyOpenedWindow, clampPageWait, originOf, type PageTarget } from './page-wait'
+import { returnedWindow, newlyOpenedWindow, clampPageWait, expectedOriginAfter, notBackMessage, type PageTarget } from './page-wait'
 import { resolveTransportMode, sharedChannelDegradedWarning, resolveCertDir, planCertSetup, httpsPortFor, mayReclaimHttpsPort } from './transports'
 import { ambiguousFocusWarning } from './focus-ambiguity'
 import { shouldEmitWarning } from './warning-dedupe'
@@ -2894,20 +2894,20 @@ Run 'hj --help' for all commands.`
             // both: a different window-selection rule (focused, else most recent of ALL windows) and
             // a wait that only knew same-windowId reconnects.
             const target = pageTarget()
-            const response = await requestFromBrowser('navigation', 'goto', { url: step.url, waitMs: stepTimeout }, stepTimeout, target?.id)
+            const waitMs = clampPageWait(stepTimeout)
+            const response = await requestFromBrowser('navigation', 'goto', { url: step.url, waitMs }, stepTimeout, target?.id)
             if (!response.success) {
               stepPassed = false
               error = response.error || 'Navigation failed'
               break
             }
             if (!response.data?.sameDocument) {
-              const expected = originOf(response.data?.url ?? step.url, target?.url)
-              const back = await waitForNewPage(target, { timeoutMs: stepTimeout, expectedOrigin: expected })
-              if (!back.reconnected) {
+              const expected = expectedOriginAfter(response.data?.url, step.url, target)
+              const back = await waitForNewPage(target, { timeoutMs: waitMs, expectedOrigin: expected })
+              const notBack = notBackMessage(back, waitMs)
+              if (notBack) {
                 stepPassed = false
-                error = back.candidate
-                  ? `The tab did not come back as itself; a new tab appeared at ${back.candidate.url} (window ${back.candidate.windowId}). A cross-site navigation resets a tab's identity outside the desktop app.`
-                  : 'Browser did not reconnect after navigation'
+                error = notBack
               }
             }
             break

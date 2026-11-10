@@ -14,7 +14,7 @@ import { performDrag } from './drag'
 import { attachSession, readSession, writeSession, detachSession, type RunTmux } from './tmux-session'
 import type { EndpointDef } from './api-schema'
 import { saveDataUrl } from './artifacts'
-import { clampPageWait, originOf, type PageTarget } from './page-wait'
+import { clampPageWait, expectedOriginAfter, notBackMessage, type PageTarget } from './page-wait'
 
 // ============================================
 // Handler Context Type
@@ -747,7 +747,7 @@ async function withNewPage(
     return Response.json(response, { headers: ctx.headers })
   }
   // The widget reports the URL it actually loaded; /refresh reloads the page it was on.
-  const expectedOrigin = originOf(response.data?.url ?? target?.url ?? '')
+  const expectedOrigin = expectedOriginAfter(response.data?.url, body.url, target)
   const back = await ctx.waitForNewPage(target, { timeoutMs, expectedOrigin })
   const data = { ...(response.data || {}), reconnected: back.reconnected }
   if (back.reconnected) return Response.json({ ...response, data }, { headers: ctx.headers })
@@ -755,15 +755,13 @@ async function withNewPage(
   // nowhere, or to the wrong tab. JOINED to any warning already attached (hidden tab, ambiguous
   // focus), never replacing it, and a new warning is not a repeat: keeping the old
   // `warningRepeated: true` made `hj` print nothing (beta.2 review).
-  const note = back.candidate
-    ? `The page changed, but the tab did not come back as itself: a new tab appeared at ` +
-      `${back.candidate.url} (window ${back.candidate.windowId}). Outside the desktop app a ` +
-      `cross-site navigation resets a tab's identity; if that is this tab, target it with ` +
-      `--window ${back.candidate.windowId}. Untargeted commands go to whichever visible tab has ` +
-      `focus; check with \`hj windows\`.`
-    : `The page changed, but no haltija widget reconnected from it within ${timeoutMs} ms. If the ` +
-      `page doesn't load the widget itself, re-inject it (bookmarklet) before sending more ` +
-      `commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`
+  const note =
+    notBackMessage(back, timeoutMs) +
+    (back.candidate
+      ? ` If that is this tab, target it with --window ${back.candidate.windowId}. Untargeted ` +
+        `commands go to whichever visible tab has focus; check with \`hj windows\`.`
+      : ` If the page doesn't load the widget itself, re-inject it (bookmarklet) before sending ` +
+        `more commands, and pass --no-wait to skip this wait; if it is just slow, raise --timeout.`)
   if (back.candidate) (data as any).candidateWindowId = back.candidate.windowId
   const { warningRepeated: _stale, ...rest } = response
   return Response.json(

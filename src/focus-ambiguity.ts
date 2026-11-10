@@ -47,7 +47,7 @@ function isTopLevelTab(w: FocusWindowInfo): boolean {
 
 /** A tab's origin for grouping — `about:blank`, opaque, and unparseable URLs fall back to the raw
  * string so they still form an honest distinct bucket rather than silently collapsing together. */
-export function originOf(url: string | undefined | null): string | null {
+export function originBucket(url: string | undefined | null): string | null {
   if (!url) return null
   try {
     const origin = new URL(url).origin
@@ -79,7 +79,7 @@ export function ambiguousFocusWarning(opts: {
 
   const withOrigin = windows
     .filter(isTopLevelTab) // frames/popups aren't separate projects — see isTopLevelTab
-    .map((w) => ({ ...w, origin: originOf(w.url) }))
+    .map((w) => ({ ...w, origin: originBucket(w.url) }))
     .filter((w): w is FocusWindowInfo & { origin: string } => w.origin !== null)
 
   const distinctOrigins = new Set(withOrigin.map((w) => w.origin))
