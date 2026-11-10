@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'bun:test'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import {
   DEFAULT_HTTP_PORT,
   DEFAULT_HTTPS_PORT,
@@ -80,4 +82,16 @@ describe('desktop-isolation agrees with the canonical block', () => {
     // The private-isolation guard this constant was originally written for must survive the move.
     expect(resolveInternalPort({ HALTIJA_INTERNAL_PORT: '0' })).toBe(0)
   })
+})
+
+describe('hand-written runtime files take ports from the compiled twins (#3384)', () => {
+  // Help and message text may name a port; a DEFAULT may not. These are the shapes a default takes.
+  const DEFAULT_SHAPES = /\|\|\s*'?87\d\d'?|'87\d\d'|localhost:87\d\d/
+  for (const file of ['bin/tosijs-dev.mjs', 'apps/desktop/renderer/tabs.js']) {
+    it(`${file} declares no port default of its own`, () => {
+      const src = readFileSync(join(import.meta.dir, '..', file), 'utf8')
+      const offending = src.split('\n').filter((l) => DEFAULT_SHAPES.test(l) && !/^\s*(\/\/|\*)/.test(l))
+      expect(offending).toEqual([])
+    })
+  }
 })

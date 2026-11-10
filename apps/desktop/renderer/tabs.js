@@ -6,6 +6,7 @@ import { tabs, activeTabId, setActiveTabId, nextTabId, el, getServerUrl, lastCwd
 import { showNotification } from './ui-utils.js'
 import { setupWebviewEvents } from './webview-events.js'
 import { checkHaltija, updateNavButtons } from './status.js'
+import { DEFAULT_HTTP_PORT } from './ports.js'
 
 /**
  * The port of THIS instance's public server.
@@ -17,9 +18,9 @@ import { checkHaltija, updateNavButtons } from './status.js'
 function resolvePublicPort() {
   try {
     const url = window.haltija?.serverUrl
-    if (url) return new URL(url).port || '8700'
+    if (url) return new URL(url).port || String(DEFAULT_HTTP_PORT)
   } catch {}
-  return '8700'
+  return String(DEFAULT_HTTP_PORT)
 }
 
 import { handleAction, getIsRecordingActions, getIsRecordingVideo, getIsSelecting } from './widget-status.js'

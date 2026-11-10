@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { stalePrivateEntries, pidIsAlive } from './private-state.mjs'
 import { mcpServerPath, mcpServerCommand, staleMcpEntry } from './mcp-locate.mjs'
+import { DEFAULT_HTTP_PORT } from './ports.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const serverPath = join(__dirname, '../dist/server.js')
@@ -204,9 +205,9 @@ function checkMcpConfig() {
   }
   
   // Check if server is running
-  fetch('http://localhost:8700/status', { signal: AbortSignal.timeout(1000) })
+  fetch(`http://localhost:${DEFAULT_HTTP_PORT}/status`, { signal: AbortSignal.timeout(1000) })
     .then(r => {
-      if (r.ok) console.log(green('✓') + ' Haltija server is running on port 8700')
+      if (r.ok) console.log(green('✓') + ` Haltija server is running on port ${DEFAULT_HTTP_PORT}`)
       else console.log(yellow('○') + ' Haltija server not running')
     })
     .catch(() => {
@@ -323,7 +324,7 @@ import { normalizeLauncherArgs } from './launcher-args.mjs'
 const firstNonFlag = args.find(a => !a.startsWith('-'))
 if (firstNonFlag && isSubcommand(firstNonFlag)) {
   // Parse --port for subcommand mode. Priority: --port > HALTIJA_PORT > DEV_CHANNEL_PORT > 8700.
-  let subPort = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || '8700'
+  let subPort = process.env.HALTIJA_PORT || process.env.DEV_CHANNEL_PORT || String(DEFAULT_HTTP_PORT)
   const subPortIdx = args.indexOf('--port')
   if (subPortIdx !== -1 && args[subPortIdx + 1]) {
     subPort = args[subPortIdx + 1]
@@ -932,7 +933,7 @@ const tryBun = () => {
     (async () => {
       const serverPort = privateMode
         ? await discoverPrivatePort(privatePortFile)
-        : (env.DEV_CHANNEL_PORT || 8700)
+        : (env.DEV_CHANNEL_PORT || DEFAULT_HTTP_PORT)
       if (!serverPort) {
         console.error('[tosijs-dev] Private server did not report its port within timeout')
         process.exit(1)
@@ -972,7 +973,7 @@ const tryNode = () => {
     (async () => {
       const serverPort = privateMode
         ? await discoverPrivatePort(privatePortFile)
-        : (env.DEV_CHANNEL_PORT || 8700)
+        : (env.DEV_CHANNEL_PORT || DEFAULT_HTTP_PORT)
       if (!serverPort) {
         console.error('[tosijs-dev] Private server did not report its port within timeout')
         process.exit(1)
@@ -1090,7 +1091,7 @@ function killOnPort(port) {
 // Launch Mode Selection
 // ============================================
 
-const port = env.DEV_CHANNEL_PORT || '8700'
+const port = env.DEV_CHANNEL_PORT || String(DEFAULT_HTTP_PORT)
 const forceRestart = args.includes('--force') || args.includes('-f')
 
 // A PRIVATE instance NEVER consults or adopts the shared server — that adoption is the exact

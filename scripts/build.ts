@@ -128,6 +128,13 @@ writeFileSync(
   `/** ⚠️  AUTO-GENERATED FROM src/ports.ts — DO NOT EDIT. Run: bun run build */\n` +
     readFileSync('apps/desktop/ports.js', 'utf-8'),
 )
+// …and for the two hand-written runtime files that still carried literals: the launcher (bin/,
+// Node ESM) and the desktop renderer (browser ESM). #3384: CLAUDE.md said no module declares its
+// own port default, and these two did.
+for (const [out, target] of [['bin/ports.mjs', 'node'], ['apps/desktop/renderer/ports.js', 'browser']] as const) {
+  await $`bun build ./src/ports.ts --outfile=${out} --target=${target} --format=esm`
+  writeFileSync(out, `/** ⚠️  AUTO-GENERATED FROM src/ports.ts — DO NOT EDIT. Run: bun run build */\n` + readFileSync(out, 'utf-8'))
+}
 
 // 0f. Compile src/desktop-server-env.ts for the Electron main process (CommonJS — main.js uses
 // require). Its contract is asserted in src/desktop-server-env.test.ts without launching Electron.
