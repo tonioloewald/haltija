@@ -194,7 +194,9 @@ jobs:
           # attempt killed exactly what it was trying not to.
           echo "--- process tree ---"
           ps -eo pid=,ppid=,comm=,args= | grep -E 'xvfb|tosijs-dev|electron' | grep -v grep || true
-          LAUNCHER_PID=$(ps -eo pid=,comm=,args= | awk '$2 ~ /node$/ && /tosijs-dev\.mjs/ && /--private/ {print $1; exit}')
+          # Newer Node names its main thread "MainThread", and that is what `comm` reports on the
+          # current runner image (seen 2026-11-10), so match either name. Still never the wrapper.
+          LAUNCHER_PID=$(ps -eo pid=,comm=,args= | awk '$2 ~ /^(node|MainThread)$/ && /tosijs-dev\.mjs/ && /--private/ {print $1; exit}')
           echo "wrapper pid: $WRAPPER_PID, launcher pid: ${LAUNCHER_PID:-<not found>}"
           if [ -z "$LAUNCHER_PID" ]; then
             echo "::error::could not find the launcher process — the teardown assertion below would be meaningless"
