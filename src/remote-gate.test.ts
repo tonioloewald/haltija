@@ -45,7 +45,10 @@ describe('refusalLogLine (#815 review)', () => {
 
   it('an unknown address is still reported, and the set stays bounded', () => {
     const told = new Set<string>()
-    expect(refusalLogLine(null, told)).toContain('unknown address')
+    const unknown = refusalLogLine(null, told)!
+    expect(unknown).toContain('socket closed')
+    // A closed socket is often a local widget reconnecting: no container/--token advice (#3382).
+    expect(unknown).not.toContain('--token')
     for (let i = 0; i < 1000; i++) refusalLogLine(`10.0.${i >> 8}.${i & 255}`, told)
     expect(told.size).toBeLessThanOrEqual(256)
   })

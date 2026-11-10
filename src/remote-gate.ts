@@ -57,6 +57,12 @@ export function refusalLogLine(address: string | null | undefined, told: Set<str
   // Bounded: a scan from many addresses must not grow this without limit.
   if (told.size >= 256) told.clear()
   told.add(peer)
+  // No address means the socket closed before we could read it: usually a client that gave up, which
+  // a local widget's reconnect storm produces too. Advice about containers and --token would send
+  // someone after a misconfiguration that may not exist (#3382), so say only what is known.
+  if (!address) {
+    return 'refused a request whose socket closed before its address could be read; if this repeats, a client is reaching haltija from somewhere it cannot identify'
+  }
   return (
     `refused a connection from ${peer}: without a token, haltija accepts only this machine. ` +
     'A browser in a container, VM or WSL2, or on another device, counts as another machine. ' +
