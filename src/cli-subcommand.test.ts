@@ -1341,3 +1341,22 @@ describe('a failing test fails the command (#22)', () => {
     expect(failed({ weird: true })).toBe(false)
   })
 })
+
+describe('dialog-configure prompt answers are explicit (#3383)', () => {
+  const build = (...args: string[]) => (ARG_MAPS as any)['dialog-configure'](args)
+  test('--prompt-answer auto-fills, and modes pass through', () => {
+    expect(build('--prompt-answer', 'dismiss')).toEqual({ prompt: { response: 'dismiss' } })
+    expect(build('--prompt', 'show')).toEqual({ prompt: 'show' })
+  })
+  test('--prompt <text> still answers, but says so on stderr, so a typo of a mode is visible', () => {
+    const errors: string[] = []
+    const orig = console.error
+    console.error = (m: string) => { errors.push(m) }
+    try {
+      expect(build('--prompt', 'dismis')).toEqual({ prompt: { response: 'dismis' } })
+    } finally {
+      console.error = orig
+    }
+    expect(errors.join('\n')).toContain('--prompt-answer')
+  })
+})

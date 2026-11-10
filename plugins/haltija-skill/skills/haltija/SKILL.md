@@ -363,7 +363,7 @@ hj console                             # console output + uncaught errors and re
 Use these when "did my click actually do anything?" matters: watch, act, then read. `hj click`/`hj
 type` also accept `--diff` to return a before/after DOM diff of the action.
 
-Dialogs never block you (`hj dialog-history`); `hj dialog-configure --alert show` is for humans.
+Dialogs never block you (`hj dialog-history`); `hj dialog-configure --alert show` is for humans; `--prompt-answer <text>` fills prompts.
 
 ## Recording a flow into a test
 

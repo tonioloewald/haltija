@@ -20,6 +20,7 @@ import { z } from "zod"
 // Inlined by the bundle (scripts/build.ts → dist/mcp.js), so the server reports haltija's version.
 import { VERSION } from "../../../src/version"
 import { DEFAULT_HTTP_PORT } from "../../../src/ports"
+import { differsBeyondPatch } from "../../../src/semver"
 
 // Import generated endpoints JSON (built from api-schema.ts - single source of truth)
 import endpoints from "./endpoints.json" with { type: "json" }
@@ -60,6 +61,24 @@ function pathToToolName(path: string): string {
   return path.slice(1).replace(/\//g, '_')
 }
 
+// The MCP entry is version-pinned (`npx -p haltija@<version>`), so it stays put while the server is
+// upgraded, and its tool list (generated from that version's schema) quietly falls behind (#3383).
+// Said once, in a tool result, because stderr never reaches the agent. Patch drift is normal, as for hj.
+let skewNote: string | null = null
+let skewDelivered = false
+function noteVersionSkew(serverVersion: string | null): void {
+  if (skewNote || !serverVersion || !differsBeyondPatch(serverVersion, VERSION)) return
+  skewNote =
+    `Note: this MCP server is haltija ${VERSION} but the haltija server is ${serverVersion}, so the ` +
+    `tool list may be missing or misdescribe endpoints. Re-run setup to update the pinned entry: ` +
+    `\`npx -p haltija@${serverVersion} haltija-mcp-setup\` (Claude Code) or \`bunx haltija@${serverVersion} --setup-mcp\` (Claude Desktop), then restart the MCP client.`
+}
+function withSkewNote<T extends { content: Array<{ type: 'text'; text: string }> }>(result: T): T {
+  if (!skewNote || skewDelivered) return result
+  skewDelivered = true
+  return { ...result, content: [...result.content, { type: 'text' as const, text: skewNote }] }
+}
+
 // Helper to call Haltija REST API
 async function callHaltija(endpoint: EndpointDef, args: Record<string, unknown>): Promise<unknown> {
   const url = `${baseUrl}${endpoint.path}`
@@ -78,7 +97,8 @@ async function callHaltija(endpoint: EndpointDef, args: Record<string, unknown>)
   }
   
   const response = await fetch(url, options)
-  
+  noteVersionSkew(response.headers.get('X-Haltija-Version'))
+
   if (!response.ok) {
     const error = await response.text()
     throw new Error(`Haltija API error: ${response.status} - ${error}`)
@@ -169,14 +189,14 @@ for (const endpoint of ALL_ENDPOINTS) {
       async (args) => {
         try {
           const result = await callHaltija(endpoint, args)
-          return {
+          return withSkewNote({
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          }
+          })
         } catch (error) {
-          return {
+          return withSkewNote({
             content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
-          }
+          })
         }
       }
     )
@@ -188,14 +208,14 @@ for (const endpoint of ALL_ENDPOINTS) {
       async () => {
         try {
           const result = await callHaltija(endpoint, {})
-          return {
+          return withSkewNote({
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          }
+          })
         } catch (error) {
-          return {
+          return withSkewNote({
             content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
-          }
+          })
         }
       }
     )

@@ -1353,8 +1353,19 @@ var ARG_MAPS = {
   },
   "video-stop": () => ({}),
   "dialog-configure": (args) => {
-    const { flags } = takeFlags(args, { "--alert": "str", "--confirm": "str", "--prompt": "str", "--beforeunload": "str" });
-    if (typeof flags.prompt === "string" && flags.prompt !== "dismiss" && flags.prompt !== "show") {
+    const { flags } = takeFlags(args, {
+      "--alert": "str",
+      "--confirm": "str",
+      "--prompt": "str",
+      "--beforeunload": "str",
+      "--prompt-answer": "str",
+      "--prompt-answer:name": "promptAnswer"
+    });
+    if (typeof flags.promptAnswer === "string") {
+      flags.prompt = { response: flags.promptAnswer };
+      delete flags.promptAnswer;
+    } else if (typeof flags.prompt === "string" && flags.prompt !== "dismiss" && flags.prompt !== "show") {
+      console.error(`hj dialog-configure: answering prompts with ${JSON.stringify(flags.prompt)}. The modes are dismiss and show; to answer, say so with --prompt-answer <text>.`);
       flags.prompt = { response: flags.prompt };
     }
     return flags;
@@ -1926,7 +1937,7 @@ var KNOWN_FLAGS = {
   refresh: ["--soft", "--no-wait", "--timeout"],
   navigate: ["--no-wait", "--timeout"],
   "test-run": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
-  "dialog-configure": ["--alert", "--confirm", "--prompt", "--beforeunload"],
+  "dialog-configure": ["--alert", "--confirm", "--prompt", "--prompt-answer", "--beforeunload"],
   "test-validate": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   "test-suite": ["--vars", "--seed", "--timeoutMs", "--allow-failures", "--allow-failures-streak", "--step-delay"],
   map: ["--global", "--max-nodes", "--image", "--png", "--data-url", "--scale", "--maxWidth", "--max-width", "--maxHeight", "--max-height", "--format", "--quality", "--full-page", "--layout"],
@@ -2399,7 +2410,8 @@ function listSubcommands() {
     refresh [--soft] [--no-wait]      Reload page; waits for it to come back
     tabs ${dim2("open|close|focus")}            Tab management (default: list)
     eval <code>                       Run JS in browser
-    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered)
+    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered);
+                                      --prompt-answer <text> auto-fills prompts
     dialog-history                    Dialogs the page opened, and how each was answered
 
   ${bold("Test")}

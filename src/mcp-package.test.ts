@@ -134,8 +134,29 @@ describe('the MCP server works from the packed package (GitHub #47)', () => {
       const call = await mcp.request('tools/call', { name: 'status', arguments: {} })
       expect(call.result.isError).toBeFalsy()
       expect(JSON.parse(call.result.content[0].text).serverVersion).toBeTruthy()
+      // Same version on both sides: no skew note (the control for the test below).
+      expect(call.result.content).toHaveLength(1)
     } finally {
       mcp.close()
+    }
+  }, 30_000)
+
+  it('says once, in a tool result, when the server is a different minor than the pinned MCP entry (#3383)', async () => {
+    const newer = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => Response.json({ serverVersion: '99.0.0' }, { headers: { 'X-Haltija-Version': '99.0.0' } }),
+    })
+    const mcp = await mcpSession({ command: 'node', args: [join(pkg, 'dist/mcp.js')] }, { HALTIJA_PORT: String(newer.port) })
+    try {
+      const first = await mcp.request('tools/call', { name: 'status', arguments: {} })
+      expect(first.result.content).toHaveLength(2)
+      expect(first.result.content[1].text).toContain('haltija@99.0.0 haltija-mcp-setup')
+      const second = await mcp.request('tools/call', { name: 'status', arguments: {} })
+      expect(second.result.content).toHaveLength(1)
+    } finally {
+      mcp.close()
+      newer.stop(true)
     }
   }, 30_000)
 

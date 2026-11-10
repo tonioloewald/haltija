@@ -346,10 +346,19 @@ export const ARG_MAPS = {
     return body
   },
   'video-stop': () => ({}),
-  // `--prompt` takes "dismiss", "show", or the text to answer with — any other word is the answer.
+  // `--prompt` takes "dismiss" or "show"; `--prompt-answer <text>` auto-fills. `--prompt <text>`
+  // still means the answer, as it always has, but no longer silently: a typo of a mode ("dismis")
+  // became the page's answer while the server's "unknown values are refused" rule never saw it (#3383).
   'dialog-configure': (args) => {
-    const { flags } = takeFlags(args, { '--alert': 'str', '--confirm': 'str', '--prompt': 'str', '--beforeunload': 'str' })
-    if (typeof flags.prompt === 'string' && flags.prompt !== 'dismiss' && flags.prompt !== 'show') {
+    const { flags } = takeFlags(args, {
+      '--alert': 'str', '--confirm': 'str', '--prompt': 'str', '--beforeunload': 'str',
+      '--prompt-answer': 'str', '--prompt-answer:name': 'promptAnswer',
+    })
+    if (typeof flags.promptAnswer === 'string') {
+      flags.prompt = { response: flags.promptAnswer }
+      delete flags.promptAnswer
+    } else if (typeof flags.prompt === 'string' && flags.prompt !== 'dismiss' && flags.prompt !== 'show') {
+      console.error(`hj dialog-configure: answering prompts with ${JSON.stringify(flags.prompt)}. The modes are dismiss and show; to answer, say so with --prompt-answer <text>.`)
       flags.prompt = { response: flags.prompt }
     }
     return flags
@@ -962,7 +971,7 @@ export const KNOWN_FLAGS = {
   refresh: ['--soft', '--no-wait', '--timeout'],
   navigate: ['--no-wait', '--timeout'],
   'test-run': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
-  'dialog-configure': ['--alert', '--confirm', '--prompt', '--beforeunload'],
+  'dialog-configure': ['--alert', '--confirm', '--prompt', '--prompt-answer', '--beforeunload'],
   'test-validate': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   'test-suite': ['--vars', '--seed', '--timeoutMs', '--allow-failures', '--allow-failures-streak', '--step-delay'],
   // Added after an invariant test derived them from the parsers themselves. Missing entries are
@@ -1634,7 +1643,8 @@ export function listSubcommands() {
     refresh [--soft] [--no-wait]      Reload page; waits for it to come back
     tabs ${dim('open|close|focus')}            Tab management (default: list)
     eval <code>                       Run JS in browser
-    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered)
+    dialog-configure --alert show     Let alert/confirm/prompt reach a person (default: answered);
+                                      --prompt-answer <text> auto-fills prompts
     dialog-history                    Dialogs the page opened, and how each was answered
 
   ${bold('Test')}
