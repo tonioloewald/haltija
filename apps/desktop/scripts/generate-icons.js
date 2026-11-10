@@ -15,7 +15,7 @@
  */
 
 const { app, nativeImage } = require('electron')
-const { writeFileSync, mkdirSync, copyFileSync, rmSync, existsSync } = require('fs')
+const { writeFileSync, readFileSync, mkdirSync, copyFileSync, rmSync, existsSync } = require('fs')
 const { join, dirname } = require('path')
 const { execSync, spawnSync } = require('child_process')
 
@@ -23,6 +23,7 @@ const APP_DIR = dirname(__dirname)
 const ROOT_DIR = join(APP_DIR, '../..')
 const SOURCE_PNG = join(ROOT_DIR, 'haltija.png')
 const ICON_BUNDLE = join(ROOT_DIR, 'haltija.icon')
+const ICON_NAME = 'haltija' // basename of ICON_BUNDLE: the name actool gives the icon
 const ICONS_DIR = join(APP_DIR, 'icons')
 const RESOURCES_DIR = join(APP_DIR, 'resources')
 
@@ -98,7 +99,9 @@ async function generateIcons() {
           '--output-format', 'human-readable-text',
           '--notices', '--warnings', '--errors',
           '--output-partial-info-plist', join(tempDir, 'partial-info.plist'),
-          '--app-icon', 'AppIcon',
+          // actool names the icon after the .icon bundle's FILE name, whatever --app-icon says, and
+          // macOS 26 shows the layered icon only when CFBundleIconName matches it (virta #3740).
+          '--app-icon', ICON_NAME,
           '--include-all-app-icons',
           '--enable-on-demand-resources', 'NO',
           '--target-device', 'mac',
@@ -108,6 +111,11 @@ async function generateIcons() {
         
         if (result.status === 0) {
           console.log('  Assets.car created')
+          const declared = JSON.parse(readFileSync(join(APP_DIR, 'package.json'), 'utf8')).build?.mac?.extendInfo?.CFBundleIconName
+          if (declared !== ICON_NAME) {
+            console.error(`  CFBundleIconName is ${JSON.stringify(declared)}, but Assets.car names the icon '${ICON_NAME}': macOS 26 will fall back to the static icon.icns`)
+            process.exitCode = 1
+          }
           // Clean up temp
           rmSync(tempDir, { recursive: true, force: true })
         } else {

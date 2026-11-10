@@ -41,7 +41,7 @@
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "extendInfo": {
-        "CFBundleIconName": "AppIcon"
+        "CFBundleIconName": "haltija"
       },
       "notarize": true,
       "target": [
