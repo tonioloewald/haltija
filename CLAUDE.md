@@ -352,7 +352,7 @@ Step types (generated from `src/test-actions.ts`):
 | action | fields | what it does | example |
 | --- | --- | --- | --- |
 | `navigate` | `url` | Load a URL, then wait for the widget to reconnect in that same tab. | `{"action": "navigate", "url": "http://localhost:3000/login"}` |
-| `click` | `selector` or `ref` | Realistic click (scroll into view, mouseenter/over/down/up/click). Prefers the match a user could act on when several exist. | `{"action": "click", "selector": "button:text(Sign in)"}` |
+| `click` | `selector` or `ref` | Realistic click (scroll into view, pointer and mouse over/enter/move/down/up, then click). Prefers the match a user could act on when several exist. | `{"action": "click", "selector": "button:text(Sign in)"}` |
 | `type` | `selector`/`ref`, `text`, `clear`, `paste`, `humanlike` | Per-character typing with the full key lifecycle. `paste: true` for fast entry that still triggers framework validation. | `{"action": "type", "selector": "#email", "text": "a@b.com"}` |
 | `check` | `selector` or `ref` | Toggle a checkbox or radio via a realistic click. | `{"action": "check", "selector": "#agree"}` |
 | `key` | `key`, `selector`, `modifiers` | Press a key, optionally with modifiers, at the focused element. | `{"action": "key", "key": "Enter"}` |
@@ -386,7 +386,7 @@ Test JSON files support `${VAR_NAME}` placeholders. When a test file is loaded, 
 ### Test Runner Behavior
 
 - **`type`**: Uses realistic per-character keystroke simulation by default (native setter, keydown/input/keyup per character, focus/blur lifecycle). Add `"paste": true` for fast paste-style input that still triggers React/form framework validation. Add `"humanlike": false` for instant typing. `"typoRate"` is always 0 in tests.
-- **`click`**: Uses realistic click simulation (scroll into view, mouseenter/mouseover/mousedown/mouseup/click sequence).
+- **`click`**: Uses realistic click simulation (scroll into view, then each PointerEvent before its MouseEvent twin: over/enter/move/down/up, then click). A cancelled `pointerdown` suppresses the compatibility `mousedown`/`mouseup` but not `click`, as in a browser.
 - **`check`**: For checkboxes/radios — uses realistic click. The recording system generates these.
 - **`eval`**: Executes JavaScript in the browser. Async code is supported — see "Eval Semantics" above. Multi-statement code needs an explicit `return`.
 - **`tabs-open`**: Opens a new tab (desktop app only). Optional `url` field.

@@ -10608,17 +10608,25 @@ export class DevChannel extends HTMLElement {
       this.showSubtitle(`Clicking ${elementLabel}`, 4000)
       await this.sleep(100) // Let cursor animate into position
 
-      // Full mouse lifecycle
+      // Full pointer + mouse lifecycle, in a real browser's order: each pointer event precedes its
+      // mouse twin. Controls built on pointer events alone (most modern widget libraries) saw
+      // nothing from a mouse-only click (#3382). As in a browser, a cancelled pointerdown
+      // suppresses the compatibility mousedown/mouseup, but not the click.
+      const pointerOpts = { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }
+      el.dispatchEvent(new PointerEvent('pointerover', pointerOpts))
+      el.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOpts, bubbles: false }))
+      el.dispatchEvent(new MouseEvent('mouseover', mouseOpts))
       el.dispatchEvent(
         new MouseEvent('mouseenter', { ...mouseOpts, bubbles: false }),
       )
-      el.dispatchEvent(new MouseEvent('mouseover', mouseOpts))
+      el.dispatchEvent(new PointerEvent('pointermove', pointerOpts))
       el.dispatchEvent(new MouseEvent('mousemove', mouseOpts))
       await this.sleep(10)
 
       // Pulse on mousedown
       this.pulseCursor()
-      el.dispatchEvent(new MouseEvent('mousedown', mouseOpts))
+      const compat = el.dispatchEvent(new PointerEvent('pointerdown', { ...pointerOpts, buttons: 1 }))
+      if (compat) el.dispatchEvent(new MouseEvent('mousedown', { ...mouseOpts, buttons: 1 }))
 
       // Focus if focusable
       if (
@@ -10631,7 +10639,8 @@ export class DevChannel extends HTMLElement {
       }
 
       await this.sleep(10)
-      el.dispatchEvent(new MouseEvent('mouseup', mouseOpts))
+      el.dispatchEvent(new PointerEvent('pointerup', { ...pointerOpts, buttons: 0 }))
+      if (compat) el.dispatchEvent(new MouseEvent('mouseup', mouseOpts))
       el.dispatchEvent(new MouseEvent('click', mouseOpts))
 
       // Keep cursor visible briefly, then fade

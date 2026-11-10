@@ -11570,19 +11570,27 @@ export const COMPONENT_JS: string = `(() => {
         this.showCursor(x, y, "\\uD83D\\uDC46");
         this.showSubtitle(\`Clicking \${elementLabel}\`, 4000);
         await this.sleep(100);
-        el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
+        const pointerOpts = { ...mouseOpts, pointerId: 1, pointerType: "mouse", isPrimary: true };
+        el.dispatchEvent(new PointerEvent("pointerover", pointerOpts));
+        el.dispatchEvent(new PointerEvent("pointerenter", { ...pointerOpts, bubbles: false }));
         el.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
+        el.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
+        el.dispatchEvent(new PointerEvent("pointermove", pointerOpts));
         el.dispatchEvent(new MouseEvent("mousemove", mouseOpts));
         await this.sleep(10);
         this.pulseCursor();
-        el.dispatchEvent(new MouseEvent("mousedown", mouseOpts));
+        const compat = el.dispatchEvent(new PointerEvent("pointerdown", { ...pointerOpts, buttons: 1 }));
+        if (compat)
+          el.dispatchEvent(new MouseEvent("mousedown", { ...mouseOpts, buttons: 1 }));
         if (el.tabIndex >= 0 || ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(el.tagName)) {
           el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
           el.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
           el.focus();
         }
         await this.sleep(10);
-        el.dispatchEvent(new MouseEvent("mouseup", mouseOpts));
+        el.dispatchEvent(new PointerEvent("pointerup", { ...pointerOpts, buttons: 0 }));
+        if (compat)
+          el.dispatchEvent(new MouseEvent("mouseup", mouseOpts));
         el.dispatchEvent(new MouseEvent("click", mouseOpts));
         this.hideCursorAfter(4000);
         this.respond(responseId, true, { clicked: payload2.selector });

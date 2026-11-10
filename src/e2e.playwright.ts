@@ -369,6 +369,31 @@ test.describe('haltija-dev CLI', () => {
     expect(await page.evaluate(() => (window as any).pk.dx)).toBeGreaterThan(30)
   })
 
+  test('REST click reaches a POINTER-only control, in a browser\'s event order (#3382)', async ({ page }) => {
+    await injectDevChannel(page)
+    // Activates on pointerdown/pointerup alone, as many widget libraries do, and cancels pointerdown,
+    // which in a real browser suppresses the compatibility mousedown/mouseup but not click.
+    await page.evaluate(() => {
+      const b = document.createElement('div')
+      b.id = 'pbtn'
+      b.style.cssText = 'position:fixed;left:20px;top:300px;width:60px;height:30px;background:#3cf'
+      document.body.appendChild(b)
+      const w = window as any
+      w.pb = { log: [] as string[] }
+      for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+        b.addEventListener(t, (e: any) => {
+          w.pb.log.push(t + (t.startsWith('pointer') ? `:${e.pointerType}:${e.buttons}` : ''))
+          if (t === 'pointerdown') e.preventDefault()
+        })
+      }
+    })
+    const res = await fetch(`${SERVER_URL}/click`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selector: '#pbtn' }),
+    }).then((r) => r.json())
+    expect(res.success).toBe(true)
+    expect(await page.evaluate(() => (window as any).pb.log)).toEqual(['pointerdown:mouse:1', 'pointerup:mouse:0', 'click'])
+  })
+
   test('map surfaces contrast failures with the page\'s real colours and a WCAG verdict', async ({ page }) => {
     await injectDevChannel(page)
     await page.evaluate(() => {

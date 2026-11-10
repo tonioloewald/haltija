@@ -258,7 +258,7 @@ Tests are JSON files with steps:
 | action | fields | what it does | example |
 | --- | --- | --- | --- |
 | `navigate` | `url` | Load a URL, then wait for the widget to reconnect in that same tab. | `{"action": "navigate", "url": "http://localhost:3000/login"}` |
-| `click` | `selector` or `ref` | Realistic click (scroll into view, mouseenter/over/down/up/click). Prefers the match a user could act on when several exist. | `{"action": "click", "selector": "button:text(Sign in)"}` |
+| `click` | `selector` or `ref` | Realistic click (scroll into view, pointer and mouse over/enter/move/down/up, then click). Prefers the match a user could act on when several exist. | `{"action": "click", "selector": "button:text(Sign in)"}` |
 | `type` | `selector`/`ref`, `text`, `clear`, `paste`, `humanlike` | Per-character typing with the full key lifecycle. `paste: true` for fast entry that still triggers framework validation. | `{"action": "type", "selector": "#email", "text": "a@b.com"}` |
 | `check` | `selector` or `ref` | Toggle a checkbox or radio via a realistic click. | `{"action": "check", "selector": "#agree"}` |
 | `key` | `key`, `selector`, `modifiers` | Press a key, optionally with modifiers, at the focused element. | `{"action": "key", "key": "Enter"}` |

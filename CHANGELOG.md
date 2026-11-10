@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **`click` reaches controls built on pointer events** (virta #3382). The realistic click sent
+  mouse events only, so a control listening for `pointerdown`/`pointerup` (as many widget
+  libraries do) saw nothing while the click reported success. Each pointer event now precedes its
+  mouse twin, as in a browser, and a cancelled `pointerdown` suppresses the compatibility
+  `mousedown`/`mouseup` but not `click`. This applies to `hj click`, `POST /click` and the `click`
+  and `check` steps.
+- **A refusal whose socket had already closed is no longer logged as a container misconfiguration.**
+  The #815 gate refuses a request with no readable address (the socket is gone), and its log line
+  used to give the other-machine `--token` advice, which a local widget's reconnect storm could
+  trigger. It now says only what is known.
 - **`hj where` names the right remedy when a server refuses this shell for being on another
   machine** (virta #3382). A container or VM reaching haltija through a forwarded port gets the #815
   403; `hj where` used to answer "export HALTIJA_TOKEN", which cannot help until the server itself

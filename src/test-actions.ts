@@ -59,7 +59,7 @@ export const TEST_ACTIONS = {
   click: {
     core: true,
     summary:
-      'Realistic click (scroll into view, mouseenter/over/down/up/click). Prefers the match a user could act on when several exist.',
+      'Realistic click (scroll into view, pointer and mouse over/enter/move/down/up, then click). Prefers the match a user could act on when several exist.',
     fields: '`selector` or `ref`',
     example: '{"action": "click", "selector": "button:text(Sign in)"}',
   },
