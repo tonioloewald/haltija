@@ -1,32 +1,32 @@
 {
   "version": "1.13.1",
-  "tree": "a9a0706898f014cecdc25ebb9051b2783deaeefb",
-  "commit": "5aa426ec23507706d3f049b170ddee1f261f5793",
+  "tree": "75e3f95134a104319fa1af266f9c5f38fdd75a86",
+  "commit": "ce3ec39317c0a838606e2959e229e22c2bbd5795",
   "bun": "1.4.2",
   "lanes": {
     "test:integration": {
       "command": "bun scripts/integration.ts",
       "exitCode": 0,
-      "durationMs": 44933,
-      "tail": "\n 11 pass\n 0 fail\n 21 expect() calls\nRan 11 tests across 1 file. [43.85s]\n$ bun scripts/integration.ts"
+      "durationMs": 46149,
+      "tail": "\n 11 pass\n 0 fail\n 21 expect() calls\nRan 11 tests across 1 file. [45.06s]\n$ bun scripts/integration.ts"
     },
     "test:e2e": {
       "command": "bunx playwright test",
       "exitCode": 0,
-      "durationMs": 83176,
-      "tail": "  ✓  171 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (1ms)\n  ✓  172 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  172 passed (1.4m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
+      "durationMs": 85001,
+      "tail": "  ✓  171 [chromium] › src/test-in-browser.playwright.ts:201:3 › corpus liveness (#51) › a tier that ran nothing reports it, instead of passing quietly (0ms)\n  ✓  172 [chromium] › src/test-in-browser.playwright.ts:208:3 › corpus liveness (#51) › a probe with no browser is an error, not an empty value (0ms)\n\n  172 passed (1.4m)\n$ bunx playwright test\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     },
     "test:engines": {
       "command": "bunx playwright test -c playwright.engines.config.ts",
       "exitCode": 0,
-      "durationMs": 7363,
-      "tail": "  ✓  25 [webkit] › src/playwright-bridge.playwright.ts:45:3 › playwrightBridge › type, click and press drive the page (180ms)\n  ✓  26 [webkit] › src/playwright-bridge.playwright.ts:54:3 › playwrightBridge › clickAt and dragFrom dispatch at a coordinate (110ms)\n  ✓  27 [webkit] › src/playwright-bridge.playwright.ts:69:3 › playwrightBridge › a missing coordinate target fails instead of passing (111ms)\n\n  27 passed (7.1s)\n$ bunx playwright test -c playwright.engines.config.ts"
+      "durationMs": 6375,
+      "tail": "  ✓  25 [webkit] › src/playwright-bridge.playwright.ts:45:3 › playwrightBridge › type, click and press drive the page (148ms)\n  ✓  26 [webkit] › src/playwright-bridge.playwright.ts:54:3 › playwrightBridge › clickAt and dragFrom dispatch at a coordinate (101ms)\n  ✓  27 [webkit] › src/playwright-bridge.playwright.ts:69:3 › playwrightBridge › a missing coordinate target fails instead of passing (97ms)\n\n  27 passed (6.1s)\n$ bunx playwright test -c playwright.engines.config.ts"
     },
     "test:all": {
       "command": "bun test src/ && bun scripts/integration.ts && bunx playwright test",
       "exitCode": 0,
-      "durationMs": 171507,
-      "tail": "\n 1146 pass\n 0 fail\n 2400 expect() calls\nRan 1146 tests across 80 files. [41.34s]\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
+      "durationMs": 170833,
+      "tail": "\n 1146 pass\n 0 fail\n 2400 expect() calls\nRan 1146 tests across 80 files. [41.07s]\n\u001b[0m\u001b[31mhj key : <key> --ctrl --shift --alt --meta, --repeat 3 | see: type, click\u001b[0m"
     }
   },
   "shipped": {
@@ -123,7 +123,7 @@
     "dist/machine-log.d.ts": "04e8fd46955c0018306a39bbe100cffc9584596c285b54617a1405bbe66a1c08",
     "dist/machine-response.d.ts": "bbe303a07f102164c568d548f39dbbeda86eeccf8955fb71b7151529e9cdf192",
     "dist/mcp-config.d.ts": "fab5faa015b1be573d1a9e0fbcbcc7a7f133d2aab140865846814f46e4872119",
-    "dist/mcp.js": "9073a3b3d12c8fe6ece4a8a5755f6c8fb1235306d4d16b09e4ba394c694d320f",
+    "dist/mcp.js": "34a68cc70b7f9d7fbd19a96e264ea606c07151b6f7b616ee265b9fd46c1df505",
     "dist/naming-probe.d.ts": "557204ee936bd2bdec67ef23f2f1a029cd1f7fd2a3e80e2f26240613444a2948",
     "dist/navigation-url.d.ts": "e466fe40505cba164b8cf2e0bf08aa4a958c27583a21bda0d21790bbfc4c65cc",
     "dist/page-wait.d.ts": "d81d297af248f168aecb0a206ae573bfc6a4a8c7a76ee55e41a5c6692b8c3aa9",
