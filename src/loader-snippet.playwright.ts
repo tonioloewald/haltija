@@ -9,8 +9,9 @@
  *
  * A test that only shows "it connected" is not enough either: an earlier attempt showed "localhost
  * works" in an environment where the LAN IP ALSO worked, i.e. a permissive environment that proved
- * nothing. So the control is here too: the same reach from a LAN-IP page must be refused. If the
- * control ever passes, this suite fails, because then the localhost result means nothing.
+ * nothing. So the control is here too: the same reach from a LAN-IP page must never open the channel,
+ * and each engine's answer to whether the BROWSER lets it out is asserted (Chromium now does, and
+ * haltija's #815 gate is what refuses it). If the control ever opens, this suite fails.
  *
  * The app pages are served by REAL http/https servers (throwaway self-signed cert), not
  * `page.route`. A route-fulfilled page has no IP address space, so Chromium's Local Network Access
@@ -27,6 +28,7 @@ import { execFileSync } from 'child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { createServer as createHttpServer, type Server } from 'http'
 import { createServer as createHttpsServer } from 'https'
+import { createServer as createTcpServer } from 'net'
 import { networkInterfaces, tmpdir } from 'os'
 import { join } from 'path'
 import { startTestServer, type TestServer } from './playwright-server'
@@ -38,6 +40,14 @@ import { loaderSnippetHtml } from './loader-snippet'
  * console says "[blocked] The page at https://localhost:… requested insecure content from http://…".
  */
 const blocksLoopbackFromHttps = (browserName: string) => browserName === 'webkit'
+
+/**
+ * Engines that block an https page's ws:// to a LAN address before it leaves the browser. Measured
+ * 2026-11-10: Firefox 159 and WebKit 27.2 block it; Chromium 158 SENDS it (Chromium 143 threw a
+ * SecurityError synchronously). Where the browser lets it out, haltija's own #815 gate is what
+ * refuses it, so the control below asserts both layers rather than assuming the browser's.
+ */
+const blocksLanFromHttps = (browserName: string) => browserName !== 'chromium'
 
 let server: TestServer
 /** Nothing listens here: it stands in for an https transport that is down. */
@@ -135,9 +145,10 @@ test.describe('loader snippet — transport fallback (#32c)', () => {
     expect(srcs[0]).toContain(`http://localhost:${server.port}/`)
   })
 
-  test('control: the same reach from an https LAN-IP page is refused by the browser', async ({ page, browserName }) => {
+  test('control: the same reach from an https LAN-IP page never opens the channel', async ({ page, browserName }) => {
     const ip = lanIPv4()
-    test.skip(!ip, 'no non-internal IPv4 interface, so there is no LAN origin to use as the control')
+    // A failure, not a skip: a skipped control reads green on a loopback-only runner (#3384).
+    expect(ip, 'no non-internal IPv4 interface, so there is no LAN origin to use as the control').toBeTruthy()
 
     await serveApp(page, `https://${ip}:${httpsApp.port}/`)
     expect(await page.evaluate(() => isSecureContext)).toBe(true)
@@ -159,17 +170,29 @@ test.describe('loader snippet — transport fallback (#32c)', () => {
         wsUrl,
       )
 
-    const blocks = blocksLoopbackFromHttps(browserName)
-    // Chromium/Firefox throw synchronously; WebKit blocks and reports it as an error event.
-    expect(await probe(`ws://${ip}:${server.port}/ws/browser`)).toBe(blocks ? 'error' : 'threw SecurityError')
+    // Layer 1, the browser: does the reach leave it at all? A bare TCP listener counts arrivals.
+    let arrivals = 0
+    const tcp = createTcpServer((s) => { arrivals++; s.destroy() })
+    await new Promise<void>((r) => tcp.listen(0, '0.0.0.0', r))
+    try {
+      await probe(`ws://${ip}:${(tcp.address() as any).port}/`)
+      await new Promise((r) => setTimeout(r, 300))
+    } finally {
+      tcp.close()
+    }
+    expect(arrivals > 0).toBe(!blocksLanFromHttps(browserName))
+
+    // Layer 2, the channel: whichever layer refuses, it never opens from a LAN page.
+    expect(await probe(`ws://${ip}:${server.port}/ws/browser`)).not.toBe('open')
 
     await serveApp(page, `https://localhost:${httpsApp.port}/`)
+    const blocks = blocksLoopbackFromHttps(browserName)
     expect(await probe(`ws://localhost:${server.port}/ws/browser`)).toBe(blocks ? 'error' : 'open')
   })
 
   test('an https LAN-IP page does not even try http, and says why it gave up', async ({ page }) => {
     const ip = lanIPv4()
-    test.skip(!ip, 'no non-internal IPv4 interface')
+    expect(ip, 'no non-internal IPv4 interface').toBeTruthy()
 
     const warnings: string[] = []
     page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()) })

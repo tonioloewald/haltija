@@ -80,26 +80,26 @@
   "author": "Tonio Loewald",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@codemirror/commands": "^6.10.3",
+    "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-css": "^6.3.1",
-    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-html": "^6.4.12",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/lang-python": "^6.2.1",
-    "@codemirror/language": "^6.12.2",
-    "@codemirror/state": "^6.6.0",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/state": "^6.7.6",
     "@codemirror/theme-one-dark": "^6.1.3",
-    "@codemirror/view": "^6.40.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
-    "@playwright/test": "^1.40.0",
-    "bun-types": "^1.3.14",
+    "@codemirror/view": "^6.43.15",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@playwright/test": "^1.65.0",
+    "bun-types": "^1.4.4",
     "tosijs-floorplan": "^0.7.0",
-    "typescript": "^5.0.0",
-    "zod": "^4.6.6"
+    "typescript": "^5.9.3",
+    "zod": "^4.6.7"
   },
   "dependencies": {
-    "tosijs-schema": "^1.9.0"
+    "tosijs-schema": "^1.14.0"
   },
   "repository": {
     "type": "git",
