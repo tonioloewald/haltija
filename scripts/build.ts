@@ -1055,6 +1055,8 @@ if (!readFileSync('dist/hj.js').includes(HJ_MARKER)) {
 // installs a nested package's dependencies, so an unbundled apps/mcp could not import its SDK in
 // an installed package, and it was not in `files` at all. The SDK and zod are root devDependencies
 // so CI's build bundles exactly what a local build does (attestation compares shipped bytes).
+// Not minified, on purpose (#3383): ~150 KB gzipped either way once npm compresses the tarball,
+// it runs locally, and a readable stack trace in an adopter's bug report is worth more than the bytes.
 await $`bun build ./apps/mcp/src/index.ts --outfile=dist/mcp.js --target=node --format=esm`
 {
   const mcp = readFileSync('dist/mcp.js', 'utf-8')
@@ -1090,5 +1092,8 @@ if (syntaxErrors.length) {
   process.exit(1)
 }
 console.log(`  Syntax-checked ${mjsFiles.length} bin/*.mjs`)
+
+// Sizes and the change since the baseline recorded at the last release (#1076). Re-record at the tag.
+await $`bun scripts/sizes.ts`
 
 console.log('Build complete')

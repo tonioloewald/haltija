@@ -61,6 +61,7 @@
     "start": "bun run electron",
     "test": "bun test src/",
     "test:integration": "bun scripts/integration.ts",
+    "sizes:record": "bun scripts/sizes.ts --record",
     "test:server": "bun test src/server.test.ts",
     "test:https": "bun test src/https.test.ts",
     "test:both": "bun test src/both-mode.test.ts",

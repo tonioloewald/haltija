@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- **The MCP server says when it has fallen behind the haltija server** (virta #3383). Setup pins
+  the MCP entry to a version, so after an upgrade its tool list can lag the server. On the first
+  call against a server a minor or more away, the result carries a note with the setup command
+  to re-run. Patch drift is normal and stays quiet, as in `hj`.
+- **`hj dialog-configure --prompt-answer <text>`** auto-fills prompts. `--prompt <text>` still
+  answers, but now says so on stderr, because a mistyped mode (`--prompt dismis`) silently became
+  the page's answer.
+- **The build prints each bundle's gzip size and its change since the last release**
+  (`dist-sizes.json`, recorded from the v1.13.1 build; virta #1076). Re-record it with
+  `bun run sizes:record` at each tag.
+
 ### Fixed
 
 - **`click` reaches controls built on pointer events** (virta #3382). The realistic click sent

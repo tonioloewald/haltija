@@ -523,6 +523,9 @@ Specific to haltija:
   release commit: `bun run build && bun ../tosijs-coding-practices/tools/attest.ts`, commit **only**
   `release-attestation.json`, and tag that commit. CI rebuilds and must reproduce every shipped
   file byte-for-byte, so build with the pinned Bun (the build refuses otherwise).
+- **Re-record the size baseline at each tag:** `bun run sizes:record` after the release build, and
+  commit `dist-sizes.json` with the release commit (not the attestation commit, which must change
+  nothing else). The build prints each bundle's gzip size and its change since that baseline.
 - **`electron-store` is an optional peer**: npm never installs a nested non-workspace manifest's
   dependencies, so `apps/desktop/package.json`'s declaration never reached anyone. `main.js`
   falls back without it.
