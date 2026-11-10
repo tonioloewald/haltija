@@ -2652,7 +2652,8 @@ async function runWhere(port, portSource, jsonOutput) {
       serverInfo = await resp.json();
     } else if (resp.status === 401 || resp.status === 403) {
       serverAuthRefused = true;
-      serverError = process.env.HALTIJA_TOKEN ? `a server IS running here, but it rejected the token in HALTIJA_TOKEN — check the value matches what the server was started with (haltija --token <secret>)` : `a server IS running here, but it requires a token and this shell has none — export HALTIJA_TOKEN=<secret> (the value passed to haltija --token), or use hj --token <secret>`;
+      const body = await resp.text().catch(() => "");
+      serverError = resp.status === 403 && body.includes("other machines") ? `a server IS running here, but it refuses other machines without a token, and this shell connects as one (a container, VM or forwarded port). Restart the server with haltija --token <secret>, then export HALTIJA_TOKEN=<secret> here` : process.env.HALTIJA_TOKEN ? `a server IS running here, but it rejected the token in HALTIJA_TOKEN — check the value matches what the server was started with (haltija --token <secret>)` : `a server IS running here, but it requires a token and this shell has none — export HALTIJA_TOKEN=<secret> (the value passed to haltija --token), or use hj --token <secret>`;
     } else {
       serverError = `HTTP ${resp.status}`;
     }

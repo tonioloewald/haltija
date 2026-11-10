@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`hj where` names the right remedy when a server refuses this shell for being on another
+  machine** (virta #3382). A container or VM reaching haltija through a forwarded port gets the #815
+  403; `hj where` used to answer "export HALTIJA_TOKEN", which cannot help until the server itself
+  is restarted with `--token`. It now says so.
+- **The desktop app shows its layered (Liquid Glass) icon on macOS 26** (virta #3740).
+  `CFBundleIconName` said `AppIcon`, but actool names the icon after the `.icon` bundle
+  (`haltija`), so macOS fell back to the static `icon.icns`. A test now checks the two names agree.
+
+### Changed
+
+- **Dependencies:** minor and patch updates in every tree, including Playwright 1.57 → 1.65 and
+  tosijs-schema 1.9 → 1.14 (no generated output changed). CI's actions moved to their Node 24
+  releases, pinned by SHA.
+- **The loader-snippet LAN control measures both layers.** Chromium 158 now lets an https page's
+  `ws://` reach a LAN address (Chromium 143 threw a SecurityError); haltija's #815 gate is what
+  refuses it there. Firefox 159 and WebKit 27.2 still block it in the browser. The control now
+  asserts each engine's answer and that the channel never opens from a LAN page, and a runner with
+  no LAN address fails the control instead of skipping it.
+
 ## 1.13.1 (2026-11-01)
 
 ### Changed

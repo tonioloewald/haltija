@@ -120,8 +120,13 @@ async function runWhere(port, portSource, jsonOutput) {
     } else if (resp.status === 401 || resp.status === 403) {
       serverAuthRefused = true
       // Name the actual cause and its remedy. "HTTP 401" sends someone to look at the server;
-      // the problem is in this shell.
-      serverError = process.env.HALTIJA_TOKEN
+      // the problem is in this shell. Unless the server has NO token and refused us for being on
+      // another machine (#815: a container or VM reaching it through a forwarded port), in which
+      // case no value in this shell can help until the server is restarted with one.
+      const body = await resp.text().catch(() => '')
+      serverError = resp.status === 403 && body.includes('other machines')
+        ? `a server IS running here, but it refuses other machines without a token, and this shell connects as one (a container, VM or forwarded port). Restart the server with haltija --token <secret>, then export HALTIJA_TOKEN=<secret> here`
+        : process.env.HALTIJA_TOKEN
         ? `a server IS running here, but it rejected the token in HALTIJA_TOKEN — check the value matches what the server was started with (haltija --token <secret>)`
         : `a server IS running here, but it requires a token and this shell has none — export HALTIJA_TOKEN=<secret> (the value passed to haltija --token), or use hj --token <secret>`
     } else {
